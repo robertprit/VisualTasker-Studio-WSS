@@ -1,0 +1,8 @@
+[submodule "visualtasker-blockeditor"]
+	path = visualtasker-blockeditor
+	url = https://github.com/robertprit/visualtasker-blockeditor.git
+	branch = codex/blockeditor-compact-badge-bounds
+[submodule "visualtasker-flowchart"]
+	path = visualtasker-flowchart
+	url = https://github.com/robertprit/visualtasker-flowchart.git
+	branch = codex/flowchart-visual-semantics
