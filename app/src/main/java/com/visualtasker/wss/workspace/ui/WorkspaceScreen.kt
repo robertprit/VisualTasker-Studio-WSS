@@ -916,7 +916,9 @@ private fun BlockEditorPanel(
             showBlockFactory = true,
             showToolbox = false,
             allowClearWorkspace = true,
-            paletteInsertMode = paletteInsertMode
+            paletteInsertMode = paletteInsertMode,
+            soundEffectsEnabled = true,
+            hapticFeedbackEnabled = true
         ),
         modifier = Modifier.fillMaxSize()
     )
