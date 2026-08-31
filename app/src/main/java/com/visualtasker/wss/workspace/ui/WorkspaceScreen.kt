@@ -134,6 +134,7 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellEditorSessi
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
+import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.compose.ui.EditorNavigationRail
@@ -154,6 +155,7 @@ private const val PANEL_DEFAULT_H = 240f
 private const val GRID_STEP_SMALL = 24f
 private const val GRID_STEP_LARGE = 48f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
+private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -187,6 +189,18 @@ fun WorkspaceScreen(
     var useLargeGrid by remember { mutableStateOf(uiPrefs.getBoolean("grid_large", false)) }
     var uiScale by remember { mutableStateOf(uiPrefs.getFloat("ui_scale", 1f).coerceIn(0.7f, 1.5f)) }
     var snapEnabled by remember { mutableStateOf(uiPrefs.getBoolean("snap_enabled", true)) }
+    var blockPaletteInsertMode by remember {
+        mutableStateOf(
+            runCatching {
+                BlockPaletteInsertMode.valueOf(
+                    uiPrefs.getString(
+                        BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY,
+                        BlockPaletteInsertMode.TapToAdd.name
+                    ) ?: BlockPaletteInsertMode.TapToAdd.name
+                )
+            }.getOrDefault(BlockPaletteInsertMode.TapToAdd)
+        )
+    }
     var showAddPanelDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var settingsTab by remember { mutableIntStateOf(2) }
@@ -257,13 +271,14 @@ fun WorkspaceScreen(
             .debounce(300)
             .collect { sessionStore.save(it) }
     }
-    LaunchedEffect(hideSystemBars, dockAtTop, useLargeGrid, snapEnabled, uiScale) {
+    LaunchedEffect(hideSystemBars, dockAtTop, useLargeGrid, snapEnabled, uiScale, blockPaletteInsertMode) {
         uiPrefs.edit()
             .putBoolean("hide_system_bars", hideSystemBars)
             .putBoolean("dock_top", dockAtTop)
             .putBoolean("grid_large", useLargeGrid)
             .putBoolean("snap_enabled", snapEnabled)
             .putFloat("ui_scale", uiScale)
+            .putString(BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY, blockPaletteInsertMode.name)
             .apply()
     }
     LaunchedEffect(hideSystemBars, context) {
@@ -311,7 +326,10 @@ fun WorkspaceScreen(
                     railExpandedFillHeight = isBlockEditorPanel,
                     railContent = {
                         if (isBlockEditorPanel) {
-                            BlockEditorPanelRail(session = blockEditorSessionState.value)
+                            BlockEditorPanelRail(
+                                session = blockEditorSessionState.value,
+                                paletteInsertMode = blockPaletteInsertMode
+                            )
                         }
                     },
                     onPositionChange = { newPos ->
@@ -357,6 +375,7 @@ fun WorkspaceScreen(
                         actionSink = bridge,
                         uiPrefs = uiPrefs,
                         workspaceJson = workspaceJson,
+                        paletteInsertMode = blockPaletteInsertMode,
                         onBlockEditorSessionReady = { session ->
                             blockEditorSessionState.value = session
                         },
@@ -481,6 +500,8 @@ fun WorkspaceScreen(
             onUiScaleChange = { uiScale = it.coerceIn(0.7f, 1.5f) },
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
+            blockPaletteInsertMode = blockPaletteInsertMode,
+            onBlockPaletteInsertModeChange = { blockPaletteInsertMode = it },
             onResetPanels = {
                 panels.clear()
                 panels.addAll(defaultPanels())
@@ -640,6 +661,7 @@ private fun WorkspacePanelContent(
     actionSink: PanelActionSink,
     uiPrefs: android.content.SharedPreferences,
     workspaceJson: String,
+    paletteInsertMode: BlockPaletteInsertMode,
     onBlockEditorSessionReady: (BlockEditorShellEditorSession?) -> Unit = {},
     onWorkspaceJsonChange: (String) -> Unit
 ) {
@@ -649,6 +671,7 @@ private fun WorkspacePanelContent(
             panelId = panel.id,
             uiPrefs = uiPrefs,
             workspaceJson = workspaceJson,
+            paletteInsertMode = paletteInsertMode,
             onSessionReady = onBlockEditorSessionReady,
             onWorkspaceJsonChange = onWorkspaceJsonChange
         )
@@ -842,6 +865,7 @@ private fun BlockEditorPanel(
     panelId: String,
     uiPrefs: android.content.SharedPreferences,
     workspaceJson: String,
+    paletteInsertMode: BlockPaletteInsertMode,
     onSessionReady: (BlockEditorShellEditorSession?) -> Unit,
     onWorkspaceJsonChange: (String) -> Unit
 ) {
@@ -891,7 +915,8 @@ private fun BlockEditorPanel(
             showBottomPanel = true,
             showBlockFactory = true,
             showToolbox = false,
-            allowClearWorkspace = true
+            allowClearWorkspace = true,
+            paletteInsertMode = paletteInsertMode
         ),
         modifier = Modifier.fillMaxSize()
     )
@@ -899,7 +924,8 @@ private fun BlockEditorPanel(
 
 @Composable
 private fun BlockEditorPanelRail(
-    session: BlockEditorShellEditorSession?
+    session: BlockEditorShellEditorSession?,
+    paletteInsertMode: BlockPaletteInsertMode
 ) {
     if (session == null) {
         Text(
@@ -922,6 +948,8 @@ private fun BlockEditorPanelRail(
         CategoryPalettePanel(
             category = session.controller.expandedCategory,
             definitions = session.controller.definitionsForExpandedCategory(),
+            allDefinitions = session.controller.registry.allDefinitions(),
+            insertMode = paletteInsertMode,
             onAddBlock = session.controller::addBlockFromPalette,
             onCreateVariable = session.controller::createVariable,
             onDismiss = session.controller::dismissCategory,
@@ -1268,6 +1296,8 @@ private fun WorkspaceSettingsBottomSheet(
     onUiScaleChange: (Float) -> Unit,
     themeMode: String,
     onThemeModeChange: (String) -> Unit,
+    blockPaletteInsertMode: BlockPaletteInsertMode,
+    onBlockPaletteInsertModeChange: (BlockPaletteInsertMode) -> Unit,
     onResetPanels: () -> Unit,
     onAutoArrange: () -> Unit,
     onDismiss: () -> Unit
@@ -1379,7 +1409,10 @@ private fun WorkspaceSettingsBottomSheet(
             }
 
             1 -> WorkspaceSettingsInfoTab("Flowchart", listOf("Flowchart-Panels sind direkt im Workspace-FAB und in der linken Rail verfügbar."))
-            2 -> WorkspaceSettingsInfoTab("Blockeditor", listOf("BlockEditor-Panels sind direkt im Workspace-FAB und in der linken Rail verfügbar."))
+            2 -> BlockEditorSettingsTab(
+                paletteInsertMode = blockPaletteInsertMode,
+                onPaletteInsertModeChange = onBlockPaletteInsertModeChange
+            )
             3 -> WorkspaceSettingsInfoTab("Texteditor", listOf("Die Workspace-Shell hält Texteditor-Funktionalität außerhalb der Shell-Plugin-Panels."))
             4 -> WorkspaceSettingsInfoTab("Browser", listOf("Browser-Panels sind in dieser Shell nicht als Platzhalter angeboten."))
             5 -> WorkspaceSettingsInfoTab("Extras", listOf("Keine Platzhalter-Panels im Workspace-Menü."))
@@ -1400,6 +1433,62 @@ private fun WorkspaceColorPreviewRow(label: String, color: Color) {
             modifier = Modifier
                 .size(28.dp)
                 .background(color, RoundedCornerShape(14.dp))
+        )
+    }
+}
+
+@Composable
+private fun BlockEditorSettingsTab(
+    paletteInsertMode: BlockPaletteInsertMode,
+    onPaletteInsertModeChange: (BlockPaletteInsertMode) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Palette/Flyout", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = { onPaletteInsertModeChange(BlockPaletteInsertMode.TapToAdd) },
+                label = { Text("Tap-to-add") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.TouchApp,
+                        contentDescription = null,
+                        tint = if (paletteInsertMode == BlockPaletteInsertMode.TapToAdd) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            )
+            AssistChip(
+                onClick = { onPaletteInsertModeChange(BlockPaletteInsertMode.DragFromPalette) },
+                label = { Text("Drag-from-palette") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = null,
+                        tint = if (paletteInsertMode == BlockPaletteInsertMode.DragFromPalette) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            )
+        }
+        Text(
+            text = "Aktuell: " + if (paletteInsertMode == BlockPaletteInsertMode.DragFromPalette) {
+                "Drag-from-palette"
+            } else {
+                "Tap-to-add"
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
