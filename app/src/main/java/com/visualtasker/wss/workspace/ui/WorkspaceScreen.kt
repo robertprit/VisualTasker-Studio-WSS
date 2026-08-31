@@ -27,22 +27,36 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesomeMosaic
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Minimize
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Polyline
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -56,6 +70,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
@@ -79,6 +94,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,9 +106,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -102,10 +123,18 @@ import androidx.core.view.WindowInsetsCompat
 import com.visualtasker.wss.components.DarkPanel
 import com.visualtasker.wss.components.FabAction
 import com.visualtasker.wss.components.M3EExpandableFAB
+import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
+import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
+import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
+import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
+import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.data.PanelState as MainPanelState
 import com.visualtasker.wss.data.PanelType as MainPanelType
 import com.visualtasker.wss.flowchart.BlockEditorFlowchartProjector
 import com.visualtasker.wss.grid.GridSystem
+import com.visualtasker.wss.logging.StudioLogFilters
+import com.visualtasker.wss.logging.StudioLogLevel
+import com.visualtasker.wss.logging.StudioLogStore
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
@@ -138,12 +167,17 @@ import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.compose.ui.EditorNavigationRail
+import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.blockeditor.validation.Validator
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -157,6 +191,7 @@ private const val GRID_STEP_SMALL = 24f
 private const val GRID_STEP_LARGE = 48f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
+private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -206,6 +241,47 @@ fun WorkspaceScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var settingsTab by remember { mutableIntStateOf(2) }
     var workspaceJson by remember(uiPrefs) { mutableStateOf(loadBlockEditorWorkspaceJson(uiPrefs)) }
+    val initialTextEditorDraft = remember(uiPrefs) {
+        uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, "// Shell TextEditor") ?: "// Shell TextEditor"
+    }
+    val initialEmscriptProjection = remember(workspaceJson) {
+        generateEmscriptProjection(workspaceJson).getOrDefault("// Leerer Workspace")
+    }
+    var emscriptSession by remember {
+        mutableStateOf(
+            EmscriptEditorSession.create(
+                manualContent = initialTextEditorDraft,
+                generatedContent = initialEmscriptProjection
+            )
+        )
+    }
+    val emscriptEditorUiState = remember { EmscriptEditorUiState() }
+    val emscriptFileManager = remember {
+        EmscriptFileManagerUiState().apply {
+            scripts["draft"] = initialTextEditorDraft
+        }
+    }
+    val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
+    val logConsoleState = remember { LogConsoleUiState() }
+    val latestEmscriptProjected = remember(workspaceJson) {
+        generateEmscriptProjection(workspaceJson).getOrDefault("// Leerer Workspace")
+    }
+    val latestEmscriptGenerationFailure = remember(workspaceJson) {
+        generateEmscriptProjection(workspaceJson).exceptionOrNull()?.message
+    }
+    LaunchedEffect(latestEmscriptProjected, latestEmscriptGenerationFailure) {
+        emscriptSession = emscriptSession.updateGeneratedFromBlocks(latestEmscriptProjected)
+        latestEmscriptGenerationFailure?.let { message ->
+            studioLogStore.append(
+                level = StudioLogLevel.ERROR,
+                source = "EMSCRIPT",
+                message = "Projektion fehlgeschlagen",
+                details = message,
+                documentRevision = workspaceJson.hashCode().toLong(),
+                groupKey = "emscript:projection-error:$message"
+            )
+        }
+    }
     val baseDensity = LocalDensity.current
     val scaledDensity = remember(baseDensity, uiScale) {
         Density(
@@ -264,6 +340,13 @@ fun WorkspaceScreen(
             )
         )
         focusedPanelId = id
+        studioLogStore.append(
+            level = StudioLogLevel.INFO,
+            source = "WORKSPACE",
+            message = "Panel geöffnet",
+            details = "$type ($title)",
+            groupKey = "workspace:panel-opened:$type"
+        )
         bridge.onPanelAction(PanelAction.OpenPanel(type))
     }
 
@@ -291,6 +374,14 @@ fun WorkspaceScreen(
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }
+    LaunchedEffect(Unit) {
+        studioLogStore.append(
+            level = StudioLogLevel.INFO,
+            source = "workspace-shell",
+            message = "Workspace Shell session gestartet",
+            documentRevision = workspaceJson.hashCode().toLong()
+        )
+    }
 
     CompositionLocalProvider(LocalDensity provides scaledDensity) {
         Box(
@@ -307,6 +398,8 @@ fun WorkspaceScreen(
                 val maxWidthDp = ((surfaceSize.width - panel.x - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
                 val maxHeightDp = ((surfaceSize.height - panel.y - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
+                val isLogConsolePanel = panel.type == PanelType.LogConsole || panel.type == PanelType.RuntimeLog
+                val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
                 val blockEditorExpandedCategory = blockEditorSessionState.value?.controller?.expandedCategory
                 DarkPanel(
@@ -317,19 +410,136 @@ fun WorkspaceScreen(
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
                     showRail = true,
-                    showDefaultRailIcons = !isBlockEditorPanel,
-                    showRailColorPicker = !isBlockEditorPanel,
+                    showDefaultRailIcons = !(isBlockEditorPanel || isLogConsolePanel || isEmscriptPanel),
+                    showRailColorPicker = !(isBlockEditorPanel || isLogConsolePanel || isEmscriptPanel),
                     railExpandedWidth = when {
-                        !isBlockEditorPanel -> 186.dp
+                        isBlockEditorPanel && blockEditorExpandedCategory == null -> 96.dp
+                        isBlockEditorPanel -> 352.dp
+                        isLogConsolePanel -> 220.dp
+                        isEmscriptPanel -> 240.dp
                         blockEditorExpandedCategory == null -> 96.dp
-                        else -> 352.dp
+                        else -> 186.dp
                     },
-                    railExpandedFillHeight = isBlockEditorPanel,
+                    railExpandedFillHeight = isBlockEditorPanel || isLogConsolePanel || isEmscriptPanel,
+                    compactRailContent = { onExpandRequested ->
+                        when {
+                            isLogConsolePanel -> LogConsoleCompactRail(
+                                store = studioLogStore,
+                                uiState = logConsoleState
+                            )
+                            isEmscriptPanel -> EmscriptCompactRail(
+                                onExpandRequested = onExpandRequested,
+                                onSave = {
+                                    val manual = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                                    if (manual != null) {
+                                        val key = emscriptFileManager.currentName.trim().ifBlank { "draft" }
+                                        emscriptFileManager.currentName = key
+                                        emscriptFileManager.scripts[key] = manual.content
+                                        uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, manual.content).apply()
+                                        studioLogStore.append(
+                                            level = StudioLogLevel.INFO,
+                                            source = "EMSCRIPT",
+                                            message = "Script gespeichert",
+                                            details = "Name=$key",
+                                            documentRevision = workspaceJson.hashCode().toLong(),
+                                            groupKey = "emscript:file-saved:$key"
+                                        )
+                                    }
+                                },
+                                onLoad = {
+                                    val key = emscriptFileManager.currentName.trim().ifBlank { return@EmscriptCompactRail }
+                                    val content = emscriptFileManager.scripts[key] ?: return@EmscriptCompactRail
+                                    emscriptSession = emscriptSession
+                                        .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
+                                        .updateManualContent(content)
+                                    uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+                                    studioLogStore.append(
+                                        level = StudioLogLevel.INFO,
+                                        source = "EMSCRIPT",
+                                        message = "Script geladen",
+                                        details = "Name=$key",
+                                        documentRevision = workspaceJson.hashCode().toLong(),
+                                        groupKey = "emscript:file-loaded:$key"
+                                    )
+                                },
+                                canLoad = emscriptFileManager.scripts.containsKey(emscriptFileManager.currentName.trim())
+                            )
+                        }
+                    },
                     railContent = {
-                        if (isBlockEditorPanel) {
-                            BlockEditorPanelRail(
+                        when {
+                            isBlockEditorPanel -> BlockEditorPanelRail(
                                 session = blockEditorSessionState.value,
                                 paletteInsertMode = blockPaletteInsertMode
+                            )
+                            isLogConsolePanel -> LogConsoleExpandedRail(
+                                store = studioLogStore,
+                                uiState = logConsoleState
+                            )
+                            isEmscriptPanel -> EmscriptExpandedRail(
+                                manager = emscriptFileManager,
+                                onSave = {
+                                    val manual = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                                    if (manual != null) {
+                                        val key = emscriptFileManager.currentName.trim().ifBlank { "draft" }
+                                        emscriptFileManager.currentName = key
+                                        emscriptFileManager.scripts[key] = manual.content
+                                        uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, manual.content).apply()
+                                        studioLogStore.append(
+                                            level = StudioLogLevel.INFO,
+                                            source = "EMSCRIPT",
+                                            message = "Script gespeichert",
+                                            details = "Name=$key",
+                                            documentRevision = workspaceJson.hashCode().toLong(),
+                                            groupKey = "emscript:file-saved:$key"
+                                        )
+                                    }
+                                },
+                                onLoad = { name ->
+                                    val content = emscriptFileManager.scripts[name] ?: return@EmscriptExpandedRail
+                                    emscriptFileManager.currentName = name
+                                    emscriptSession = emscriptSession
+                                        .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
+                                        .updateManualContent(content)
+                                    uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+                                    studioLogStore.append(
+                                        level = StudioLogLevel.INFO,
+                                        source = "EMSCRIPT",
+                                        message = "Script geladen",
+                                        details = "Name=$name",
+                                        documentRevision = workspaceJson.hashCode().toLong(),
+                                        groupKey = "emscript:file-loaded:$name"
+                                    )
+                                },
+                                onDelete = { name ->
+                                    if (name == "draft") return@EmscriptExpandedRail
+                                    emscriptFileManager.scripts.remove(name)
+                                    if (emscriptFileManager.currentName == name) {
+                                        emscriptFileManager.currentName = "draft"
+                                    }
+                                    studioLogStore.append(
+                                        level = StudioLogLevel.WARNING,
+                                        source = "EMSCRIPT",
+                                        message = "Script gelöscht",
+                                        details = "Name=$name",
+                                        documentRevision = workspaceJson.hashCode().toLong(),
+                                        groupKey = "emscript:file-deleted:$name"
+                                    )
+                                },
+                                onNew = {
+                                    var idx = 1
+                                    var next = "script-$idx"
+                                    while (emscriptFileManager.scripts.containsKey(next)) {
+                                        idx++
+                                        next = "script-$idx"
+                                    }
+                                    emscriptFileManager.currentName = next
+                                    emscriptFileManager.scripts[next] = ""
+                                    emscriptSession = emscriptSession
+                                        .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
+                                        .updateManualContent("")
+                                    uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, "").apply()
+                                }
                             )
                         }
                     },
@@ -364,6 +574,13 @@ fun WorkspaceScreen(
                     },
                     onClose = {
                         panels.removeAll { it.id == panel.id }
+                        studioLogStore.append(
+                            level = StudioLogLevel.INFO,
+                            source = "WORKSPACE",
+                            message = "Panel geschlossen",
+                            details = "${panel.type} (${panel.title})",
+                            groupKey = "workspace:panel-closed:${panel.type}"
+                        )
                         bridge.onPanelAction(PanelAction.ClosePanel(panel.id))
                     },
                     onColorChange = { color ->
@@ -377,6 +594,21 @@ fun WorkspaceScreen(
                         uiPrefs = uiPrefs,
                         workspaceJson = workspaceJson,
                         paletteInsertMode = blockPaletteInsertMode,
+                        emscriptSession = emscriptSession,
+                        emscriptEditorUiState = emscriptEditorUiState,
+                        latestEmscriptProjected = latestEmscriptProjected,
+                        latestEmscriptGenerationFailure = latestEmscriptGenerationFailure,
+                        onEmscriptSessionChange = { updated ->
+                            emscriptSession = updated
+                            val manual = updated.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                            if (manual != null) {
+                                uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, manual.content).apply()
+                            }
+                        },
+                        logStore = studioLogStore,
+                        logConsoleState = logConsoleState,
+                        panels = panels,
+                        focusedPanelId = focusedPanelId,
                         onBlockEditorSessionReady = { session ->
                             blockEditorSessionState.value = session
                         },
@@ -384,6 +616,14 @@ fun WorkspaceScreen(
                             if (updated != workspaceJson) {
                                 workspaceJson = updated
                                 uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, updated).apply()
+                                studioLogStore.append(
+                                    level = StudioLogLevel.DEBUG,
+                                    source = "WORKSPACE",
+                                    message = "Blockeditor Workspace aktualisiert",
+                                    details = "JSON=${updated.length} Zeichen",
+                                    documentRevision = updated.hashCode().toLong(),
+                                    groupKey = "workspace:blockeditor-updated"
+                                )
                             }
                         }
                     )
@@ -663,6 +903,15 @@ private fun WorkspacePanelContent(
     uiPrefs: android.content.SharedPreferences,
     workspaceJson: String,
     paletteInsertMode: BlockPaletteInsertMode,
+    emscriptSession: EmscriptEditorSession,
+    emscriptEditorUiState: EmscriptEditorUiState,
+    latestEmscriptProjected: String,
+    latestEmscriptGenerationFailure: String?,
+    onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
+    logStore: StudioLogStore,
+    logConsoleState: LogConsoleUiState,
+    panels: List<PanelState>,
+    focusedPanelId: String,
     onBlockEditorSessionReady: (BlockEditorShellEditorSession?) -> Unit = {},
     onWorkspaceJsonChange: (String) -> Unit
 ) {
@@ -681,11 +930,59 @@ private fun WorkspacePanelContent(
             uiPrefs = uiPrefs,
             workspaceJson = workspaceJson
         )
+        PanelType.TextEditor,
+        PanelType.Emscript -> EmscriptTextEditorPanel(
+            session = emscriptSession,
+            uiState = emscriptEditorUiState,
+            latestEmscriptProjected = latestEmscriptProjected,
+            onSessionChange = onEmscriptSessionChange,
+            logStore = logStore,
+            workspaceJson = workspaceJson,
+            onWorkspaceJsonChange = onWorkspaceJsonChange
+        )
+        PanelType.RuntimeLog,
+        PanelType.LogConsole -> LogConsolePanel(
+            store = logStore,
+            uiState = logConsoleState
+        )
+        PanelType.DebugInfo -> DebugInfoPanel(
+            projectionStatus = EMSCRIPT_PROJECTION_STATUS_RUNNING,
+            editingStatus = EMSCRIPT_EDITING_STATUS_NOT_IMPLEMENTED,
+            overallStatus = EMSCRIPT_STATUS_READ_ONLY_PROJECTION,
+            revision = workspaceJson.hashCode(),
+            projectedScript = latestEmscriptProjected,
+            draft = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }?.content.orEmpty(),
+            onSaveDraft = {
+                logStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "EMSCRIPT",
+                    message = "Lokaler Draft gespeichert",
+                    details = "Draft ist nicht auf Workspace angewendet",
+                    documentRevision = workspaceJson.hashCode().toLong(),
+                    groupKey = "emscript:draft-saved"
+                )
+            },
+            onUseProjection = {
+                onEmscriptSessionChange(emscriptSession.copyGeneratedToManual())
+                logStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "EMSCRIPT",
+                    message = "Projektion in lokalen Draft übernommen",
+                    details = "Workspace bleibt unverändert",
+                    documentRevision = workspaceJson.hashCode().toLong(),
+                    groupKey = "emscript:draft-replaced-by-projection"
+                )
+            },
+            diagnostics = buildList {
+                add("EMScript Parser-Slice ist integriert (LET/SET/Literale/Variablen/Arithmetik/Compare/IF).")
+                add("Automatisches Anwenden auf den Workspace bleibt vorerst deaktiviert.")
+                add("Draft konnte erfolgreich in ein Workspace-Dokument übersetzt werden.")
+                latestEmscriptGenerationFailure?.let(::add)
+            }
+        )
         PanelType.Screenshot,
         PanelType.Marker,
-        PanelType.Emscript,
         PanelType.M3Director -> Unit
-        PanelType.RuntimeLog -> RuntimeLogPanel()
     }
 }
 
@@ -718,7 +1015,9 @@ private fun WorkspaceRail(
                 PanelType.RecorderSteps,
                 PanelType.BlockEditor,
                 PanelType.Flowchart,
-                PanelType.RuntimeLog
+                PanelType.TextEditor,
+                PanelType.LogConsole,
+                PanelType.DebugInfo
             ).forEach { type ->
                 val displayName = displayNameForPanelType(type)
                 TooltipIconButton(tooltip = "Panel $displayName", onClick = { onOpenPanel(type) }, modifier = Modifier.size(28.dp)) {
@@ -731,7 +1030,7 @@ private fun WorkspaceRail(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TooltipIconButton(
+internal fun TooltipIconButton(
     tooltip: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -840,23 +1139,6 @@ private fun RecorderStepsPanel(
                     }
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun RuntimeLogPanel() {
-    val sample = remember {
-        listOf(
-            "12:01:14  runtime: waiting",
-            "12:01:17  recorder: 4 steps loaded",
-            "12:01:21  shell: no runtime binding active"
-        )
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("RuntimeLogPanel", style = MaterialTheme.typography.titleSmall)
-        sample.forEach {
-            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1045,7 +1327,7 @@ private fun defaultPanels(): List<PanelState> = listOf(
     workspacePanel("panel-1", PanelType.RecorderSteps, "Stepper 1", 84f, 72f, 360f, 360f, 1),
     workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor 2", 470f, 84f, 360f, 300f, 2),
     workspacePanel("panel-3", PanelType.Flowchart, "Flowchart 3", 470f, 420f, 360f, 300f, 3),
-    workspacePanel("panel-4", PanelType.RuntimeLog, "RuntimeLog 4", 860f, 110f, 320f, 240f, 4)
+    workspacePanel("panel-4", PanelType.LogConsole, "LogConsole 4", 860f, 110f, 320f, 240f, 4)
 )
 
 private fun workspacePanel(
@@ -1130,6 +1412,9 @@ private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.Marker -> Icons.Default.TouchApp
     PanelType.Emscript -> Icons.Default.Terminal
     PanelType.RuntimeLog -> Icons.Default.PlayArrow
+    PanelType.TextEditor -> Icons.Default.Article
+    PanelType.LogConsole -> Icons.Default.BugReport
+    PanelType.DebugInfo -> Icons.Default.Terminal
     PanelType.M3Director -> Icons.Default.SmartToy
 }
 
@@ -1143,7 +1428,9 @@ private fun AddPanelDialog(
         PanelType.RecorderSteps,
         PanelType.BlockEditor,
         PanelType.Flowchart,
-        PanelType.RuntimeLog
+        PanelType.TextEditor,
+        PanelType.LogConsole,
+        PanelType.DebugInfo
     )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1172,8 +1459,11 @@ private fun displayNameForPanelType(type: PanelType): String = when (type) {
     PanelType.Flowchart -> "Flowchart"
     PanelType.Screenshot -> "Screenshot"
     PanelType.Marker -> "Marker"
-    PanelType.Emscript -> "Debug"
+    PanelType.Emscript -> "EMScript"
     PanelType.RuntimeLog -> "RuntimeLog"
+    PanelType.TextEditor -> "TextEditor"
+    PanelType.LogConsole -> "LogConsole"
+    PanelType.DebugInfo -> "Debug"
     PanelType.M3Director -> "M3Director"
 }
 
@@ -1196,7 +1486,10 @@ private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
     PanelType.BlockEditor -> MainPanelType.BLOCKEDITOR
     PanelType.Flowchart -> MainPanelType.FLOWCHART
     PanelType.RuntimeLog -> MainPanelType.LOG_CONSOLE
+    PanelType.LogConsole -> MainPanelType.LOG_CONSOLE
+    PanelType.TextEditor -> MainPanelType.EDITOR
     PanelType.Emscript -> MainPanelType.EMSCRIPT
+    PanelType.DebugInfo -> MainPanelType.EMSCRIPT
     PanelType.Screenshot,
     PanelType.Marker,
     PanelType.M3Director -> MainPanelType.LIST_TEST

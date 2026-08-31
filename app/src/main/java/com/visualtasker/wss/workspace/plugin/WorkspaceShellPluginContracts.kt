@@ -38,6 +38,12 @@ enum class ShellSaveAcknowledgmentResult {
     STALE
 }
 
+enum class ShellToolbarActionPlacement {
+    PANEL_RAIL,
+    PANEL_HEADER,
+    COMMAND_PALETTE
+}
+
 data class ShellPluginSessionId(val value: String) {
     init {
         require(value.isNotBlank() && value == value.trim()) {
@@ -120,12 +126,59 @@ data class ShellPluginRuntimeState(
     }
 }
 
+data class ShellToolbarActionId(val value: String) {
+    init {
+        require(value.isNotBlank() && value == value.trim()) {
+            "ShellToolbarActionId must be nonblank and trimmed."
+        }
+    }
+}
+
+data class ShellToolbarAction(
+    val id: ShellToolbarActionId,
+    val label: String,
+    val iconName: String,
+    val placement: ShellToolbarActionPlacement = ShellToolbarActionPlacement.PANEL_RAIL,
+    val enabled: Boolean = true
+) {
+    init {
+        require(label.isNotBlank() && label == label.trim()) {
+            "ShellToolbarAction label must be nonblank and trimmed."
+        }
+        require(iconName.isNotBlank() && iconName == iconName.trim()) {
+            "ShellToolbarAction iconName must be nonblank and trimmed."
+        }
+    }
+}
+
+data class ShellToolbarActionRequest(
+    val sessionId: ShellPluginSessionId,
+    val actionId: ShellToolbarActionId
+)
+
+data class ShellPanelStatus(
+    val title: String,
+    val dirtyState: ShellDirtyState = ShellDirtyState.CLEAN,
+    val validation: ShellValidationResult = ShellValidationResult(emptyList()),
+    val runtimeState: ShellPluginRuntimeState? = null
+) {
+    init {
+        require(title.isNotBlank() && title == title.trim()) {
+            "ShellPanelStatus title must be nonblank and trimmed."
+        }
+    }
+}
+
 interface ShellPanelSession {
     val sessionId: ShellPluginSessionId
 
     fun onActivated()
     fun onDeactivated()
     fun dispose()
+
+    fun toolbarActions(): List<ShellToolbarAction> = emptyList()
+    fun performToolbarAction(request: ShellToolbarActionRequest): Boolean = false
+    fun status(): ShellPanelStatus = ShellPanelStatus(title = sessionId.value)
 }
 
 interface ShellEditorSession : ShellPanelSession {
@@ -156,6 +209,13 @@ interface ShellPluginHostServices {
     fun publishOutput(output: ShellEditorOutput)
     fun reportDiagnostics(sessionId: ShellPluginSessionId, result: ShellValidationResult)
 
+    fun reportToolbarActions(
+        sessionId: ShellPluginSessionId,
+        actions: List<ShellToolbarAction>
+    ) {
+        // Hosts that do not expose plugin toolbars ignore the event.
+    }
+
     fun reportRuntimeState(
         sessionId: ShellPluginSessionId,
         state: ShellPluginRuntimeState
@@ -172,6 +232,7 @@ class RecordingShellPluginHostAdapter(
     private val outputs = mutableListOf<ShellEditorOutput>()
     private val diagnostics = mutableListOf<Pair<ShellPluginSessionId, ShellValidationResult>>()
     private val runtimeStates = mutableListOf<Pair<ShellPluginSessionId, ShellPluginRuntimeState>>()
+    private val toolbarActions = mutableListOf<Pair<ShellPluginSessionId, List<ShellToolbarAction>>>()
 
     override fun reportDirtyState(sessionId: ShellPluginSessionId, dirtyState: ShellDirtyState) {
         dirtyStates += sessionId to dirtyState
@@ -189,6 +250,13 @@ class RecordingShellPluginHostAdapter(
         diagnostics += sessionId to result
     }
 
+    override fun reportToolbarActions(
+        sessionId: ShellPluginSessionId,
+        actions: List<ShellToolbarAction>
+    ) {
+        toolbarActions += sessionId to actions
+    }
+
     override fun reportRuntimeState(sessionId: ShellPluginSessionId, state: ShellPluginRuntimeState) {
         runtimeStates += sessionId to state
     }
@@ -198,4 +266,5 @@ class RecordingShellPluginHostAdapter(
     fun recordedOutputs(): List<ShellEditorOutput> = outputs.toList()
     fun recordedDiagnostics(): List<Pair<ShellPluginSessionId, ShellValidationResult>> = diagnostics.toList()
     fun recordedRuntimeStates(): List<Pair<ShellPluginSessionId, ShellPluginRuntimeState>> = runtimeStates.toList()
+    fun recordedToolbarActions(): List<Pair<ShellPluginSessionId, List<ShellToolbarAction>>> = toolbarActions.toList()
 }

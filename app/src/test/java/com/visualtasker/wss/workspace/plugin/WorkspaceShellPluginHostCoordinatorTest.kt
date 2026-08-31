@@ -117,12 +117,35 @@ class WorkspaceShellPluginHostCoordinatorTest {
         )
         host.reportDiagnostics(sessionId, ShellValidationResult(emptyList()))
         host.reportRuntimeState(sessionId, ShellPluginRuntimeState("RUNNING_WITH_GUARDS"))
+        val toolbarAction = ShellToolbarAction(
+            id = ShellToolbarActionId("save"),
+            label = "Save",
+            iconName = "Save"
+        )
+        host.reportToolbarActions(sessionId, listOf(toolbarAction))
 
         assertEquals(listOf(sessionId to ShellDirtyState.DIRTY), host.recordedDirtyStates())
         assertEquals(1, host.recordedSaveRequests().size)
         assertEquals(ShellEditorOutputDisposition.DRAFT_EXPORT, host.recordedOutputs().single().disposition)
         assertTrue(host.recordedDiagnostics().single().second.isValid)
         assertEquals("RUNNING_WITH_GUARDS", host.recordedRuntimeStates().single().second.status)
+        assertEquals(listOf(sessionId to listOf(toolbarAction)), host.recordedToolbarActions())
+    }
+
+    @Test
+    fun panelSessionsExposeStableToolbarAndStatusDefaults() {
+        val session = FakeShellEditorSession(ShellPluginSessionId("session-1"))
+
+        assertTrue(session.toolbarActions().isEmpty())
+        assertFalse(
+            session.performToolbarAction(
+                ShellToolbarActionRequest(
+                    sessionId = session.sessionId,
+                    actionId = ShellToolbarActionId("unknown")
+                )
+            )
+        )
+        assertEquals("session-1", session.status().title)
     }
 
     private fun sampleInput(

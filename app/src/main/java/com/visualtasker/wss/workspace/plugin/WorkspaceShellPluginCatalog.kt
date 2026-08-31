@@ -40,8 +40,22 @@ object WorkspaceShellPluginCatalog {
             pluginId = ShellPluginId("emscript"),
             panelId = ShellPanelId("emscript-panel"),
             studioPanelTypeName = "TEXT_EDITOR",
-            shellPanelTypeNames = setOf("EDITOR", "EMSCRIPT", "Emscript"),
+            shellPanelTypeNames = setOf("EDITOR", "EMSCRIPT", "Emscript", "TextEditor"),
             viewSurface = WorkflowViewSurface.EMSCRIPT
+        ),
+        WorkspaceShellPanelBinding(
+            pluginId = ShellPluginId("log-console"),
+            panelId = ShellPanelId("log-console-panel"),
+            studioPanelTypeName = "LOG_CONSOLE",
+            shellPanelTypeNames = setOf("LOG_CONSOLE", "RuntimeLog", "LogConsole"),
+            viewSurface = WorkflowViewSurface.STEP_EDITOR
+        ),
+        WorkspaceShellPanelBinding(
+            pluginId = ShellPluginId("debug-info"),
+            panelId = ShellPanelId("debug-info-panel"),
+            studioPanelTypeName = "DEBUG_INFO",
+            shellPanelTypeNames = setOf("DebugInfo"),
+            viewSurface = WorkflowViewSurface.STEP_EDITOR
         ),
         WorkspaceShellPanelBinding(
             pluginId = ShellPluginId("step-editor"),

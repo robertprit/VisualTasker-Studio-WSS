@@ -25,6 +25,9 @@ enum class PanelType {
     Marker,
     Emscript,
     RuntimeLog,
+    TextEditor,
+    LogConsole,
+    DebugInfo,
     M3Director
 }
 
