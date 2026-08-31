@@ -52,7 +52,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.visualtasker.wss.ui.theme.M3EColors
@@ -72,6 +74,9 @@ fun CollapsibleIconRail(
     onColorChange: (Color) -> Unit,
     icons: List<RailIconItem> = defaultRailIcons,
     showDefaultIcons: Boolean = true,
+    showColorPicker: Boolean = true,
+    expandedWidth: Dp = 186.dp,
+    expandedFillHeight: Boolean = false,
     compactRailContent: @Composable ColumnScope.(onExpandRequested: () -> Unit) -> Unit = {},
     railContent: @Composable ColumnScope.() -> Unit = {},
     modifier: Modifier = Modifier
@@ -81,6 +86,11 @@ fun CollapsibleIconRail(
         animationSpec = tween(300),
         label = "rail_toggle"
     )
+    val toggleTint = if (accentColor.luminance() < 0.18f) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        accentColor
+    }
 
     Row(
         modifier = modifier.fillMaxHeight()
@@ -105,12 +115,12 @@ fun CollapsibleIconRail(
                             .padding(top = 8.dp, start = 4.dp, end = 4.dp)
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(accentColor.copy(alpha = 0.25f))
+                            .background(toggleTint.copy(alpha = 0.25f))
                     ) {
                         AnimatedPanelIcon(
                             imageVector = Icons.Default.ChevronLeft,
                             contentDescription = if (isExpanded) "Einklappen" else "Ausklappen",
-                            tint = accentColor,
+                            tint = toggleTint,
                             modifier = Modifier.size(16.dp).rotate(rotation),
                             riveArtboard = "rail_chevron",
                             riveStateMachine = "toggle"
@@ -131,21 +141,32 @@ fun CollapsibleIconRail(
                     .zIndex(2f)
             ) {
                 Surface(
+                    modifier = if (expandedFillHeight) Modifier.fillMaxHeight() else Modifier,
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 6.dp
                 ) {
+                    val expandedModifier = if (expandedFillHeight) {
+                        Modifier
+                            .fillMaxHeight()
+                            .width(expandedWidth)
+                            .padding(6.dp)
+                    } else {
+                        Modifier
+                            .width(expandedWidth)
+                            .padding(6.dp)
+                    }
                     Column(
-                        modifier = Modifier
-                            .width(186.dp)
-                            .padding(6.dp),
+                        modifier = expandedModifier,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        ColorPickerButton(
-                            currentColor = accentColor,
-                            onColorSelected = onColorChange
-                        )
+                        if (showColorPicker) {
+                            ColorPickerButton(
+                                currentColor = accentColor,
+                                onColorSelected = onColorChange
+                            )
+                        }
                         if (showDefaultIcons) {
                             icons.forEach { item ->
                                 RailIconDot(icon = item.icon, color = item.color, label = item.label)

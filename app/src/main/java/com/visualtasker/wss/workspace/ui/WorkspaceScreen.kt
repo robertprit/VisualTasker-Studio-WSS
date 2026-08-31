@@ -135,6 +135,8 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
+import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
+import de.visualtasker.blockeditor.compose.ui.EditorNavigationRail
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
@@ -288,6 +290,9 @@ fun WorkspaceScreen(
             key(panel.id) {
                 val maxWidthDp = ((surfaceSize.width - panel.x - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
                 val maxHeightDp = ((surfaceSize.height - panel.y - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
+                val isBlockEditorPanel = panel.type == PanelType.BlockEditor
+                val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
+                val blockEditorExpandedCategory = blockEditorSessionState.value?.controller?.expandedCategory
                 DarkPanel(
                     panel = panel.toMainPanelState(),
                     snapEnabled = snapEnabled,
@@ -296,7 +301,19 @@ fun WorkspaceScreen(
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
                     showRail = true,
-                    showDefaultRailIcons = true,
+                    showDefaultRailIcons = !isBlockEditorPanel,
+                    showRailColorPicker = !isBlockEditorPanel,
+                    railExpandedWidth = when {
+                        !isBlockEditorPanel -> 186.dp
+                        blockEditorExpandedCategory == null -> 96.dp
+                        else -> 352.dp
+                    },
+                    railExpandedFillHeight = isBlockEditorPanel,
+                    railContent = {
+                        if (isBlockEditorPanel) {
+                            BlockEditorPanelRail(session = blockEditorSessionState.value)
+                        }
+                    },
                     onPositionChange = { newPos ->
                         updatePanel(panels, panel.id) {
                             val panelWidthPx = it.width * density
@@ -340,6 +357,9 @@ fun WorkspaceScreen(
                         actionSink = bridge,
                         uiPrefs = uiPrefs,
                         workspaceJson = workspaceJson,
+                        onBlockEditorSessionReady = { session ->
+                            blockEditorSessionState.value = session
+                        },
                         onWorkspaceJsonChange = { updated ->
                             if (updated != workspaceJson) {
                                 workspaceJson = updated
@@ -620,6 +640,7 @@ private fun WorkspacePanelContent(
     actionSink: PanelActionSink,
     uiPrefs: android.content.SharedPreferences,
     workspaceJson: String,
+    onBlockEditorSessionReady: (BlockEditorShellEditorSession?) -> Unit = {},
     onWorkspaceJsonChange: (String) -> Unit
 ) {
     when (panel.type) {
@@ -628,6 +649,7 @@ private fun WorkspacePanelContent(
             panelId = panel.id,
             uiPrefs = uiPrefs,
             workspaceJson = workspaceJson,
+            onSessionReady = onBlockEditorSessionReady,
             onWorkspaceJsonChange = onWorkspaceJsonChange
         )
         PanelType.Flowchart -> FlowchartPanel(
@@ -820,6 +842,7 @@ private fun BlockEditorPanel(
     panelId: String,
     uiPrefs: android.content.SharedPreferences,
     workspaceJson: String,
+    onSessionReady: (BlockEditorShellEditorSession?) -> Unit,
     onWorkspaceJsonChange: (String) -> Unit
 ) {
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
@@ -843,10 +866,14 @@ private fun BlockEditorPanel(
         )
     }
     val session = boundEditor.session as BlockEditorShellEditorSession
+    LaunchedEffect(session) {
+        onSessionReady(session)
+    }
 
-    DisposableEffect(boundEditor, uiPrefs) {
+    DisposableEffect(boundEditor, uiPrefs, onSessionReady) {
         onDispose {
             persistBlockEditorSession(uiPrefs, session)
+            onSessionReady(null)
             boundEditor.close()
         }
     }
@@ -860,8 +887,47 @@ private fun BlockEditorPanel(
     BlockEditorShellPanel(
         session = session,
         onSave = { persistBlockEditorSession(uiPrefs, session) },
+        uiConfig = de.visualtasker.blockeditor.compose.host.BlockEditorHostUiConfig(
+            showBottomPanel = true,
+            showBlockFactory = true,
+            showToolbox = false,
+            allowClearWorkspace = true
+        ),
         modifier = Modifier.fillMaxSize()
     )
+}
+
+@Composable
+private fun BlockEditorPanelRail(
+    session: BlockEditorShellEditorSession?
+) {
+    if (session == null) {
+        Text(
+            text = "BlockEditor",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        return
+    }
+    Row(modifier = Modifier.fillMaxHeight()) {
+        EditorNavigationRail(
+            expandedCategory = session.controller.expandedCategory,
+            onCategoryClick = session.controller::onCategoryClick,
+            extraCategories = emptyList(),
+            containerColor = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(80.dp)
+        )
+        CategoryPalettePanel(
+            category = session.controller.expandedCategory,
+            definitions = session.controller.definitionsForExpandedCategory(),
+            onAddBlock = session.controller::addBlockFromPalette,
+            onCreateVariable = session.controller::createVariable,
+            onDismiss = session.controller::dismissCategory,
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
 }
 
 @Composable

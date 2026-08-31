@@ -54,6 +54,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.visualtasker.wss.data.PanelState
 import com.visualtasker.wss.grid.GridSystem
 import kotlin.math.roundToInt
@@ -70,6 +71,9 @@ fun DarkPanel(
     onClose: () -> Unit,
     onColorChange: (Color) -> Unit,
     showDefaultRailIcons: Boolean = true,
+    showRailColorPicker: Boolean = true,
+    railExpandedWidth: Dp = 186.dp,
+    railExpandedFillHeight: Boolean = false,
     compactRailContent: @Composable ColumnScope.(onExpandRequested: () -> Unit) -> Unit = {},
     railContent: @Composable ColumnScope.() -> Unit = {},
     isActiveTarget: Boolean,
@@ -156,6 +160,9 @@ fun DarkPanel(
                     accentColor = panel.accentColor,
                     onColorChange = onColorChange,
                     showDefaultIcons = showDefaultRailIcons,
+                    showColorPicker = showRailColorPicker,
+                    expandedWidth = railExpandedWidth,
+                    expandedFillHeight = railExpandedFillHeight,
                     compactRailContent = compactRailContent,
                     railContent = railContent
                 )
