@@ -21,6 +21,7 @@ import de.visualtasker.blockeditor.compose.host.BlockEditorHostCallbacks
 import de.visualtasker.blockeditor.compose.host.BlockEditorRuntimeState
 import de.visualtasker.blockeditor.compose.host.BlockEditorRuntimeStatus
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
+import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.blockeditor.validation.ValidationError
 import de.visualtasker.blockeditor.validation.Validator
@@ -82,7 +83,20 @@ class BlockEditorShellEditorSession(
         }
         documentId = input.documentId
         formatId = input.formatId
-        val document = WorkspaceSerializer.deserialize(input.content)
+        val decoded = WorkspaceSerializer.decode(input.content)
+        val document = when (decoded) {
+            is WorkspaceDecodeResult.Decoded -> decoded.document
+            is WorkspaceDecodeResult.Malformed -> throw IllegalArgumentException(decoded.reason)
+            is WorkspaceDecodeResult.UnsupportedSchema -> throw IllegalArgumentException(
+                decoded.diagnostics.firstOrNull()?.message ?: "Unsupported workspace schema."
+            )
+        }
+        if (decoded.diagnostics.isNotEmpty()) {
+            hostServices.reportDiagnostics(
+                sessionId,
+                ShellValidationResult(decoded.diagnostics.map { it.message })
+            )
+        }
         persistedContent = WorkspaceSerializer.serialize(document)
         dirtyState = ShellDirtyState.CLEAN
         hostServices.reportDirtyState(sessionId, dirtyState)
@@ -193,7 +207,11 @@ class BlockEditorShellEditorSession(
         WorkspaceSerializer.serialize(controller.document)
 
     private fun normalize(raw: String): String =
-        WorkspaceSerializer.serialize(WorkspaceSerializer.deserialize(raw))
+        when (val decoded = WorkspaceSerializer.decode(raw)) {
+            is WorkspaceDecodeResult.Decoded -> WorkspaceSerializer.serialize(decoded.document)
+            is WorkspaceDecodeResult.Malformed -> raw
+            is WorkspaceDecodeResult.UnsupportedSchema -> raw
+        }
 
     private fun updateDirtyState(next: ShellDirtyState) {
         if (dirtyState == next) return

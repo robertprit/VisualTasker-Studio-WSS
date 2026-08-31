@@ -10,8 +10,11 @@ import com.visualtasker.wss.workspace.plugin.ShellPluginSessionId
 import com.visualtasker.wss.workspace.plugin.ShellSaveAcknowledgmentResult
 import com.visualtasker.wss.workspace.plugin.WorkspaceShellPluginHostCoordinator
 import com.visualtasker.wss.workspace.plugin.defaultWorkspaceShellPluginRegistry
+import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.blockeditor.domain.BlockNode
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
+import de.visualtasker.blockeditor.serialization.WORKSPACE_SCHEMA_VERSION
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,6 +95,48 @@ class BlockEditorShellPluginTest {
 
         assertTrue(result.isValid)
         assertEquals(result, host.recordedDiagnostics().last().second)
+    }
+
+    @Test
+    fun openingLegacyWorkspaceWithoutSchemaReportsMigrationDiagnostic() {
+        val legacyJson = WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
+            .replace(""""schemaVersion":$WORKSPACE_SCHEMA_VERSION,""", "")
+        val host = RecordingShellPluginHostAdapter()
+
+        val session = BlockEditorShellPlugin().createEditorSession(sampleInput(content = legacyJson), host)
+
+        assertTrue(session is BlockEditorShellEditorSession)
+        assertTrue(
+            host.recordedDiagnostics().any { (_, result) ->
+                result.messages.any { it.contains("without schemaVersion") }
+            },
+        )
+    }
+
+    @Test
+    fun openingWorkspaceWithMissingPluginDefinitionReportsDiagnosticButKeepsSessionUsable() {
+        val pluginBlock = BlockNode(
+            id = BlockId("plugin-block"),
+            type = "plugin.custom.missing",
+        )
+        val content = WorkspaceSerializer.serialize(
+            de.visualtasker.blockeditor.domain.WorkspaceDocument(
+                id = "missing-plugin",
+                blocks = mapOf(pluginBlock.id to pluginBlock),
+                rootBlocks = listOf(pluginBlock.id),
+            ),
+        )
+        val host = RecordingShellPluginHostAdapter()
+
+        val session = BlockEditorShellPlugin().createEditorSession(sampleInput(content = content), host)
+
+        assertTrue(session is BlockEditorShellEditorSession)
+        assertEquals(ShellDirtyState.CLEAN, session.dirtyState)
+        assertTrue(
+            host.recordedDiagnostics().any { (_, result) ->
+                result.messages.any { it.contains("unavailable block definition") }
+            },
+        )
     }
 
     @Test

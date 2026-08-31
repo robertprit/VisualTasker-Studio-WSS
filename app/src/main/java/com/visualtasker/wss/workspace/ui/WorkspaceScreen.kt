@@ -139,6 +139,7 @@ import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.compose.ui.EditorNavigationRail
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
+import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
@@ -1206,7 +1207,13 @@ private fun loadBlockEditorWorkspaceJson(
 ): String {
     val persisted = uiPrefs.getString(BLOCKEDITOR_WORKSPACE_PREF_KEY, null)
     return persisted
-        ?.let { runCatching { WorkspaceSerializer.serialize(WorkspaceSerializer.deserialize(it)) }.getOrNull() }
+        ?.let {
+            when (val decoded = WorkspaceSerializer.decode(it)) {
+                is WorkspaceDecodeResult.Decoded -> WorkspaceSerializer.serialize(decoded.document)
+                is WorkspaceDecodeResult.Malformed -> null
+                is WorkspaceDecodeResult.UnsupportedSchema -> null
+            }
+        }
         ?: WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
 }
 
