@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import com.visualtasker.wss.workspace.model.FlowchartConnectionOption
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
 import de.visualtasker.flowchart.compose.FlowchartHost
 import de.visualtasker.flowchart.compose.FlowchartHostCallbacks
@@ -93,6 +96,7 @@ fun FlowchartShellPanel(
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
     onDeleteNode: ((FlowNodeId) -> Unit)? = null,
     onConnectNodes: ((FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit)? = null,
+    connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<FlowchartConnectionOption> = { _, _ -> emptyList() },
     onDisconnectEdge: ((FlowEdgeId) -> Unit)? = null,
     onViewChanged: ((FlowViewDocument) -> Unit)? = null,
 ) {
@@ -101,23 +105,31 @@ fun FlowchartShellPanel(
     var selectedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var selectedEdgeId by remember(session.sessionId) { mutableStateOf<FlowEdgeId?>(null) }
     var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
+    var connectionMenu by remember(session.sessionId) { mutableStateOf<PendingConnectionMenu?>(null) }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
             session.onViewDocumentChanged(view)
             onViewChanged?.invoke(view)
         }
     }
-    val callbacks = remember(session, onNodeSelected, onConnectNodes, pendingConnectionStart, handleViewChanged) {
+    val callbacks = remember(session, onNodeSelected, onConnectNodes, connectionOptionsFor, pendingConnectionStart, handleViewChanged) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
             onStatusMessage = session::onStatusMessage,
             onNodeSelected = {
                 val source = pendingConnectionStart
                 if (it != null && source != null && source != it) {
+                    val options = connectionOptionsFor(source, it)
                     pendingConnectionStart = null
                     selectedNodeId = it
                     selectedEdgeId = null
-                    onConnectNodes?.invoke(source, it, FlowEdgeKind.SEQUENCE, null)
+                    when (options.size) {
+                        0 -> Unit
+                        1 -> options.single().let { option ->
+                            onConnectNodes?.invoke(source, it, option.kind, option.label)
+                        }
+                        else -> connectionMenu = PendingConnectionMenu(source, it, options)
+                    }
                     onNodeSelected?.invoke(it)
                 } else {
                     selectedNodeId = it
@@ -129,6 +141,7 @@ fun FlowchartShellPanel(
                 selectedEdgeId = it
                 if (it != null) selectedNodeId = null
                 if (it != null) pendingConnectionStart = null
+                if (it != null) connectionMenu = null
             },
         )
     }
@@ -243,6 +256,42 @@ fun FlowchartShellPanel(
             selectedEdgeId = selectedEdgeId,
             runtimeSnapshot = runtimeSnapshot,
         )
+        FlowchartConnectionMenu(
+            expanded = connectionMenu != null,
+            options = connectionMenu?.options.orEmpty(),
+            onDismiss = { connectionMenu = null },
+            onSelect = { option ->
+                val pending = connectionMenu ?: return@FlowchartConnectionMenu
+                connectionMenu = null
+                onConnectNodes?.invoke(pending.sourceNodeId, pending.targetNodeId, option.kind, option.label)
+            },
+        )
+    }
+}
+
+private data class PendingConnectionMenu(
+    val sourceNodeId: FlowNodeId,
+    val targetNodeId: FlowNodeId,
+    val options: List<FlowchartConnectionOption>,
+)
+
+@Composable
+private fun FlowchartConnectionMenu(
+    expanded: Boolean,
+    options: List<FlowchartConnectionOption>,
+    onDismiss: () -> Unit,
+    onSelect: (FlowchartConnectionOption) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+    ) {
+        options.forEach { option ->
+            DropdownMenuItem(
+                text = { Text(option.displayLabel) },
+                onClick = { onSelect(option) },
+            )
+        }
     }
 }
 

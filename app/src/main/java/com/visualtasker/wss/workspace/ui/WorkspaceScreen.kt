@@ -150,6 +150,7 @@ import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
 import com.visualtasker.wss.workspace.model.connectFlowchartNodesInWorkspace
 import com.visualtasker.wss.workspace.model.deleteFlowchartNodeFromWorkspace
 import com.visualtasker.wss.workspace.model.disconnectFlowchartEdgeFromWorkspace
+import com.visualtasker.wss.workspace.model.flowchartConnectionOptions
 import com.visualtasker.wss.workspace.model.syncRootPositionsFromFlowchartView
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
@@ -374,6 +375,13 @@ fun WorkspaceScreen(
                 "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${sourceNodeId.value}:${targetNodeId.value}:connect"
             )
         }
+    }
+    val flowchartConnectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption> = { sourceNodeId, targetNodeId ->
+        flowchartConnectionOptions(
+            document = workflowState.document,
+            sourceNodeId = sourceNodeId,
+            targetNodeId = targetNodeId,
+        )
     }
     val syncFlowchartView: (FlowViewDocument) -> Unit = { viewDocument ->
         val nextDocument = syncRootPositionsFromFlowchartView(workflowState.document, viewDocument)
@@ -864,6 +872,7 @@ fun WorkspaceScreen(
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
                         onFlowchartNodesConnect = connectFlowchartNodes,
+                        flowchartConnectionOptionsFor = flowchartConnectionOptionsFor,
                         onFlowchartEdgeDisconnect = disconnectFlowchartEdge,
                         onFlowchartViewChanged = syncFlowchartView,
                         onFlowRuntimeSnapshotChange = { snapshot ->
@@ -1175,6 +1184,7 @@ private fun WorkspacePanelContent(
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
     onFlowchartNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { _, _, _, _ -> },
+    flowchartConnectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption> = { _, _ -> emptyList() },
     onFlowchartEdgeDisconnect: (FlowEdgeId) -> Unit = {},
     onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
@@ -1205,6 +1215,7 @@ private fun WorkspacePanelContent(
             onNodeSelected = onFlowchartNodeSelected,
             onNodeDelete = onFlowchartNodeDelete,
             onNodesConnect = onFlowchartNodesConnect,
+            connectionOptionsFor = flowchartConnectionOptionsFor,
             onEdgeDisconnect = onFlowchartEdgeDisconnect,
             onViewChanged = onFlowchartViewChanged,
             onSessionReady = onFlowchartSessionReady
@@ -1611,6 +1622,7 @@ private fun FlowchartPanel(
     onNodeSelected: (FlowNodeId) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
     onNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit,
+    connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption>,
     onEdgeDisconnect: (FlowEdgeId) -> Unit,
     onViewChanged: (FlowViewDocument) -> Unit,
     onSessionReady: (FlowchartShellEditorSession?) -> Unit
@@ -1660,6 +1672,7 @@ private fun FlowchartPanel(
         onNodeSelected = onNodeSelected,
         onDeleteNode = onNodeDelete,
         onConnectNodes = onNodesConnect,
+        connectionOptionsFor = connectionOptionsFor,
         onDisconnectEdge = onEdgeDisconnect,
         onViewChanged = onViewChanged,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },

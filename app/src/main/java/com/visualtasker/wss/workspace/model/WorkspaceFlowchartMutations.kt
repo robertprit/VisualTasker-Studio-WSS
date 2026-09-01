@@ -18,6 +18,12 @@ import kotlin.math.abs
 const val WORKFLOW_SOURCE_FLOWCHART_PREFIX = "flowchart:"
 private const val FLOW_BLOCK_NODE_PREFIX = "block:"
 
+data class FlowchartConnectionOption(
+    val kind: FlowEdgeKind,
+    val label: String?,
+    val displayLabel: String,
+)
+
 fun addFlowchartNodeToWorkspace(
     document: WorkspaceDocument,
     definitionId: String,
@@ -142,6 +148,50 @@ fun connectFlowchartNodesInWorkspace(
     return WorkspaceReducer.reduce(document, action)
 }
 
+fun flowchartConnectionOptions(
+    document: WorkspaceDocument,
+    sourceNodeId: FlowNodeId,
+    targetNodeId: FlowNodeId,
+): List<FlowchartConnectionOption> {
+    val sourceBlockId = sourceNodeId.toWorkspaceBlockId() ?: return emptyList()
+    val targetBlockId = targetNodeId.toWorkspaceBlockId() ?: return emptyList()
+    val sourceBlock = document.blocks[sourceBlockId] ?: return emptyList()
+    val targetBlock = document.blocks[targetBlockId] ?: return emptyList()
+    if (sourceBlockId == targetBlockId) return emptyList()
+
+    val candidates = buildList {
+        if (sourceBlock.next != null && targetBlock.previous != null) {
+            add(FlowchartConnectionOption(FlowEdgeKind.SEQUENCE, null, "Next"))
+        }
+        if (targetBlock.previous != null) {
+            sourceBlock.statementInputs.forEach { input ->
+                val kind = statementSlotEdgeKind(sourceBlock.type, input.name) ?: return@forEach
+                add(FlowchartConnectionOption(kind, input.name, statementSlotDisplayLabel(input.name)))
+            }
+        }
+        if (sourceBlock.output != null) {
+            targetBlock.valueInputs.forEach { input ->
+                val kind = if (input.name == "CONDITION") {
+                    FlowEdgeKind.CONDITION
+                } else {
+                    FlowEdgeKind.DATA_FLOW
+                }
+                add(FlowchartConnectionOption(kind, input.name, valueInputDisplayLabel(input.name)))
+            }
+        }
+    }
+
+    return candidates.filter { option ->
+        connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = sourceNodeId,
+            targetNodeId = targetNodeId,
+            kind = option.kind,
+            label = option.label,
+        ) != document
+    }
+}
+
 fun syncRootPositionsFromFlowchartView(
     document: WorkspaceDocument,
     viewDocument: FlowViewDocument,
@@ -179,6 +229,39 @@ private fun defaultStatementSlotName(sourceBlockType: String, kind: FlowEdgeKind
             else -> null
         }
         else -> null
+    }
+
+private fun statementSlotEdgeKind(sourceBlockType: String, slotName: String): FlowEdgeKind? =
+    when (slotName) {
+        BlockTypes.SLOT_THEN -> FlowEdgeKind.TRUE_BRANCH
+        BlockTypes.SLOT_ELSE -> FlowEdgeKind.FALSE_BRANCH
+        BlockTypes.SLOT_ELIF -> FlowEdgeKind.ELSE_IF_BRANCH
+        BlockTypes.SLOT_DO -> if (sourceBlockType == BlockTypes.CONTROL_REPEAT) FlowEdgeKind.LOOP_BODY else null
+        BlockTypes.SLOT_BODY -> if (sourceBlockType == BlockTypes.CONTROL_WHILE) FlowEdgeKind.LOOP_BODY else null
+        else -> null
+    }
+
+private fun statementSlotDisplayLabel(slotName: String): String =
+    when (slotName) {
+        BlockTypes.SLOT_THEN -> "Branch: then"
+        BlockTypes.SLOT_ELIF -> "Branch: elseif"
+        BlockTypes.SLOT_ELSE -> "Branch: else"
+        BlockTypes.SLOT_DO -> "Loop: do"
+        BlockTypes.SLOT_BODY -> "Loop: body"
+        else -> "Branch: $slotName"
+    }
+
+private fun valueInputDisplayLabel(inputName: String): String =
+    when (inputName) {
+        "CONDITION" -> "Condition"
+        "ELIF_CONDITION" -> "Elseif condition"
+        "LEFT" -> "Input: left"
+        "RIGHT" -> "Input: right"
+        "A" -> "Input: A"
+        "B" -> "Input: B"
+        "Input1" -> "Input: 1"
+        "Input2" -> "Input: 2"
+        else -> "Input: $inputName"
     }
 
 private fun defaultValueInputName(targetBlockType: String, kind: FlowEdgeKind): String? =

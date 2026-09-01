@@ -209,6 +209,49 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `flowchart connection options expose compatible sequence branch and value ports`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-connect-options-test"), BlockTypes.CONTROL_IF_ELSEIF_ELSE, 10f, 20f)
+        val ifId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val waitId = document.blocks.keys.single { it != ifId }
+        document = instantiate(document, BlockTypes.LITERAL_BOOLEAN, 80f, 120f)
+        val booleanId = document.blocks.keys.single { it != ifId && it != waitId }
+
+        val branchOptions = flowchartConnectionOptions(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${ifId.value}"),
+            targetNodeId = FlowNodeId("block:${waitId.value}"),
+        )
+        val conditionOptions = flowchartConnectionOptions(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${booleanId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+        )
+
+        assertTrue(branchOptions.any { it.kind == FlowEdgeKind.SEQUENCE && it.label == null })
+        assertTrue(branchOptions.any { it.kind == FlowEdgeKind.TRUE_BRANCH && it.label == BlockTypes.SLOT_THEN })
+        assertTrue(branchOptions.any { it.kind == FlowEdgeKind.ELSE_IF_BRANCH && it.label == BlockTypes.SLOT_ELIF })
+        assertTrue(branchOptions.any { it.kind == FlowEdgeKind.FALSE_BRANCH && it.label == BlockTypes.SLOT_ELSE })
+        assertEquals(listOf("CONDITION", "ELIF_CONDITION"), conditionOptions.map { it.label })
+    }
+
+    @Test
+    fun `flowchart connection options hide incompatible value ports`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-connect-options-incompatible-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val waitId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.CONTROL_IF, 40f, 80f)
+        val ifId = document.blocks.keys.single { it != waitId }
+
+        val options = flowchartConnectionOptions(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${waitId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+        )
+
+        assertFalse(options.any { it.kind == FlowEdgeKind.CONDITION || it.kind == FlowEdgeKind.DATA_FLOW })
+    }
+
+    @Test
     fun `sync root positions from flowchart view updates workspace roots`() {
         val document = addFlowchartNodeToWorkspace(
             WorkspaceDocument(id = "flowchart-move-test"),
