@@ -87,6 +87,44 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun parse_remGroupMarkers_ignoresEditorFacetsAsComments() {
+        val source = """
+            REM @vt.group.start id="vars:init" label="Variablen initialisieren" kind="variable-bulk"
+            LET counter = 0
+            REM @vt.group.end id="vars:init"
+        """.trimIndent()
+
+        val result = EmscriptParserSlice().parse(source)
+
+        assertTrue(result.issues.joinToString { it.message }, result.isSuccess)
+        assertEquals(1, result.ir!!.statements.size)
+        assertTrue(result.ir.statements.single() is EmscriptIrStatement.Let)
+    }
+
+    @Test
+    fun scan_groupFacets_extractsRemAndSlashMarkers() {
+        val source = """
+            REM @vt.group.start id="vars:init" label="Variablen initialisieren" kind="variable-bulk"
+            LET counter = 0
+            REM @vt.group.end id="vars:init"
+            // @vt.group.start id="flow:loop" label="Loop" kind="loop-region"
+            LOOP 1
+            END LOOP
+        """.trimIndent()
+
+        val facets = EmscriptEditorFacetScanner.scan(source)
+
+        assertEquals(2, facets.size)
+        assertEquals("vars:init", facets[0].id)
+        assertEquals("Variablen initialisieren", facets[0].label)
+        assertEquals("variable-bulk", facets[0].kind)
+        assertEquals(1, facets[0].startLine)
+        assertEquals(3, facets[0].endLine)
+        assertEquals("flow:loop", facets[1].id)
+        assertEquals(null, facets[1].endLine)
+    }
+
+    @Test
     fun parse_operatorPrecedence_keepsMultiplicationBeforeAddition() {
         val source = "SET a = 1 + 2 * 3"
         val result = EmscriptParserSlice().parse(source)

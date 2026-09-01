@@ -1817,28 +1817,19 @@ private fun loadBlockEditorWorkspaceJson(
     uiPrefs: android.content.SharedPreferences
 ): String {
     val loadedTestVersion = uiPrefs.getInt(BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY, 0)
-    if (loadedTestVersion < EditorDefaults.integrationTestScriptVersion) {
-        EmscriptWorkspaceImporter()
-            .import(EditorDefaults.integrationTestScript, workspaceId = "workflow-main")
-            .document
-            ?.let { document ->
-                val serialized = WorkspaceSerializer.serialize(document)
-                uiPrefs.edit()
-                    .putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, serialized)
-                    .putInt(BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
-                    .apply()
-                return serialized
-            }
-    }
     val persisted = uiPrefs.getString(BLOCKEDITOR_WORKSPACE_PREF_KEY, null)
+    if (loadedTestVersion < EditorDefaults.integrationTestScriptVersion || persisted.isNullOrBlank()) {
+        importAndPersistIntegrationWorkspace(uiPrefs)?.let { return it }
+    }
     return persisted
         ?.let {
             when (val decoded = WorkspaceSerializer.decode(it)) {
                 is WorkspaceDecodeResult.Decoded -> WorkspaceSerializer.serialize(decoded.document)
-                is WorkspaceDecodeResult.Malformed -> null
-                is WorkspaceDecodeResult.UnsupportedSchema -> null
+                is WorkspaceDecodeResult.Malformed -> importAndPersistIntegrationWorkspace(uiPrefs)
+                is WorkspaceDecodeResult.UnsupportedSchema -> importAndPersistIntegrationWorkspace(uiPrefs)
             }
         }
+        ?: importAndPersistIntegrationWorkspace(uiPrefs)
         ?: WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
 }
 
@@ -1846,16 +1837,30 @@ private fun loadInitialTextEditorDraft(
     uiPrefs: android.content.SharedPreferences
 ): String {
     val loadedVersion = uiPrefs.getInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, 0)
-    if (loadedVersion < EditorDefaults.integrationTestScriptVersion) {
+    val persisted = uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, null)
+    if (loadedVersion < EditorDefaults.integrationTestScriptVersion || persisted.isNullOrBlank()) {
         uiPrefs.edit()
             .putString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.integrationTestScript)
             .putInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
             .apply()
         return EditorDefaults.integrationTestScript
     }
-    return uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.integrationTestScript)
-        ?: EditorDefaults.integrationTestScript
+    return persisted
 }
+
+private fun importAndPersistIntegrationWorkspace(
+    uiPrefs: android.content.SharedPreferences,
+): String? = EmscriptWorkspaceImporter()
+    .import(EditorDefaults.integrationTestScript, workspaceId = "workflow-main")
+    .document
+    ?.let { document ->
+        val serialized = WorkspaceSerializer.serialize(document)
+        uiPrefs.edit()
+            .putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, serialized)
+            .putInt(BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
+            .apply()
+        serialized
+    }
 
 private fun persistBlockEditorSession(
     uiPrefs: android.content.SharedPreferences,

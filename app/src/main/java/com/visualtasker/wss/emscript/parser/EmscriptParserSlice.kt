@@ -313,6 +313,10 @@ private class Lexer(private val source: String) {
         }
         val raw = builder.toString()
         val upper = raw.uppercase()
+        if (upper == "REM") {
+            skipComment()
+            return
+        }
         val type = when (upper) {
             "LET" -> TokenType.LET
             "SET" -> TokenType.SET

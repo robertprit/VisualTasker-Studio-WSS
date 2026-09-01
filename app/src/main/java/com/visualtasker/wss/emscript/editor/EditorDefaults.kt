@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 4
+    const val integrationTestScriptVersion: Int = 5
 
     val sampleScript: String = """
         LET v1 = 1
@@ -13,17 +13,20 @@ object EditorDefaults {
     """.trimIndent()
 
     val integrationTestScript: String = """
+        REM @vt.group.start id="vars:init" label="Variablen initialisieren" kind="variable-bulk"
         LET loopIndex = 0
         LET thresholdLow = 3
         LET thresholdHigh = 7
         LET score = 0
         LET nestedScore = 0
         LET result = 0
+        REM @vt.group.end id="vars:init"
 
         log("integration-start")
         wait(100)
         click("Start")
 
+        REM @vt.group.start id="flow:main-loop" label="Hauptschleife" kind="loop-region"
         LOOP 10
             SET loopIndex = loopIndex + 1
             SET score = score + loopIndex
@@ -63,6 +66,7 @@ object EditorDefaults {
                 END IF
             END IF
         END LOOP
+        REM @vt.group.end id="flow:main-loop"
 
         WHILE loopIndex < 12
             SET loopIndex = loopIndex + 1
