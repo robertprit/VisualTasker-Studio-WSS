@@ -2,13 +2,14 @@ package com.visualtasker.wss.flowchart
 
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
+import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
+import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowGraphExtension
 import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowRuntimeDiagnostic
-import de.visualtasker.flowchart.domain.FlowRuntimeNodeState
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowRunId
 import de.visualtasker.flowchart.domain.FlowSemanticValue
@@ -16,63 +17,28 @@ import de.visualtasker.flowchart.domain.FlowSourceSessionId
 
 object EmscriptDryRunFlowRuntimeMapper {
     fun map(
+        irGraph: IrGraph,
         graph: FlowGraphDocument,
         result: EmscriptDryRunResult,
         sequence: Long,
         capturedAtEpochMs: Long = System.currentTimeMillis(),
         maxEventIndex: Int? = null,
     ): FlowRuntimeSnapshot {
-        val executableNodes = graph.nodes
-            .map { it.id }
-        val events = when (result) {
-            is EmscriptDryRunResult.Success -> result.events
-            is EmscriptDryRunResult.Failure -> result.events
-        }.let { sourceEvents ->
-            maxEventIndex?.let { limit -> sourceEvents.filter { it.index <= limit } } ?: sourceEvents
-        }
-        val tracedNodeIds = events
-            .mapNotNull { it.blockId?.let { blockId -> FlowNodeId("block:$blockId") } }
-            .filter { traced -> graph.nodes.any { it.id == traced } }
-            .toSet()
-        val traversedEdges = events.mapNotNull { event ->
-            val source = event.edgeSourceBlockId?.let { FlowNodeId("block:$it") } ?: return@mapNotNull null
-            val target = event.edgeTargetBlockId?.let { FlowNodeId("block:$it") } ?: return@mapNotNull null
-            graph.edges.firstOrNull { edge ->
-                edge.sourceNodeId == source &&
-                    edge.targetNodeId == target &&
-                    (event.edgeKind == null || edge.kind.name == event.edgeKind)
-            }?.id
-        }.distinct()
-        val activeNodeId = events
-            .asReversed()
-            .firstNotNullOfOrNull { event ->
-                event.blockId?.let { blockId -> FlowNodeId("block:$blockId") }
-            }
+        val irRuntime = EmscriptDryRunIrGraphRuntimeMapper.map(
+            irGraph = irGraph,
+            result = result,
+            sequence = sequence,
+            maxEventIndex = maxEventIndex,
+        )
+        val nodeStates = irRuntime.nodeStates
+            .mapKeys { (nodeId, _) -> FlowNodeId(nodeId.value) }
+            .filterKeys { nodeId -> graph.nodes.any { it.id == nodeId } }
+        val traversedEdges = irRuntime.traversedEdgeIds
+            .map { FlowEdgeId(it.value) }
+            .filter { edgeId -> graph.edges.any { it.id == edgeId } }
+        val activeNodeId = irRuntime.activeNodeId
+            ?.let { FlowNodeId(it.value) }
             ?.takeIf { candidate -> graph.nodes.any { it.id == candidate } }
-        val hasWorkspaceTrace = tracedNodeIds.isNotEmpty() || traversedEdges.isNotEmpty()
-        val nodeStates = when (result) {
-            is EmscriptDryRunResult.Success -> if (hasWorkspaceTrace) {
-                executableNodes.associateWith { nodeId ->
-                    if (nodeId in tracedNodeIds) FlowRuntimeNodeState.SUCCEEDED else FlowRuntimeNodeState.SKIPPED
-                }
-            } else {
-                emptyMap()
-            }
-            is EmscriptDryRunResult.Failure -> {
-                val lastTraced = tracedNodeIds.lastOrNull()
-                if (hasWorkspaceTrace) {
-                    executableNodes.associateWith { nodeId ->
-                        when {
-                            nodeId == lastTraced -> FlowRuntimeNodeState.FAILED
-                            nodeId in tracedNodeIds -> FlowRuntimeNodeState.SUCCEEDED
-                            else -> FlowRuntimeNodeState.SKIPPED
-                        }
-                    }
-                } else {
-                    graph.entryNodeId?.let { mapOf(it to FlowRuntimeNodeState.FAILED) }.orEmpty()
-                }
-            }
-        }
         val diagnostics = when (result) {
             is EmscriptDryRunResult.Success -> emptyList()
             is EmscriptDryRunResult.Failure -> listOf(
@@ -96,12 +62,12 @@ object EmscriptDryRunFlowRuntimeMapper {
             nodeStates = nodeStates,
             traversedEdgeIds = traversedEdges,
             diagnostics = diagnostics,
-            extensions = runtimeExtensions(events, result),
+            extensions = runtimeExtensions(irRuntime.events, result),
         )
     }
 
     private fun runtimeExtensions(
-        events: List<com.visualtasker.wss.emscript.runtime.EmscriptDryRunEvent>,
+        events: List<IrGraphRuntimeEvent>,
         result: EmscriptDryRunResult,
     ): List<FlowGraphExtension> = buildList {
         add(runtimeEventExtension(events))
@@ -110,17 +76,17 @@ object EmscriptDryRunFlowRuntimeMapper {
         }
     }
 
-    private fun runtimeEventExtension(events: List<com.visualtasker.wss.emscript.runtime.EmscriptDryRunEvent>): FlowGraphExtension {
+    private fun runtimeEventExtension(events: List<IrGraphRuntimeEvent>): FlowGraphExtension {
         val values = events.map { event ->
             FlowSemanticValue.ObjectValue(
                 buildMap {
                     put("index", FlowSemanticValue.NumberValue(event.index.toString()))
                     put("kind", FlowSemanticValue.StringValue(event.kind))
                     put("message", FlowSemanticValue.StringValue(event.message))
-                    event.blockId?.let { put("nodeId", FlowSemanticValue.StringValue("block:$it")) }
-                    event.edgeSourceBlockId?.let { put("edgeSourceNodeId", FlowSemanticValue.StringValue("block:$it")) }
-                    event.edgeTargetBlockId?.let { put("edgeTargetNodeId", FlowSemanticValue.StringValue("block:$it")) }
-                    event.edgeKind?.let { put("edgeKind", FlowSemanticValue.StringValue(it)) }
+                    event.nodeId?.let { put("irNodeId", FlowSemanticValue.StringValue(it.value)) }
+                    event.nodeId?.let { put("nodeId", FlowSemanticValue.StringValue(it.value)) }
+                    event.edgeId?.let { put("irEdgeId", FlowSemanticValue.StringValue(it.value)) }
+                    event.edgeKind?.let { put("edgeKind", FlowSemanticValue.StringValue(it.name)) }
                 }
             )
         }

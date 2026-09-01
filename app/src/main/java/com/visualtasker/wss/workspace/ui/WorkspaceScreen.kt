@@ -377,6 +377,7 @@ fun WorkspaceScreen(
         workspaceDryRunStepIndex = stepIndex.coerceIn(0, eventCount)
         workspaceDryRunSequence += 1
         flowRuntimeSnapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = workflowState.irGraph,
             graph = workflowState.flowchartProjection.graph,
             result = result,
             sequence = workspaceDryRunSequence,
@@ -434,6 +435,7 @@ fun WorkspaceScreen(
         workspaceDryRunStepIndex = dryRunEventCount(result)
         workspaceDryRunSequence += 1
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = workflowState.irGraph,
             graph = workflowState.flowchartProjection.graph,
             result = result,
             sequence = workspaceDryRunSequence,

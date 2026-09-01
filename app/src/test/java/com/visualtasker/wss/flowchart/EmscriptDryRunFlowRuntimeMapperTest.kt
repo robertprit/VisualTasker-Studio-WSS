@@ -5,6 +5,9 @@ import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
+import de.visualtasker.blockeditor.domain.WorkspaceDocument
+import de.visualtasker.blockeditor.ir.IrGraph
+import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.flowchart.domain.FlowRuntimeNodeState
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.validation.FlowRuntimeSnapshotValidator
@@ -18,11 +21,12 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         val imported = EmscriptWorkspaceImporter()
             .import(EditorDefaults.integrationTestScript, workspaceId = "runtime-flowchart")
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
-        val graph = BlockEditorFlowchartProjector.project(imported.document!!).graph
+        val (irGraph, graph) = project(imported.document!!)
         val dryRun = EmscriptDryRunRuntime().run(EditorDefaults.integrationTestScript)
         assertTrue(dryRun is EmscriptDryRunResult.Success)
 
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
             graph = graph,
             result = dryRun,
             sequence = 7,
@@ -47,11 +51,12 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             workspaceId = "runtime-flowchart-stepper",
         )
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
-        val graph = BlockEditorFlowchartProjector.project(imported.document!!).graph
+        val (irGraph, graph) = project(imported.document!!)
         val dryRun = WorkspaceDryRunRuntime().run(imported.document!!)
         assertTrue(dryRun is EmscriptDryRunResult.Success)
 
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
             graph = graph,
             result = dryRun,
             sequence = 4,
@@ -72,11 +77,12 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         val imported = EmscriptWorkspaceImporter()
             .import(EditorDefaults.integrationTestScript, workspaceId = "runtime-flowchart-failure")
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
-        val graph = BlockEditorFlowchartProjector.project(imported.document!!).graph
+        val (irGraph, graph) = project(imported.document!!)
         val dryRun = EmscriptDryRunRuntime().run("WHILE true\nEND WHILE")
         assertTrue(dryRun is EmscriptDryRunResult.Failure)
 
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
             graph = graph,
             result = dryRun,
             sequence = 1,
@@ -102,11 +108,12 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             workspaceId = "runtime-flowchart-branches",
         )
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
-        val graph = BlockEditorFlowchartProjector.project(imported.document!!).graph
+        val (irGraph, graph) = project(imported.document!!)
         val dryRun = WorkspaceDryRunRuntime().run(imported.document!!)
         assertTrue(dryRun is EmscriptDryRunResult.Success)
 
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
             graph = graph,
             result = dryRun,
             sequence = 2,
@@ -138,11 +145,12 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             workspaceId = "runtime-flowchart-fallback",
         )
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
-        val graph = BlockEditorFlowchartProjector.project(imported.document!!).graph
+        val (irGraph, graph) = project(imported.document!!)
         val dryRun = WorkspaceDryRunRuntime().run(imported.document!!)
         assertTrue(dryRun is EmscriptDryRunResult.Success)
 
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
             graph = graph,
             result = dryRun,
             sequence = 3,
@@ -163,6 +171,11 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             }
         })
         assertTrue(FlowRuntimeSnapshotValidator.validate(graph, snapshot).isValid)
+    }
+
+    private fun project(document: WorkspaceDocument): Pair<IrGraph, de.visualtasker.flowchart.domain.FlowGraphDocument> {
+        val irGraph = IrGraphGenerator().generate(document)
+        return irGraph to IrGraphFlowchartProjector.project(irGraph).graph
     }
 
     private fun de.visualtasker.flowchart.domain.FlowRuntimeSnapshot.runtimeVariables(): Map<String, String> =

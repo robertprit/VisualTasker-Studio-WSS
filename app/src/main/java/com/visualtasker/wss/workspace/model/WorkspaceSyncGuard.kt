@@ -1,6 +1,7 @@
 package com.visualtasker.wss.workspace.model
 
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
+import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 
@@ -38,7 +39,9 @@ class WorkspaceSyncGuard {
         } else {
             messages += "EMScript-Projektion OK (${emscript.getOrDefault("").length} Zeichen)."
         }
-        val flowchart = runCatching { com.visualtasker.wss.flowchart.BlockEditorFlowchartProjector.project(document) }
+        val flowchart = runCatching {
+            com.visualtasker.wss.flowchart.IrGraphFlowchartProjector.project(IrGraphGenerator().generate(document))
+        }
         if (flowchart.isFailure) {
             messages += "Flowchart-Projektion fehlgeschlagen: ${flowchart.exceptionOrNull()?.message ?: "unknown"}"
         } else {

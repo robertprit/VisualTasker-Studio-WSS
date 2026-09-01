@@ -50,6 +50,7 @@ import com.visualtasker.wss.logging.StudioLogLevel
 import com.visualtasker.wss.logging.StudioLogStore
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
+import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
@@ -136,17 +137,21 @@ internal fun EmscriptTextEditorPanel(
 
     fun dryRun() {
         val workspaceDocument = runCatching { WorkspaceSerializer.deserialize(workspaceJson) }.getOrNull()
+        val irGraph = workspaceDocument?.let { IrGraphGenerator().generate(it) }
         val result = workspaceDocument
             ?.let(workspaceDryRunRuntime::run)
             ?: dryRunRuntime.run(session.activeTab.content)
         dryRunSequence += 1
-        onDryRunRuntimeSnapshot(
-            EmscriptDryRunFlowRuntimeMapper.map(
-                graph = currentFlowGraph,
-                result = result,
-                sequence = dryRunSequence,
+        if (irGraph != null) {
+            onDryRunRuntimeSnapshot(
+                EmscriptDryRunFlowRuntimeMapper.map(
+                    irGraph = irGraph,
+                    graph = currentFlowGraph,
+                    result = result,
+                    sequence = dryRunSequence,
+                )
             )
-        )
+        }
         when (result) {
             is EmscriptDryRunResult.Success -> {
                 val preview = result.events.takeLast(8).joinToString(separator = "\n") {
