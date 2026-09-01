@@ -68,6 +68,7 @@ import de.visualtasker.flowchart.compose.FlowchartUiConfig
 import de.visualtasker.flowchart.domain.FlowGraphNode
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowEdgeId
+import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowGraphEdge
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowPoint
@@ -91,6 +92,7 @@ fun FlowchartShellPanel(
     stepLabel: String? = null,
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
     onDeleteNode: ((FlowNodeId) -> Unit)? = null,
+    onConnectNodes: ((FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit)? = null,
     onDisconnectEdge: ((FlowEdgeId) -> Unit)? = null,
     onViewChanged: ((FlowViewDocument) -> Unit)? = null,
 ) {
@@ -98,24 +100,35 @@ fun FlowchartShellPanel(
     var gridVisible by remember(session.sessionId) { mutableStateOf(true) }
     var selectedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var selectedEdgeId by remember(session.sessionId) { mutableStateOf<FlowEdgeId?>(null) }
+    var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
             session.onViewDocumentChanged(view)
             onViewChanged?.invoke(view)
         }
     }
-    val callbacks = remember(session, onNodeSelected, handleViewChanged) {
+    val callbacks = remember(session, onNodeSelected, onConnectNodes, pendingConnectionStart, handleViewChanged) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
             onStatusMessage = session::onStatusMessage,
             onNodeSelected = {
-                selectedNodeId = it
-                if (it != null) selectedEdgeId = null
-                if (it != null) onNodeSelected?.invoke(it)
+                val source = pendingConnectionStart
+                if (it != null && source != null && source != it) {
+                    pendingConnectionStart = null
+                    selectedNodeId = it
+                    selectedEdgeId = null
+                    onConnectNodes?.invoke(source, it, FlowEdgeKind.SEQUENCE, null)
+                    onNodeSelected?.invoke(it)
+                } else {
+                    selectedNodeId = it
+                    if (it != null) selectedEdgeId = null
+                    if (it != null) onNodeSelected?.invoke(it)
+                }
             },
             onEdgeSelected = {
                 selectedEdgeId = it
                 if (it != null) selectedNodeId = null
+                if (it != null) pendingConnectionStart = null
             },
         )
     }
@@ -193,6 +206,13 @@ fun FlowchartShellPanel(
             },
             onGridToggle = { gridVisible = !gridVisible },
             onSave = { onSave?.invoke() ?: session.requestSave() },
+            onBeginConnect = selectedNodeId?.let { nodeId ->
+                if (onConnectNodes == null) {
+                    null
+                } else {
+                    { pendingConnectionStart = if (pendingConnectionStart == nodeId) null else nodeId }
+                }
+            },
             onDeleteSelected = selectedNodeId?.let { nodeId ->
                 onDeleteNode?.let { deleteNode -> { deleteNode(nodeId) } }
             } ?: selectedEdgeId?.let { edgeId ->
@@ -205,6 +225,7 @@ fun FlowchartShellPanel(
             canStepForward = canStepForward,
             stepLabel = stepLabel,
             gridVisible = gridVisible,
+            connecting = pendingConnectionStart != null,
         )
         FlowchartProjectionDiagnostics(
             modifier = Modifier
@@ -481,6 +502,7 @@ private fun FlowchartShellToolbar(
     onArrange: () -> Unit,
     onGridToggle: () -> Unit,
     onSave: () -> Unit,
+    onBeginConnect: (() -> Unit)?,
     onDeleteSelected: (() -> Unit)?,
     onRunDry: (() -> Unit)?,
     onStepBack: (() -> Unit)?,
@@ -489,6 +511,7 @@ private fun FlowchartShellToolbar(
     canStepForward: Boolean,
     stepLabel: String?,
     gridVisible: Boolean,
+    connecting: Boolean,
 ) {
     Surface(
         modifier = modifier,
@@ -503,6 +526,17 @@ private fun FlowchartShellToolbar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FlowchartToolbarButton("Speichern", onSave) { Icon(Icons.Default.Save, contentDescription = null) }
+            FlowchartToolbarButton(
+                tooltip = if (connecting) "Verbindung abbrechen" else "Verbindung starten",
+                onClick = onBeginConnect ?: {},
+                enabled = onBeginConnect != null,
+            ) {
+                Icon(
+                    Icons.Default.DeviceHub,
+                    contentDescription = null,
+                    tint = if (connecting) Color(0xFF63C7FF) else Color.Unspecified,
+                )
+            }
             FlowchartToolbarButton("Node löschen", onDeleteSelected ?: {}, enabled = onDeleteSelected != null) {
                 Icon(Icons.Default.Delete, contentDescription = null)
             }

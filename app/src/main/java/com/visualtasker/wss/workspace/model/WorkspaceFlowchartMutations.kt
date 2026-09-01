@@ -5,6 +5,7 @@ import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.domain.WorkspacePoint
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
+import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
 import de.visualtasker.flowchart.domain.FlowEdgeId
@@ -97,6 +98,50 @@ fun disconnectFlowchartEdgeFromWorkspace(
     )
 }
 
+fun connectFlowchartNodesInWorkspace(
+    document: WorkspaceDocument,
+    sourceNodeId: FlowNodeId,
+    targetNodeId: FlowNodeId,
+    kind: FlowEdgeKind = FlowEdgeKind.SEQUENCE,
+    label: String? = null,
+): WorkspaceDocument {
+    val sourceBlockId = sourceNodeId.toWorkspaceBlockId() ?: return document
+    val targetBlockId = targetNodeId.toWorkspaceBlockId() ?: return document
+    val sourceBlock = document.blocks[sourceBlockId] ?: return document
+    val targetBlock = document.blocks[targetBlockId] ?: return document
+    if (sourceBlockId == targetBlockId) return document
+
+    val action = when (kind) {
+        FlowEdgeKind.SEQUENCE,
+        FlowEdgeKind.LOOP_EXIT -> {
+            val source = sourceBlock.next?.id ?: return document
+            val target = targetBlock.previous?.id ?: return document
+            WorkspaceAction.Connect(source, target)
+        }
+        FlowEdgeKind.TRUE_BRANCH,
+        FlowEdgeKind.FALSE_BRANCH,
+        FlowEdgeKind.ELSE_IF_BRANCH,
+        FlowEdgeKind.LOOP_BODY -> {
+            val slotName = label ?: defaultStatementSlotName(sourceBlock.type, kind) ?: return document
+            val source = sourceBlock.statementInputs.firstOrNull { it.name == slotName }?.connection?.id
+                ?: return document
+            val target = targetBlock.previous?.id ?: return document
+            WorkspaceAction.Connect(source, target)
+        }
+        FlowEdgeKind.DATA_FLOW,
+        FlowEdgeKind.CONDITION -> {
+            val inputName = label ?: defaultValueInputName(targetBlock.type, kind) ?: return document
+            val source = sourceBlock.output?.id ?: return document
+            val target = targetBlock.valueInputs.firstOrNull { it.name == inputName }?.connection?.id
+                ?: return document
+            WorkspaceAction.Connect(source, target)
+        }
+        else -> return document
+    }
+
+    return WorkspaceReducer.reduce(document, action)
+}
+
 fun syncRootPositionsFromFlowchartView(
     document: WorkspaceDocument,
     viewDocument: FlowViewDocument,
@@ -122,6 +167,32 @@ fun FlowNodeId.toWorkspaceBlockId(): de.visualtasker.blockeditor.domain.BlockId?
     if (value == this.value || value.isBlank()) return null
     return de.visualtasker.blockeditor.domain.BlockId(value)
 }
+
+private fun defaultStatementSlotName(sourceBlockType: String, kind: FlowEdgeKind): String? =
+    when (kind) {
+        FlowEdgeKind.TRUE_BRANCH -> BlockTypes.SLOT_THEN
+        FlowEdgeKind.FALSE_BRANCH -> BlockTypes.SLOT_ELSE
+        FlowEdgeKind.ELSE_IF_BRANCH -> BlockTypes.SLOT_ELIF
+        FlowEdgeKind.LOOP_BODY -> when (sourceBlockType) {
+            BlockTypes.CONTROL_REPEAT -> BlockTypes.SLOT_DO
+            BlockTypes.CONTROL_WHILE -> BlockTypes.SLOT_BODY
+            else -> null
+        }
+        else -> null
+    }
+
+private fun defaultValueInputName(targetBlockType: String, kind: FlowEdgeKind): String? =
+    when (kind) {
+        FlowEdgeKind.CONDITION -> "CONDITION"
+        FlowEdgeKind.DATA_FLOW -> when (targetBlockType) {
+            BlockTypes.LOGIC_COMPARE -> "LEFT"
+            BlockTypes.LOGIC_AND,
+            BlockTypes.LOGIC_OR -> "A"
+            BlockTypes.LOGIC_OPERATE -> "Input1"
+            else -> null
+        }
+        else -> null
+    }
 
 private fun WorkspacePoint.closeTo(x: Float, y: Float): Boolean =
     abs(this.x - x) < 0.5f && abs(this.y - y) < 0.5f

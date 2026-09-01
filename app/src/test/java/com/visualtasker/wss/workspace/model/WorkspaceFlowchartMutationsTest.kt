@@ -126,6 +126,89 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `connect flowchart sequence edge creates workspace next connection`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-sequence-connect-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val firstId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_CLICK_TEXT, 40f, 80f)
+        val secondId = document.blocks.keys.single { it != firstId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${firstId.value}"),
+            targetNodeId = FlowNodeId("block:${secondId.value}"),
+            kind = FlowEdgeKind.SEQUENCE,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(secondId).previous!!.id,
+            updated.blocks.getValue(firstId).next!!.connectedTo,
+        )
+        assertFalse(secondId in updated.rootBlocks)
+    }
+
+    @Test
+    fun `connect flowchart branch edge creates workspace statement slot connection`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-branch-connect-test"), BlockTypes.CONTROL_REPEAT, 10f, 20f)
+        val repeatId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val waitId = document.blocks.keys.single { it != repeatId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${repeatId.value}"),
+            targetNodeId = FlowNodeId("block:${waitId.value}"),
+            kind = FlowEdgeKind.LOOP_BODY,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(waitId).previous!!.id,
+            updated.blocks.getValue(repeatId).statementInputs.single { it.name == BlockTypes.SLOT_DO }.connection.connectedTo,
+        )
+        assertFalse(waitId in updated.rootBlocks)
+    }
+
+    @Test
+    fun `connect flowchart condition edge creates workspace value connection`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-condition-connect-test"), BlockTypes.LITERAL_BOOLEAN, 10f, 20f)
+        val booleanId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.CONTROL_IF, 40f, 80f)
+        val ifId = document.blocks.keys.single { it != booleanId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${booleanId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+            kind = FlowEdgeKind.CONDITION,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(ifId).valueInputs.single { it.name == "CONDITION" }.connection.id,
+            updated.blocks.getValue(booleanId).output!!.connectedTo,
+        )
+        assertFalse(booleanId in updated.rootBlocks)
+    }
+
+    @Test
+    fun `connect incompatible flowchart data edge leaves workspace unchanged`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-incompatible-connect-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val waitId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.CONTROL_IF, 40f, 80f)
+        val ifId = document.blocks.keys.single { it != waitId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${waitId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+            kind = FlowEdgeKind.CONDITION,
+        )
+
+        assertEquals(document, updated)
+    }
+
+    @Test
     fun `sync root positions from flowchart view updates workspace roots`() {
         val document = addFlowchartNodeToWorkspace(
             WorkspaceDocument(id = "flowchart-move-test"),

@@ -147,6 +147,7 @@ import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
 import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
+import com.visualtasker.wss.workspace.model.connectFlowchartNodesInWorkspace
 import com.visualtasker.wss.workspace.model.deleteFlowchartNodeFromWorkspace
 import com.visualtasker.wss.workspace.model.disconnectFlowchartEdgeFromWorkspace
 import com.visualtasker.wss.workspace.model.syncRootPositionsFromFlowchartView
@@ -191,6 +192,7 @@ import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowEdgeId
+import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
@@ -355,6 +357,21 @@ fun WorkspaceScreen(
             applyWorkspaceJsonChange(
                 WorkspaceSerializer.serialize(nextDocument),
                 "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${edgeId.value}:disconnect"
+            )
+        }
+    }
+    val connectFlowchartNodes: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { sourceNodeId, targetNodeId, kind, label ->
+        val nextDocument = connectFlowchartNodesInWorkspace(
+            document = workflowState.document,
+            sourceNodeId = sourceNodeId,
+            targetNodeId = targetNodeId,
+            kind = kind,
+            label = label,
+        )
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${sourceNodeId.value}:${targetNodeId.value}:connect"
             )
         }
     }
@@ -846,6 +863,7 @@ fun WorkspaceScreen(
                         onFlowchartNodeSelected = ::focusBlockFromFlowNode,
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
+                        onFlowchartNodesConnect = connectFlowchartNodes,
                         onFlowchartEdgeDisconnect = disconnectFlowchartEdge,
                         onFlowchartViewChanged = syncFlowchartView,
                         onFlowRuntimeSnapshotChange = { snapshot ->
@@ -1156,6 +1174,7 @@ private fun WorkspacePanelContent(
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
+    onFlowchartNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { _, _, _, _ -> },
     onFlowchartEdgeDisconnect: (FlowEdgeId) -> Unit = {},
     onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
@@ -1185,6 +1204,7 @@ private fun WorkspacePanelContent(
             stepLabel = dryRunStepLabel,
             onNodeSelected = onFlowchartNodeSelected,
             onNodeDelete = onFlowchartNodeDelete,
+            onNodesConnect = onFlowchartNodesConnect,
             onEdgeDisconnect = onFlowchartEdgeDisconnect,
             onViewChanged = onFlowchartViewChanged,
             onSessionReady = onFlowchartSessionReady
@@ -1590,6 +1610,7 @@ private fun FlowchartPanel(
     stepLabel: String?,
     onNodeSelected: (FlowNodeId) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
+    onNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit,
     onEdgeDisconnect: (FlowEdgeId) -> Unit,
     onViewChanged: (FlowViewDocument) -> Unit,
     onSessionReady: (FlowchartShellEditorSession?) -> Unit
@@ -1638,6 +1659,7 @@ private fun FlowchartPanel(
         stepLabel = stepLabel,
         onNodeSelected = onNodeSelected,
         onDeleteNode = onNodeDelete,
+        onConnectNodes = onNodesConnect,
         onDisconnectEdge = onEdgeDisconnect,
         onViewChanged = onViewChanged,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },
