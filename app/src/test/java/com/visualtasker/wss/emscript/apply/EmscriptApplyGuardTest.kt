@@ -1,5 +1,6 @@
 package com.visualtasker.wss.emscript.apply
 
+import com.visualtasker.wss.emscript.editor.EditorDefaults
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,5 +25,15 @@ class EmscriptApplyGuardTest {
         result as EmscriptApplyGuardResult.Failure
         assertEquals(EmscriptApplyGuardStage.PARSE_IMPORT, result.stage)
         assertTrue(result.message.isNotBlank())
+    }
+
+    @Test
+    fun previewAcceptsIntegrationTestDraft() {
+        val result = EmscriptApplyGuard().preview(EditorDefaults.integrationTestScript)
+
+        assertTrue(result is EmscriptApplyGuardResult.Success)
+        result as EmscriptApplyGuardResult.Success
+        assertTrue(result.blockCount > 20)
+        assertTrue(result.summary.contains("Roundtrip-Script-Länge"))
     }
 }

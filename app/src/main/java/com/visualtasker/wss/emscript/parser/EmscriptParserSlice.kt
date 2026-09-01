@@ -29,11 +29,42 @@ sealed interface EmscriptIrStatement {
         val value: EmscriptIrExpression,
     ) : EmscriptIrStatement
 
+    data class Wait(val milliseconds: EmscriptIrExpression) : EmscriptIrStatement
+
+    data class ClickText(val text: String) : EmscriptIrStatement
+
+    data class Output(val value: EmscriptIrExpression) : EmscriptIrStatement
+
+    data class Beep(
+        val frequency: Int? = null,
+        val durationMs: Int? = null,
+        val volume: Int? = null,
+    ) : EmscriptIrStatement
+
+    data class Vibrate(val pattern: List<Long>) : EmscriptIrStatement
+
+    data class Loop(
+        val times: EmscriptIrExpression,
+        val body: List<EmscriptIrStatement>,
+    ) : EmscriptIrStatement
+
+    data class While(
+        val condition: EmscriptIrExpression,
+        val body: List<EmscriptIrStatement>,
+    ) : EmscriptIrStatement
+
     data class If(
         val condition: EmscriptIrExpression,
         val thenBranch: List<EmscriptIrStatement>,
+        val elseIfBranches: List<EmscriptElseIfBranch> = emptyList(),
+        val elseBranch: List<EmscriptIrStatement> = emptyList(),
     ) : EmscriptIrStatement
 }
+
+data class EmscriptElseIfBranch(
+    val condition: EmscriptIrExpression,
+    val body: List<EmscriptIrStatement>,
+)
 
 sealed interface EmscriptIrExpression {
     data class VariableRef(val name: String) : EmscriptIrExpression
@@ -69,7 +100,7 @@ class EmscriptParserSlice {
             val tokens = lexer.lex()
             val parser = Parser(tokens)
             EmscriptParseResult(
-                ir = EmscriptIrScript(parser.parseStatements(untilEndKeyword = false)),
+                ir = EmscriptIrScript(parser.parseStatements(untilBoundary = false)),
                 issues = emptyList(),
             )
         }.getOrElse { error ->
@@ -108,8 +139,13 @@ private enum class TokenType {
     LET,
     SET,
     IF,
+    ELSEIF,
+    ELSE,
+    LOOP,
+    WHILE,
     END,
     ASSIGN,
+    COMMA,
     PLUS,
     MINUS,
     STAR,
@@ -171,6 +207,10 @@ private class Lexer(private val source: String) {
                 }
                 ')' -> {
                     tokens += token(TokenType.RPAREN, ")")
+                    advance()
+                }
+                ',' -> {
+                    tokens += token(TokenType.COMMA, ",")
                     advance()
                 }
                 '=' -> {
@@ -277,6 +317,10 @@ private class Lexer(private val source: String) {
             "LET" -> TokenType.LET
             "SET" -> TokenType.SET
             "IF" -> TokenType.IF
+            "ELSEIF" -> TokenType.ELSEIF
+            "ELSE" -> TokenType.ELSE
+            "LOOP" -> TokenType.LOOP
+            "WHILE" -> TokenType.WHILE
             "END" -> TokenType.END
             "TRUE" -> TokenType.TRUE
             "FALSE" -> TokenType.FALSE
@@ -315,11 +359,11 @@ private class Lexer(private val source: String) {
 private class Parser(private val tokens: List<Token>) {
     private var current: Int = 0
 
-    fun parseStatements(untilEndKeyword: Boolean): List<EmscriptIrStatement> {
+    fun parseStatements(untilBoundary: Boolean): List<EmscriptIrStatement> {
         val statements = mutableListOf<EmscriptIrStatement>()
         skipNewlines()
         while (!isAtEnd()) {
-            if (untilEndKeyword && check(TokenType.END)) break
+            if (untilBoundary && isBlockBoundary()) break
             statements += parseStatement()
             skipNewlines()
         }
@@ -331,6 +375,9 @@ private class Parser(private val tokens: List<Token>) {
             match(TokenType.LET) -> parseLet()
             match(TokenType.SET) -> parseSet()
             match(TokenType.IF) -> parseIf()
+            match(TokenType.LOOP) -> parseLoop()
+            match(TokenType.WHILE) -> parseWhile()
+            match(TokenType.IDENT) -> parseCommandStatement(previous())
             else -> {
                 val token = peek()
                 throw ParseException(token.line, token.column, "Unerwartetes Token '${token.lexeme}'.")
@@ -355,10 +402,141 @@ private class Parser(private val tokens: List<Token>) {
     private fun parseIf(): EmscriptIrStatement.If {
         val condition = parseExpression()
         skipNewlines()
-        val thenBranch = parseStatements(untilEndKeyword = true)
+        val thenBranch = parseStatements(untilBoundary = true)
+        val elseIfBranches = mutableListOf<EmscriptElseIfBranch>()
+        var elseBranch = emptyList<EmscriptIrStatement>()
+        while (match(TokenType.ELSEIF)) {
+            val elseIfCondition = parseExpression()
+            skipNewlines()
+            elseIfBranches += EmscriptElseIfBranch(
+                condition = elseIfCondition,
+                body = parseStatements(untilBoundary = true),
+            )
+        }
+        if (match(TokenType.ELSE)) {
+            skipNewlines()
+            elseBranch = parseStatements(untilBoundary = true)
+        }
         consume(TokenType.END, "END zum Schließen von IF erwartet.")
         consume(TokenType.IF, "IF nach END erwartet.")
-        return EmscriptIrStatement.If(condition = condition, thenBranch = thenBranch)
+        return EmscriptIrStatement.If(
+            condition = condition,
+            thenBranch = thenBranch,
+            elseIfBranches = elseIfBranches,
+            elseBranch = elseBranch,
+        )
+    }
+
+    private fun parseLoop(): EmscriptIrStatement.Loop {
+        val times = parseExpression()
+        skipNewlines()
+        val body = parseStatements(untilBoundary = true)
+        consume(TokenType.END, "END zum Schließen von LOOP erwartet.")
+        consume(TokenType.LOOP, "LOOP nach END erwartet.")
+        return EmscriptIrStatement.Loop(times = times, body = body)
+    }
+
+    private fun parseWhile(): EmscriptIrStatement.While {
+        val condition = parseExpression()
+        skipNewlines()
+        val body = parseStatements(untilBoundary = true)
+        consume(TokenType.END, "END zum Schließen von WHILE erwartet.")
+        consume(TokenType.WHILE, "WHILE nach END erwartet.")
+        return EmscriptIrStatement.While(condition = condition, body = body)
+    }
+
+    private fun parseCommandStatement(command: Token): EmscriptIrStatement {
+        return when (command.lexeme.uppercase()) {
+            "WAIT" -> if (check(TokenType.LPAREN)) parseWaitFunction(command) else EmscriptIrStatement.Wait(parseExpression())
+            "CLICK" -> if (check(TokenType.LPAREN)) parseClickFunction(command) else {
+                EmscriptIrStatement.ClickText(consume(TokenType.STRING, "CLICK erwartet Text-String.").lexeme)
+            }
+            "OUTPUT" -> if (check(TokenType.LPAREN)) parseLogFunction(command) else EmscriptIrStatement.Output(parseExpression())
+            "LOG" -> parseLogFunction(command)
+            "BEEP" -> if (check(TokenType.LPAREN)) parseBeepFunction(command) else parseLegacyBeep()
+            else -> parseFunctionCommand(command)
+        }
+    }
+
+    private fun parseFunctionCommand(command: Token): EmscriptIrStatement {
+        return when (command.lexeme.lowercase()) {
+            "wait" -> parseWaitFunction(command)
+            "click" -> parseClickFunction(command)
+            "log" -> parseLogFunction(command)
+            "beep" -> parseBeepFunction(command)
+            "vibrate" -> {
+                val args = parseIntegerFunctionArguments(command, min = 1, max = 16)
+                EmscriptIrStatement.Vibrate(args)
+            }
+            else -> throw ParseException(command.line, command.column, "Unbekanntes Kommando '${command.lexeme}'.")
+        }
+    }
+
+    private fun parseWaitFunction(command: Token): EmscriptIrStatement.Wait {
+        val args = parseIntegerFunctionArguments(command, min = 1, max = 1)
+        return EmscriptIrStatement.Wait(EmscriptIrExpression.NumberLiteral(args.single().toDouble(), args.single().toString()))
+    }
+
+    private fun parseClickFunction(command: Token): EmscriptIrStatement.ClickText {
+        consume(TokenType.LPAREN, "'(' nach ${command.lexeme} erwartet.")
+        val text = consume(TokenType.STRING, "${command.lexeme} erwartet Text-String.").lexeme
+        consume(TokenType.RPAREN, "')' nach ${command.lexeme}-Parametern erwartet.")
+        return EmscriptIrStatement.ClickText(text)
+    }
+
+    private fun parseLogFunction(command: Token): EmscriptIrStatement.Output {
+        consume(TokenType.LPAREN, "'(' nach ${command.lexeme} erwartet.")
+        val value = parseExpression()
+        consume(TokenType.RPAREN, "')' nach ${command.lexeme}-Parametern erwartet.")
+        return EmscriptIrStatement.Output(value)
+    }
+
+    private fun parseBeepFunction(command: Token): EmscriptIrStatement.Beep {
+        val args = parseIntegerFunctionArguments(command, min = 0, max = 3)
+        return EmscriptIrStatement.Beep(
+            frequency = args.getOrNull(0)?.toInt(),
+            durationMs = args.getOrNull(1)?.toInt(),
+            volume = args.getOrNull(2)?.toInt(),
+        )
+    }
+
+    private fun parseLegacyBeep(): EmscriptIrStatement.Beep {
+        val args = mutableListOf<Long>()
+        while (!check(TokenType.NEWLINE) && !check(TokenType.EOF)) {
+            val value = consume(TokenType.NUMBER, "BEEP erwartet numerische Parameter.").lexeme.toLongOrNull()
+                ?: throw ParseException(previous().line, previous().column, "BEEP-Parameter muss eine Ganzzahl sein.")
+            args += value
+            if (args.size > 3) {
+                val token = previous()
+                throw ParseException(token.line, token.column, "BEEP unterstützt maximal drei Parameter.")
+            }
+        }
+        return EmscriptIrStatement.Beep(
+            frequency = args.getOrNull(0)?.toInt(),
+            durationMs = args.getOrNull(1)?.toInt(),
+            volume = args.getOrNull(2)?.toInt(),
+        )
+    }
+
+    private fun parseIntegerFunctionArguments(command: Token, min: Int, max: Int): List<Long> {
+        consume(TokenType.LPAREN, "'(' nach ${command.lexeme} erwartet.")
+        val args = mutableListOf<Long>()
+        if (!check(TokenType.RPAREN)) {
+            do {
+                val token = consume(TokenType.NUMBER, "${command.lexeme} erwartet numerische Parameter.")
+                val value = token.lexeme.toLongOrNull()
+                    ?: throw ParseException(token.line, token.column, "${command.lexeme}-Parameter muss eine Ganzzahl sein.")
+                args += value
+                if (args.size > max) {
+                    throw ParseException(token.line, token.column, "${command.lexeme} unterstützt maximal $max Parameter.")
+                }
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.RPAREN, "')' nach ${command.lexeme}-Parametern erwartet.")
+        if (args.size < min) {
+            throw ParseException(command.line, command.column, "${command.lexeme} erwartet mindestens $min Parameter.")
+        }
+        return args
     }
 
     private fun parseExpression(): EmscriptIrExpression = parseComparison()
@@ -453,6 +631,9 @@ private class Parser(private val tokens: List<Token>) {
         }
     }
 
+    private fun isBlockBoundary(): Boolean =
+        check(TokenType.END) || check(TokenType.ELSEIF) || check(TokenType.ELSE)
+
     private fun match(type: TokenType): Boolean {
         if (!check(type)) return false
         advance()
@@ -465,7 +646,12 @@ private class Parser(private val tokens: List<Token>) {
         throw ParseException(token.line, token.column, message)
     }
 
-    private fun check(type: TokenType): Boolean = !isAtEnd() && peek().type == type
+    private fun check(type: TokenType): Boolean =
+        if (type == TokenType.EOF) {
+            peek().type == TokenType.EOF
+        } else {
+            !isAtEnd() && peek().type == type
+        }
 
     private fun advance(): Token {
         if (!isAtEnd()) current += 1

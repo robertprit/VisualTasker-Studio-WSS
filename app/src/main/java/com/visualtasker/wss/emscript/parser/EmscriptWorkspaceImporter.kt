@@ -94,13 +94,77 @@ private class WorkspaceAssembler(workspaceId: String) {
                 ensureVariable(statement.variable, defaultValue = null)
                 emitSetVariableBlock(statement.variable, statement.value, assignmentKind = "SET")
             }
+            is EmscriptIrStatement.Wait -> {
+                val block = instantiate(BlockTypes.ACTION_WAIT)
+                setNumberField(block, "ms", expressionToNumber(statement.milliseconds, fallback = 500.0))
+                block
+            }
+            is EmscriptIrStatement.ClickText -> {
+                val block = instantiate(BlockTypes.ACTION_CLICK_TEXT)
+                setTextField(block, "text", statement.text)
+                block
+            }
+            is EmscriptIrStatement.Output -> {
+                val block = instantiate(BlockTypes.DEBUG_LOG)
+                setTextField(block, "message", expressionToOutputText(statement.value))
+                block
+            }
+            is EmscriptIrStatement.Beep -> {
+                val block = instantiate(BlockTypes.FEEDBACK_BEEP)
+                setNumberField(block, "frequency", statement.frequency?.toDouble() ?: 1000.0)
+                setNumberField(block, "durationMs", statement.durationMs?.toDouble() ?: 200.0)
+                setNumberField(block, "volume", statement.volume?.coerceIn(0, 100)?.toDouble() ?: 100.0)
+                block
+            }
+            is EmscriptIrStatement.Vibrate -> {
+                val block = instantiate(BlockTypes.FEEDBACK_VIBRATE)
+                setTextField(block, "pattern", statement.pattern.joinToString())
+                block
+            }
+            is EmscriptIrStatement.Loop -> {
+                val repeatBlock = instantiate(BlockTypes.CONTROL_REPEAT)
+                setNumberField(repeatBlock, "times", expressionToRepeatCount(statement.times))
+                val bodyHead = appendStatementChain(statement.body)
+                if (bodyHead != null) {
+                    connectStatementInput(parent = repeatBlock, slotName = BlockTypes.SLOT_DO, child = bodyHead)
+                }
+                repeatBlock
+            }
+            is EmscriptIrStatement.While -> {
+                val whileBlock = instantiate(BlockTypes.CONTROL_WHILE)
+                val conditionBlock = emitExpression(statement.condition)
+                connectValueInput(parent = whileBlock, inputName = "CONDITION", child = conditionBlock)
+                val bodyHead = appendStatementChain(statement.body)
+                if (bodyHead != null) {
+                    connectStatementInput(parent = whileBlock, slotName = BlockTypes.SLOT_BODY, child = bodyHead)
+                }
+                whileBlock
+            }
             is EmscriptIrStatement.If -> {
-                val ifBlock = instantiate(BlockTypes.CONTROL_IF)
+                val ifType = when {
+                    statement.elseIfBranches.isNotEmpty() -> BlockTypes.CONTROL_IF_ELSEIF_ELSE
+                    statement.elseBranch.isNotEmpty() -> BlockTypes.CONTROL_IF_ELSE
+                    else -> BlockTypes.CONTROL_IF
+                }
+                val ifBlock = instantiate(ifType)
                 val conditionBlock = emitExpression(statement.condition)
                 connectValueInput(parent = ifBlock, inputName = "CONDITION", child = conditionBlock)
                 val thenHead = appendStatementChain(statement.thenBranch)
                 if (thenHead != null) {
                     connectStatementInput(parent = ifBlock, slotName = BlockTypes.SLOT_THEN, child = thenHead)
+                }
+                val elseIf = statement.elseIfBranches.firstOrNull()
+                if (elseIf != null) {
+                    val elseIfConditionBlock = emitExpression(elseIf.condition)
+                    connectValueInput(parent = ifBlock, inputName = "ELIF_CONDITION", child = elseIfConditionBlock)
+                    val elseIfHead = appendStatementChain(elseIf.body)
+                    if (elseIfHead != null) {
+                        connectStatementInput(parent = ifBlock, slotName = BlockTypes.SLOT_ELIF, child = elseIfHead)
+                    }
+                }
+                val elseHead = appendStatementChain(statement.elseBranch)
+                if (elseHead != null) {
+                    connectStatementInput(parent = ifBlock, slotName = BlockTypes.SLOT_ELSE, child = elseHead)
                 }
                 ifBlock
             }
@@ -250,6 +314,21 @@ private class WorkspaceAssembler(workspaceId: String) {
         }
     }
 
+    private fun expressionToRepeatCount(expression: EmscriptIrExpression): Double =
+        expressionToNumber(expression, fallback = 0.0)
+
+    private fun expressionToNumber(expression: EmscriptIrExpression, fallback: Double): Double =
+        when (expression) {
+            is EmscriptIrExpression.NumberLiteral -> expression.value
+            else -> expressionToInlineText(expression).toDoubleOrNull() ?: fallback
+        }
+
+    private fun expressionToOutputText(expression: EmscriptIrExpression): String =
+        when (expression) {
+            is EmscriptIrExpression.StringLiteral -> expression.value
+            else -> expressionToInlineText(expression)
+        }
+
     private fun operatorFieldValue(op: EmscriptBinaryOp): String {
         return when (op) {
             EmscriptBinaryOp.ADD -> "ADD"
@@ -332,6 +411,16 @@ private class WorkspaceAssembler(workspaceId: String) {
                 blockId = blockId,
                 key = key,
                 value = FieldValue.Text(value),
+            ),
+        )
+    }
+
+    private fun setNumberField(blockId: BlockId, key: String, value: Double) {
+        apply(
+            WorkspaceAction.UpdateField(
+                blockId = blockId,
+                key = key,
+                value = FieldValue.Number(value),
             ),
         )
     }

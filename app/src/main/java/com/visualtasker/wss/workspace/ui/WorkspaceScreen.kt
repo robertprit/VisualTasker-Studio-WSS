@@ -124,17 +124,27 @@ import com.visualtasker.wss.components.DarkPanel
 import com.visualtasker.wss.components.FabAction
 import com.visualtasker.wss.components.M3EExpandableFAB
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
+import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
 import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
+import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
+import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.data.PanelState as MainPanelState
 import com.visualtasker.wss.data.PanelType as MainPanelType
-import com.visualtasker.wss.flowchart.BlockEditorFlowchartProjector
 import com.visualtasker.wss.grid.GridSystem
 import com.visualtasker.wss.logging.StudioLogFilters
 import com.visualtasker.wss.logging.StudioLogLevel
 import com.visualtasker.wss.logging.StudioLogStore
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_APPLY
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
+import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
+import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
+import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
@@ -160,18 +170,22 @@ import com.visualtasker.wss.workspace.plugin.blockeditor.BlockEditorShellEditorS
 import com.visualtasker.wss.workspace.plugin.blockeditor.BlockEditorShellPanel
 import com.visualtasker.wss.workspace.plugin.defaultWorkspaceShellPluginRegistry
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellEditorSession
+import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartCompactNodeRail
+import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartNodeToolboxRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
+import de.visualtasker.blockeditor.domain.BlockId
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.compose.ui.EditorNavigationRail
-import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
-import de.visualtasker.blockeditor.validation.Validator
+import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
+import de.visualtasker.flowchart.domain.FlowNodeId
+import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
@@ -190,8 +204,10 @@ private const val PANEL_DEFAULT_H = 240f
 private const val GRID_STEP_SMALL = 24f
 private const val GRID_STEP_LARGE = 48f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
+private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
+private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -240,34 +256,178 @@ fun WorkspaceScreen(
     var showAddPanelDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var settingsTab by remember { mutableIntStateOf(2) }
-    var workspaceJson by remember(uiPrefs) { mutableStateOf(loadBlockEditorWorkspaceJson(uiPrefs)) }
-    val initialTextEditorDraft = remember(uiPrefs) {
-        uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, "// Shell TextEditor") ?: "// Shell TextEditor"
+    var workflowState by remember(uiPrefs) {
+        mutableStateOf(WorkspaceWorkflowState.fromSerialized(loadBlockEditorWorkspaceJson(uiPrefs)))
     }
-    val initialEmscriptProjection = remember(workspaceJson) {
-        generateEmscriptProjection(workspaceJson).getOrDefault("// Leerer Workspace")
+    var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
+    val initialTextEditorDraft = remember(uiPrefs) {
+        loadInitialTextEditorDraft(uiPrefs)
     }
     var emscriptSession by remember {
         mutableStateOf(
             EmscriptEditorSession.create(
                 manualContent = initialTextEditorDraft,
-                generatedContent = initialEmscriptProjection
+                generatedContent = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
             )
         )
     }
     val emscriptEditorUiState = remember { EmscriptEditorUiState() }
+    val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
+    val workspaceSyncGuard = remember { WorkspaceSyncGuard() }
+    var workspaceDryRunSequence by remember { mutableStateOf(0L) }
+    var workspaceDryRunResult by remember { mutableStateOf<EmscriptDryRunResult?>(null) }
+    var workspaceDryRunStepIndex by remember { mutableIntStateOf(0) }
+    val activeBlockEditorSessionState = remember { mutableStateOf<BlockEditorShellEditorSession?>(null) }
+    val activeFlowchartSessionState = remember { mutableStateOf<FlowchartShellEditorSession?>(null) }
     val emscriptFileManager = remember {
         EmscriptFileManagerUiState().apply {
             scripts["draft"] = initialTextEditorDraft
+            EditorDefaults.allSamples.forEach { (name, script) ->
+                scripts.putIfAbsent(name, script)
+            }
         }
     }
     val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
     val logConsoleState = remember { LogConsoleUiState() }
-    val latestEmscriptProjected = remember(workspaceJson) {
-        generateEmscriptProjection(workspaceJson).getOrDefault("// Leerer Workspace")
+    val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
+        if (updated != workflowState.serializedJson) {
+            val syncReport = workspaceSyncGuard.inspect(updated)
+            if (!syncReport.isValid) {
+                studioLogStore.append(
+                    level = StudioLogLevel.ERROR,
+                    source = "WORKSPACE",
+                    message = "Workspace Sync Guard abgebrochen",
+                    details = syncReport.messages.joinToString(separator = "\n"),
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "workspace:sync-guard:$source"
+                )
+                return@applyWorkspaceJsonChange
+            }
+            workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
+            flowRuntimeSnapshot = null
+            workspaceDryRunResult = null
+            workspaceDryRunStepIndex = 0
+            val normalized = workflowState.serializedJson
+            uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, normalized).apply()
+            studioLogStore.append(
+                level = StudioLogLevel.DEBUG,
+                source = "WORKSPACE",
+                message = "Blockeditor Workspace aktualisiert",
+                details = "JSON=${normalized.length} Zeichen, Quelle=$source",
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:workflow-updated:$source"
+            )
+        }
     }
-    val latestEmscriptGenerationFailure = remember(workspaceJson) {
-        generateEmscriptProjection(workspaceJson).exceptionOrNull()?.message
+    val addFlowchartNode: (String) -> Unit = { definitionId ->
+        val nextDocument = addFlowchartNodeToWorkspace(workflowState.document, definitionId)
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX$definitionId"
+            )
+        }
+    }
+    val latestEmscriptProjected = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
+    val latestEmscriptGenerationFailure = workflowState.emscriptProjection.exceptionOrNull()?.message
+    fun dryRunEventCount(result: EmscriptDryRunResult?): Int = when (result) {
+        is EmscriptDryRunResult.Success -> result.events.size
+        is EmscriptDryRunResult.Failure -> result.events.size
+        null -> 0
+    }
+    fun renderWorkspaceDryRunStep(stepIndex: Int) {
+        val result = workspaceDryRunResult ?: return
+        val eventCount = dryRunEventCount(result)
+        workspaceDryRunStepIndex = stepIndex.coerceIn(0, eventCount)
+        workspaceDryRunSequence += 1
+        flowRuntimeSnapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            graph = workflowState.flowchartProjection.graph,
+            result = result,
+            sequence = workspaceDryRunSequence,
+            maxEventIndex = workspaceDryRunStepIndex,
+        )
+    }
+    fun focusBlockFromFlowNode(nodeId: FlowNodeId) {
+        val blockId = nodeId.value.removePrefix("block:").takeIf { it != nodeId.value } ?: return
+        val session = activeBlockEditorSessionState.value ?: return
+        val target = BlockId(blockId).takeIf { it in session.controller.document.blocks } ?: return
+        session.controller.replaceWorkspaceDocument(
+            newDocument = session.controller.document,
+            recordHistory = false,
+            focusBlockId = target,
+            selectFocusedBlock = true,
+        )
+        studioLogStore.append(
+            level = StudioLogLevel.DEBUG,
+            source = "FLOWCHART",
+            message = "Blockeditor auf Flowchart-Node fokussiert",
+            details = "Node=${nodeId.value}, Block=$blockId",
+            documentRevision = workflowState.revision.toLong(),
+            groupKey = "flowchart:block-focus:$blockId"
+        )
+    }
+    fun focusFlowNodeFromBlock(blockId: BlockId?) {
+        val target = blockId?.let { FlowNodeId("block:${it.value}") } ?: return
+        val session = activeFlowchartSessionState.value ?: return
+        if (session.graphDocument.nodes.none { it.id == target }) return
+        session.controller.dispatch(FlowInteractionAction.SelectNode(target))
+        studioLogStore.append(
+            level = StudioLogLevel.DEBUG,
+            source = "BLOCKEDITOR",
+            message = "Flowchart auf Block fokussiert",
+            details = "Block=${blockId.value}, Node=${target.value}",
+            documentRevision = workflowState.revision.toLong(),
+            groupKey = "blockeditor:flow-focus:${blockId.value}"
+        )
+    }
+    fun runCurrentWorkspaceDryRun(source: String) {
+        if (workflowState.emscriptProjection.isFailure) {
+            val message = workflowState.emscriptProjection.exceptionOrNull()?.message ?: "EMScript-Projektion nicht verfügbar."
+            studioLogStore.append(
+                level = StudioLogLevel.ERROR,
+                source = source,
+                message = "Dry-Run abgebrochen",
+                details = message,
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:dry-run:projection-missing"
+            )
+            return
+        }
+        val result = workspaceDryRunRuntime.run(workflowState.document)
+        workspaceDryRunResult = result
+        workspaceDryRunStepIndex = dryRunEventCount(result)
+        workspaceDryRunSequence += 1
+        val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            graph = workflowState.flowchartProjection.graph,
+            result = result,
+            sequence = workspaceDryRunSequence,
+        )
+        flowRuntimeSnapshot = snapshot
+        when (result) {
+            is EmscriptDryRunResult.Success -> {
+                val preview = result.events.takeLast(8).joinToString(separator = "\n") {
+                    "#${it.index} ${it.kind.uppercase()}: ${it.message}"
+                }
+                studioLogStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = source,
+                    message = "Workspace Dry-Run erfolgreich",
+                    details = "Events=${result.events.size}\n$preview",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "workspace:dry-run:success:${snapshot.sequence}"
+                )
+            }
+            is EmscriptDryRunResult.Failure -> {
+                studioLogStore.append(
+                    level = StudioLogLevel.ERROR,
+                    source = source,
+                    message = "Workspace Dry-Run fehlgeschlagen",
+                    details = result.message,
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "workspace:dry-run:failure:${snapshot.sequence}"
+                )
+            }
+        }
     }
     LaunchedEffect(latestEmscriptProjected, latestEmscriptGenerationFailure) {
         emscriptSession = emscriptSession.updateGeneratedFromBlocks(latestEmscriptProjected)
@@ -277,7 +437,7 @@ fun WorkspaceScreen(
                 source = "EMSCRIPT",
                 message = "Projektion fehlgeschlagen",
                 details = message,
-                documentRevision = workspaceJson.hashCode().toLong(),
+                documentRevision = workflowState.revision.toLong(),
                 groupKey = "emscript:projection-error:$message"
             )
         }
@@ -379,7 +539,7 @@ fun WorkspaceScreen(
             level = StudioLogLevel.INFO,
             source = "workspace-shell",
             message = "Workspace Shell session gestartet",
-            documentRevision = workspaceJson.hashCode().toLong()
+            documentRevision = workflowState.revision.toLong()
         )
     }
 
@@ -398,9 +558,11 @@ fun WorkspaceScreen(
                 val maxWidthDp = ((surfaceSize.width - panel.x - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
                 val maxHeightDp = ((surfaceSize.height - panel.y - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
+                val isFlowchartPanel = panel.type == PanelType.Flowchart
                 val isLogConsolePanel = panel.type == PanelType.LogConsole || panel.type == PanelType.RuntimeLog
                 val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
+                val flowchartSessionState = remember(panel.id) { mutableStateOf<FlowchartShellEditorSession?>(null) }
                 val blockEditorExpandedCategory = blockEditorSessionState.value?.controller?.expandedCategory
                 DarkPanel(
                     panel = panel.toMainPanelState(),
@@ -410,19 +572,21 @@ fun WorkspaceScreen(
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
                     showRail = true,
-                    showDefaultRailIcons = !(isBlockEditorPanel || isLogConsolePanel || isEmscriptPanel),
-                    showRailColorPicker = !(isBlockEditorPanel || isLogConsolePanel || isEmscriptPanel),
+                    showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
+                    showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
                     railExpandedWidth = when {
                         isBlockEditorPanel && blockEditorExpandedCategory == null -> 96.dp
                         isBlockEditorPanel -> 352.dp
+                        isFlowchartPanel -> 236.dp
                         isLogConsolePanel -> 220.dp
                         isEmscriptPanel -> 240.dp
                         blockEditorExpandedCategory == null -> 96.dp
                         else -> 186.dp
                     },
-                    railExpandedFillHeight = isBlockEditorPanel || isLogConsolePanel || isEmscriptPanel,
+                    railExpandedFillHeight = isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel,
                     compactRailContent = { onExpandRequested ->
                         when {
+                            isFlowchartPanel -> FlowchartCompactNodeRail(onExpandRequested = onExpandRequested)
                             isLogConsolePanel -> LogConsoleCompactRail(
                                 store = studioLogStore,
                                 uiState = logConsoleState
@@ -441,7 +605,7 @@ fun WorkspaceScreen(
                                             source = "EMSCRIPT",
                                             message = "Script gespeichert",
                                             details = "Name=$key",
-                                            documentRevision = workspaceJson.hashCode().toLong(),
+                                            documentRevision = workflowState.revision.toLong(),
                                             groupKey = "emscript:file-saved:$key"
                                         )
                                     }
@@ -458,7 +622,7 @@ fun WorkspaceScreen(
                                         source = "EMSCRIPT",
                                         message = "Script geladen",
                                         details = "Name=$key",
-                                        documentRevision = workspaceJson.hashCode().toLong(),
+                                        documentRevision = workflowState.revision.toLong(),
                                         groupKey = "emscript:file-loaded:$key"
                                     )
                                 },
@@ -472,6 +636,7 @@ fun WorkspaceScreen(
                                 session = blockEditorSessionState.value,
                                 paletteInsertMode = blockPaletteInsertMode
                             )
+                            isFlowchartPanel -> FlowchartNodeToolboxRail(onAddNode = addFlowchartNode)
                             isLogConsolePanel -> LogConsoleExpandedRail(
                                 store = studioLogStore,
                                 uiState = logConsoleState
@@ -490,7 +655,7 @@ fun WorkspaceScreen(
                                             source = "EMSCRIPT",
                                             message = "Script gespeichert",
                                             details = "Name=$key",
-                                            documentRevision = workspaceJson.hashCode().toLong(),
+                                            documentRevision = workflowState.revision.toLong(),
                                             groupKey = "emscript:file-saved:$key"
                                         )
                                     }
@@ -507,7 +672,7 @@ fun WorkspaceScreen(
                                         source = "EMSCRIPT",
                                         message = "Script geladen",
                                         details = "Name=$name",
-                                        documentRevision = workspaceJson.hashCode().toLong(),
+                                        documentRevision = workflowState.revision.toLong(),
                                         groupKey = "emscript:file-loaded:$name"
                                     )
                                 },
@@ -522,7 +687,7 @@ fun WorkspaceScreen(
                                         source = "EMSCRIPT",
                                         message = "Script gelöscht",
                                         details = "Name=$name",
-                                        documentRevision = workspaceJson.hashCode().toLong(),
+                                        documentRevision = workflowState.revision.toLong(),
                                         groupKey = "emscript:file-deleted:$name"
                                     )
                                 },
@@ -592,12 +757,13 @@ fun WorkspaceScreen(
                         steps = projectedSteps,
                         actionSink = bridge,
                         uiPrefs = uiPrefs,
-                        workspaceJson = workspaceJson,
+                        workflowState = workflowState,
                         paletteInsertMode = blockPaletteInsertMode,
                         emscriptSession = emscriptSession,
                         emscriptEditorUiState = emscriptEditorUiState,
                         latestEmscriptProjected = latestEmscriptProjected,
                         latestEmscriptGenerationFailure = latestEmscriptGenerationFailure,
+                        flowRuntimeSnapshot = flowRuntimeSnapshot,
                         onEmscriptSessionChange = { updated ->
                             emscriptSession = updated
                             val manual = updated.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -607,25 +773,48 @@ fun WorkspaceScreen(
                         },
                         logStore = studioLogStore,
                         logConsoleState = logConsoleState,
-                        panels = panels,
-                        focusedPanelId = focusedPanelId,
                         onBlockEditorSessionReady = { session ->
                             blockEditorSessionState.value = session
-                        },
-                        onWorkspaceJsonChange = { updated ->
-                            if (updated != workspaceJson) {
-                                workspaceJson = updated
-                                uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, updated).apply()
-                                studioLogStore.append(
-                                    level = StudioLogLevel.DEBUG,
-                                    source = "WORKSPACE",
-                                    message = "Blockeditor Workspace aktualisiert",
-                                    details = "JSON=${updated.length} Zeichen",
-                                    documentRevision = updated.hashCode().toLong(),
-                                    groupKey = "workspace:blockeditor-updated"
-                                )
+                            if (session != null) {
+                                activeBlockEditorSessionState.value = session
+                            } else {
+                                activeBlockEditorSessionState.value = null
                             }
-                        }
+                        },
+                        onFlowchartSessionReady = { session ->
+                            flowchartSessionState.value = session
+                            if (session != null) {
+                                activeFlowchartSessionState.value = session
+                            } else {
+                                activeFlowchartSessionState.value = null
+                            }
+                        },
+                        onRunWorkspaceDry = { runCurrentWorkspaceDryRun("FLOWCHART") },
+                        onDryRunStepBack = { renderWorkspaceDryRunStep(workspaceDryRunStepIndex - 1) },
+                        onDryRunStepForward = {
+                            if (workspaceDryRunResult == null) {
+                                runCurrentWorkspaceDryRun("FLOWCHART")
+                            } else {
+                                renderWorkspaceDryRunStep(workspaceDryRunStepIndex + 1)
+                            }
+                        },
+                        canDryRunStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
+                        canDryRunStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
+                        dryRunStepLabel = workspaceDryRunResult?.let { "${workspaceDryRunStepIndex}/${dryRunEventCount(it)}" },
+                        onFlowchartNodeSelected = ::focusBlockFromFlowNode,
+                        onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
+                        onFlowRuntimeSnapshotChange = { snapshot ->
+                            flowRuntimeSnapshot = snapshot
+                            studioLogStore.append(
+                                level = StudioLogLevel.INFO,
+                                source = "FLOWCHART",
+                                message = "Dry-Run Runtime-Snapshot aktualisiert",
+                                details = "Nodes=${snapshot.nodeStates.size}, Edges=${snapshot.traversedEdgeIds.size}, Diagnostics=${snapshot.diagnostics.size}",
+                                documentRevision = workflowState.revision.toLong(),
+                                groupKey = "flowchart:runtime-snapshot:${snapshot.sequence}"
+                            )
+                        },
+                        onWorkspaceJsonChange = applyWorkspaceJsonChange
                     )
                 }
             }
@@ -901,34 +1090,53 @@ private fun WorkspacePanelContent(
     steps: List<RecorderStepUi>,
     actionSink: PanelActionSink,
     uiPrefs: android.content.SharedPreferences,
-    workspaceJson: String,
+    workflowState: WorkspaceWorkflowState,
     paletteInsertMode: BlockPaletteInsertMode,
     emscriptSession: EmscriptEditorSession,
     emscriptEditorUiState: EmscriptEditorUiState,
     latestEmscriptProjected: String,
     latestEmscriptGenerationFailure: String?,
+    flowRuntimeSnapshot: FlowRuntimeSnapshot?,
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     logConsoleState: LogConsoleUiState,
-    panels: List<PanelState>,
-    focusedPanelId: String,
     onBlockEditorSessionReady: (BlockEditorShellEditorSession?) -> Unit = {},
-    onWorkspaceJsonChange: (String) -> Unit
+    onFlowchartSessionReady: (FlowchartShellEditorSession?) -> Unit = {},
+    onRunWorkspaceDry: () -> Unit = {},
+    onDryRunStepBack: () -> Unit = {},
+    onDryRunStepForward: () -> Unit = {},
+    canDryRunStepBack: Boolean = false,
+    canDryRunStepForward: Boolean = false,
+    dryRunStepLabel: String? = null,
+    onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
+    onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
+    onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
+    onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     when (panel.type) {
         PanelType.RecorderSteps -> RecorderStepsPanel(steps = steps, actionSink = actionSink)
         PanelType.BlockEditor -> BlockEditorPanel(
             panelId = panel.id,
             uiPrefs = uiPrefs,
-            workspaceJson = workspaceJson,
+            workflowState = workflowState,
             paletteInsertMode = paletteInsertMode,
             onSessionReady = onBlockEditorSessionReady,
+            onBlockSelected = onBlockEditorBlockSelected,
             onWorkspaceJsonChange = onWorkspaceJsonChange
         )
         PanelType.Flowchart -> FlowchartPanel(
             panelId = panel.id,
             uiPrefs = uiPrefs,
-            workspaceJson = workspaceJson
+            graphContent = FlowGraphJsonCodec().encodeCanonical(workflowState.flowchartProjection.graph),
+            runtimeSnapshot = flowRuntimeSnapshot,
+            onRunDry = onRunWorkspaceDry,
+            onStepBack = onDryRunStepBack,
+            onStepForward = onDryRunStepForward,
+            canStepBack = canDryRunStepBack,
+            canStepForward = canDryRunStepForward,
+            stepLabel = dryRunStepLabel,
+            onNodeSelected = onFlowchartNodeSelected,
+            onSessionReady = onFlowchartSessionReady
         )
         PanelType.TextEditor,
         PanelType.Emscript -> EmscriptTextEditorPanel(
@@ -937,8 +1145,10 @@ private fun WorkspacePanelContent(
             latestEmscriptProjected = latestEmscriptProjected,
             onSessionChange = onEmscriptSessionChange,
             logStore = logStore,
-            workspaceJson = workspaceJson,
-            onWorkspaceJsonChange = onWorkspaceJsonChange
+            workspaceJson = workflowState.serializedJson,
+            currentFlowGraph = workflowState.flowchartProjection.graph,
+            onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_APPLY) },
+            onDryRunRuntimeSnapshot = onFlowRuntimeSnapshotChange
         )
         PanelType.RuntimeLog,
         PanelType.LogConsole -> LogConsolePanel(
@@ -949,16 +1159,17 @@ private fun WorkspacePanelContent(
             projectionStatus = EMSCRIPT_PROJECTION_STATUS_RUNNING,
             editingStatus = EMSCRIPT_EDITING_STATUS_NOT_IMPLEMENTED,
             overallStatus = EMSCRIPT_STATUS_READ_ONLY_PROJECTION,
-            revision = workspaceJson.hashCode(),
+            revision = workflowState.revision,
             projectedScript = latestEmscriptProjected,
             draft = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }?.content.orEmpty(),
+            flowRuntimeSnapshot = flowRuntimeSnapshot,
             onSaveDraft = {
                 logStore.append(
                     level = StudioLogLevel.INFO,
                     source = "EMSCRIPT",
                     message = "Lokaler Draft gespeichert",
                     details = "Draft ist nicht auf Workspace angewendet",
-                    documentRevision = workspaceJson.hashCode().toLong(),
+                    documentRevision = workflowState.revision.toLong(),
                     groupKey = "emscript:draft-saved"
                 )
             },
@@ -969,7 +1180,7 @@ private fun WorkspacePanelContent(
                     source = "EMSCRIPT",
                     message = "Projektion in lokalen Draft übernommen",
                     details = "Workspace bleibt unverändert",
-                    documentRevision = workspaceJson.hashCode().toLong(),
+                    documentRevision = workflowState.revision.toLong(),
                     groupKey = "emscript:draft-replaced-by-projection"
                 )
             },
@@ -977,6 +1188,14 @@ private fun WorkspacePanelContent(
                 add("EMScript Parser-Slice ist integriert (LET/SET/Literale/Variablen/Arithmetik/Compare/IF).")
                 add("Automatisches Anwenden auf den Workspace bleibt vorerst deaktiviert.")
                 add("Draft konnte erfolgreich in ein Workspace-Dokument übersetzt werden.")
+                val syncReport = WorkspaceSyncGuard().inspect(workflowState.serializedJson)
+                add(if (syncReport.isValid) "Workspace Sync Guard: OK" else "Workspace Sync Guard: BLOCKED")
+                addAll(syncReport.messages.take(5))
+                val capabilityReport = RuntimeCapabilityGate().inspect(workflowState.document)
+                add(capabilityReport.summary)
+                capabilityReport.capabilities.take(6).forEach { capability ->
+                    add("${capability.command}: ${capability.status} - ${capability.details}")
+                }
                 latestEmscriptGenerationFailure?.let(::add)
             }
         )
@@ -1147,10 +1366,11 @@ private fun RecorderStepsPanel(
 private fun BlockEditorPanel(
     panelId: String,
     uiPrefs: android.content.SharedPreferences,
-    workspaceJson: String,
+    workflowState: WorkspaceWorkflowState,
     paletteInsertMode: BlockPaletteInsertMode,
     onSessionReady: (BlockEditorShellEditorSession?) -> Unit,
-    onWorkspaceJsonChange: (String) -> Unit
+    onBlockSelected: (BlockId?) -> Unit,
+    onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
     val pluginRegistry = remember { defaultWorkspaceShellPluginRegistry() }
@@ -1168,13 +1388,32 @@ private fun BlockEditorPanel(
                 documentId = ShellDocumentId("workflow-main"),
                 formatId = BlockEditorDocumentFormats.WORKSPACE_JSON,
                 revision = null,
-                content = workspaceJson
+                content = workflowState.serializedJson
             )
         )
     }
     val session = boundEditor.session as BlockEditorShellEditorSession
+    val sessionSource = "$WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX$panelId"
     LaunchedEffect(session) {
         onSessionReady(session)
+    }
+    LaunchedEffect(session, workflowState.revision, workflowState.mutationSource) {
+        val current = WorkspaceSerializer.serialize(session.controller.document)
+        if (
+            workflowState.mutationSource != sessionSource &&
+            current != workflowState.serializedJson
+        ) {
+            session.open(
+                ShellEditorInput(
+                    sessionId = session.sessionId,
+                    documentId = ShellDocumentId("workflow-main"),
+                    formatId = BlockEditorDocumentFormats.WORKSPACE_JSON,
+                    revision = workflowState.revision.toString(),
+                    content = workflowState.serializedJson
+                )
+            )
+            onSessionReady(session)
+        }
     }
 
     DisposableEffect(boundEditor, uiPrefs, onSessionReady) {
@@ -1187,8 +1426,12 @@ private fun BlockEditorPanel(
     LaunchedEffect(session, onWorkspaceJsonChange) {
         snapshotFlow { session.controller.document }
             .collect { document ->
-                onWorkspaceJsonChange(WorkspaceSerializer.serialize(document))
+                onWorkspaceJsonChange(WorkspaceSerializer.serialize(document), sessionSource)
             }
+    }
+    LaunchedEffect(session, onBlockSelected) {
+        snapshotFlow { session.controller.selectedBlockIds.singleOrNull() }
+            .collect(onBlockSelected)
     }
 
     BlockEditorShellPanel(
@@ -1247,9 +1490,17 @@ private fun BlockEditorPanelRail(
 private fun FlowchartPanel(
     panelId: String,
     uiPrefs: android.content.SharedPreferences,
-    workspaceJson: String
+    graphContent: String,
+    runtimeSnapshot: FlowRuntimeSnapshot?,
+    onRunDry: () -> Unit,
+    onStepBack: () -> Unit,
+    onStepForward: () -> Unit,
+    canStepBack: Boolean,
+    canStepForward: Boolean,
+    stepLabel: String?,
+    onNodeSelected: (FlowNodeId) -> Unit,
+    onSessionReady: (FlowchartShellEditorSession?) -> Unit
 ) {
-    val graphContent = remember(workspaceJson) { loadFlowchartGraphJson(workspaceJson) }
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
     val pluginRegistry = remember { defaultWorkspaceShellPluginRegistry() }
     val coordinator = remember(hostServices, pluginRegistry) {
@@ -1271,15 +1522,31 @@ private fun FlowchartPanel(
         )
     }
     val session = boundEditor.session as FlowchartShellEditorSession
+    LaunchedEffect(session, onSessionReady) {
+        onSessionReady(session)
+    }
 
-    DisposableEffect(boundEditor, uiPrefs) {
+    DisposableEffect(boundEditor, uiPrefs, onSessionReady) {
         onDispose {
             persistFlowchartViewSession(uiPrefs, session)
+            onSessionReady(null)
             boundEditor.close()
         }
     }
 
-    FlowchartShellPanel(session = session)
+    FlowchartShellPanel(
+        session = session,
+        runtimeSnapshot = runtimeSnapshot,
+        onRunDry = onRunDry,
+        onStepBack = onStepBack,
+        onStepForward = onStepForward,
+        canStepBack = canStepBack,
+        canStepForward = canStepForward,
+        stepLabel = stepLabel,
+        onNodeSelected = onNodeSelected,
+        onSave = { persistFlowchartViewSession(uiPrefs, session) },
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 @Composable
@@ -1498,6 +1765,20 @@ private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
 private fun loadBlockEditorWorkspaceJson(
     uiPrefs: android.content.SharedPreferences
 ): String {
+    val loadedTestVersion = uiPrefs.getInt(BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY, 0)
+    if (loadedTestVersion < EditorDefaults.integrationTestScriptVersion) {
+        EmscriptWorkspaceImporter()
+            .import(EditorDefaults.integrationTestScript, workspaceId = "workflow-main")
+            .document
+            ?.let { document ->
+                val serialized = WorkspaceSerializer.serialize(document)
+                uiPrefs.edit()
+                    .putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, serialized)
+                    .putInt(BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
+                    .apply()
+                return serialized
+            }
+    }
     val persisted = uiPrefs.getString(BLOCKEDITOR_WORKSPACE_PREF_KEY, null)
     return persisted
         ?.let {
@@ -1510,12 +1791,19 @@ private fun loadBlockEditorWorkspaceJson(
         ?: WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
 }
 
-private fun loadFlowchartGraphJson(
-    workspaceJson: String
+private fun loadInitialTextEditorDraft(
+    uiPrefs: android.content.SharedPreferences
 ): String {
-    val workspace = WorkspaceSerializer.deserialize(workspaceJson)
-    val graph = BlockEditorFlowchartProjector.project(workspace).graph
-    return FlowGraphJsonCodec().encodeCanonical(graph)
+    val loadedVersion = uiPrefs.getInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, 0)
+    if (loadedVersion < EditorDefaults.integrationTestScriptVersion) {
+        uiPrefs.edit()
+            .putString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.integrationTestScript)
+            .putInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
+            .apply()
+        return EditorDefaults.integrationTestScript
+    }
+    return uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.integrationTestScript)
+        ?: EditorDefaults.integrationTestScript
 }
 
 private fun persistBlockEditorSession(

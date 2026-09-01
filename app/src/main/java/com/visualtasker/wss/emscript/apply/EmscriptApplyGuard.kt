@@ -6,6 +6,8 @@ import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
+import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
+import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.blockeditor.validation.Validator
 
@@ -26,10 +28,11 @@ class EmscriptApplyGuard(
         }
 
         val imported = importResult.document
+        val effectiveRegistry = registry ?: imported.registryWithVariables()
         val validation = if (registry != null) {
             Validator.validate(imported, registry)
         } else {
-            Validator.validate(imported)
+            Validator.validate(imported, effectiveRegistry)
         }
         if (!validation.isValid) {
             return EmscriptApplyGuardResult.Failure(
@@ -39,11 +42,7 @@ class EmscriptApplyGuard(
         }
 
         val roundtrip = runCatching {
-            if (registry != null) {
-                EmscriptGenerator(IrGenerator(registry)).generate(imported)
-            } else {
-                EmscriptGenerator().generate(imported)
-            }
+            EmscriptGenerator(IrGenerator(effectiveRegistry)).generate(imported)
         }.getOrElse { error ->
             return EmscriptApplyGuardResult.Failure(
                 stage = EmscriptApplyGuardStage.ROUNDTRIP,
@@ -54,7 +53,7 @@ class EmscriptApplyGuard(
         val unsupportedCount = importResult.issues.count { it.message.contains("unsupported", ignoreCase = true) } +
             (registry?.let { blockRegistry ->
                 imported.blocks.values.count { blockRegistry.getDefinition(it.type) == null }
-            } ?: 0)
+            } ?: imported.blocks.values.count { effectiveRegistry.getDefinition(it.type) == null })
 
         return EmscriptApplyGuardResult.Success(
             importedDocument = imported,
@@ -114,3 +113,10 @@ private fun com.visualtasker.wss.emscript.parser.EmscriptImportResult.firstIssue
 
 private fun EmscriptParseIssue.asApplyMessage(): String =
     "Parse/Import Fehler $line:$column $message"
+
+private fun WorkspaceDocument.registryWithVariables(): BlockRegistry =
+    CompositeBlockRegistry().apply {
+        variables.variables.values.forEach { variable ->
+            register(VariableReporterFactory.create(variable))
+        }
+    }

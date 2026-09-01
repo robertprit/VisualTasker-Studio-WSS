@@ -53,7 +53,7 @@ object SyntaxHighlighter {
 
     private val commandKeywords = setOf(
         "OPEN", "OPENCT", "WAIT", "LOAD", "ELEMENT", "CLICK", "TYPE", "SCREENSHOT",
-        "RECORD", "START", "STOP", "TOGGLE", "BEEP", "BACK", "HOME", "START_SCRIPT",
+        "RECORD", "START", "STOP", "TOGGLE", "BEEP", "VIBRATE", "BACK", "HOME", "START_SCRIPT",
         "AI_REQUEST", "WAIT_AI_RESPONSE", "TASKER_EVENT", "WAIT_TASKER", "BPARAM", "SHARE",
         "DOWNLOAD", "FAVORITE", "ACTION", "CLOSE", "BROWSER", "COLOR", "LET", "SET", "CALL",
         "INTEROP", "GOTO", "OUTPUT", "LAUNCH", "OCR", "SWIPE", "INPUT", "SCAN", "CROP", "FIND",

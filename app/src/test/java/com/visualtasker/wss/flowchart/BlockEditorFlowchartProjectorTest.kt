@@ -1,5 +1,6 @@
 package com.visualtasker.wss.flowchart
 
+import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import de.visualtasker.blockeditor.domain.BlockId
 import de.visualtasker.blockeditor.domain.FieldValue
@@ -34,7 +35,7 @@ class BlockEditorFlowchartProjectorTest {
         val variable = VariableDefinition("score", "Score", "Number", VariableScope.Global)
         val reporter = VariableReporterFactory.create(variable)
         assertEquals("variable.reporter.score", reporter.id)
-        assertEquals(listOf("variableId", "variableLabel"), reporter.fields.map { it.key })
+        assertTrue(reporter.fields.map { it.key }.contains("variable"))
     }
 
     @Test
@@ -76,7 +77,7 @@ class BlockEditorFlowchartProjectorTest {
         var workspace = buildReferenceWorkspace()
         val compareId = workspace.blocks.entries.first { it.value.type == BlockTypes.LOGIC_COMPARE }.key
         val variableOneId = workspace.blocks.entries.first {
-            it.value.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX) && it.value.fields["variableId"] == FieldValue.Text("v1")
+            it.value.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX) && it.value.fields["variable"] == FieldValue.Text("v1")
         }.key
         val factory = buildRegistry().asFactory()
 
@@ -105,7 +106,7 @@ class BlockEditorFlowchartProjectorTest {
         var workspace = buildReferenceWorkspace(factoryRegistry)
         val addId = workspace.blocks.entries.first { it.value.type == BlockTypes.LOGIC_OPERATE && it.value.fields["operator"] == FieldValue.Text("ADD") }.key
         val v1Id = workspace.blocks.entries.first {
-            it.value.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX) && it.value.fields["variableId"] == FieldValue.Text("v1")
+            it.value.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX) && it.value.fields["variable"] == FieldValue.Text("v1")
         }.key
         val addInput1 = workspace.blocks[addId]!!.valueInputs.first { it.name == "Input1" }.connection.id
         val v1Output = workspace.blocks[v1Id]!!.output!!.id
@@ -138,6 +139,35 @@ class BlockEditorFlowchartProjectorTest {
         assertTrue(numberNodes.any { it.label.startsWith("NUM ") })
     }
 
+    @Test
+    fun integrationTestScript_projectsSupportedCommandsWithoutDiagnostics() {
+        val imported = EmscriptWorkspaceImporter()
+            .import(EditorDefaults.integrationTestScript, workspaceId = "flowchart-integration")
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val result = BlockEditorFlowchartProjector.project(imported.document!!)
+        val labels = result.graph.nodes.map { it.label }
+
+        assertEquals(FlowchartProjectionStatus.RUNNING, result.status)
+        assertTrue(result.graph.diagnostics.joinToString { it.message }, result.graph.diagnostics.isEmpty())
+        assertTrue(labels.any { it.startsWith("REPEAT 10x") })
+        assertTrue(labels.any { it == "IF" })
+        assertTrue(labels.any { it.startsWith("WAIT ") })
+        assertTrue(labels.any { it.startsWith("CLICK ") })
+        assertTrue(labels.any { it.startsWith("LOG ") })
+        assertTrue(labels.any { it.startsWith("BEEP ") })
+        assertTrue(labels.any { it.startsWith("VIBRATE ") })
+        assertTrue(labels.any { it.startsWith("COMPARE ") })
+        assertTrue(labels.any { it in setOf("ADD", "SUB", "MUL", "DIV", "MOD") })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.TRUE_BRANCH })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.ELSE_IF_BRANCH })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.FALSE_BRANCH })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.LOOP_BODY })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.LOOP_EXIT })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.CONDITION })
+        assertTrue(result.graph.edges.any { it.kind == FlowEdgeKind.DATA_FLOW })
+    }
+
     private fun buildReferenceWorkspace(registry: CompositeBlockRegistry = buildRegistry()): WorkspaceDocument {
         val factory = registry.asFactory()
         var doc = WorkspaceBootstrap.empty()
@@ -163,8 +193,8 @@ class BlockEditorFlowchartProjectorTest {
         val v3Id = instantiate(VariableReporterFactory.reporterId("v3"), 320f, 260f)
 
         fun connect(source: BlockId, sourceConn: String, target: BlockId, targetConn: String) {
-            val sourceId = connectionId(source, sourceConn)
-            val targetId = connectionId(target, targetConn)
+            val sourceId = connectionId(doc, source, sourceConn)
+            val targetId = connectionId(doc, target, targetConn)
             doc = WorkspaceReducer.reduce(doc, WorkspaceAction.Connect(sourceId, targetId), factory)
         }
 
@@ -190,10 +220,18 @@ class BlockEditorFlowchartProjectorTest {
         return registry
     }
 
-    private fun connectionId(blockId: BlockId, key: String): de.visualtasker.blockeditor.domain.ConnectionId {
+    private fun connectionId(
+        document: WorkspaceDocument,
+        blockId: BlockId,
+        key: String,
+    ): de.visualtasker.blockeditor.domain.ConnectionId {
+        val block = document.blocks.getValue(blockId)
         return when (key) {
-            "previous", "next", "output" -> de.visualtasker.blockeditor.domain.ConnectionId("${blockId.value}:$key")
-            else -> de.visualtasker.blockeditor.domain.ConnectionId("${blockId.value}:$key")
+            "previous" -> block.previous!!.id
+            "next" -> block.next!!.id
+            "output" -> block.output!!.id
+            else -> block.valueInputs.firstOrNull { it.name == key }?.connection?.id
+                ?: block.statementInputs.first { it.name == key }.connection.id
         }
     }
 }

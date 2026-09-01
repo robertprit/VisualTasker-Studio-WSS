@@ -102,6 +102,9 @@ fun EmScriptEditorScreen(
     onSessionChange: (EmscriptEditorSession) -> Unit,
     onSaveDraft: () -> Unit,
     onUseProjection: () -> Unit,
+    onCompileCheck: () -> Unit = {},
+    onDryRun: () -> Unit = {},
+    canDryRun: Boolean = session.activeTab.content.isNotBlank(),
     canApplyDraft: Boolean,
     onRequestApplyPreview: () -> String?,
     onConfirmApply: () -> Unit,
@@ -242,8 +245,8 @@ fun EmScriptEditorScreen(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    EditorToolbarIconButton(Icons.Default.Build, "Compile (NOT_IMPLEMENTED)", {}, enabled = false)
-                    EditorToolbarIconButton(Icons.Default.PlayArrow, "Run (NOT_IMPLEMENTED)", {}, enabled = false)
+                    EditorToolbarIconButton(Icons.Default.Build, "Compile Check", onCompileCheck, enabled = activeTab.content.isNotBlank())
+                    EditorToolbarIconButton(Icons.Default.PlayArrow, "Run Dry", onDryRun, enabled = canDryRun)
                     EditorToolbarIconButton(Icons.Default.Pause, "Pause (NOT_IMPLEMENTED)", {}, enabled = false)
                     EditorToolbarIconButton(Icons.Default.Stop, "Stop (NOT_IMPLEMENTED)", {}, enabled = false)
                     EditorToolbarIconButton(Icons.Default.Done, "Apply", {
@@ -458,9 +461,9 @@ fun EmScriptEditorScreen(
                 )
                 Text(
                     text = if (activeTab.readOnly) {
-                        "GENERATED PROJECTION (READ-ONLY) | Compiler: NOT_IMPLEMENTED"
+                        "GENERATED PROJECTION (READ-ONLY) | Runtime: DRY_RUN_ONLY"
                     } else {
-                        "LOCAL DRAFT - NOT APPLIED TO WORKSPACE | Compiler: NOT_IMPLEMENTED"
+                        "LOCAL DRAFT - NOT APPLIED TO WORKSPACE | Runtime: DRY_RUN_ONLY"
                     },
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.secondary,

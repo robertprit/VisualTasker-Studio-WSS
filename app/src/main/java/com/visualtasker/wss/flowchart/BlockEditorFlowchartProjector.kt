@@ -81,11 +81,16 @@ object BlockEditorFlowchartProjector {
             val source = flowNodeId(block.id)
             block.next?.connectedTo?.let { nextConn ->
                 val (targetId, _) = WorkspaceGraph.findConnection(document, nextConn) ?: return@let
+                val edgeKind = when (block.type) {
+                    BlockTypes.CONTROL_REPEAT,
+                    BlockTypes.CONTROL_WHILE -> FlowEdgeKind.LOOP_EXIT
+                    else -> FlowEdgeKind.SEQUENCE
+                }
                 putEdge(
                     edges = edges,
                     source = source,
                     target = flowNodeId(targetId),
-                    kind = FlowEdgeKind.SEQUENCE,
+                    kind = edgeKind,
                     label = null,
                 )
             }
@@ -96,6 +101,8 @@ object BlockEditorFlowchartProjector {
                     BlockTypes.SLOT_THEN -> FlowEdgeKind.TRUE_BRANCH
                     BlockTypes.SLOT_ELSE -> FlowEdgeKind.FALSE_BRANCH
                     BlockTypes.SLOT_ELIF -> FlowEdgeKind.ELSE_IF_BRANCH
+                    BlockTypes.SLOT_DO,
+                    BlockTypes.SLOT_BODY -> FlowEdgeKind.LOOP_BODY
                     else -> FlowEdgeKind.SEQUENCE
                 }
                 putEdge(
@@ -119,7 +126,7 @@ object BlockEditorFlowchartProjector {
                     return@forEach
                 }
                 val sourceBlockId = partner.first
-                val edgeKind = if (valueInput.name == "CONDITION") {
+                val edgeKind = if (valueInput.name.endsWith("CONDITION")) {
                     FlowEdgeKind.CONDITION
                 } else {
                     FlowEdgeKind.DATA_FLOW
@@ -163,6 +170,8 @@ object BlockEditorFlowchartProjector {
         BlockTypes.ACTION_CLICK_TEXT,
         BlockTypes.ACTION_WAIT,
         BlockTypes.DEBUG_LOG,
+        BlockTypes.FEEDBACK_BEEP,
+        BlockTypes.FEEDBACK_VIBRATE,
         -> FlowSemanticKind(FlowNodeKind.ACTION)
         BlockTypes.CONTROL_REPEAT,
         BlockTypes.CONTROL_WHILE,
@@ -212,6 +221,16 @@ object BlockEditorFlowchartProjector {
         BlockTypes.DEBUG_LOG -> {
             val message = textField(block, "message").orEmpty()
             "LOG \"$message\""
+        }
+        BlockTypes.FEEDBACK_BEEP -> {
+            val frequency = numberField(block, "frequency") ?: 1000.0
+            val duration = numberField(block, "durationMs") ?: 200.0
+            val volume = numberField(block, "volume") ?: 100.0
+            "BEEP ${frequency.toLong()}Hz ${duration.toLong()}ms ${volume.toLong()}%"
+        }
+        BlockTypes.FEEDBACK_VIBRATE -> {
+            val pattern = textField(block, "pattern").orEmpty().ifBlank { "80" }
+            "VIBRATE $pattern"
         }
         BlockTypes.CONTROL_REPEAT -> {
             val times = numberField(block, "times") ?: 0.0
@@ -310,6 +329,13 @@ object BlockEditorFlowchartProjector {
         numberField(block, "value")?.let { props["literalNumber"] = FlowSemanticValue.NumberValue(it.toString()) }
         textField(block, "value")?.let { props["literalString"] = FlowSemanticValue.StringValue(it) }
         boolField(block, "value")?.let { props["literalBoolean"] = FlowSemanticValue.BooleanValue(it) }
+        numberField(block, "ms")?.let { props["waitMs"] = FlowSemanticValue.NumberValue(it.toString()) }
+        numberField(block, "frequency")?.let { props["frequency"] = FlowSemanticValue.NumberValue(it.toString()) }
+        numberField(block, "durationMs")?.let { props["durationMs"] = FlowSemanticValue.NumberValue(it.toString()) }
+        numberField(block, "volume")?.let { props["volume"] = FlowSemanticValue.NumberValue(it.toString()) }
+        textField(block, "pattern")?.let { props["pattern"] = FlowSemanticValue.StringValue(it) }
+        textField(block, "message")?.let { props["message"] = FlowSemanticValue.StringValue(it) }
+        textField(block, "text")?.let { props["text"] = FlowSemanticValue.StringValue(it) }
         return props
     }
 

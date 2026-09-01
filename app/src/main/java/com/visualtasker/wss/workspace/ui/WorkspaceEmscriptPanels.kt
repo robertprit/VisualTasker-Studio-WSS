@@ -41,11 +41,18 @@ import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
 import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
+import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
+import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
+import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.logging.StudioLogLevel
 import com.visualtasker.wss.logging.StudioLogStore
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.flowchart.domain.FlowGraphDocument
+import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 
 internal const val EMSCRIPT_STATUS_READ_ONLY_PROJECTION = "READ_ONLY_PROJECTION"
 internal const val EMSCRIPT_PROJECTION_STATUS_RUNNING = "RUNNING"
@@ -64,11 +71,18 @@ internal fun EmscriptTextEditorPanel(
     onSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     workspaceJson: String,
-    onWorkspaceJsonChange: (String) -> Unit
+    currentFlowGraph: FlowGraphDocument,
+    onWorkspaceJsonChange: (String) -> Unit,
+    onDryRunRuntimeSnapshot: (FlowRuntimeSnapshot) -> Unit = {},
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
+    val parser = remember { EmscriptParserSlice() }
+    val dryRunRuntime = remember { EmscriptDryRunRuntime() }
+    val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
     var pendingApplyJson by remember { mutableStateOf<String?>(null) }
     var applyDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
+    var dryRunDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
+    var dryRunSequence by remember { mutableStateOf(0L) }
 
     fun buildApplyPreview(): String? {
         val manual = session.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -90,6 +104,77 @@ internal fun EmscriptTextEditorPanel(
                 pendingApplyJson = preview.serializedWorkspaceJson
                 applyDiagnostics = listOf("Apply Vorschau bereit.")
                 preview.summary
+            }
+        }
+    }
+
+    fun compileCheck() {
+        val result = parser.parse(session.activeTab.content)
+        if (result.isSuccess) {
+            dryRunDiagnostics = listOf("Compile Check OK: ${result.ir?.statements?.size ?: 0} Top-Level-Statements.")
+            logStore.append(
+                level = StudioLogLevel.INFO,
+                source = "EMSCRIPT",
+                message = "Compile Check erfolgreich",
+                details = "Tab=${session.activeTab.title}",
+                documentRevision = workspaceJson.hashCode().toLong(),
+                groupKey = "emscript:compile-check:success"
+            )
+        } else {
+            val message = result.issues.joinToString(separator = "\n") { "${it.line}:${it.column} ${it.message}" }
+            dryRunDiagnostics = listOf(message)
+            logStore.append(
+                level = StudioLogLevel.ERROR,
+                source = "EMSCRIPT",
+                message = "Compile Check fehlgeschlagen",
+                details = message,
+                documentRevision = workspaceJson.hashCode().toLong(),
+                groupKey = "emscript:compile-check:failure"
+            )
+        }
+    }
+
+    fun dryRun() {
+        val workspaceDocument = runCatching { WorkspaceSerializer.deserialize(workspaceJson) }.getOrNull()
+        val result = workspaceDocument
+            ?.let(workspaceDryRunRuntime::run)
+            ?: dryRunRuntime.run(session.activeTab.content)
+        dryRunSequence += 1
+        onDryRunRuntimeSnapshot(
+            EmscriptDryRunFlowRuntimeMapper.map(
+                graph = currentFlowGraph,
+                result = result,
+                sequence = dryRunSequence,
+            )
+        )
+        when (result) {
+            is EmscriptDryRunResult.Success -> {
+                val preview = result.events.takeLast(8).joinToString(separator = "\n") {
+                    "#${it.index} ${it.kind.uppercase()}: ${it.message}"
+                }
+                dryRunDiagnostics = listOf("Dry-Run OK: ${result.events.size} Events.", preview)
+                logStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "EMSCRIPT",
+                    message = "Dry-Run erfolgreich",
+                    details = preview,
+                    documentRevision = workspaceJson.hashCode().toLong(),
+                    groupKey = "emscript:dry-run:success"
+                )
+            }
+            is EmscriptDryRunResult.Failure -> {
+                val preview = result.events.takeLast(8).joinToString(separator = "\n") {
+                    "#${it.index} ${it.kind.uppercase()}: ${it.message}"
+                }
+                dryRunDiagnostics = listOf("Dry-Run fehlgeschlagen: ${result.message}", preview)
+                logStore.append(
+                    level = StudioLogLevel.ERROR,
+                    source = "EMSCRIPT",
+                    message = "Dry-Run fehlgeschlagen",
+                    details = listOf(result.message, preview).filter { it.isNotBlank() }.joinToString(separator = "\n"),
+                    documentRevision = workspaceJson.hashCode().toLong(),
+                    groupKey = "emscript:dry-run:failure"
+                )
             }
         }
     }
@@ -123,6 +208,9 @@ internal fun EmscriptTextEditorPanel(
                 groupKey = "emscript:draft-replaced-by-projection"
             )
         },
+        onCompileCheck = ::compileCheck,
+        onDryRun = ::dryRun,
+        canDryRun = session.activeTab.content.isNotBlank(),
         canApplyDraft = session.activeTab.id == EmscriptEditorSession.MANUAL_TAB_ID,
         onRequestApplyPreview = ::buildApplyPreview,
         onConfirmApply = {
@@ -141,7 +229,7 @@ internal fun EmscriptTextEditorPanel(
                 pendingApplyJson = null
             }
         },
-        diagnostics = applyDiagnostics + listOf(
+        diagnostics = applyDiagnostics + dryRunDiagnostics + listOf(
             "EMScript Parser-Slice ist integriert (LET/SET/Literale/Variablen/Arithmetik/Compare/IF).",
             "Generierte Projektion: ${latestEmscriptProjected.length} Zeichen."
         ),
@@ -266,6 +354,7 @@ internal fun DebugInfoPanel(
     revision: Int,
     projectedScript: String,
     draft: String,
+    flowRuntimeSnapshot: FlowRuntimeSnapshot? = null,
     onSaveDraft: () -> Unit,
     onUseProjection: () -> Unit,
     diagnostics: List<String>
@@ -286,9 +375,23 @@ internal fun DebugInfoPanel(
             color = M3EColors.Amber,
             style = MaterialTheme.typography.labelMedium
         )
+        Text(
+            text = flowRuntimeSnapshot?.let { snapshot ->
+                "Flowchart-Runtime: DRY_RUN seq=${snapshot.sequence} | Nodes=${snapshot.nodeStates.size} | Edges=${snapshot.traversedEdgeIds.size}"
+            } ?: "Flowchart-Runtime: kein Dry-Run Snapshot",
+            color = M3EColors.Amber,
+            style = MaterialTheme.typography.labelMedium
+        )
         diagnostics.forEach { message ->
             Text(
                 text = "• $message",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+        flowRuntimeSnapshot?.diagnostics.orEmpty().forEach { diagnostic ->
+            Text(
+                text = "• ${diagnostic.code}: ${diagnostic.message}",
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.labelSmall
             )
