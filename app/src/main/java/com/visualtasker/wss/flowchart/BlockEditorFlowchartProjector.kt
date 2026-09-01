@@ -326,6 +326,8 @@ object BlockEditorFlowchartProjector {
         textField(block, "variableLabel", "variableName", "label", "variable")
             ?.let { props["variableLabel"] = FlowSemanticValue.StringValue(it) }
         operatorRawValue(block)?.let { props["operator"] = FlowSemanticValue.StringValue(it) }
+        props["inputPorts"] = FlowSemanticValue.ListValue(inputPortValues(block))
+        props["outputPorts"] = FlowSemanticValue.ListValue(outputPortValues(block))
         numberField(block, "value")?.let { props["literalNumber"] = FlowSemanticValue.NumberValue(it.toString()) }
         textField(block, "value")?.let { props["literalString"] = FlowSemanticValue.StringValue(it) }
         boolField(block, "value")?.let { props["literalBoolean"] = FlowSemanticValue.BooleanValue(it) }
@@ -338,6 +340,69 @@ object BlockEditorFlowchartProjector {
         textField(block, "text")?.let { props["text"] = FlowSemanticValue.StringValue(it) }
         return props
     }
+
+    private fun inputPortValues(block: BlockNode): List<FlowSemanticValue> = buildList {
+        if (block.previous != null) {
+            add(portValue(name = "previous", label = "Previous", kind = FlowEdgeKind.SEQUENCE))
+        }
+        block.valueInputs.forEach { input ->
+            add(
+                portValue(
+                    name = input.name,
+                    label = input.name,
+                    kind = if (input.name.endsWith("CONDITION")) FlowEdgeKind.CONDITION else FlowEdgeKind.DATA_FLOW,
+                )
+            )
+        }
+    }
+
+    private fun outputPortValues(block: BlockNode): List<FlowSemanticValue> = buildList {
+        if (block.next != null) {
+            add(
+                portValue(
+                    name = "next",
+                    label = "Next",
+                    kind = when (block.type) {
+                        BlockTypes.CONTROL_REPEAT,
+                        BlockTypes.CONTROL_WHILE -> FlowEdgeKind.LOOP_EXIT
+                        else -> FlowEdgeKind.SEQUENCE
+                    },
+                )
+            )
+        }
+        block.statementInputs.forEach { input ->
+            add(
+                portValue(
+                    name = input.name,
+                    label = input.name,
+                    kind = when (input.name) {
+                        BlockTypes.SLOT_THEN -> FlowEdgeKind.TRUE_BRANCH
+                        BlockTypes.SLOT_ELSE -> FlowEdgeKind.FALSE_BRANCH
+                        BlockTypes.SLOT_ELIF -> FlowEdgeKind.ELSE_IF_BRANCH
+                        BlockTypes.SLOT_DO,
+                        BlockTypes.SLOT_BODY -> FlowEdgeKind.LOOP_BODY
+                        else -> FlowEdgeKind.SEQUENCE
+                    },
+                )
+            )
+        }
+        if (block.output != null) {
+            add(portValue(name = "output", label = "Output", kind = FlowEdgeKind.DATA_FLOW))
+        }
+    }
+
+    private fun portValue(
+        name: String,
+        label: String,
+        kind: FlowEdgeKind,
+    ): FlowSemanticValue =
+        FlowSemanticValue.ObjectValue(
+            mapOf(
+                "name" to FlowSemanticValue.StringValue(name),
+                "label" to FlowSemanticValue.StringValue(label),
+                "kind" to FlowSemanticValue.StringValue(kind.name),
+            )
+        )
 
     private fun normalizeCompareOperator(block: BlockNode): de.visualtasker.blockeditor.domain.CompareOperator? {
         return when (val normalized = OperatorNormalization.normalize(operatorRawValue(block))) {

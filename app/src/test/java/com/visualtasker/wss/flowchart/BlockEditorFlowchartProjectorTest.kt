@@ -58,6 +58,26 @@ class BlockEditorFlowchartProjectorTest {
     }
 
     @Test
+    fun projectsVisiblePortMetadataForFlowchartHandles() {
+        val workspace = buildReferenceWorkspace()
+        val graph = BlockEditorFlowchartProjector.project(workspace).graph
+        val ifNode = graph.nodes.first { it.label == "IF" }
+        val compareNode = graph.nodes.first { it.label == "COMPARE >=" }
+
+        val ifInputs = portNames(ifNode.properties.getValue("inputPorts"))
+        val ifOutputs = portNames(ifNode.properties.getValue("outputPorts"))
+        val compareInputs = portNames(compareNode.properties.getValue("inputPorts"))
+        val compareOutputs = portNames(compareNode.properties.getValue("outputPorts"))
+
+        assertTrue("previous" in ifInputs)
+        assertTrue("CONDITION" in ifInputs)
+        assertTrue(BlockTypes.SLOT_THEN in ifOutputs)
+        assertTrue("LEFT" in compareInputs)
+        assertTrue("RIGHT" in compareInputs)
+        assertTrue("output" in compareOutputs)
+    }
+
+    @Test
     fun saveLoadRoundtrip_keepsFlowchartSemanticsStable() {
         val workspace = buildReferenceWorkspace()
         val saved = WorkspaceSerializer.serialize(workspace)
@@ -233,5 +253,12 @@ class BlockEditorFlowchartProjectorTest {
             else -> block.valueInputs.firstOrNull { it.name == key }?.connection?.id
                 ?: block.statementInputs.first { it.name == key }.connection.id
         }
+    }
+
+    private fun portNames(value: FlowSemanticValue): Set<String> {
+        val list = value as FlowSemanticValue.ListValue
+        return list.values.mapNotNull { item ->
+            ((item as? FlowSemanticValue.ObjectValue)?.values?.get("name") as? FlowSemanticValue.StringValue)?.value
+        }.toSet()
     }
 }
