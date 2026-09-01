@@ -91,6 +91,7 @@ fun FlowchartShellPanel(
     stepLabel: String? = null,
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
     onDeleteNode: ((FlowNodeId) -> Unit)? = null,
+    onDisconnectEdge: ((FlowEdgeId) -> Unit)? = null,
     onViewChanged: ((FlowViewDocument) -> Unit)? = null,
 ) {
     val controller = session.controller
@@ -194,6 +195,8 @@ fun FlowchartShellPanel(
             onSave = { onSave?.invoke() ?: session.requestSave() },
             onDeleteSelected = selectedNodeId?.let { nodeId ->
                 onDeleteNode?.let { deleteNode -> { deleteNode(nodeId) } }
+            } ?: selectedEdgeId?.let { edgeId ->
+                onDisconnectEdge?.let { disconnectEdge -> { disconnectEdge(edgeId) } }
             },
             onRunDry = onRunDry,
             onStepBack = onStepBack,

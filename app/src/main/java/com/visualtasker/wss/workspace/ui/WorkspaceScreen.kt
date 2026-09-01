@@ -146,6 +146,7 @@ import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
 import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
 import com.visualtasker.wss.workspace.model.deleteFlowchartNodeFromWorkspace
+import com.visualtasker.wss.workspace.model.disconnectFlowchartEdgeFromWorkspace
 import com.visualtasker.wss.workspace.model.syncRootPositionsFromFlowchartView
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
@@ -186,6 +187,7 @@ import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
+import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
@@ -337,6 +339,19 @@ fun WorkspaceScreen(
             applyWorkspaceJsonChange(
                 WorkspaceSerializer.serialize(nextDocument),
                 "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:delete"
+            )
+        }
+    }
+    val disconnectFlowchartEdge: (FlowEdgeId) -> Unit = { edgeId ->
+        val nextDocument = disconnectFlowchartEdgeFromWorkspace(
+            document = workflowState.document,
+            graph = workflowState.flowchartProjection.graph,
+            edgeId = edgeId,
+        )
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${edgeId.value}:disconnect"
             )
         }
     }
@@ -825,6 +840,7 @@ fun WorkspaceScreen(
                         onFlowchartNodeSelected = ::focusBlockFromFlowNode,
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
+                        onFlowchartEdgeDisconnect = disconnectFlowchartEdge,
                         onFlowchartViewChanged = syncFlowchartView,
                         onFlowRuntimeSnapshotChange = { snapshot ->
                             flowRuntimeSnapshot = snapshot
@@ -1134,6 +1150,7 @@ private fun WorkspacePanelContent(
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
+    onFlowchartEdgeDisconnect: (FlowEdgeId) -> Unit = {},
     onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
     onWorkspaceJsonChange: (String, String) -> Unit
@@ -1162,6 +1179,7 @@ private fun WorkspacePanelContent(
             stepLabel = dryRunStepLabel,
             onNodeSelected = onFlowchartNodeSelected,
             onNodeDelete = onFlowchartNodeDelete,
+            onEdgeDisconnect = onFlowchartEdgeDisconnect,
             onViewChanged = onFlowchartViewChanged,
             onSessionReady = onFlowchartSessionReady
         )
@@ -1527,6 +1545,7 @@ private fun FlowchartPanel(
     stepLabel: String?,
     onNodeSelected: (FlowNodeId) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
+    onEdgeDisconnect: (FlowEdgeId) -> Unit,
     onViewChanged: (FlowViewDocument) -> Unit,
     onSessionReady: (FlowchartShellEditorSession?) -> Unit
 ) {
@@ -1574,6 +1593,7 @@ private fun FlowchartPanel(
         stepLabel = stepLabel,
         onNodeSelected = onNodeSelected,
         onDeleteNode = onNodeDelete,
+        onDisconnectEdge = onEdgeDisconnect,
         onViewChanged = onViewChanged,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },
         modifier = Modifier.fillMaxSize()

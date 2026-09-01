@@ -6,6 +6,8 @@ import de.visualtasker.blockeditor.domain.WorkspaceReducer
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
+import com.visualtasker.wss.flowchart.BlockEditorFlowchartProjector
+import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowDocumentId
 import de.visualtasker.flowchart.domain.FlowDocumentRevision
 import de.visualtasker.flowchart.domain.FlowNodeId
@@ -69,6 +71,61 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `disconnect flowchart sequence edge removes workspace next connection`() {
+        val document = twoConnectedStatementBlocks()
+        val graph = BlockEditorFlowchartProjector.project(document).graph
+        val edge = graph.edges.single { it.kind == FlowEdgeKind.SEQUENCE }
+
+        val updated = disconnectFlowchartEdgeFromWorkspace(document, graph, edge.id)
+
+        assertNotEquals(document, updated)
+        assertTrue(updated.blocks.values.all { block ->
+            block.next?.connectedTo == null && block.previous?.connectedTo == null
+        })
+        assertEquals(2, updated.rootBlocks.size)
+    }
+
+    @Test
+    fun `disconnect flowchart branch edge removes workspace statement slot connection`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-branch-disconnect-test"), BlockTypes.CONTROL_REPEAT, 10f, 20f)
+        val repeatId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val waitId = document.blocks.keys.single { it != repeatId }
+        val repeatDo = document.blocks.getValue(repeatId).statementInputs.single { it.name == BlockTypes.SLOT_DO }.connection.id
+        val waitPrevious = document.blocks.getValue(waitId).previous!!.id
+        document = WorkspaceReducer.reduce(document, WorkspaceAction.Connect(repeatDo, waitPrevious))
+        val graph = BlockEditorFlowchartProjector.project(document).graph
+        val edge = graph.edges.single { it.kind == FlowEdgeKind.LOOP_BODY }
+
+        val updated = disconnectFlowchartEdgeFromWorkspace(document, graph, edge.id)
+
+        assertNotEquals(document, updated)
+        assertEquals(null, updated.blocks.getValue(repeatId).statementInputs.single { it.name == BlockTypes.SLOT_DO }.connection.connectedTo)
+        assertEquals(null, updated.blocks.getValue(waitId).previous?.connectedTo)
+        assertTrue(waitId in updated.rootBlocks)
+    }
+
+    @Test
+    fun `disconnect flowchart data edge removes workspace value connection`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-data-disconnect-test"), BlockTypes.LOGIC_COMPARE, 10f, 20f)
+        val compareId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.LITERAL_NUMBER, 40f, 80f)
+        val numberId = document.blocks.keys.single { it != compareId }
+        val numberOutput = document.blocks.getValue(numberId).output!!.id
+        val compareLeft = document.blocks.getValue(compareId).valueInputs.single { it.name == "LEFT" }.connection.id
+        document = WorkspaceReducer.reduce(document, WorkspaceAction.Connect(numberOutput, compareLeft))
+        val graph = BlockEditorFlowchartProjector.project(document).graph
+        val edge = graph.edges.single { it.kind == FlowEdgeKind.DATA_FLOW }
+
+        val updated = disconnectFlowchartEdgeFromWorkspace(document, graph, edge.id)
+
+        assertNotEquals(document, updated)
+        assertEquals(null, updated.blocks.getValue(compareId).valueInputs.single { it.name == "LEFT" }.connection.connectedTo)
+        assertEquals(null, updated.blocks.getValue(numberId).output?.connectedTo)
+        assertTrue(numberId in updated.rootBlocks)
+    }
+
+    @Test
     fun `sync root positions from flowchart view updates workspace roots`() {
         val document = addFlowchartNodeToWorkspace(
             WorkspaceDocument(id = "flowchart-move-test"),
@@ -127,5 +184,30 @@ class WorkspaceFlowchartMutationsTest {
                 position = FlowPoint(x, y),
             )
         ),
+    )
+
+    private fun twoConnectedStatementBlocks(): WorkspaceDocument {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-sequence-disconnect-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val firstId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val secondId = document.blocks.keys.single { it != firstId }
+        return WorkspaceReducer.reduce(
+            document,
+            WorkspaceAction.Connect(
+                document.blocks.getValue(firstId).next!!.id,
+                document.blocks.getValue(secondId).previous!!.id,
+            ),
+        )
+    }
+
+    private fun instantiate(
+        document: WorkspaceDocument,
+        type: String,
+        x: Float,
+        y: Float,
+    ): WorkspaceDocument = WorkspaceReducer.reduce(
+        document,
+        WorkspaceAction.InstantiateBlock(type, x, y),
+        DefaultBlockRegistry.asFactory(),
     )
 }
