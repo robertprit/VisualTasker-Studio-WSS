@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Subject
@@ -102,6 +103,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -179,10 +181,11 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
+import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
-import de.visualtasker.blockeditor.compose.ui.EditorNavigationRail
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
@@ -601,7 +604,6 @@ fun WorkspaceScreen(
                 val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
                 val flowchartSessionState = remember(panel.id) { mutableStateOf<FlowchartShellEditorSession?>(null) }
-                val blockEditorExpandedCategory = blockEditorSessionState.value?.controller?.expandedCategory
                 DarkPanel(
                     panel = panel.toMainPanelState(),
                     snapEnabled = snapEnabled,
@@ -613,17 +615,19 @@ fun WorkspaceScreen(
                     showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
                     showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
                     railExpandedWidth = when {
-                        isBlockEditorPanel && blockEditorExpandedCategory == null -> 96.dp
-                        isBlockEditorPanel -> 352.dp
+                        isBlockEditorPanel -> 300.dp
                         isFlowchartPanel -> 236.dp
                         isLogConsolePanel -> 220.dp
                         isEmscriptPanel -> 240.dp
-                        blockEditorExpandedCategory == null -> 96.dp
                         else -> 186.dp
                     },
                     railExpandedFillHeight = isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel,
                     compactRailContent = { onExpandRequested ->
                         when {
+                            isBlockEditorPanel -> BlockEditorCompactCategoryRail(
+                                session = blockEditorSessionState.value,
+                                onExpandRequested = onExpandRequested
+                            )
                             isFlowchartPanel -> FlowchartCompactNodeRail(onExpandRequested = onExpandRequested)
                             isLogConsolePanel -> LogConsoleCompactRail(
                                 store = studioLogStore,
@@ -1485,7 +1489,9 @@ private fun BlockEditorPanel(
         session = session,
         onSave = { persistBlockEditorSession(uiPrefs, session) },
         uiConfig = de.visualtasker.blockeditor.compose.host.BlockEditorHostUiConfig(
-            showBottomPanel = true,
+            showBottomPanel = false,
+            showFloatingInspector = true,
+            showBottomPanelToggle = false,
             showBlockFactory = true,
             showToolbox = false,
             allowClearWorkspace = true,
@@ -1495,6 +1501,53 @@ private fun BlockEditorPanel(
         ),
         modifier = Modifier.fillMaxSize()
     )
+}
+
+@Composable
+private fun ColumnScope.BlockEditorCompactCategoryRail(
+    session: BlockEditorShellEditorSession?,
+    onExpandRequested: () -> Unit
+) {
+    val categories = remember {
+        BlockCategories.all.filter { it.id != BlockCategories.CUSTOM }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = true)
+            .verticalScroll(rememberScrollState())
+            .padding(top = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        categories.forEach { category ->
+            val accent = Color(category.accentArgb)
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (session?.controller?.expandedCategory == category.id) {
+                            accent.copy(alpha = 0.28f)
+                        } else {
+                            accent.copy(alpha = 0.18f)
+                        }
+                    )
+                    .clickable {
+                        session?.controller?.onCategoryClick(category.id)
+                        onExpandRequested()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = CategoryIcons.forCategory(category.id),
+                    contentDescription = category.label,
+                    tint = accent,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1510,27 +1563,17 @@ private fun BlockEditorPanelRail(
         )
         return
     }
-    Row(modifier = Modifier.fillMaxHeight()) {
-        EditorNavigationRail(
-            expandedCategory = session.controller.expandedCategory,
-            onCategoryClick = session.controller::onCategoryClick,
-            extraCategories = emptyList(),
-            containerColor = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(80.dp)
-        )
-        CategoryPalettePanel(
-            category = session.controller.expandedCategory,
-            definitions = session.controller.definitionsForExpandedCategory(),
-            allDefinitions = session.controller.registry.allDefinitions(),
-            insertMode = paletteInsertMode,
-            onAddBlock = session.controller::addBlockFromPalette,
-            onCreateVariable = session.controller::createVariable,
-            onDismiss = session.controller::dismissCategory,
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    }
+    CategoryPalettePanel(
+        category = session.controller.expandedCategory,
+        definitions = session.controller.definitionsForExpandedCategory(),
+        allDefinitions = session.controller.registry.allDefinitions(),
+        insertMode = paletteInsertMode,
+        onAddBlock = session.controller::addBlockFromPalette,
+        onCreateVariable = session.controller::createVariable,
+        onDismiss = session.controller::dismissCategory,
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxHeight()
+    )
 }
 
 @Composable
