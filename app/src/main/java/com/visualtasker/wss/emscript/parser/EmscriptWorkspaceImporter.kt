@@ -198,6 +198,11 @@ private class WorkspaceAssembler(workspaceId: String) {
 
     private fun emitBinaryExpression(expression: EmscriptIrExpression.Binary): BlockId {
         val blockType = when (expression.op) {
+            EmscriptBinaryOp.OR,
+            EmscriptBinaryOp.AND -> when (expression.op) {
+                EmscriptBinaryOp.OR -> BlockTypes.LOGIC_OR
+                else -> BlockTypes.LOGIC_AND
+            }
             EmscriptBinaryOp.ADD,
             EmscriptBinaryOp.SUB,
             EmscriptBinaryOp.MUL,
@@ -214,12 +219,20 @@ private class WorkspaceAssembler(workspaceId: String) {
         setTextField(block, "operator", operatorFieldValue(expression.op))
         val left = emitExpression(expression.left)
         val right = emitExpression(expression.right)
-        if (blockType == BlockTypes.LOGIC_COMPARE) {
-            connectValueInput(parent = block, inputName = "LEFT", child = left)
-            connectValueInput(parent = block, inputName = "RIGHT", child = right)
-        } else {
-            connectValueInput(parent = block, inputName = "Input1", child = left)
-            connectValueInput(parent = block, inputName = "Input2", child = right)
+        when (blockType) {
+            BlockTypes.LOGIC_COMPARE -> {
+                connectValueInput(parent = block, inputName = "LEFT", child = left)
+                connectValueInput(parent = block, inputName = "RIGHT", child = right)
+            }
+            BlockTypes.LOGIC_AND,
+            BlockTypes.LOGIC_OR -> {
+                connectValueInput(parent = block, inputName = "A", child = left)
+                connectValueInput(parent = block, inputName = "B", child = right)
+            }
+            else -> {
+                connectValueInput(parent = block, inputName = "Input1", child = left)
+                connectValueInput(parent = block, inputName = "Input2", child = right)
+            }
         }
         return block
     }
@@ -297,6 +310,9 @@ private class WorkspaceAssembler(workspaceId: String) {
             is EmscriptIrExpression.StringLiteral -> "Text"
             is EmscriptIrExpression.VariableRef -> "Any"
             is EmscriptIrExpression.Binary -> when (expression.op) {
+                EmscriptBinaryOp.OR,
+                EmscriptBinaryOp.AND,
+                -> "Boolean"
                 EmscriptBinaryOp.ADD,
                 EmscriptBinaryOp.SUB,
                 EmscriptBinaryOp.MUL,
@@ -331,6 +347,8 @@ private class WorkspaceAssembler(workspaceId: String) {
 
     private fun operatorFieldValue(op: EmscriptBinaryOp): String {
         return when (op) {
+            EmscriptBinaryOp.OR -> "OR"
+            EmscriptBinaryOp.AND -> "AND"
             EmscriptBinaryOp.ADD -> "ADD"
             EmscriptBinaryOp.SUB -> "SUB"
             EmscriptBinaryOp.MUL -> "MUL"
@@ -359,6 +377,8 @@ private class WorkspaceAssembler(workspaceId: String) {
 
     private fun inlineOperator(op: EmscriptBinaryOp): String {
         return when (op) {
+            EmscriptBinaryOp.OR -> "||"
+            EmscriptBinaryOp.AND -> "&&"
             EmscriptBinaryOp.ADD -> "+"
             EmscriptBinaryOp.SUB -> "-"
             EmscriptBinaryOp.MUL -> "*"

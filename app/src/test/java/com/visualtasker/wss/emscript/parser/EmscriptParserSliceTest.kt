@@ -56,16 +56,16 @@ class EmscriptParserSliceTest {
     @Test
     fun parse_basicActionFunctions_acceptsCanonicalFunctionsAndLegacyStatements() {
         val source = """
-            wait(125)
-            click("OK")
-            log("ready")
+            wait(125);
+            click("OK");
+            log("ready");
             WAIT 250
             CLICK "Legacy"
             OUTPUT status
-            beep()
-            beep(880, 150, 75)
-            vibrate(80)
-            vibrate(0, 80, 40, 120)
+            beep();
+            beep(880, 150, 75);
+            vibrate(80);
+            vibrate(0, 80, 40, 120);
             BEEP 660 50 40
         """.trimIndent()
         val result = EmscriptParserSlice().parse(source)
@@ -134,6 +134,38 @@ class EmscriptParserSliceTest {
         assertEquals(EmscriptBinaryOp.ADD, expr.op)
         assertTrue(expr.right is EmscriptIrExpression.Binary)
         assertEquals(EmscriptBinaryOp.MUL, (expr.right as EmscriptIrExpression.Binary).op)
+    }
+
+    @Test
+    fun parse_canonicalBraceControlFlow_buildsBranchesAndLoops() {
+        val source = """
+            set score = 1;
+            if ((score >= 3) && true) {
+                log("then");
+            } else if (score == 2) {
+                beep();
+            } else {
+                vibrate(40);
+            }
+            repeat (2) {
+                wait(10);
+            }
+            while (score < 4) {
+                set score = score + 1;
+            }
+        """.trimIndent()
+        val result = EmscriptParserSlice().parse(source)
+
+        assertTrue(result.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, result.isSuccess)
+        val statements = result.ir!!.statements
+        assertTrue(statements[0] is EmscriptIrStatement.Set)
+        val ifStatement = statements[1] as EmscriptIrStatement.If
+        assertEquals(1, ifStatement.elseIfBranches.size)
+        assertTrue(ifStatement.thenBranch.single() is EmscriptIrStatement.Output)
+        assertTrue(ifStatement.elseIfBranches.single().body.single() is EmscriptIrStatement.Beep)
+        assertTrue(ifStatement.elseBranch.single() is EmscriptIrStatement.Vibrate)
+        assertTrue(statements[2] is EmscriptIrStatement.Loop)
+        assertTrue(statements[3] is EmscriptIrStatement.While)
     }
 
     @Test
@@ -223,8 +255,8 @@ class EmscriptParserSliceTest {
 
         assertEquals(
             """
-            beep(880, 150, 75)
-            vibrate(0, 80, 40, 120)
+            beep(880, 150, 75);
+            vibrate(0, 80, 40, 120);
             """.trimIndent(),
             regenerated,
         )
@@ -247,10 +279,10 @@ class EmscriptParserSliceTest {
 
         assertEquals(
             """
-            SET sum = (5 + 3)
-            SET result = (sum * 2)
-            IF (result >= 10)
-            END IF
+            set sum = (5 + 3);
+            set result = (sum * 2);
+            if ((result >= 10)) {
+            }
             """.trimIndent(),
             regenerated,
         )

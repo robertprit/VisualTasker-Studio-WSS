@@ -171,6 +171,8 @@ private class Interpreter(
         val left = evaluate(expression.left)
         val right = evaluate(expression.right)
         return when (expression.op) {
+            EmscriptBinaryOp.OR -> EmscriptValue.BooleanValue(left.asBoolean("||") || right.asBoolean("||"))
+            EmscriptBinaryOp.AND -> EmscriptValue.BooleanValue(left.asBoolean("&&") && right.asBoolean("&&"))
             EmscriptBinaryOp.ADD -> EmscriptValue.NumberValue(left.asDouble("+") + right.asDouble("+"))
             EmscriptBinaryOp.SUB -> EmscriptValue.NumberValue(left.asDouble("-") - right.asDouble("-"))
             EmscriptBinaryOp.MUL -> EmscriptValue.NumberValue(left.asDouble("*") * right.asDouble("*"))

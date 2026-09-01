@@ -253,6 +253,8 @@ private class WorkspaceInterpreter(
                 val left = evaluateParsedExpression(expression.left)
                 val right = evaluateParsedExpression(expression.right)
                 when (expression.op) {
+                    EmscriptBinaryOp.OR -> EmscriptValue.BooleanValue(left.asBooleanDryRun("||") || right.asBooleanDryRun("||"))
+                    EmscriptBinaryOp.AND -> EmscriptValue.BooleanValue(left.asBooleanDryRun("&&") && right.asBooleanDryRun("&&"))
                     EmscriptBinaryOp.ADD -> EmscriptValue.NumberValue(left.asDoubleDryRun("+") + right.asDoubleDryRun("+"))
                     EmscriptBinaryOp.SUB -> EmscriptValue.NumberValue(left.asDoubleDryRun("-") - right.asDoubleDryRun("-"))
                     EmscriptBinaryOp.MUL -> EmscriptValue.NumberValue(left.asDoubleDryRun("*") * right.asDoubleDryRun("*"))

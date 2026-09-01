@@ -80,6 +80,8 @@ sealed interface EmscriptIrExpression {
 }
 
 enum class EmscriptBinaryOp {
+    OR,
+    AND,
     ADD,
     SUB,
     MUL,
@@ -159,6 +161,11 @@ private enum class TokenType {
     GTE,
     LPAREN,
     RPAREN,
+    LBRACE,
+    RBRACE,
+    SEMICOLON,
+    ANDAND,
+    OROR,
     NEWLINE,
     EOF,
 }
@@ -208,6 +215,36 @@ private class Lexer(private val source: String) {
                 ')' -> {
                     tokens += token(TokenType.RPAREN, ")")
                     advance()
+                }
+                '{' -> {
+                    tokens += token(TokenType.LBRACE, "{")
+                    advance()
+                }
+                '}' -> {
+                    tokens += token(TokenType.RBRACE, "}")
+                    advance()
+                }
+                ';' -> {
+                    tokens += token(TokenType.SEMICOLON, ";")
+                    advance()
+                }
+                '&' -> {
+                    if (peekNext() == '&') {
+                        tokens += token(TokenType.ANDAND, "&&")
+                        advance()
+                        advance()
+                    } else {
+                        throw ParseException(line, column, "Unerwartetes Zeichen '&'.")
+                    }
+                }
+                '|' -> {
+                    if (peekNext() == '|') {
+                        tokens += token(TokenType.OROR, "||")
+                        advance()
+                        advance()
+                    } else {
+                        throw ParseException(line, column, "Unerwartetes Zeichen '|'.")
+                    }
                 }
                 ',' -> {
                     tokens += token(TokenType.COMMA, ",")
@@ -324,6 +361,7 @@ private class Lexer(private val source: String) {
             "ELSEIF" -> TokenType.ELSEIF
             "ELSE" -> TokenType.ELSE
             "LOOP" -> TokenType.LOOP
+            "REPEAT" -> TokenType.LOOP
             "WHILE" -> TokenType.WHILE
             "END" -> TokenType.END
             "TRUE" -> TokenType.TRUE
@@ -365,11 +403,11 @@ private class Parser(private val tokens: List<Token>) {
 
     fun parseStatements(untilBoundary: Boolean): List<EmscriptIrStatement> {
         val statements = mutableListOf<EmscriptIrStatement>()
-        skipNewlines()
+        skipSeparators()
         while (!isAtEnd()) {
             if (untilBoundary && isBlockBoundary()) break
             statements += parseStatement()
-            skipNewlines()
+            skipSeparators()
         }
         return statements
     }
@@ -405,24 +443,38 @@ private class Parser(private val tokens: List<Token>) {
 
     private fun parseIf(): EmscriptIrStatement.If {
         val condition = parseExpression()
-        skipNewlines()
+        val braceBlock = match(TokenType.LBRACE)
+        skipSeparators()
         val thenBranch = parseStatements(untilBoundary = true)
+        if (braceBlock) {
+            consume(TokenType.RBRACE, "'}' zum Schließen von if-Zweig erwartet.")
+        }
         val elseIfBranches = mutableListOf<EmscriptElseIfBranch>()
         var elseBranch = emptyList<EmscriptIrStatement>()
-        while (match(TokenType.ELSEIF)) {
+        while (matchElseIf()) {
             val elseIfCondition = parseExpression()
-            skipNewlines()
+            val elseIfBraceBlock = match(TokenType.LBRACE)
+            skipSeparators()
             elseIfBranches += EmscriptElseIfBranch(
                 condition = elseIfCondition,
                 body = parseStatements(untilBoundary = true),
             )
+            if (elseIfBraceBlock) {
+                consume(TokenType.RBRACE, "'}' zum Schließen von else-if-Zweig erwartet.")
+            }
         }
         if (match(TokenType.ELSE)) {
-            skipNewlines()
+            val elseBraceBlock = match(TokenType.LBRACE)
+            skipSeparators()
             elseBranch = parseStatements(untilBoundary = true)
+            if (elseBraceBlock) {
+                consume(TokenType.RBRACE, "'}' zum Schließen von else-Zweig erwartet.")
+            }
         }
-        consume(TokenType.END, "END zum Schließen von IF erwartet.")
-        consume(TokenType.IF, "IF nach END erwartet.")
+        if (!braceBlock) {
+            consume(TokenType.END, "END zum Schließen von IF erwartet.")
+            consume(TokenType.IF, "IF nach END erwartet.")
+        }
         return EmscriptIrStatement.If(
             condition = condition,
             thenBranch = thenBranch,
@@ -433,19 +485,29 @@ private class Parser(private val tokens: List<Token>) {
 
     private fun parseLoop(): EmscriptIrStatement.Loop {
         val times = parseExpression()
-        skipNewlines()
+        val braceBlock = match(TokenType.LBRACE)
+        skipSeparators()
         val body = parseStatements(untilBoundary = true)
-        consume(TokenType.END, "END zum Schließen von LOOP erwartet.")
-        consume(TokenType.LOOP, "LOOP nach END erwartet.")
+        if (braceBlock) {
+            consume(TokenType.RBRACE, "'}' zum Schließen von repeat-Zweig erwartet.")
+        } else {
+            consume(TokenType.END, "END zum Schließen von LOOP erwartet.")
+            consume(TokenType.LOOP, "LOOP nach END erwartet.")
+        }
         return EmscriptIrStatement.Loop(times = times, body = body)
     }
 
     private fun parseWhile(): EmscriptIrStatement.While {
         val condition = parseExpression()
-        skipNewlines()
+        val braceBlock = match(TokenType.LBRACE)
+        skipSeparators()
         val body = parseStatements(untilBoundary = true)
-        consume(TokenType.END, "END zum Schließen von WHILE erwartet.")
-        consume(TokenType.WHILE, "WHILE nach END erwartet.")
+        if (braceBlock) {
+            consume(TokenType.RBRACE, "'}' zum Schließen von while-Zweig erwartet.")
+        } else {
+            consume(TokenType.END, "END zum Schließen von WHILE erwartet.")
+            consume(TokenType.WHILE, "WHILE nach END erwartet.")
+        }
         return EmscriptIrStatement.While(condition = condition, body = body)
     }
 
@@ -543,7 +605,25 @@ private class Parser(private val tokens: List<Token>) {
         return args
     }
 
-    private fun parseExpression(): EmscriptIrExpression = parseComparison()
+    private fun parseExpression(): EmscriptIrExpression = parseLogicalOr()
+
+    private fun parseLogicalOr(): EmscriptIrExpression {
+        var expr = parseLogicalAnd()
+        while (match(TokenType.OROR)) {
+            val right = parseLogicalAnd()
+            expr = EmscriptIrExpression.Binary(expr, EmscriptBinaryOp.OR, right)
+        }
+        return expr
+    }
+
+    private fun parseLogicalAnd(): EmscriptIrExpression {
+        var expr = parseComparison()
+        while (match(TokenType.ANDAND)) {
+            val right = parseComparison()
+            expr = EmscriptIrExpression.Binary(expr, EmscriptBinaryOp.AND, right)
+        }
+        return expr
+    }
 
     private fun parseComparison(): EmscriptIrExpression {
         var expr = parseAdditive()
@@ -629,14 +709,24 @@ private class Parser(private val tokens: List<Token>) {
         }
     }
 
-    private fun skipNewlines() {
-        while (match(TokenType.NEWLINE)) {
+    private fun skipSeparators() {
+        while (match(TokenType.NEWLINE) || match(TokenType.SEMICOLON)) {
             // no-op
         }
     }
 
     private fun isBlockBoundary(): Boolean =
-        check(TokenType.END) || check(TokenType.ELSEIF) || check(TokenType.ELSE)
+        check(TokenType.END) || check(TokenType.ELSEIF) || check(TokenType.ELSE) || check(TokenType.RBRACE)
+
+    private fun matchElseIf(): Boolean {
+        if (match(TokenType.ELSEIF)) return true
+        if (check(TokenType.ELSE) && tokens.getOrNull(current + 1)?.type == TokenType.IF) {
+            advance()
+            advance()
+            return true
+        }
+        return false
+    }
 
     private fun match(type: TokenType): Boolean {
         if (!check(type)) return false
