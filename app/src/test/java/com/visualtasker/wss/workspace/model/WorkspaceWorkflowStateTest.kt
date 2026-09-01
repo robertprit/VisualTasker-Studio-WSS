@@ -45,10 +45,16 @@ class WorkspaceWorkflowStateTest {
         assertTrue(state.emscriptProjection.getOrThrow().contains("ELSEIF"))
         assertTrue(state.irGraph.edges.any { it.kind == IrGraphEdgeKind.CONDITION })
         assertTrue(state.irGraph.edges.any { it.kind == IrGraphEdgeKind.DATA_FLOW })
+        assertTrue(state.irGraph.scopes.isNotEmpty())
+        assertTrue(state.irGraph.branches.isNotEmpty())
+        assertTrue(state.irGraph.facets.isNotEmpty())
         assertTrue(state.flowchartProjection.graph.nodes.any { it.label == "IF" })
         assertEquals(
             FlowSemanticValue.StringValue("ir-graph"),
             state.flowchartProjection.graph.extensions.single { it.key == "visualtasker.projection-source" }.value,
         )
+        assertTrue(state.flowchartProjection.graph.extensions.any { it.key == "visualtasker.ir-scopes" })
+        assertTrue(state.flowchartProjection.graph.extensions.any { it.key == "visualtasker.ir-branches" })
+        assertTrue(state.flowchartProjection.graph.extensions.any { it.key == "visualtasker.ir-facets" })
     }
 }

@@ -49,6 +49,7 @@ object IrGraphFlowchartProjector {
                         ("irScope" to FlowSemanticValue.ListValue(node.scopePath.map(FlowSemanticValue::StringValue))),
                     extensions = listOf(
                         FlowGraphExtension("visualtasker.ir-node-kind", FlowSemanticValue.StringValue(node.kind.name)),
+                        FlowGraphExtension("visualtasker.ir-source", sourceExtension(node.source)),
                     ),
                 )
             },
@@ -62,12 +63,16 @@ object IrGraphFlowchartProjector {
                     sourceReference = sourceReference(graph, edge.source.blockId, edge.source.slotName),
                     extensions = listOf(
                         FlowGraphExtension("visualtasker.ir-edge-kind", FlowSemanticValue.StringValue(edge.kind.name)),
+                        FlowGraphExtension("visualtasker.ir-source", sourceExtension(edge.source)),
                     ),
                 )
             },
             diagnostics = diagnostics,
             extensions = listOf(
                 FlowGraphExtension("visualtasker.projection-source", FlowSemanticValue.StringValue("ir-graph")),
+                FlowGraphExtension("visualtasker.ir-scopes", scopesExtension(graph)),
+                FlowGraphExtension("visualtasker.ir-branches", branchesExtension(graph)),
+                FlowGraphExtension("visualtasker.ir-facets", facetsExtension(graph)),
             ),
         )
         return FlowchartProjectionResult(
@@ -111,4 +116,85 @@ object IrGraphFlowchartProjector {
         sourceKind = "ir-graph",
         canonicalText = listOfNotNull(blockId?.let { "block:$it" }, slotName?.let { "slot:$it" }).joinToString(" "),
     )
+
+    private fun scopesExtension(graph: IrGraph): FlowSemanticValue =
+        FlowSemanticValue.ListValue(
+            graph.scopes.map { scope ->
+                FlowSemanticValue.ObjectValue(
+                    buildMap {
+                        put("id", FlowSemanticValue.StringValue(scope.id))
+                        put("kind", FlowSemanticValue.StringValue(scope.kind.name))
+                        scope.parentId?.let { put("parentId", FlowSemanticValue.StringValue(it)) }
+                        put("label", FlowSemanticValue.StringValue(scope.label))
+                        put("source", sourceExtension(scope.source))
+                    }
+                )
+            }
+        )
+
+    private fun branchesExtension(graph: IrGraph): FlowSemanticValue =
+        FlowSemanticValue.ListValue(
+            graph.branches.map { branch ->
+                FlowSemanticValue.ObjectValue(
+                    buildMap {
+                        put("id", FlowSemanticValue.StringValue(branch.id))
+                        put("ownerNodeId", FlowSemanticValue.StringValue(branch.ownerNodeId.value))
+                        put("role", FlowSemanticValue.StringValue(branch.role.name))
+                        put("index", FlowSemanticValue.NumberValue(branch.index.toString()))
+                        put("slotName", FlowSemanticValue.StringValue(branch.slotName))
+                        put("scopeId", FlowSemanticValue.StringValue(branch.scopeId))
+                        branch.conditionNodeId?.let { put("conditionNodeId", FlowSemanticValue.StringValue(it.value)) }
+                        branch.bodyEntryNodeId?.let { put("bodyEntryNodeId", FlowSemanticValue.StringValue(it.value)) }
+                        put("source", sourceExtension(branch.source))
+                    }
+                )
+            }
+        )
+
+    private fun facetsExtension(graph: IrGraph): FlowSemanticValue =
+        FlowSemanticValue.ListValue(
+            graph.facets.map { facet ->
+                FlowSemanticValue.ObjectValue(
+                    buildMap {
+                        put("id", FlowSemanticValue.StringValue(facet.id))
+                        put("kind", FlowSemanticValue.StringValue(facet.kind.name))
+                        put("label", FlowSemanticValue.StringValue(facet.label))
+                        facet.scopeId?.let { put("scopeId", FlowSemanticValue.StringValue(it)) }
+                        facet.ownerNodeId?.let { put("ownerNodeId", FlowSemanticValue.StringValue(it.value)) }
+                        put("nodeIds", FlowSemanticValue.ListValue(facet.nodeIds.map { FlowSemanticValue.StringValue(it.value) }))
+                        put(
+                            "properties",
+                            FlowSemanticValue.ObjectValue(facet.properties.mapValues { (_, value) -> FlowSemanticValue.StringValue(value) })
+                        )
+                        put("source", sourceExtension(facet.source))
+                    }
+                )
+            }
+        )
+
+    private fun sourceExtension(source: de.visualtasker.blockeditor.ir.IrGraphSourceRef): FlowSemanticValue =
+        FlowSemanticValue.ObjectValue(
+            buildMap {
+                put("workspaceId", FlowSemanticValue.StringValue(source.workspaceId))
+                put("workspaceVersion", FlowSemanticValue.NumberValue(source.workspaceVersion.toString()))
+                source.blockId?.let { put("blockId", FlowSemanticValue.StringValue(it)) }
+                source.slotName?.let { put("slotName", FlowSemanticValue.StringValue(it)) }
+                source.sourceLine?.let { put("sourceLine", FlowSemanticValue.NumberValue(it.toString())) }
+                source.sourceColumn?.let { put("sourceColumn", FlowSemanticValue.NumberValue(it.toString())) }
+                source.branch?.let { branch ->
+                    put(
+                        "branch",
+                        FlowSemanticValue.ObjectValue(
+                            mapOf(
+                                "id" to FlowSemanticValue.StringValue(branch.id),
+                                "ownerBlockId" to FlowSemanticValue.StringValue(branch.ownerBlockId),
+                                "role" to FlowSemanticValue.StringValue(branch.role.name),
+                                "index" to FlowSemanticValue.NumberValue(branch.index.toString()),
+                                "slotName" to FlowSemanticValue.StringValue(branch.slotName),
+                            )
+                        )
+                    )
+                }
+            }
+        )
 }
