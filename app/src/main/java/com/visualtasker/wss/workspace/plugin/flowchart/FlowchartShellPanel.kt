@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeviceHub
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PlayArrow
@@ -72,6 +73,7 @@ import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowSemanticValue
+import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.blockeditor.registry.BlockTypes
 
@@ -88,14 +90,22 @@ fun FlowchartShellPanel(
     canStepForward: Boolean = false,
     stepLabel: String? = null,
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
+    onDeleteNode: ((FlowNodeId) -> Unit)? = null,
+    onViewChanged: ((FlowViewDocument) -> Unit)? = null,
 ) {
     val controller = session.controller
     var gridVisible by remember(session.sessionId) { mutableStateOf(true) }
     var selectedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var selectedEdgeId by remember(session.sessionId) { mutableStateOf<FlowEdgeId?>(null) }
-    val callbacks = remember(session, onNodeSelected) {
+    val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
+        { view ->
+            session.onViewDocumentChanged(view)
+            onViewChanged?.invoke(view)
+        }
+    }
+    val callbacks = remember(session, onNodeSelected, handleViewChanged) {
         FlowchartHostCallbacks(
-            onViewDocumentChanged = session::onViewDocumentChanged,
+            onViewDocumentChanged = handleViewChanged,
             onStatusMessage = session::onStatusMessage,
             onNodeSelected = {
                 selectedNodeId = it
@@ -178,10 +188,13 @@ fun FlowchartShellPanel(
             onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
             onCenter = { controller.attachGraph(controller.snapshot().graph ?: session.graphDocument, null) },
             onArrange = {
-                controller.replaceLayout()?.let(session::onViewDocumentChanged)
+                controller.replaceLayout()?.let(handleViewChanged)
             },
             onGridToggle = { gridVisible = !gridVisible },
             onSave = { onSave?.invoke() ?: session.requestSave() },
+            onDeleteSelected = selectedNodeId?.let { nodeId ->
+                onDeleteNode?.let { deleteNode -> { deleteNode(nodeId) } }
+            },
             onRunDry = onRunDry,
             onStepBack = onStepBack,
             onStepForward = onStepForward,
@@ -465,6 +478,7 @@ private fun FlowchartShellToolbar(
     onArrange: () -> Unit,
     onGridToggle: () -> Unit,
     onSave: () -> Unit,
+    onDeleteSelected: (() -> Unit)?,
     onRunDry: (() -> Unit)?,
     onStepBack: (() -> Unit)?,
     onStepForward: (() -> Unit)?,
@@ -486,6 +500,9 @@ private fun FlowchartShellToolbar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FlowchartToolbarButton("Speichern", onSave) { Icon(Icons.Default.Save, contentDescription = null) }
+            FlowchartToolbarButton("Node löschen", onDeleteSelected ?: {}, enabled = onDeleteSelected != null) {
+                Icon(Icons.Default.Delete, contentDescription = null)
+            }
             FlowchartToolbarButton("Run Dry", onRunDry ?: {}, enabled = onRunDry != null) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
             }

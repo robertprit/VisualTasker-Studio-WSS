@@ -145,6 +145,8 @@ import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
 import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
+import com.visualtasker.wss.workspace.model.deleteFlowchartNodeFromWorkspace
+import com.visualtasker.wss.workspace.model.syncRootPositionsFromFlowchartView
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
@@ -185,6 +187,7 @@ import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowNodeId
+import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
@@ -325,6 +328,24 @@ fun WorkspaceScreen(
             applyWorkspaceJsonChange(
                 WorkspaceSerializer.serialize(nextDocument),
                 "$WORKFLOW_SOURCE_FLOWCHART_PREFIX$definitionId"
+            )
+        }
+    }
+    val deleteFlowchartNode: (FlowNodeId) -> Unit = { nodeId ->
+        val nextDocument = deleteFlowchartNodeFromWorkspace(workflowState.document, nodeId)
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:delete"
+            )
+        }
+    }
+    val syncFlowchartView: (FlowViewDocument) -> Unit = { viewDocument ->
+        val nextDocument = syncRootPositionsFromFlowchartView(workflowState.document, viewDocument)
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${viewDocument.surfaceId.value}:move"
             )
         }
     }
@@ -803,6 +824,8 @@ fun WorkspaceScreen(
                         dryRunStepLabel = workspaceDryRunResult?.let { "${workspaceDryRunStepIndex}/${dryRunEventCount(it)}" },
                         onFlowchartNodeSelected = ::focusBlockFromFlowNode,
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
+                        onFlowchartNodeDelete = deleteFlowchartNode,
+                        onFlowchartViewChanged = syncFlowchartView,
                         onFlowRuntimeSnapshotChange = { snapshot ->
                             flowRuntimeSnapshot = snapshot
                             studioLogStore.append(
@@ -1110,6 +1133,8 @@ private fun WorkspacePanelContent(
     dryRunStepLabel: String? = null,
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
+    onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
+    onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
@@ -1136,6 +1161,8 @@ private fun WorkspacePanelContent(
             canStepForward = canDryRunStepForward,
             stepLabel = dryRunStepLabel,
             onNodeSelected = onFlowchartNodeSelected,
+            onNodeDelete = onFlowchartNodeDelete,
+            onViewChanged = onFlowchartViewChanged,
             onSessionReady = onFlowchartSessionReady
         )
         PanelType.TextEditor,
@@ -1499,6 +1526,8 @@ private fun FlowchartPanel(
     canStepForward: Boolean,
     stepLabel: String?,
     onNodeSelected: (FlowNodeId) -> Unit,
+    onNodeDelete: (FlowNodeId) -> Unit,
+    onViewChanged: (FlowViewDocument) -> Unit,
     onSessionReady: (FlowchartShellEditorSession?) -> Unit
 ) {
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
@@ -1544,6 +1573,8 @@ private fun FlowchartPanel(
         canStepForward = canStepForward,
         stepLabel = stepLabel,
         onNodeSelected = onNodeSelected,
+        onDeleteNode = onNodeDelete,
+        onViewChanged = onViewChanged,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },
         modifier = Modifier.fillMaxSize()
     )
