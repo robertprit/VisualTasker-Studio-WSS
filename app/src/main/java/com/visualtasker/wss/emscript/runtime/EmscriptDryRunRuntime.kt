@@ -81,6 +81,9 @@ private class Interpreter(
     private fun execute(statement: EmscriptIrStatement) {
         guardStep()
         when (statement) {
+            is EmscriptIrStatement.CommandCall -> {
+                emit("command", "würde ${statement.command}(${statement.arguments}) ausführen")
+            }
             is EmscriptIrStatement.Let -> {
                 val value = evaluate(statement.value)
                 variables[statement.variable] = value

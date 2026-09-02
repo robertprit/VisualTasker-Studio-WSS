@@ -189,12 +189,14 @@ class EmscriptParserSliceTest {
     }
 
     @Test
-    fun parse_cataloguedButUnsupportedCommand_reportsMissingParserAdapter() {
+    fun parse_cataloguedGenericCommand_buildsCommandCall() {
         val result = EmscriptParserSlice().parse("findTemplate(\"button.png\", 0.8, 1000)")
 
-        assertFalse(result.isSuccess)
-        assertTrue(result.issues.single().message.contains("im Katalog vorhanden"))
-        assertTrue(result.issues.single().message.contains("noch nicht im EMScript-Parser verdrahtet"))
+        assertTrue(result.issues.joinToString { it.message }, result.isSuccess)
+        assertEquals(
+            EmscriptIrStatement.CommandCall("findTemplate", "\"button.png\",0.8,1000"),
+            result.ir!!.statements.single(),
+        )
     }
 
     @Test
@@ -300,6 +302,44 @@ class EmscriptParserSliceTest {
             """.trimIndent(),
             regenerated,
         )
+    }
+
+    @Test
+    fun roundtrip_catalogCommands_surviveParserWorkspaceIrAndDryRun() {
+        val source = """
+            Tasker.runTask("Morning", {})
+            Termux.shell("echo ok")
+            Shizuku.exec("cmd", ["package", "list"])
+            ChromeTab.open("https://example.com")
+            Chart.create("line", {})
+            screenshot("screen.png")
+        """.trimIndent()
+        val parsed = EmscriptParserSlice().parse(source)
+        assertTrue(parsed.issues.joinToString { it.message }, parsed.isSuccess)
+        assertTrue(parsed.ir!!.statements.all { it is EmscriptIrStatement.CommandCall })
+
+        val imported = EmscriptWorkspaceImporter().import(source)
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val document = imported.document!!
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}tasker.runTask" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}termux.shell" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}shizuku.exec" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}chromeTab.open" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}chart.create" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}vision.screenshot" })
+
+        val irGraph = IrGraphGenerator().generate(document)
+        assertTrue(irGraph.validateIntegrity().joinToString { it.message }, irGraph.validateIntegrity().isEmpty())
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Tasker.runTask" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Termux.shell" })
+
+        val regenerated = EmscriptGenerator(IrGenerator()).generate(document, scriptName = "catalog-roundtrip")
+        assertTrue(regenerated.contains("Tasker.runTask(\"Morning\",{});"))
+        assertTrue(regenerated.contains("Termux.shell(\"echo ok\");"))
+        assertTrue(regenerated.contains("Shizuku.exec(\"cmd\",[\"package\",\"list\"]);"))
+        assertTrue(regenerated.contains("ChromeTab.open(\"https://example.com\");"))
+        assertTrue(regenerated.contains("Chart.create(\"line\",{});"))
+        assertTrue(regenerated.contains("screenshot(\"screen.png\");"))
     }
 
     @Test

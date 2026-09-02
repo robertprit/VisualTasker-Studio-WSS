@@ -114,6 +114,16 @@ private class WorkspaceAssembler(workspaceId: String) {
                 ensureVariable(statement.variable, defaultValue = null)
                 emitSetVariableBlock(statement.variable, statement.value, assignmentKind = "SET")
             }
+            is EmscriptIrStatement.CommandCall -> {
+                val entry = de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog.findByCanonicalName(statement.command)
+                    ?: de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog.findByAcceptedName(statement.command)
+                    ?: error("Kommando '${statement.command}' ist nicht im Katalog.")
+                val blockType = entry.block?.blockType ?: error("Kommando '${statement.command}' hat keinen Block-Typ.")
+                val block = instantiate(blockType)
+                setTextField(block, "command", entry.canonicalName)
+                setTextField(block, "args", statement.arguments)
+                block
+            }
             is EmscriptIrStatement.Wait -> {
                 val block = instantiate(BlockTypes.ACTION_WAIT)
                 setNumberField(block, "ms", expressionToNumber(statement.milliseconds, fallback = 500.0))

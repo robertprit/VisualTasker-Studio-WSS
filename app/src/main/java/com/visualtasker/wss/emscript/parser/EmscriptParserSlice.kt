@@ -21,6 +21,11 @@ data class EmscriptIrScript(
 )
 
 sealed interface EmscriptIrStatement {
+    data class CommandCall(
+        val command: String,
+        val arguments: String,
+    ) : EmscriptIrStatement
+
     data class Let(
         val variable: String,
         val value: EmscriptIrExpression,
@@ -150,6 +155,8 @@ private enum class TokenType {
     END,
     ASSIGN,
     COMMA,
+    DOT,
+    COLON,
     PLUS,
     MINUS,
     STAR,
@@ -165,6 +172,8 @@ private enum class TokenType {
     RPAREN,
     LBRACE,
     RBRACE,
+    LBRACKET,
+    RBRACKET,
     SEMICOLON,
     ANDAND,
     OROR,
@@ -226,6 +235,14 @@ private class Lexer(private val source: String) {
                     tokens += token(TokenType.RBRACE, "}")
                     advance()
                 }
+                '[' -> {
+                    tokens += token(TokenType.LBRACKET, "[")
+                    advance()
+                }
+                ']' -> {
+                    tokens += token(TokenType.RBRACKET, "]")
+                    advance()
+                }
                 ';' -> {
                     tokens += token(TokenType.SEMICOLON, ";")
                     advance()
@@ -250,6 +267,14 @@ private class Lexer(private val source: String) {
                 }
                 ',' -> {
                     tokens += token(TokenType.COMMA, ",")
+                    advance()
+                }
+                '.' -> {
+                    tokens += token(TokenType.DOT, ".")
+                    advance()
+                }
+                ':' -> {
+                    tokens += token(TokenType.COLON, ":")
                     advance()
                 }
                 '=' -> {
@@ -421,7 +446,7 @@ private class Parser(private val tokens: List<Token>) {
             match(TokenType.IF) -> parseIf()
             match(TokenType.LOOP) -> parseLoop()
             match(TokenType.WHILE) -> parseWhile()
-            match(TokenType.IDENT) -> parseCommandStatement(previous())
+            match(TokenType.IDENT) -> parseCommandStatement(parseQualifiedIdentifier(previous()))
             else -> {
                 val token = peek()
                 throw ParseException(token.line, token.column, "Unerwartetes Token '${token.lexeme}'.")
@@ -513,6 +538,15 @@ private class Parser(private val tokens: List<Token>) {
         return EmscriptIrStatement.While(condition = condition, body = body)
     }
 
+    private fun parseQualifiedIdentifier(first: Token): Token {
+        var lexeme = first.lexeme
+        while (match(TokenType.DOT)) {
+            val part = consume(TokenType.IDENT, "Identifier nach '.' erwartet.")
+            lexeme += ".${part.lexeme}"
+        }
+        return first.copy(lexeme = lexeme)
+    }
+
     private fun parseCommandStatement(command: Token): EmscriptIrStatement {
         return when (command.lexeme.uppercase()) {
             "WAIT" -> if (check(TokenType.LPAREN)) parseWaitFunction(command) else EmscriptIrStatement.Wait(parseExpression())
@@ -539,15 +573,37 @@ private class Parser(private val tokens: List<Token>) {
             else -> {
                 val catalogEntry = VisualTaskerCommandCatalog.findByAcceptedName(command.lexeme)
                 if (catalogEntry != null) {
-                    throw ParseException(
-                        command.line,
-                        command.column,
-                        "Kommando '${command.lexeme}' ist im Katalog vorhanden, aber noch nicht im EMScript-Parser verdrahtet.",
-                    )
+                    val args = parseRawFunctionArguments(command)
+                    return EmscriptIrStatement.CommandCall(catalogEntry.canonicalName, args)
                 }
                 throw ParseException(command.line, command.column, "Unbekanntes Kommando '${command.lexeme}'.")
             }
         }
+    }
+
+    private fun parseRawFunctionArguments(command: Token): String {
+        consume(TokenType.LPAREN, "'(' nach ${command.lexeme} erwartet.")
+        val parts = mutableListOf<String>()
+        var depth = 0
+        while (!check(TokenType.EOF)) {
+            if (check(TokenType.RPAREN) && depth == 0) break
+            val token = advance()
+            when (token.type) {
+                TokenType.LPAREN -> {
+                    depth += 1
+                    parts += token.lexeme
+                }
+                TokenType.RPAREN -> {
+                    depth -= 1
+                    parts += token.lexeme
+                }
+                TokenType.STRING -> parts += "\"${token.lexeme.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+                TokenType.NEWLINE -> parts += " "
+                else -> parts += token.lexeme
+            }
+        }
+        consume(TokenType.RPAREN, "')' nach ${command.lexeme}-Parametern erwartet.")
+        return parts.joinToString(separator = "").trim()
     }
 
     private fun parseWaitFunction(command: Token): EmscriptIrStatement.Wait {

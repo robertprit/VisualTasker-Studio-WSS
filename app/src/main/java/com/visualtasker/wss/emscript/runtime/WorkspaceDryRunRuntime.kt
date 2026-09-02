@@ -112,7 +112,12 @@ private class WorkspaceInterpreter(
             BlockTypes.CONTROL_IF,
             BlockTypes.CONTROL_IF_ELSE,
             BlockTypes.CONTROL_IF_ELSEIF_ELSE -> executeIf(blockId, block)
-            else -> emitBlock(blockId, "unsupported", "Unsupported block type: ${block.type}")
+            else -> if (block.type.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX)) {
+                val command = block.fieldText("command").ifBlank { block.type.removePrefix(BlockTypes.EMSCRIPT_COMMAND_PREFIX) }
+                emitBlock(blockId, "command", "würde $command(${block.fieldText("args")}) ausführen")
+            } else {
+                emitBlock(blockId, "unsupported", "Unsupported block type: ${block.type}")
+            }
         }
     }
 
