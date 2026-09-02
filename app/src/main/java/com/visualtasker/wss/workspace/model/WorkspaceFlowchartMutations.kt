@@ -1,13 +1,24 @@
 package com.visualtasker.wss.workspace.model
 
 import de.visualtasker.blockeditor.domain.WorkspaceAction
+import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.blockeditor.domain.BlockNode
+import de.visualtasker.blockeditor.domain.Connection
+import de.visualtasker.blockeditor.domain.ConnectionId
+import de.visualtasker.blockeditor.domain.ConnectionKind
+import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.blockeditor.domain.StatementInput
+import de.visualtasker.blockeditor.domain.ValueInput
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.domain.WorkspacePoint
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
+import de.visualtasker.blockeditor.domain.allConnections
+import de.visualtasker.blockeditor.domain.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
+import de.visualtasker.blockeditor.registry.createNode
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowGraphDocument
@@ -17,6 +28,7 @@ import kotlin.math.abs
 
 const val WORKFLOW_SOURCE_FLOWCHART_PREFIX = "flowchart:"
 private const val FLOW_BLOCK_NODE_PREFIX = "block:"
+private const val MAX_IF_BRANCHES = 8
 
 data class FlowchartConnectionOption(
     val kind: FlowEdgeKind,
@@ -146,6 +158,88 @@ fun connectFlowchartNodesInWorkspace(
     }
 
     return WorkspaceReducer.reduce(document, action)
+}
+
+fun connectFlowchartPortsInWorkspace(
+    document: WorkspaceDocument,
+    sourceNodeId: FlowNodeId,
+    sourcePortName: String,
+    targetNodeId: FlowNodeId,
+    targetPortName: String,
+    fallbackKind: FlowEdgeKind,
+): WorkspaceDocument {
+    val kind = when {
+        targetPortName == "previous" -> when {
+            sourcePortName == "next" -> fallbackKind.takeIf { it == FlowEdgeKind.LOOP_EXIT } ?: FlowEdgeKind.SEQUENCE
+            sourcePortName == BlockTypes.SLOT_THEN -> FlowEdgeKind.TRUE_BRANCH
+            sourcePortName == BlockTypes.SLOT_ELSE -> FlowEdgeKind.FALSE_BRANCH
+            sourcePortName == BlockTypes.SLOT_ELIF || sourcePortName.startsWith("ELIF_") -> FlowEdgeKind.ELSE_IF_BRANCH
+            sourcePortName == BlockTypes.SLOT_DO || sourcePortName == BlockTypes.SLOT_BODY -> FlowEdgeKind.LOOP_BODY
+            else -> fallbackKind
+        }
+        targetPortName == "CONDITION" || targetPortName.startsWith("ELIF_CONDITION") -> FlowEdgeKind.CONDITION
+        else -> FlowEdgeKind.DATA_FLOW
+    }
+    val label = when (kind) {
+        FlowEdgeKind.TRUE_BRANCH,
+        FlowEdgeKind.FALSE_BRANCH,
+        FlowEdgeKind.ELSE_IF_BRANCH,
+        FlowEdgeKind.LOOP_BODY -> sourcePortName
+        FlowEdgeKind.DATA_FLOW,
+        FlowEdgeKind.CONDITION -> targetPortName
+        else -> null
+    }
+    return connectFlowchartNodesInWorkspace(document, sourceNodeId, targetNodeId, kind, label)
+}
+
+fun updateFlowchartNodeFieldInWorkspace(
+    document: WorkspaceDocument,
+    nodeId: FlowNodeId,
+    fieldKey: String,
+    rawValue: String,
+): WorkspaceDocument {
+    val blockId = nodeId.toWorkspaceBlockId() ?: return document
+    val block = document.blocks[blockId] ?: return document
+    val current = block.fields[fieldKey]
+    val parsed = when (current) {
+        is FieldValue.Number -> rawValue.toDoubleOrNull()?.let(FieldValue::Number) ?: return document
+        is FieldValue.Bool -> rawValue.equals("true", ignoreCase = true)
+            .takeIf { it || rawValue.equals("false", ignoreCase = true) }
+            ?.let(FieldValue::Bool) ?: return document
+        is FieldValue.Text -> FieldValue.Text(rawValue)
+        null -> when (fieldKey) {
+            "ms", "frequency", "durationMs", "volume", "repeatCount" ->
+                rawValue.toDoubleOrNull()?.let(FieldValue::Number) ?: return document
+            "active", "value" ->
+                rawValue.toBooleanStrictOrNull()?.let(FieldValue::Bool) ?: FieldValue.Text(rawValue)
+            else -> FieldValue.Text(rawValue)
+        }
+    }
+    return WorkspaceReducer.reduce(document, WorkspaceAction.UpdateField(blockId, fieldKey, parsed))
+}
+
+fun addFlowchartIfBranchInWorkspace(
+    document: WorkspaceDocument,
+    nodeId: FlowNodeId,
+): WorkspaceDocument {
+    val blockId = nodeId.toWorkspaceBlockId() ?: return document
+    val block = document.blocks[blockId] ?: return document
+    if (!block.canEditIfBranches()) return document
+    val nextCount = (block.ifBranchCount() + 1).coerceAtMost(MAX_IF_BRANCHES)
+    if (nextCount == block.ifBranchCount()) return document
+    return replaceFlowchartIfBranchShape(document, blockId, nextCount)
+}
+
+fun removeFlowchartIfBranchInWorkspace(
+    document: WorkspaceDocument,
+    nodeId: FlowNodeId,
+): WorkspaceDocument {
+    val blockId = nodeId.toWorkspaceBlockId() ?: return document
+    val block = document.blocks[blockId] ?: return document
+    if (!block.canEditIfBranches()) return document
+    val nextCount = (block.ifBranchCount() - 1).coerceAtLeast(1)
+    if (nextCount == block.ifBranchCount()) return document
+    return replaceFlowchartIfBranchShape(document, blockId, nextCount)
 }
 
 fun flowchartConnectionOptions(
@@ -279,3 +373,125 @@ private fun defaultValueInputName(targetBlockType: String, kind: FlowEdgeKind): 
 
 private fun WorkspacePoint.closeTo(x: Float, y: Float): Boolean =
     abs(this.x - x) < 0.5f && abs(this.y - y) < 0.5f
+
+private fun replaceFlowchartIfBranchShape(
+    document: WorkspaceDocument,
+    blockId: BlockId,
+    branchCount: Int,
+): WorkspaceDocument {
+    val source = document.blocks[blockId] ?: return document
+    val targetType = when {
+        branchCount <= 1 -> BlockTypes.CONTROL_IF
+        branchCount == 2 -> BlockTypes.CONTROL_IF_ELSE
+        else -> BlockTypes.CONTROL_IF_ELSEIF_ELSE
+    }
+    val targetDefinition = DefaultBlockRegistry.getDefinition(targetType) ?: return document
+    val targetTemplate = targetDefinition.createNode(blockId).withIfBranches(branchCount)
+    val targetConnectionIds = targetTemplate.allConnections().map { it.id }.toSet()
+    val promotedRoots = mutableListOf<BlockId>()
+    val blocks = document.blocks.toMutableMap()
+
+    source.allConnections()
+        .filter { it.id !in targetConnectionIds }
+        .forEach { removedConnection ->
+            val partnerId = removedConnection.connectedTo ?: return@forEach
+            val (partnerBlockId, partnerConnection) = WorkspaceGraph.findConnection(document, partnerId)
+                ?: return@forEach
+            blocks[partnerBlockId] = blocks[partnerBlockId]
+                ?.withConnectionUpdated(partnerConnection.id) { it.copy(connectedTo = null) }
+                ?: return@forEach
+            if (removedConnection.kind == ConnectionKind.StatementInput &&
+                partnerConnection.kind == ConnectionKind.Previous
+            ) {
+                promotedRoots += partnerBlockId
+            }
+        }
+
+    val sourceValueInputs = source.valueInputs.associateBy { it.name }
+    val sourceStatementInputs = source.statementInputs.associateBy { it.name }
+    blocks[blockId] = targetTemplate.copy(
+        fields = targetTemplate.fields + source.fields,
+        previous = source.previous?.takeIf { targetTemplate.previous != null },
+        next = source.next?.takeIf { targetTemplate.next != null },
+        output = source.output?.takeIf { targetTemplate.output != null },
+        valueInputs = targetTemplate.valueInputs.map { input ->
+            sourceValueInputs[input.name]?.let { existing ->
+                input.copy(connection = existing.connection)
+            } ?: input
+        },
+        statementInputs = targetTemplate.statementInputs.map { input ->
+            sourceStatementInputs[input.name]?.let { existing ->
+                input.copy(connection = existing.connection)
+            } ?: input
+        },
+        collapsed = source.collapsed,
+        metadata = source.metadata + ("if.branchCount" to branchCount.toString()),
+    )
+    val updated = document.copy(
+        version = document.version + 1,
+        blocks = blocks,
+    )
+    return updated.copy(
+        rootBlocks = WorkspaceGraph.pruneRootBlocks(updated, document.rootBlocks + promotedRoots),
+        rootPositions = updated.rootPositions.filterKeys { it in WorkspaceGraph.topLevelRoots(updated) },
+    )
+}
+
+private fun BlockNode.ifBranchCount(): Int {
+    val explicit = metadata["if.branchCount"]?.toIntOrNull()
+    if (explicit != null) return explicit.coerceIn(1, MAX_IF_BRANCHES)
+    return statementInputs.count { input ->
+        input.name == BlockTypes.SLOT_THEN ||
+            input.name == BlockTypes.SLOT_ELSE ||
+            input.name == BlockTypes.SLOT_ELIF ||
+            input.name.startsWith("ELIF_")
+    }.coerceAtLeast(1)
+}
+
+private fun BlockNode.canEditIfBranches(): Boolean =
+    type == BlockTypes.CONTROL_IF ||
+        type == BlockTypes.CONTROL_IF_ELSE ||
+        type == BlockTypes.CONTROL_IF_ELSEIF_ELSE
+
+private fun BlockNode.withIfBranches(branchCount: Int): BlockNode {
+    val count = branchCount.coerceIn(1, MAX_IF_BRANCHES)
+    if (count <= 1) return this
+    val elifCount = (count - 2).coerceAtLeast(0)
+    val nextValueInputs = buildList {
+        addAll(this@withIfBranches.valueInputs.filterNot { it.name.startsWith("ELIF_CONDITION_") })
+        repeat(elifCount) { index ->
+            val number = index + 1
+            add(
+                ValueInput(
+                    name = "ELIF_CONDITION_$number",
+                    connection = Connection(
+                        id = ConnectionId("${id.value}:ELIF_CONDITION_$number"),
+                        owner = id,
+                        kind = ConnectionKind.ValueInput,
+                        accepts = setOf("Bool", "Boolean"),
+                        slotName = "ELIF_CONDITION_$number",
+                    ),
+                ),
+            )
+        }
+    }
+    val nextStatementInputs = buildList {
+        add(statementInput(BlockTypes.SLOT_THEN))
+        repeat(elifCount) { index ->
+            add(statementInput("ELIF_${index + 1}"))
+        }
+        add(statementInput(BlockTypes.SLOT_ELSE))
+    }
+    return copy(valueInputs = nextValueInputs, statementInputs = nextStatementInputs)
+}
+
+private fun BlockNode.statementInput(name: String): StatementInput =
+    statementInputs.find { it.name == name } ?: StatementInput(
+        name = name,
+        connection = Connection(
+            id = ConnectionId("${id.value}:$name:stmt"),
+            owner = id,
+            kind = ConnectionKind.StatementInput,
+            slotName = name,
+        ),
+    )

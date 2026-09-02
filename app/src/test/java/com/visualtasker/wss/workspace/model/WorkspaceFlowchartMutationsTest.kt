@@ -2,6 +2,7 @@ package com.visualtasker.wss.workspace.model
 
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceAction
+import de.visualtasker.blockeditor.domain.FieldValue
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
@@ -249,6 +250,83 @@ class WorkspaceFlowchartMutationsTest {
         )
 
         assertFalse(options.any { it.kind == FlowEdgeKind.CONDITION || it.kind == FlowEdgeKind.DATA_FLOW })
+    }
+
+    @Test
+    fun `connect flowchart ports creates branch connection from named output port`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-port-branch-connect-test"), BlockTypes.CONTROL_IF_ELSEIF_ELSE, 10f, 20f)
+        val ifId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val waitId = document.blocks.keys.single { it != ifId }
+
+        val updated = connectFlowchartPortsInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${ifId.value}"),
+            sourcePortName = BlockTypes.SLOT_THEN,
+            targetNodeId = FlowNodeId("block:${waitId.value}"),
+            targetPortName = "previous",
+            fallbackKind = FlowEdgeKind.TRUE_BRANCH,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(waitId).previous!!.id,
+            updated.blocks.getValue(ifId).statementInputs.single { it.name == BlockTypes.SLOT_THEN }.connection.connectedTo,
+        )
+    }
+
+    @Test
+    fun `connect flowchart ports creates condition connection to named input port`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-port-condition-connect-test"), BlockTypes.LITERAL_BOOLEAN, 10f, 20f)
+        val booleanId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.CONTROL_IF_ELSEIF_ELSE, 40f, 80f)
+        val ifId = document.blocks.keys.single { it != booleanId }
+
+        val updated = connectFlowchartPortsInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${booleanId.value}"),
+            sourcePortName = "output",
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+            targetPortName = "ELIF_CONDITION",
+            fallbackKind = FlowEdgeKind.DATA_FLOW,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(ifId).valueInputs.single { it.name == "ELIF_CONDITION" }.connection.id,
+            updated.blocks.getValue(booleanId).output!!.connectedTo,
+        )
+    }
+
+    @Test
+    fun `update flowchart node field writes workspace field through reducer`() {
+        val document = instantiate(WorkspaceDocument(id = "flowchart-field-update-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val waitId = document.blocks.keys.single()
+
+        val updated = updateFlowchartNodeFieldInWorkspace(
+            document = document,
+            nodeId = FlowNodeId("block:${waitId.value}"),
+            fieldKey = "ms",
+            rawValue = "1500",
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(FieldValue.Number(1500.0), updated.blocks.getValue(waitId).fields["ms"])
+    }
+
+    @Test
+    fun `flowchart if branch editing grows and shrinks control shape`() {
+        val document = instantiate(WorkspaceDocument(id = "flowchart-branch-edit-test"), BlockTypes.CONTROL_IF, 10f, 20f)
+        val ifId = document.blocks.keys.single()
+
+        val withElse = addFlowchartIfBranchInWorkspace(document, FlowNodeId("block:${ifId.value}"))
+        val withElseIf = addFlowchartIfBranchInWorkspace(withElse, FlowNodeId("block:${ifId.value}"))
+        val shrunk = removeFlowchartIfBranchInWorkspace(withElseIf, FlowNodeId("block:${ifId.value}"))
+
+        assertEquals(BlockTypes.CONTROL_IF_ELSE, withElse.blocks.getValue(ifId).type)
+        assertEquals(BlockTypes.CONTROL_IF_ELSEIF_ELSE, withElseIf.blocks.getValue(ifId).type)
+        assertTrue(withElseIf.blocks.getValue(ifId).statementInputs.any { it.name == "ELIF_1" })
+        assertEquals(BlockTypes.CONTROL_IF_ELSE, shrunk.blocks.getValue(ifId).type)
     }
 
     @Test

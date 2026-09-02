@@ -93,6 +93,17 @@ class FlowchartShellEditorSession(
         reportStatus(controller.attachGraph(graphDocument))
     }
 
+    fun replaceGraphContent(content: String) {
+        check(!disposed) { "Flowchart session is already disposed." }
+        val nextGraph = decodeGraph(content)
+        if (::graphDocument.isInitialized && graphDocument == nextGraph) return
+        graphDocument = nextGraph
+        dirtyState = ShellDirtyState.CLEAN
+        hostServices.reportDirtyState(sessionId, dirtyState)
+        reportValidation()
+        reportStatus(controller.attachGraph(graphDocument, viewDocument))
+    }
+
     fun onViewDocumentChanged(view: FlowViewDocument) {
         viewDocument = view
         val nextDirty = if (persistedViewContent == encodeView(view)) {

@@ -146,12 +146,16 @@ import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_APPLY
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
+import com.visualtasker.wss.workspace.model.addFlowchartIfBranchInWorkspace
 import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
 import com.visualtasker.wss.workspace.model.connectFlowchartNodesInWorkspace
+import com.visualtasker.wss.workspace.model.connectFlowchartPortsInWorkspace
 import com.visualtasker.wss.workspace.model.deleteFlowchartNodeFromWorkspace
 import com.visualtasker.wss.workspace.model.disconnectFlowchartEdgeFromWorkspace
 import com.visualtasker.wss.workspace.model.flowchartConnectionOptions
+import com.visualtasker.wss.workspace.model.removeFlowchartIfBranchInWorkspace
 import com.visualtasker.wss.workspace.model.syncRootPositionsFromFlowchartView
+import com.visualtasker.wss.workspace.model.updateFlowchartNodeFieldInWorkspace
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
@@ -270,6 +274,8 @@ fun WorkspaceScreen(
     var workflowState by remember(uiPrefs) {
         mutableStateOf(WorkspaceWorkflowState.fromSerialized(loadBlockEditorWorkspaceJson(uiPrefs)))
     }
+    val workspaceUndoStack = remember(uiPrefs) { mutableStateListOf<String>() }
+    val workspaceRedoStack = remember(uiPrefs) { mutableStateListOf<String>() }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     val initialTextEditorDraft = remember(uiPrefs) {
         loadInitialTextEditorDraft(uiPrefs)
@@ -300,6 +306,13 @@ fun WorkspaceScreen(
     }
     val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
     val logConsoleState = remember { LogConsoleUiState() }
+    fun replaceWorkflowStateFromJson(updated: String, source: String) {
+        workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
+        flowRuntimeSnapshot = null
+        workspaceDryRunResult = null
+        workspaceDryRunStepIndex = 0
+        uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, workflowState.serializedJson).apply()
+    }
     val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
         if (updated != workflowState.serializedJson) {
             val syncReport = workspaceSyncGuard.inspect(updated)
@@ -314,12 +327,10 @@ fun WorkspaceScreen(
                 )
                 return@applyWorkspaceJsonChange
             }
-            workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
-            flowRuntimeSnapshot = null
-            workspaceDryRunResult = null
-            workspaceDryRunStepIndex = 0
+            workspaceUndoStack.add(workflowState.serializedJson)
+            workspaceRedoStack.clear()
+            replaceWorkflowStateFromJson(updated, source)
             val normalized = workflowState.serializedJson
-            uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, normalized).apply()
             studioLogStore.append(
                 level = StudioLogLevel.DEBUG,
                 source = "WORKSPACE",
@@ -328,6 +339,26 @@ fun WorkspaceScreen(
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:workflow-updated:$source"
             )
+        }
+    }
+    val undoWorkspaceChange: () -> Boolean = {
+        val previous = workspaceUndoStack.removeLastOrNull()
+        if (previous == null) {
+            false
+        } else {
+            workspaceRedoStack.add(workflowState.serializedJson)
+            replaceWorkflowStateFromJson(previous, "workspace:undo")
+            true
+        }
+    }
+    val redoWorkspaceChange: () -> Boolean = {
+        val next = workspaceRedoStack.removeLastOrNull()
+        if (next == null) {
+            false
+        } else {
+            workspaceUndoStack.add(workflowState.serializedJson)
+            replaceWorkflowStateFromJson(next, "workspace:redo")
+            true
         }
     }
     val addFlowchartNode: (String) -> Unit = { definitionId ->
@@ -373,6 +404,54 @@ fun WorkspaceScreen(
             applyWorkspaceJsonChange(
                 WorkspaceSerializer.serialize(nextDocument),
                 "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${sourceNodeId.value}:${targetNodeId.value}:connect"
+            )
+        }
+    }
+    val connectFlowchartPorts: (FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit = { sourceNodeId, sourcePortName, targetNodeId, targetPortName, fallbackKind ->
+        val nextDocument = connectFlowchartPortsInWorkspace(
+            document = workflowState.document,
+            sourceNodeId = sourceNodeId,
+            sourcePortName = sourcePortName,
+            targetNodeId = targetNodeId,
+            targetPortName = targetPortName,
+            fallbackKind = fallbackKind,
+        )
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${sourceNodeId.value}:$sourcePortName:${targetNodeId.value}:$targetPortName:connect"
+            )
+        }
+    }
+    val updateFlowchartNodeField: (FlowNodeId, String, String) -> Unit = { nodeId, fieldKey, rawValue ->
+        val nextDocument = updateFlowchartNodeFieldInWorkspace(
+            document = workflowState.document,
+            nodeId = nodeId,
+            fieldKey = fieldKey,
+            rawValue = rawValue,
+        )
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:$fieldKey:update-field"
+            )
+        }
+    }
+    val addFlowchartIfBranch: (FlowNodeId) -> Unit = { nodeId ->
+        val nextDocument = addFlowchartIfBranchInWorkspace(workflowState.document, nodeId)
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:add-branch"
+            )
+        }
+    }
+    val removeFlowchartIfBranch: (FlowNodeId) -> Unit = { nodeId ->
+        val nextDocument = removeFlowchartIfBranchInWorkspace(workflowState.document, nodeId)
+        if (nextDocument != workflowState.document) {
+            applyWorkspaceJsonChange(
+                WorkspaceSerializer.serialize(nextDocument),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:remove-branch"
             )
         }
     }
@@ -872,9 +951,15 @@ fun WorkspaceScreen(
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
                         onFlowchartNodesConnect = connectFlowchartNodes,
+                        onFlowchartPortsConnect = connectFlowchartPorts,
                         flowchartConnectionOptionsFor = flowchartConnectionOptionsFor,
                         onFlowchartEdgeDisconnect = disconnectFlowchartEdge,
+                        onFlowchartNodeFieldUpdate = updateFlowchartNodeField,
+                        onFlowchartIfBranchAdd = addFlowchartIfBranch,
+                        onFlowchartIfBranchRemove = removeFlowchartIfBranch,
                         onFlowchartViewChanged = syncFlowchartView,
+                        onWorkspaceUndo = undoWorkspaceChange,
+                        onWorkspaceRedo = redoWorkspaceChange,
                         onFlowRuntimeSnapshotChange = { snapshot ->
                             flowRuntimeSnapshot = snapshot
                             studioLogStore.append(
@@ -1184,9 +1269,15 @@ private fun WorkspacePanelContent(
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
     onFlowchartNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { _, _, _, _ -> },
+    onFlowchartPortsConnect: (FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit = { _, _, _, _, _ -> },
     flowchartConnectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption> = { _, _ -> emptyList() },
     onFlowchartEdgeDisconnect: (FlowEdgeId) -> Unit = {},
+    onFlowchartNodeFieldUpdate: (FlowNodeId, String, String) -> Unit = { _, _, _ -> },
+    onFlowchartIfBranchAdd: (FlowNodeId) -> Unit = {},
+    onFlowchartIfBranchRemove: (FlowNodeId) -> Unit = {},
     onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
+    onWorkspaceUndo: () -> Boolean = { false },
+    onWorkspaceRedo: () -> Boolean = { false },
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
@@ -1215,9 +1306,15 @@ private fun WorkspacePanelContent(
             onNodeSelected = onFlowchartNodeSelected,
             onNodeDelete = onFlowchartNodeDelete,
             onNodesConnect = onFlowchartNodesConnect,
+            onPortsConnect = onFlowchartPortsConnect,
             connectionOptionsFor = flowchartConnectionOptionsFor,
             onEdgeDisconnect = onFlowchartEdgeDisconnect,
+            onNodeFieldUpdate = onFlowchartNodeFieldUpdate,
+            onIfBranchAdd = onFlowchartIfBranchAdd,
+            onIfBranchRemove = onFlowchartIfBranchRemove,
             onViewChanged = onFlowchartViewChanged,
+            onWorkspaceUndo = onWorkspaceUndo,
+            onWorkspaceRedo = onWorkspaceRedo,
             onSessionReady = onFlowchartSessionReady
         )
         PanelType.TextEditor,
@@ -1622,9 +1719,15 @@ private fun FlowchartPanel(
     onNodeSelected: (FlowNodeId) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
     onNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit,
+    onPortsConnect: (FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit,
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption>,
     onEdgeDisconnect: (FlowEdgeId) -> Unit,
+    onNodeFieldUpdate: (FlowNodeId, String, String) -> Unit,
+    onIfBranchAdd: (FlowNodeId) -> Unit,
+    onIfBranchRemove: (FlowNodeId) -> Unit,
     onViewChanged: (FlowViewDocument) -> Unit,
+    onWorkspaceUndo: () -> Boolean,
+    onWorkspaceRedo: () -> Boolean,
     onSessionReady: (FlowchartShellEditorSession?) -> Unit
 ) {
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
@@ -1635,7 +1738,7 @@ private fun FlowchartPanel(
             pluginLookup = pluginRegistry::findEditorPlugin
         )
     }
-    val boundEditor = remember(panelId, graphContent) {
+    val boundEditor = remember(panelId) {
         coordinator.openEditor(
             shellPanelTypeName = "Flowchart",
             input = ShellEditorInput(
@@ -1650,6 +1753,9 @@ private fun FlowchartPanel(
     val session = boundEditor.session as FlowchartShellEditorSession
     LaunchedEffect(session, onSessionReady) {
         onSessionReady(session)
+    }
+    LaunchedEffect(session, graphContent) {
+        session.replaceGraphContent(graphContent)
     }
 
     DisposableEffect(boundEditor, uiPrefs, onSessionReady) {
@@ -1672,9 +1778,15 @@ private fun FlowchartPanel(
         onNodeSelected = onNodeSelected,
         onDeleteNode = onNodeDelete,
         onConnectNodes = onNodesConnect,
+        onConnectPorts = onPortsConnect,
         connectionOptionsFor = connectionOptionsFor,
         onDisconnectEdge = onEdgeDisconnect,
+        onUpdateNodeField = onNodeFieldUpdate,
+        onAddIfBranch = onIfBranchAdd,
+        onRemoveIfBranch = onIfBranchRemove,
         onViewChanged = onViewChanged,
+        onUndoWorkspace = onWorkspaceUndo,
+        onRedoWorkspace = onWorkspaceRedo,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },
         modifier = Modifier.fillMaxSize()
     )

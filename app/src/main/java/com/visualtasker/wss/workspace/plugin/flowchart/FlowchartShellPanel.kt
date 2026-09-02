@@ -39,9 +39,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
@@ -66,6 +68,7 @@ import de.visualtasker.flowchart.compose.FlowchartColorTokens
 import de.visualtasker.flowchart.compose.FlowchartHost
 import de.visualtasker.flowchart.compose.FlowchartHostCallbacks
 import de.visualtasker.flowchart.compose.FlowchartNodeShapeProvider
+import de.visualtasker.flowchart.compose.FlowchartNodePortRef
 import de.visualtasker.flowchart.compose.FlowchartShapeTokens
 import de.visualtasker.flowchart.compose.FlowchartUiConfig
 import de.visualtasker.flowchart.domain.FlowGraphNode
@@ -79,6 +82,8 @@ import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
+import de.visualtasker.flowchart.layout.FlowLayoutConfig
+import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.blockeditor.registry.BlockTypes
 
 @Composable
@@ -96,9 +101,15 @@ fun FlowchartShellPanel(
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
     onDeleteNode: ((FlowNodeId) -> Unit)? = null,
     onConnectNodes: ((FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit)? = null,
+    onConnectPorts: ((FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit)? = null,
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<FlowchartConnectionOption> = { _, _ -> emptyList() },
     onDisconnectEdge: ((FlowEdgeId) -> Unit)? = null,
+    onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)? = null,
+    onAddIfBranch: ((FlowNodeId) -> Unit)? = null,
+    onRemoveIfBranch: ((FlowNodeId) -> Unit)? = null,
     onViewChanged: ((FlowViewDocument) -> Unit)? = null,
+    onUndoWorkspace: (() -> Boolean)? = null,
+    onRedoWorkspace: (() -> Boolean)? = null,
 ) {
     val controller = session.controller
     var gridVisible by remember(session.sessionId) { mutableStateOf(true) }
@@ -106,13 +117,14 @@ fun FlowchartShellPanel(
     var selectedEdgeId by remember(session.sessionId) { mutableStateOf<FlowEdgeId?>(null) }
     var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var connectionMenu by remember(session.sessionId) { mutableStateOf<PendingConnectionMenu?>(null) }
+    var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.CodeFlow) }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
             session.onViewDocumentChanged(view)
             onViewChanged?.invoke(view)
         }
     }
-    val callbacks = remember(session, onNodeSelected, onConnectNodes, connectionOptionsFor, pendingConnectionStart, handleViewChanged) {
+    val callbacks = remember(session, onNodeSelected, onConnectNodes, onConnectPorts, connectionOptionsFor, pendingConnectionStart, handleViewChanged) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
             onStatusMessage = session::onStatusMessage,
@@ -142,6 +154,13 @@ fun FlowchartShellPanel(
                 if (it != null) selectedNodeId = null
                 if (it != null) pendingConnectionStart = null
                 if (it != null) connectionMenu = null
+            },
+            onPortConnectionRequested = { source, target ->
+                selectedNodeId = target.nodeId
+                selectedEdgeId = null
+                pendingConnectionStart = null
+                connectionMenu = null
+                onConnectPorts?.invoke(source.nodeId, source.portName, target.nodeId, target.portName, source.kind)
             },
         )
     }
@@ -209,13 +228,26 @@ fun FlowchartShellPanel(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(8.dp),
-            onUndo = { controller.dispatch(FlowInteractionAction.UndoViewChange) },
-            onRedo = { controller.dispatch(FlowInteractionAction.RedoViewChange) },
+            onUndo = {
+                if (onUndoWorkspace?.invoke() != true) {
+                    controller.dispatch(FlowInteractionAction.UndoViewChange)
+                }
+            },
+            onRedo = {
+                if (onRedoWorkspace?.invoke() != true) {
+                    controller.dispatch(FlowInteractionAction.RedoViewChange)
+                }
+            },
             onZoomOut = { controller.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0))) },
             onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
             onCenter = { controller.attachGraph(controller.snapshot().graph ?: session.graphDocument, null) },
             onArrange = {
-                controller.replaceLayout()?.let(handleViewChanged)
+                controller.replaceLayout(arrangeMode.layoutConfig())?.let(handleViewChanged)
+            },
+            arrangeMode = arrangeMode,
+            onArrangeModeSelected = { mode ->
+                arrangeMode = mode
+                controller.replaceLayout(mode.layoutConfig())?.let(handleViewChanged)
             },
             onGridToggle = { gridVisible = !gridVisible },
             onSave = { onSave?.invoke() ?: session.requestSave() },
@@ -255,6 +287,9 @@ fun FlowchartShellPanel(
             selectedNodeId = selectedNodeId,
             selectedEdgeId = selectedEdgeId,
             runtimeSnapshot = runtimeSnapshot,
+            onUpdateNodeField = onUpdateNodeField,
+            onAddIfBranch = onAddIfBranch,
+            onRemoveIfBranch = onRemoveIfBranch,
         )
         FlowchartConnectionMenu(
             expanded = connectionMenu != null,
@@ -274,6 +309,38 @@ private data class PendingConnectionMenu(
     val targetNodeId: FlowNodeId,
     val options: List<FlowchartConnectionOption>,
 )
+
+private enum class FlowchartArrangeMode(
+    val displayLabel: String,
+    val description: String,
+) {
+    CodeFlow("Code Flow", "Vertikaler Hauptstamm, Branches treppenfoermig"),
+    Compact("Kompakt", "Engere Abstaende fuer kleine Screens"),
+    Wide("Weit", "Mehr Abstand fuer Kanten-Lanes"),
+    PreserveManual("Manuell", "Vorhandene Node-Positionen respektieren");
+
+    fun layoutConfig(): FlowLayoutConfig =
+        when (this) {
+            CodeFlow -> FlowLayoutConfig()
+            Compact -> FlowLayoutConfig(
+                layerSpacing = 104.0,
+                nodeSpacing = 56.0,
+                componentSpacing = 112.0,
+                routingClearance = 22.0,
+                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+            )
+            Wide -> FlowLayoutConfig(
+                layerSpacing = 156.0,
+                nodeSpacing = 108.0,
+                componentSpacing = 180.0,
+                routingClearance = 34.0,
+                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+            )
+            PreserveManual -> FlowLayoutConfig(
+                pinnedNodePolicy = FlowPinnedNodePolicy.HONOR_VIEW,
+            )
+        }
+}
 
 @Composable
 private fun FlowchartConnectionMenu(
@@ -302,6 +369,9 @@ private fun FlowchartRuntimeInspector(
     selectedNodeId: FlowNodeId?,
     selectedEdgeId: FlowEdgeId?,
     runtimeSnapshot: FlowRuntimeSnapshot?,
+    onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
+    onAddIfBranch: ((FlowNodeId) -> Unit)?,
+    onRemoveIfBranch: ((FlowNodeId) -> Unit)?,
 ) {
     val node = selectedNodeId?.let { id -> session.graphDocument.nodes.firstOrNull { it.id == id } }
     val edge = selectedEdgeId?.let { id -> session.graphDocument.edges.firstOrNull { it.id == id } }
@@ -327,6 +397,9 @@ private fun FlowchartRuntimeInspector(
                     node = node,
                     edges = session.graphDocument.edges,
                     runtimeSnapshot = runtimeSnapshot,
+                    onUpdateNodeField = onUpdateNodeField,
+                    onAddIfBranch = onAddIfBranch,
+                    onRemoveIfBranch = onRemoveIfBranch,
                 )
             } else if (edge != null) {
                 FlowchartEdgeInspectorRows(
@@ -343,6 +416,9 @@ private fun FlowchartNodeInspectorRows(
     node: FlowGraphNode,
     edges: List<FlowGraphEdge>,
     runtimeSnapshot: FlowRuntimeSnapshot?,
+    onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
+    onAddIfBranch: ((FlowNodeId) -> Unit)?,
+    onRemoveIfBranch: ((FlowNodeId) -> Unit)?,
 ) {
     val status = runtimeSnapshot?.nodeStates?.get(node.id)?.name ?: "NO TRACE"
     val blockType = node.properties.stringValue("blockType") ?: "?"
@@ -381,7 +457,55 @@ private fun FlowchartNodeInspectorRows(
     if (diagnostics.isNotEmpty()) {
         InspectorLine("Diagnose", diagnostics.joinToString { it.message })
     }
+    editableNodeFields(node).forEach { field ->
+        OutlinedTextField(
+            value = field.value,
+            onValueChange = { value -> onUpdateNodeField?.invoke(node.id, field.fieldKey, value) },
+            enabled = onUpdateNodeField != null,
+            singleLine = true,
+            label = { Text(field.label) },
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    if (blockType in setOf(BlockTypes.CONTROL_IF, BlockTypes.CONTROL_IF_ELSE, BlockTypes.CONTROL_IF_ELSEIF_ELSE)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(
+                onClick = { onAddIfBranch?.invoke(node.id) },
+                enabled = onAddIfBranch != null,
+            ) {
+                Text("Branch +")
+            }
+            TextButton(
+                onClick = { onRemoveIfBranch?.invoke(node.id) },
+                enabled = onRemoveIfBranch != null,
+            ) {
+                Text("Branch -")
+            }
+        }
+    }
 }
+
+private data class EditableFlowchartNodeField(
+    val label: String,
+    val fieldKey: String,
+    val value: String,
+)
+
+private fun editableNodeFields(node: FlowGraphNode): List<EditableFlowchartNodeField> =
+    listOfNotNull(
+        node.properties.textFor("waitMs")?.let { EditableFlowchartNodeField("Wartezeit ms", "ms", it) },
+        node.properties.textFor("frequency")?.let { EditableFlowchartNodeField("Frequenz", "frequency", it) },
+        node.properties.textFor("durationMs")?.let { EditableFlowchartNodeField("Dauer ms", "durationMs", it) },
+        node.properties.textFor("volume")?.let { EditableFlowchartNodeField("Lautstärke", "volume", it) },
+        node.properties.textFor("message")?.let { EditableFlowchartNodeField("Nachricht", "message", it) },
+        node.properties.textFor("text")?.let { EditableFlowchartNodeField("Text", "text", it) },
+        node.properties.textFor("operator")?.let { EditableFlowchartNodeField("Operator", "operator", it) },
+        node.properties.textFor("literalNumber")?.let { EditableFlowchartNodeField("Wert", "value", it) },
+        node.properties.textFor("literalString")?.let { EditableFlowchartNodeField("Wert", "value", it) },
+        node.properties.textFor("literalBoolean")?.let { EditableFlowchartNodeField("Wert", "value", it) },
+        node.properties.textFor("variableLabel")?.let { EditableFlowchartNodeField("Variable", "variableLabel", it) },
+    )
 
 @Composable
 private fun FlowchartEdgeInspectorRows(
@@ -549,6 +673,8 @@ private fun FlowchartShellToolbar(
     onZoomIn: () -> Unit,
     onCenter: () -> Unit,
     onArrange: () -> Unit,
+    arrangeMode: FlowchartArrangeMode,
+    onArrangeModeSelected: (FlowchartArrangeMode) -> Unit,
     onGridToggle: () -> Unit,
     onSave: () -> Unit,
     onBeginConnect: (() -> Unit)?,
@@ -562,6 +688,7 @@ private fun FlowchartShellToolbar(
     gridVisible: Boolean,
     connecting: Boolean,
 ) {
+    var arrangeMenuExpanded by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
@@ -611,7 +738,44 @@ private fun FlowchartShellToolbar(
             FlowchartToolbarButton("Zoom -", onZoomOut) { Icon(Icons.Default.ZoomOut, contentDescription = null) }
             FlowchartToolbarButton("Zoom +", onZoomIn) { Icon(Icons.Default.ZoomIn, contentDescription = null) }
             FlowchartToolbarButton("Zentrieren", onCenter) { Icon(Icons.Default.CenterFocusStrong, contentDescription = null) }
-            FlowchartToolbarButton("Auto-Arrange", onArrange) { Icon(Icons.Default.AccountTree, contentDescription = null) }
+            Box {
+                FlowchartToolbarButton(
+                    tooltip = "Auto-Arrange: ${arrangeMode.displayLabel}",
+                    onClick = { arrangeMenuExpanded = true },
+                ) {
+                    Icon(Icons.Default.AccountTree, contentDescription = null)
+                }
+                DropdownMenu(
+                    expanded = arrangeMenuExpanded,
+                    onDismissRequest = { arrangeMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Jetzt anwenden") },
+                        onClick = {
+                            arrangeMenuExpanded = false
+                            onArrange()
+                        },
+                    )
+                    FlowchartArrangeMode.entries.forEach { mode ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(mode.displayLabel)
+                                    Text(
+                                        text = mode.description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            onClick = {
+                                arrangeMenuExpanded = false
+                                onArrangeModeSelected(mode)
+                            },
+                        )
+                    }
+                }
+            }
             FlowchartToolbarButton("Grid", onGridToggle) {
                 Icon(
                     Icons.Default.GridOn,
@@ -859,3 +1023,11 @@ private fun Map<String, FlowSemanticValue>.stringValue(key: String): String? =
 
 private fun Map<String, FlowSemanticValue>.numberValue(key: String): String? =
     (this[key] as? FlowSemanticValue.NumberValue)?.canonicalValue
+
+private fun Map<String, FlowSemanticValue>.textFor(key: String): String? =
+    when (val value = this[key]) {
+        is FlowSemanticValue.StringValue -> value.value
+        is FlowSemanticValue.NumberValue -> value.canonicalValue
+        is FlowSemanticValue.BooleanValue -> value.value.toString()
+        else -> null
+    }
