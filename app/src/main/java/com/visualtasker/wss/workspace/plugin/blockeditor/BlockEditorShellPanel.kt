@@ -21,6 +21,7 @@ fun BlockEditorShellPanel(
         controller = session.controller,
         uiConfig = uiConfig,
         modifier = modifier,
-        onSaveWorkspace = onSave
+        onSaveWorkspace = onSave,
+        disposeControllerOnDispose = false
     )
 }

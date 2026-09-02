@@ -1,5 +1,8 @@
 package com.visualtasker.wss.workspace.plugin.flowchart
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.visualtasker.wss.workspace.plugin.ShellDirtyState
 import com.visualtasker.wss.workspace.plugin.ShellDocumentId
 import com.visualtasker.wss.workspace.plugin.ShellEditorCloseState
@@ -62,9 +65,10 @@ class FlowchartShellEditorSession(
         }
 
     val controller: FlowchartController = FlowchartController(FlowSurfaceId(input.sessionId.value))
-    lateinit var graphDocument: FlowGraphDocument
-        private set
-    var viewDocument: FlowViewDocument? = null
+    private var graphDocumentState: FlowGraphDocument? by mutableStateOf(null)
+    val graphDocument: FlowGraphDocument
+        get() = graphDocumentState ?: error("Flowchart graph is not initialized.")
+    var viewDocument: FlowViewDocument? by mutableStateOf(null)
         private set
 
     private var persistedViewContent: String? = null
@@ -84,7 +88,7 @@ class FlowchartShellEditorSession(
             "Flowchart supports only ${FlowchartShellPlugin.FLOW_GRAPH_JSON}."
         }
         documentId = input.documentId
-        graphDocument = decodeGraph(input.content)
+        graphDocumentState = decodeGraph(input.content)
         viewDocument = null
         persistedViewContent = null
         dirtyState = ShellDirtyState.CLEAN
@@ -96,8 +100,8 @@ class FlowchartShellEditorSession(
     fun replaceGraphContent(content: String) {
         check(!disposed) { "Flowchart session is already disposed." }
         val nextGraph = decodeGraph(content)
-        if (::graphDocument.isInitialized && graphDocument == nextGraph) return
-        graphDocument = nextGraph
+        if (graphDocumentState == nextGraph) return
+        graphDocumentState = nextGraph
         dirtyState = ShellDirtyState.CLEAN
         hostServices.reportDirtyState(sessionId, dirtyState)
         reportValidation()
@@ -152,6 +156,7 @@ class FlowchartShellEditorSession(
 
     override fun onDeactivated() {
         active = false
+        controller.cancelTransientInteraction()
     }
 
     override fun dispose() {

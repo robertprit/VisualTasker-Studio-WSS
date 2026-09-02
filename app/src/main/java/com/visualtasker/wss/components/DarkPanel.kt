@@ -1,11 +1,14 @@
 package com.visualtasker.wss.components
 
+import android.util.Log
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -92,6 +96,12 @@ fun DarkPanel(
     var liveHeight by remember(panel.id) { mutableIntStateOf(panel.height) }
     var railExpanded by remember { mutableStateOf(false) }
     val density = LocalDensity.current.density
+    fun focusPanel() {
+        if (isActiveTarget) return
+        Log.d(DARK_PANEL_LOG_TAG, "focus panel=${panel.id} title=${panel.title} z=${panel.zIndex}")
+        onFocusRequest()
+        onZIndexChange()
+    }
 
     LaunchedEffect(panel.position) {
         if (!isDragging) {
@@ -182,17 +192,18 @@ fun DarkPanel(
                             .fillMaxWidth()
                             .background(Color.Transparent)
                             .clickable {
-                                onFocusRequest()
-                                onZIndexChange()
+                                Log.d(DARK_PANEL_LOG_TAG, "header click panel=${panel.id} active=$isActiveTarget")
+                                focusPanel()
                             }
                             .pointerInput(panel.id) {
                                 detectDragGestures(
                                     onDragStart = {
+                                        Log.d(DARK_PANEL_LOG_TAG, "header dragStart panel=${panel.id} active=$isActiveTarget")
                                         isDragging = true
-                                        onFocusRequest()
-                                        onZIndexChange()
+                                        focusPanel()
                                     },
                                     onDragEnd = {
+                                        Log.d(DARK_PANEL_LOG_TAG, "header dragEnd panel=${panel.id}")
                                         isDragging = false
                                         if (snapEnabled && !panel.isMaximized) {
                                             position = GridSystem.snapPosition(position, gridSizeDp)
@@ -200,6 +211,7 @@ fun DarkPanel(
                                         }
                                     },
                                     onDragCancel = {
+                                        Log.d(DARK_PANEL_LOG_TAG, "header dragCancel panel=${panel.id}")
                                         isDragging = false
                                     },
                                     onDrag = { change, dragAmount ->
@@ -284,6 +296,19 @@ fun DarkPanel(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .pointerInput(panel.id, isActiveTarget) {
+                                        awaitEachGesture {
+                                            awaitFirstDown(
+                                                requireUnconsumed = false,
+                                                pass = PointerEventPass.Initial
+                                            )
+                                            Log.d(DARK_PANEL_LOG_TAG, "content down panel=${panel.id} active=$isActiveTarget z=${panel.zIndex}")
+                                            focusPanel()
+                                            do {
+                                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            } while (event.changes.any { it.pressed })
+                                        }
+                                    }
                                     .padding(8.dp),
                                 verticalArrangement = Arrangement.Top
                             ) {
@@ -314,6 +339,8 @@ fun DarkPanel(
         }
     }
 }
+
+private const val DARK_PANEL_LOG_TAG = "VTWSS/DarkPanel"
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)

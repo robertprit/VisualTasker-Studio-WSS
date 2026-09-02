@@ -1,5 +1,6 @@
 package com.visualtasker.wss.workspace.plugin.blockeditor
 
+import android.util.Log
 import com.visualtasker.wss.workspace.plugin.ShellDirtyState
 import com.visualtasker.wss.workspace.plugin.ShellDocumentId
 import com.visualtasker.wss.workspace.plugin.ShellEditorCloseState
@@ -71,6 +72,7 @@ class BlockEditorShellEditorSession(
     }
 
     override fun open(input: ShellEditorInput) {
+        Log.d(BLOCK_SHELL_LOG_TAG, "open session=${input.sessionId.value} disposed=$disposed initialized=${::controller.isInitialized}")
         check(!disposed) { "Blockeditor session is already disposed." }
         require(input.sessionId == sessionId) {
             "Blockeditor session cannot be reopened with another session id."
@@ -104,6 +106,47 @@ class BlockEditorShellEditorSession(
             initialDocument = document,
             callbacks = callbacks()
         )
+        Log.d(BLOCK_SHELL_LOG_TAG, "open complete session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
+    }
+
+    fun replaceInputDocument(input: ShellEditorInput) {
+        Log.d(BLOCK_SHELL_LOG_TAG, "replaceInputDocument session=${input.sessionId.value} disposed=$disposed initialized=${::controller.isInitialized}")
+        check(!disposed) { "Blockeditor session is already disposed." }
+        require(input.sessionId == sessionId) {
+            "Blockeditor session cannot be updated with another session id."
+        }
+        require(input.formatId == BlockEditorDocumentFormats.WORKSPACE_JSON) {
+            "Blockeditor supports only ${BlockEditorDocumentFormats.WORKSPACE_JSON}."
+        }
+        if (!::controller.isInitialized) {
+            open(input)
+            return
+        }
+        documentId = input.documentId
+        formatId = input.formatId
+        val decoded = WorkspaceSerializer.decode(input.content)
+        val document = when (decoded) {
+            is WorkspaceDecodeResult.Decoded -> decoded.document
+            is WorkspaceDecodeResult.Malformed -> throw IllegalArgumentException(decoded.reason)
+            is WorkspaceDecodeResult.UnsupportedSchema -> throw IllegalArgumentException(
+                decoded.diagnostics.firstOrNull()?.message ?: "Unsupported workspace schema."
+            )
+        }
+        if (decoded.diagnostics.isNotEmpty()) {
+            hostServices.reportDiagnostics(
+                sessionId,
+                ShellValidationResult(decoded.diagnostics.map { it.message })
+            )
+        }
+        persistedContent = WorkspaceSerializer.serialize(document)
+        updateDirtyState(ShellDirtyState.CLEAN)
+        controller.replaceWorkspaceDocument(
+            newDocument = document,
+            recordHistory = false,
+            focusBlockId = null,
+            selectFocusedBlock = false,
+        )
+        Log.d(BLOCK_SHELL_LOG_TAG, "replaceInputDocument complete session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
     }
 
     override fun requestSave(): ShellEditorOutput {
@@ -140,14 +183,20 @@ class BlockEditorShellEditorSession(
 
     override fun onActivated() {
         active = true
+        Log.d(BLOCK_SHELL_LOG_TAG, "activated session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
     }
 
     override fun onDeactivated() {
         active = false
+        Log.d(BLOCK_SHELL_LOG_TAG, "deactivated session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
+        if (::controller.isInitialized) {
+            controller.cancelActiveDrag()
+        }
     }
 
     override fun dispose() {
         if (disposed) return
+        Log.d(BLOCK_SHELL_LOG_TAG, "dispose session=${sessionId.value} controllerInitialized=${::controller.isInitialized}")
         disposed = true
         active = false
         controller.close()
@@ -219,3 +268,5 @@ class BlockEditorShellEditorSession(
         hostServices.reportDirtyState(sessionId, dirtyState)
     }
 }
+
+private const val BLOCK_SHELL_LOG_TAG = "VTWSS/BlockShell"

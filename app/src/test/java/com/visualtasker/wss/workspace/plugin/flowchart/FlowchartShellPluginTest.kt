@@ -12,8 +12,11 @@ import com.visualtasker.wss.workspace.plugin.WorkspaceShellPluginHostCoordinator
 import com.visualtasker.wss.workspace.plugin.defaultWorkspaceShellPluginRegistry
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import de.visualtasker.flowchart.testsupport.FlowchartFixtures
+import de.visualtasker.flowchart.domain.FlowPoint
+import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -64,6 +67,23 @@ class FlowchartShellPluginTest {
         assertTrue(bound.session is FlowchartShellEditorSession)
         bound.close()
         assertTrue((bound.session as FlowchartShellEditorSession).isDisposed())
+    }
+
+    @Test
+    fun deactivationCancelsTransientFlowchartInteraction() {
+        val session = FlowchartShellPlugin().createEditorSession(
+            sampleInput(),
+            RecordingShellPluginHostAdapter()
+        ) as FlowchartShellEditorSession
+        val nodeId = session.graphDocument.nodes.first().id
+
+        session.controller.dispatch(FlowInteractionAction.BeginNodeDrag(nodeId, FlowPoint(0.0, 0.0)))
+        session.controller.dispatch(FlowInteractionAction.UpdateNodeDrag(FlowPoint(16.0, 8.0)))
+
+        session.onDeactivated()
+
+        assertFalse(session.isActive())
+        assertNull(session.controller.snapshot().interaction.dragState)
     }
 
     private fun sampleInput(): ShellEditorInput =

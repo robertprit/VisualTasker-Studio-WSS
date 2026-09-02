@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -120,6 +121,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.visualtasker.wss.components.DarkPanel
@@ -218,6 +220,8 @@ private const val PANEL_DEFAULT_W = 320f
 private const val PANEL_DEFAULT_H = 240f
 private const val GRID_STEP_SMALL = 24f
 private const val GRID_STEP_LARGE = 48f
+private const val WORKSPACE_TOP_BAR_HEIGHT_DP = 64f
+private const val WORKSPACE_PANEL_MARGIN_DP = 12f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
@@ -602,6 +606,7 @@ fun WorkspaceScreen(
     }
     val density = scaledDensity.density
     val gridSizeDp = if (useLargeGrid) GridSystem.GRID_SIZE_DP_LARGE else GridSystem.GRID_SIZE_DP_SMALL
+    val workspaceTopGuardPx = (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP) * density
 
     val demoRecorderSteps = remember {
         mutableStateListOf(
@@ -642,7 +647,7 @@ fun WorkspaceScreen(
                 type = type,
                 title = title,
                 x = 96f,
-                y = 96f,
+                y = max(96f, workspaceTopGuardPx),
                 width = PANEL_DEFAULT_W,
                 height = PANEL_DEFAULT_H,
                 zIndex = nextZ++,
@@ -703,11 +708,31 @@ fun WorkspaceScreen(
         ) {
             GridBackground(visible = snapEnabled, stepDp = gridSizeDp.toFloat())
 
+            WorkspaceTopAppBar(
+                snapEnabled = snapEnabled,
+                onSnapToggle = { snapEnabled = !snapEnabled },
+                onAutoArrange = {
+                    autoArrangePanels(
+                        panels = panels,
+                        surfaceSize = surfaceSize,
+                        focusedPanelId = focusedPanelId,
+                        topInsetPx = workspaceTopGuardPx
+                    )
+                },
+                onOpenPanel = openPanel,
+                onOpenSettings = { showSettingsSheet = true },
+                onOpenMainScreen = onMainScreenRequested,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .zIndex(10_000f)
+            )
+
         panels.sortedBy { it.zIndex }.forEach { panel ->
             if (panel.minimized) return@forEach
             key(panel.id) {
                 val maxWidthDp = ((surfaceSize.width - panel.x - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
-                val maxHeightDp = ((surfaceSize.height - panel.y - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
+                val panelTopPx = max(panel.y, workspaceTopGuardPx)
+                val maxHeightDp = ((surfaceSize.height - panelTopPx - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
                 val isLogConsolePanel = panel.type == PanelType.LogConsole || panel.type == PanelType.RuntimeLog
@@ -864,9 +889,10 @@ fun WorkspaceScreen(
                         updatePanel(panels, panel.id) {
                             val panelWidthPx = it.width * density
                             val panelHeightPx = it.height * density
+                            val maxPanelY = max(workspaceTopGuardPx, surfaceSize.height - panelHeightPx - 16f)
                             it.copy(
                                 x = newPos.x.coerceIn(0f, max(0f, surfaceSize.width - panelWidthPx - 16f)),
-                                y = newPos.y.coerceIn(0f, max(0f, surfaceSize.height - panelHeightPx - 16f))
+                                y = newPos.y.coerceIn(workspaceTopGuardPx, maxPanelY)
                             )
                         }
                     },
@@ -902,7 +928,8 @@ fun WorkspaceScreen(
                     },
                     onColorChange = { color ->
                         updatePanel(panels, panel.id) { it.copy(accentColor = color) }
-                    }
+                    },
+                    modifier = Modifier.zIndex(panel.zIndex.toFloat())
                 ) {
                     WorkspacePanelContent(
                         panel = panel,
@@ -983,22 +1010,6 @@ fun WorkspaceScreen(
             }
         }
 
-        WorkspaceRail(
-            snapEnabled = snapEnabled,
-            onSnapToggle = { snapEnabled = !snapEnabled },
-            onAutoArrange = {
-                autoArrangePanels(
-                    panels = panels,
-                    surfaceSize = surfaceSize,
-                    focusedPanelId = focusedPanelId
-                )
-            },
-            onOpenPanel = openPanel,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 8.dp)
-        )
-
         MinimizedDock(
             panels = panels.filter { it.minimized },
             onRestore = { id ->
@@ -1010,7 +1021,7 @@ fun WorkspaceScreen(
                 .padding(
                     start = 52.dp,
                     end = 12.dp,
-                    top = if (dockAtTop) 12.dp else 0.dp,
+                    top = if (dockAtTop) (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP).dp else 0.dp,
                     bottom = if (dockAtTop) 0.dp else 12.dp
                 )
         )
@@ -1106,7 +1117,8 @@ fun WorkspaceScreen(
                 autoArrangePanels(
                     panels = panels,
                     surfaceSize = surfaceSize,
-                    focusedPanelId = focusedPanelId
+                    focusedPanelId = focusedPanelId,
+                    topInsetPx = workspaceTopGuardPx
                 )
             },
             onDismiss = { showSettingsSheet = false }
@@ -1396,6 +1408,72 @@ private fun WorkspacePanelContent(
 }
 
 @Composable
+private fun WorkspaceTopAppBar(
+    snapEnabled: Boolean,
+    onSnapToggle: () -> Unit,
+    onAutoArrange: () -> Unit,
+    onOpenPanel: (PanelType) -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMainScreen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(WORKSPACE_TOP_BAR_HEIGHT_DP.dp)
+            .statusBarsPadding(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
+        tonalElevation = 3.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "VT Studio WSS",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                TooltipIconButton(tooltip = "Neues Panel", onClick = { onOpenPanel(PanelType.BlockEditor) }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.ViewKanban, contentDescription = "BlockEditor öffnen")
+                }
+                TooltipIconButton(tooltip = "Flowchart öffnen", onClick = { onOpenPanel(PanelType.Flowchart) }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Polyline, contentDescription = "Flowchart öffnen")
+                }
+                TooltipIconButton(tooltip = "TextEditor öffnen", onClick = { onOpenPanel(PanelType.TextEditor) }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Article, contentDescription = "TextEditor öffnen")
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TooltipIconButton(tooltip = "Auto anordnen", onClick = onAutoArrange, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.AutoAwesomeMosaic, contentDescription = "Auto Arrange")
+                }
+                TooltipIconButton(tooltip = "Snap ${if (snapEnabled) "deaktivieren" else "aktivieren"}", onClick = onSnapToggle, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.GridView, contentDescription = "Snap ${if (snapEnabled) "an" else "aus"}")
+                }
+                TooltipIconButton(tooltip = "Einstellungen", onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
+                }
+                TooltipIconButton(tooltip = "MainScreen starten", onClick = onOpenMainScreen, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.AutoAwesomeMosaic, contentDescription = "MainScreen starten")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun WorkspaceRail(
     snapEnabled: Boolean,
     onSnapToggle: () -> Unit,
@@ -1593,7 +1671,7 @@ private fun BlockEditorPanel(
             workflowState.mutationSource != sessionSource &&
             current != workflowState.serializedJson
         ) {
-            session.open(
+            session.replaceInputDocument(
                 ShellEditorInput(
                     sessionId = session.sessionId,
                     documentId = ShellDocumentId("workflow-main"),
@@ -1667,9 +1745,9 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
                     .clip(CircleShape)
                     .background(
                         if (session?.controller?.expandedCategory == category.id) {
-                            accent.copy(alpha = 0.28f)
+                            accent.copy(alpha = 0.46f)
                         } else {
-                            accent.copy(alpha = 0.18f)
+                            accent.copy(alpha = 0.30f)
                         }
                     )
                     .clickable {
@@ -1681,7 +1759,7 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
                 Icon(
                     imageVector = CategoryIcons.forCategory(category.id),
                     contentDescription = category.label,
-                    tint = accent,
+                    tint = if (session?.controller?.expandedCategory == category.id) Color.White else accent,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -1845,10 +1923,10 @@ private fun GridBackground(visible: Boolean, stepDp: Float) {
 }
 
 private fun defaultPanels(): List<PanelState> = listOf(
-    workspacePanel("panel-1", PanelType.RecorderSteps, "Stepper 1", 84f, 72f, 360f, 360f, 1),
-    workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor 2", 470f, 84f, 360f, 300f, 2),
-    workspacePanel("panel-3", PanelType.Flowchart, "Flowchart 3", 470f, 420f, 360f, 300f, 3),
-    workspacePanel("panel-4", PanelType.LogConsole, "LogConsole 4", 860f, 110f, 320f, 240f, 4)
+    workspacePanel("panel-1", PanelType.RecorderSteps, "Stepper 1", 84f, 112f, 360f, 360f, 1),
+    workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor 2", 470f, 124f, 360f, 300f, 2),
+    workspacePanel("panel-3", PanelType.Flowchart, "Flowchart 3", 470f, 460f, 360f, 300f, 3),
+    workspacePanel("panel-4", PanelType.LogConsole, "LogConsole 4", 860f, 150f, 320f, 240f, 4)
 )
 
 private fun workspacePanel(
@@ -1877,7 +1955,8 @@ private fun workspacePanel(
 private fun autoArrangePanels(
     panels: MutableList<PanelState>,
     surfaceSize: IntSize,
-    focusedPanelId: String
+    focusedPanelId: String,
+    topInsetPx: Float = WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP
 ) {
     val visible = panels.filter { !it.minimized }.sortedBy { it.zIndex }
     if (visible.isEmpty() || surfaceSize.width <= 0 || surfaceSize.height <= 0) return
@@ -1885,7 +1964,7 @@ private fun autoArrangePanels(
     val columns = max(1, ceil(sqrt(visible.size.toFloat())).toInt())
     val gap = 14f
     val availableWidth = surfaceSize.width - 64f
-    val availableHeight = surfaceSize.height - 48f
+    val availableHeight = surfaceSize.height - topInsetPx - 32f
     val cellW = ((availableWidth - ((columns - 1) * gap)) / columns).coerceAtLeast(PANEL_MIN_W)
     val rows = ceil(visible.size / columns.toFloat()).toInt()
     val cellH = ((availableHeight - ((rows - 1) * gap)) / rows).coerceAtLeast(PANEL_MIN_H)
@@ -1897,7 +1976,7 @@ private fun autoArrangePanels(
         val targetW = if (isFocused) (cellW * 1.08f).coerceAtMost(availableWidth) else cellW
         val targetH = if (isFocused) (cellH * 1.08f).coerceAtMost(availableHeight) else cellH
         val nx = 52f + col * (cellW + gap)
-        val ny = 16f + row * (cellH + gap)
+        val ny = topInsetPx + row * (cellH + gap)
         val idx = panels.indexOfFirst { it.id == panel.id }
         if (idx >= 0) {
             panels[idx] = panels[idx].copy(

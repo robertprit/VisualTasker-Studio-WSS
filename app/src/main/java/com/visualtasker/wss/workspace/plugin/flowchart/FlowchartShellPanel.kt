@@ -3,6 +3,7 @@ package com.visualtasker.wss.workspace.plugin.flowchart
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,6 +64,10 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.visualtasker.wss.workspace.model.FlowchartConnectionOption
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
@@ -118,13 +124,37 @@ fun FlowchartShellPanel(
     var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var connectionMenu by remember(session.sessionId) { mutableStateOf<PendingConnectionMenu?>(null) }
     var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.CodeFlow) }
+    var panelSize by remember(session.sessionId) { mutableStateOf(IntSize.Zero) }
+    var draggedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
+    var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
+    val density = LocalDensity.current
+    val trashSizePx = with(density) { 96.dp.toPx() }
+    val trashMarginPx = with(density) { 16.dp.toPx() }
+    fun isOverTrash(point: FlowPoint): Boolean {
+        if (panelSize == IntSize.Zero) return false
+        val left = panelSize.width - trashSizePx - trashMarginPx
+        val top = panelSize.height - trashSizePx - trashMarginPx
+        val right = panelSize.width - trashMarginPx
+        val bottom = panelSize.height - trashMarginPx
+        return point.x in left..right && point.y in top..bottom
+    }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
             session.onViewDocumentChanged(view)
             onViewChanged?.invoke(view)
         }
     }
-    val callbacks = remember(session, onNodeSelected, onConnectNodes, onConnectPorts, connectionOptionsFor, pendingConnectionStart, handleViewChanged) {
+    val callbacks = remember(
+        session,
+        onNodeSelected,
+        onDeleteNode,
+        onConnectNodes,
+        onConnectPorts,
+        connectionOptionsFor,
+        pendingConnectionStart,
+        panelSize,
+        handleViewChanged,
+    ) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
             onStatusMessage = session::onStatusMessage,
@@ -162,6 +192,19 @@ fun FlowchartShellPanel(
                 connectionMenu = null
                 onConnectPorts?.invoke(source.nodeId, source.portName, target.nodeId, target.portName, source.kind)
             },
+            onNodeDragChanged = { nodeId, point ->
+                draggedNodeId = nodeId
+                draggedNodePoint = point
+            },
+            onNodeDragFinished = { nodeId, point ->
+                if (onDeleteNode != null && isOverTrash(point)) {
+                    selectedNodeId = null
+                    selectedEdgeId = null
+                    pendingConnectionStart = null
+                    connectionMenu = null
+                    onDeleteNode(nodeId)
+                }
+            },
         )
     }
     val nodeShapeProvider = remember {
@@ -198,7 +241,7 @@ fun FlowchartShellPanel(
                 nodeCornerRadiusDp = 8f,
                 nodeStrokeWidthDp = 1.4f,
                 edgeStrokeWidthDp = 2f,
-                connectorRadiusDp = 3.2f,
+                connectorRadiusDp = 5.8f,
             ),
         )
     }
@@ -210,6 +253,7 @@ fun FlowchartShellPanel(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .onSizeChanged { panelSize = it }
             .background(Color(0xFF09070F), RoundedCornerShape(18.dp))
     ) {
         if (gridVisible) {
@@ -223,6 +267,12 @@ fun FlowchartShellPanel(
             uiConfig = uiConfig,
             callbacks = callbacks,
             nodeShapeProvider = nodeShapeProvider,
+        )
+        FlowchartTrashDropTarget(
+            active = draggedNodeId != null && draggedNodePoint?.let(::isOverTrash) == true,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(18.dp),
         )
         FlowchartShellToolbar(
             modifier = Modifier
@@ -279,10 +329,10 @@ fun FlowchartShellPanel(
             session = session,
             runtimeSnapshot = runtimeSnapshot,
         )
-        FlowchartRuntimeInspector(
+        FlowchartRuntimeInspectorBottomSheet(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(10.dp),
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             session = session,
             selectedNodeId = selectedNodeId,
             selectedEdgeId = selectedEdgeId,
@@ -321,7 +371,13 @@ private enum class FlowchartArrangeMode(
 
     fun layoutConfig(): FlowLayoutConfig =
         when (this) {
-            CodeFlow -> FlowLayoutConfig()
+            CodeFlow -> FlowLayoutConfig(
+                layerSpacing = 148.0,
+                nodeSpacing = 92.0,
+                componentSpacing = 168.0,
+                routingClearance = 36.0,
+                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+            )
             Compact -> FlowLayoutConfig(
                 layerSpacing = 104.0,
                 nodeSpacing = 56.0,
@@ -363,7 +419,30 @@ private fun FlowchartConnectionMenu(
 }
 
 @Composable
-private fun FlowchartRuntimeInspector(
+private fun FlowchartTrashDropTarget(
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(96.dp),
+        shape = CircleShape,
+        color = if (active) Color(0xFFB3261E).copy(alpha = 0.86f) else Color(0xFF3C3746).copy(alpha = 0.82f),
+        contentColor = if (active) Color.White else Color(0xFFECE6F3),
+        tonalElevation = 4.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FlowchartRuntimeInspectorBottomSheet(
     modifier: Modifier,
     session: FlowchartShellEditorSession,
     selectedNodeId: FlowNodeId?,
@@ -376,36 +455,62 @@ private fun FlowchartRuntimeInspector(
     val node = selectedNodeId?.let { id -> session.graphDocument.nodes.firstOrNull { it.id == id } }
     val edge = selectedEdgeId?.let { id -> session.graphDocument.edges.firstOrNull { it.id == id } }
     if (node == null && edge == null) return
+    val density = LocalDensity.current
+    var sheetHeightDp by remember { mutableFloatStateOf(196f) }
     Surface(
-        modifier = modifier.fillMaxWidth(0.58f),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(sheetHeightDp.dp),
+        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 14.dp, bottomEnd = 14.dp),
         color = Color(0xFF171121).copy(alpha = 0.96f),
         contentColor = Color(0xFFE9DFF5),
         tonalElevation = 5.dp,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(width = 42.dp, height = 5.dp)
+                    .background(Color(0xFFE9DFF5).copy(alpha = 0.45f), RoundedCornerShape(999.dp))
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            sheetHeightDp = (sheetHeightDp - dragAmount.y / density.density).coerceIn(112f, 340f)
+                        }
+                    }
+            )
             Text(
                 text = if (node != null) "Runtime Inspector" else "Edge Inspector",
                 style = MaterialTheme.typography.labelLarge,
                 color = Color(0xFFE9DFF5),
             )
-            if (node != null) {
-                FlowchartNodeInspectorRows(
-                    node = node,
-                    edges = session.graphDocument.edges,
-                    runtimeSnapshot = runtimeSnapshot,
-                    onUpdateNodeField = onUpdateNodeField,
-                    onAddIfBranch = onAddIfBranch,
-                    onRemoveIfBranch = onRemoveIfBranch,
-                )
-            } else if (edge != null) {
-                FlowchartEdgeInspectorRows(
-                    edge = edge,
-                    runtimeSnapshot = runtimeSnapshot,
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (node != null) {
+                    FlowchartNodeInspectorRows(
+                        node = node,
+                        edges = session.graphDocument.edges,
+                        runtimeSnapshot = runtimeSnapshot,
+                        onUpdateNodeField = onUpdateNodeField,
+                        onAddIfBranch = onAddIfBranch,
+                        onRemoveIfBranch = onRemoveIfBranch,
+                    )
+                } else if (edge != null) {
+                    FlowchartEdgeInspectorRows(
+                        edge = edge,
+                        runtimeSnapshot = runtimeSnapshot,
+                    )
+                }
             }
         }
     }
@@ -702,37 +807,6 @@ private fun FlowchartShellToolbar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FlowchartToolbarButton("Speichern", onSave) { Icon(Icons.Default.Save, contentDescription = null) }
-            FlowchartToolbarButton(
-                tooltip = if (connecting) "Verbindung abbrechen" else "Verbindung starten",
-                onClick = onBeginConnect ?: {},
-                enabled = onBeginConnect != null,
-            ) {
-                Icon(
-                    Icons.Default.DeviceHub,
-                    contentDescription = null,
-                    tint = if (connecting) Color(0xFF63C7FF) else Color.Unspecified,
-                )
-            }
-            FlowchartToolbarButton("Node löschen", onDeleteSelected ?: {}, enabled = onDeleteSelected != null) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-            }
-            FlowchartToolbarButton("Run Dry", onRunDry ?: {}, enabled = onRunDry != null) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-            }
-            FlowchartToolbarButton("Step zurück", onStepBack ?: {}, enabled = onStepBack != null && canStepBack) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = null)
-            }
-            FlowchartToolbarButton("Step vor", onStepForward ?: {}, enabled = onStepForward != null && canStepForward) {
-                Icon(Icons.Default.SkipNext, contentDescription = null)
-            }
-            stepLabel?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFECE6F3).copy(alpha = 0.78f),
-                    maxLines = 1,
-                )
-            }
             FlowchartToolbarButton("Undo", onUndo) { Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null) }
             FlowchartToolbarButton("Redo", onRedo) { Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = null) }
             FlowchartToolbarButton("Zoom -", onZoomOut) { Icon(Icons.Default.ZoomOut, contentDescription = null) }
@@ -781,6 +855,37 @@ private fun FlowchartShellToolbar(
                     Icons.Default.GridOn,
                     contentDescription = null,
                     tint = if (gridVisible) Color(0xFFA9D7FF) else Color(0xFF8F879B),
+                )
+            }
+            FlowchartToolbarButton(
+                tooltip = if (connecting) "Verbindung abbrechen" else "Verbindung starten",
+                onClick = onBeginConnect ?: {},
+                enabled = onBeginConnect != null,
+            ) {
+                Icon(
+                    Icons.Default.DeviceHub,
+                    contentDescription = null,
+                    tint = if (connecting) Color(0xFF63C7FF) else Color.Unspecified,
+                )
+            }
+            FlowchartToolbarButton("Node löschen", onDeleteSelected ?: {}, enabled = onDeleteSelected != null) {
+                Icon(Icons.Default.Delete, contentDescription = null)
+            }
+            FlowchartToolbarButton("Run Dry", onRunDry ?: {}, enabled = onRunDry != null) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+            }
+            FlowchartToolbarButton("Step zurück", onStepBack ?: {}, enabled = onStepBack != null && canStepBack) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = null)
+            }
+            FlowchartToolbarButton("Step vor", onStepForward ?: {}, enabled = onStepForward != null && canStepForward) {
+                Icon(Icons.Default.SkipNext, contentDescription = null)
+            }
+            stepLabel?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFECE6F3).copy(alpha = 0.78f),
+                    maxLines = 1,
                 )
             }
         }
