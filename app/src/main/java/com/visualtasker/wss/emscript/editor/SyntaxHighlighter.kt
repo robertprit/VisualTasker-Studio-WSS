@@ -9,6 +9,8 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
+import de.visualtasker.blockeditor.registry.CommandCatalogKind
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 
 object SyntaxHighlighter {
     data class Palette(
@@ -51,7 +53,17 @@ object SyntaxHighlighter {
         plain = Color(0xFF212121)
     )
 
-    private val commandKeywords = setOf(
+    private val commandKeywords =
+        VisualTaskerCommandCatalog
+            .acceptedNamesForKinds(
+                CommandCatalogKind.EVENT,
+                CommandCatalogKind.STATEMENT,
+                CommandCatalogKind.REPORTER,
+                CommandCatalogKind.OPERATOR,
+                CommandCatalogKind.VARIABLE,
+            )
+            .map { it.uppercase() }
+            .toSet() + setOf(
         "OPEN", "OPENCT", "WAIT", "LOAD", "ELEMENT", "CLICK", "TYPE", "SCREENSHOT",
         "RECORD", "START", "STOP", "TOGGLE", "BEEP", "VIBRATE", "BACK", "HOME", "START_SCRIPT",
         "AI_REQUEST", "WAIT_AI_RESPONSE", "TASKER_EVENT", "WAIT_TASKER", "BPARAM", "SHARE",

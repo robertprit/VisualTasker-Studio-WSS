@@ -33,7 +33,7 @@ class EmscriptWorkspaceImporter(
         )
         return runCatching {
             val assembler = WorkspaceAssembler(workspaceId)
-            val document = assembler.build(ir)
+            val document = assembler.build(ir, EmscriptEditorFacetScanner.scan(script))
             EmscriptImportResult(ir = ir, document = document, issues = emptyList())
         }.getOrElse { error ->
             EmscriptImportResult(
@@ -55,13 +55,33 @@ private class WorkspaceAssembler(workspaceId: String) {
     private val registry = CompositeBlockRegistry()
     private var document = WorkspaceDocument(id = workspaceId)
 
-    fun build(ir: EmscriptIrScript): WorkspaceDocument {
+    fun build(ir: EmscriptIrScript, facets: List<EmscriptGroupFacet> = emptyList()): WorkspaceDocument {
         val startBlock = instantiate(BlockTypes.EVENT_START)
+        if (facets.isNotEmpty()) {
+            annotateGroupFacets(startBlock, facets)
+        }
         val topLevelHead = appendStatementChain(ir.statements)
         if (topLevelHead != null) {
             connectNext(startBlock, topLevelHead)
         }
         return document
+    }
+
+    private fun annotateGroupFacets(blockId: BlockId, facets: List<EmscriptGroupFacet>) {
+        val block = document.blocks[blockId] ?: return
+        val metadata = buildMap {
+            putAll(block.metadata)
+            put("emscript.groupFacet.count", facets.size.toString())
+            facets.forEachIndexed { index, facet ->
+                val prefix = "emscript.groupFacet.$index"
+                put("$prefix.id", facet.id)
+                put("$prefix.label", facet.label)
+                put("$prefix.kind", facet.kind)
+                put("$prefix.startLine", facet.startLine.toString())
+                facet.endLine?.let { put("$prefix.endLine", it.toString()) }
+            }
+        }
+        document = document.copy(blocks = document.blocks + (blockId to block.copy(metadata = metadata)))
     }
 
     private fun appendStatementChain(statements: List<EmscriptIrStatement>): BlockId? {

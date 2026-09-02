@@ -1,5 +1,7 @@
 package com.visualtasker.wss.emscript.parser
 
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+
 data class EmscriptParseIssue(
     val line: Int,
     val column: Int,
@@ -534,7 +536,17 @@ private class Parser(private val tokens: List<Token>) {
                 val args = parseIntegerFunctionArguments(command, min = 1, max = 16)
                 EmscriptIrStatement.Vibrate(args)
             }
-            else -> throw ParseException(command.line, command.column, "Unbekanntes Kommando '${command.lexeme}'.")
+            else -> {
+                val catalogEntry = VisualTaskerCommandCatalog.findByAcceptedName(command.lexeme)
+                if (catalogEntry != null) {
+                    throw ParseException(
+                        command.line,
+                        command.column,
+                        "Kommando '${command.lexeme}' ist im Katalog vorhanden, aber noch nicht im EMScript-Parser verdrahtet.",
+                    )
+                }
+                throw ParseException(command.line, command.column, "Unbekanntes Kommando '${command.lexeme}'.")
+            }
         }
     }
 

@@ -1,49 +1,60 @@
 package com.visualtasker.wss.emscript.runtime
 
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.CommandCapability
+import de.visualtasker.blockeditor.registry.CommandCatalogEntry
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 
 class RuntimeCapabilityGate {
     fun inspect(document: WorkspaceDocument): RuntimeCapabilityReport {
         val commands = document.blocks.values
-            .mapNotNull { block -> commandForBlockType(block.type) }
-            .distinctBy { it.command }
-            .sortedBy { it.command }
-        val capabilities = commands.map { command ->
-            when (command.command) {
-                "log", "let", "set", "wait" -> RuntimeCapability(
-                    command = command.command,
-                    status = RuntimeCapabilityStatus.DRY_RUN_READY,
-                    details = "Dry-Run verfügbar; Real-Run benötigt den Runtime-Scheduler.",
-                )
-                "click" -> RuntimeCapability(
-                    command = command.command,
-                    status = RuntimeCapabilityStatus.BLOCKED,
-                    details = "Real-Run benötigt Accessibility/Shizuku-Ausführungsadapter und Capability-Freigabe.",
-                )
-                "beep", "vibrate" -> RuntimeCapability(
-                    command = command.command,
-                    status = RuntimeCapabilityStatus.BLOCKED,
-                    details = "Dry-Run verfügbar; Real-Run benötigt Feedback-Bridge und Nutzereinstellung.",
-                )
-                else -> RuntimeCapability(
-                    command = command.command,
-                    status = RuntimeCapabilityStatus.BLOCKED,
-                    details = "Kein Runtime-Adapter registriert.",
-                )
-            }
-        }
+            .mapNotNull { block -> VisualTaskerCommandCatalog.findByBlockType(block.type) }
+            .distinctBy { it.id }
+            .sortedBy { it.canonicalName }
+        val capabilities = commands.map { command -> command.runtimeCapability() }
         return RuntimeCapabilityReport(capabilities)
     }
 
-    private fun commandForBlockType(type: String): RuntimeCommand? = when (type) {
-        BlockTypes.ACTION_CLICK_TEXT -> RuntimeCommand("click")
-        BlockTypes.ACTION_WAIT -> RuntimeCommand("wait")
-        BlockTypes.DEBUG_LOG -> RuntimeCommand("log")
-        BlockTypes.FEEDBACK_BEEP -> RuntimeCommand("beep")
-        BlockTypes.FEEDBACK_VIBRATE -> RuntimeCommand("vibrate")
-        BlockTypes.VARIABLE_SET -> RuntimeCommand("set")
-        else -> null
+    private fun CommandCatalogEntry.runtimeCapability(): RuntimeCapability {
+        val command = canonicalName
+        val gate = runtime?.liveCapabilityGate
+        return when (gate) {
+            CommandCapability.CORE,
+            CommandCapability.TIMING,
+            CommandCapability.DEBUG,
+            -> when (command) {
+                "log", "let", "set", "wait" -> RuntimeCapability(
+                    command = command,
+                    status = RuntimeCapabilityStatus.DRY_RUN_READY,
+                    details = "Dry-Run verfügbar; Real-Run benötigt den Runtime-Scheduler.",
+                )
+                else -> RuntimeCapability(
+                    command = command,
+                    status = RuntimeCapabilityStatus.DRY_RUN_READY,
+                    details = "Dry-Run verfügbar; Real-Run Adapter noch nicht finalisiert.",
+                )
+            }
+            CommandCapability.A11Y -> RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.BLOCKED,
+                details = "Real-Run benötigt Accessibility/Shizuku-Ausführungsadapter und Capability-Freigabe.",
+            )
+            CommandCapability.FEEDBACK -> RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.BLOCKED,
+                details = "Dry-Run verfügbar; Real-Run benötigt Feedback-Bridge und Nutzereinstellung.",
+            )
+            null -> RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.BLOCKED,
+                details = "Kein Runtime-Adapter registriert.",
+            )
+            else -> RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.BLOCKED,
+                details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
+            )
+        }
     }
 }
 
@@ -74,5 +85,3 @@ enum class RuntimeCapabilityStatus {
     DRY_RUN_READY,
     BLOCKED,
 }
-
-private data class RuntimeCommand(val command: String)

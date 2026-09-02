@@ -276,6 +276,7 @@ fun WorkspaceScreen(
     }
     val workspaceUndoStack = remember(uiPrefs) { mutableStateListOf<String>() }
     val workspaceRedoStack = remember(uiPrefs) { mutableStateListOf<String>() }
+    var lastWorkspaceChangeSource by remember(uiPrefs) { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     val initialTextEditorDraft = remember(uiPrefs) {
         loadInitialTextEditorDraft(uiPrefs)
@@ -327,9 +328,12 @@ fun WorkspaceScreen(
                 )
                 return@applyWorkspaceJsonChange
             }
-            workspaceUndoStack.add(workflowState.serializedJson)
+            if (!source.coalescesWith(lastWorkspaceChangeSource)) {
+                workspaceUndoStack.add(workflowState.serializedJson)
+            }
             workspaceRedoStack.clear()
             replaceWorkflowStateFromJson(updated, source)
+            lastWorkspaceChangeSource = source
             val normalized = workflowState.serializedJson
             studioLogStore.append(
                 level = StudioLogLevel.DEBUG,
@@ -348,6 +352,7 @@ fun WorkspaceScreen(
         } else {
             workspaceRedoStack.add(workflowState.serializedJson)
             replaceWorkflowStateFromJson(previous, "workspace:undo")
+            lastWorkspaceChangeSource = null
             true
         }
     }
@@ -358,6 +363,7 @@ fun WorkspaceScreen(
         } else {
             workspaceUndoStack.add(workflowState.serializedJson)
             replaceWorkflowStateFromJson(next, "workspace:redo")
+            lastWorkspaceChangeSource = null
             true
         }
     }
@@ -1107,6 +1113,11 @@ fun WorkspaceScreen(
         )
     }
 }
+
+private fun String.coalescesWith(previous: String?): Boolean =
+    previous == this &&
+        startsWith(WORKFLOW_SOURCE_FLOWCHART_PREFIX) &&
+        endsWith(":move")
 
 @Composable
 private fun WorkspaceFloatingPanel(

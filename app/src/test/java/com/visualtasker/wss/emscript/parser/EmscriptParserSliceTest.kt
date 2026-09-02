@@ -1,9 +1,14 @@
 package com.visualtasker.wss.emscript.parser
 
+import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
+import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.blockeditor.ir.validateIntegrity
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
+import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -184,6 +189,15 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun parse_cataloguedButUnsupportedCommand_reportsMissingParserAdapter() {
+        val result = EmscriptParserSlice().parse("findTemplate(\"button.png\", 0.8, 1000)")
+
+        assertFalse(result.isSuccess)
+        assertTrue(result.issues.single().message.contains("im Katalog vorhanden"))
+        assertTrue(result.issues.single().message.contains("noch nicht im EMScript-Parser verdrahtet"))
+    }
+
+    @Test
     fun import_validScript_buildsWorkspaceWithIfAndCompare() {
         val source = """
             LET v1 = 1
@@ -286,5 +300,31 @@ class EmscriptParserSliceTest {
             """.trimIndent(),
             regenerated,
         )
+    }
+
+    @Test
+    fun roundtrip_integrationScriptSurvivesWorkspaceSerializationIrAndFlowchartProjection() {
+        val imported = EmscriptWorkspaceImporter().import(EditorDefaults.integrationTestScript)
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val serialized = WorkspaceSerializer.serialize(imported.document!!)
+        val decoded = WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded
+        val document = decoded.document
+        val irGraph = IrGraphGenerator().generate(document)
+        val flowchart = IrGraphFlowchartProjector.project(irGraph).graph
+        val regenerated = EmscriptGenerator(IrGenerator()).generate(document, scriptName = "roundtrip")
+
+        assertTrue(irGraph.validateIntegrity().joinToString { it.message }, irGraph.validateIntegrity().isEmpty())
+        assertTrue(flowchart.nodes.isNotEmpty())
+        assertTrue(flowchart.edges.isNotEmpty())
+        assertTrue(flowchart.diagnostics.joinToString { it.message }, flowchart.diagnostics.none { it.severity.name == "ERROR" })
+        assertTrue(irGraph.facets.any { it.id == "facet:emscript:vars:init" && it.properties["editorFacetKind"] == "variable-bulk" })
+        assertTrue(irGraph.facets.any { it.id == "facet:emscript:flow:main-loop" && it.properties["startLine"] != null })
+        assertTrue(regenerated.contains("repeat (10) {"))
+        assertTrue(regenerated.contains("if ("))
+        assertTrue(regenerated.contains("} else if ("))
+        assertTrue(regenerated.contains("beep("))
+        assertTrue(regenerated.contains("vibrate("))
+        assertTrue(regenerated.contains("click(\"Start\")"))
     }
 }
