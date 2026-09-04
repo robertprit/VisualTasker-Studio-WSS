@@ -384,6 +384,7 @@ fun WorkspaceScreen(
     val workspaceRedoStack = remember(uiPrefs) { mutableStateListOf<String>() }
     var lastWorkspaceChangeSource by remember(uiPrefs) { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
+    var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
     val initialTextEditorDraft = remember(uiPrefs) {
         loadInitialTextEditorDraft(uiPrefs)
     }
@@ -576,8 +577,11 @@ fun WorkspaceScreen(
 
     val addFlowchartNode: (String) -> Unit = { definitionId ->
         applyFlowchartMutation(
-            FlowchartWorkspaceMutation.AddNode(definitionId),
-            definitionId,
+            FlowchartWorkspaceMutation.AddNode(
+                definitionId = definitionId,
+                afterNodeId = selectedFlowchartNodeForInsert,
+            ),
+            selectedFlowchartNodeForInsert?.let { "${it.value}:insert:$definitionId" } ?: definitionId,
         )
     }
     val deleteFlowchartNode: (FlowNodeId) -> Unit = { nodeId ->
@@ -632,6 +636,15 @@ fun WorkspaceScreen(
                 rawValue = rawValue,
             ),
             "${nodeId.value}:$fieldKey:update-field",
+        )
+    }
+    val replaceFlowchartNodeType: (FlowNodeId, String) -> Unit = { nodeId, definitionId ->
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.ReplaceNodeType(
+                nodeId = nodeId,
+                definitionId = definitionId,
+            ),
+            "${nodeId.value}:$definitionId:replace-type",
         )
     }
     val addFlowchartIfBranch: (FlowNodeId) -> Unit = { nodeId ->
@@ -1294,7 +1307,10 @@ fun WorkspaceScreen(
                         canDryRunStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
                         canDryRunStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
                         dryRunStepLabel = workspaceDryRunResult?.let { "${workspaceDryRunStepIndex}/${dryRunEventCount(it)}" },
-                        onFlowchartNodeSelected = ::focusBlockFromFlowNode,
+                        onFlowchartNodeSelected = { nodeId ->
+                            selectedFlowchartNodeForInsert = nodeId
+                            focusBlockFromFlowNode(nodeId)
+                        },
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
                         onFlowchartNodesDelete = deleteFlowchartNodes,
@@ -1303,6 +1319,7 @@ fun WorkspaceScreen(
                         flowchartConnectionOptionsFor = flowchartConnectionOptionsFor,
                         onFlowchartEdgeDisconnect = disconnectFlowchartEdge,
                         onFlowchartNodeFieldUpdate = updateFlowchartNodeField,
+                        onFlowchartNodeTypeReplace = replaceFlowchartNodeType,
                         onFlowchartIfBranchAdd = addFlowchartIfBranch,
                         onFlowchartIfBranchRemove = removeFlowchartIfBranch,
                         onFlowchartViewChanged = syncFlowchartView,
@@ -1626,6 +1643,7 @@ private fun WorkspacePanelContent(
     flowchartConnectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption> = { _, _ -> emptyList() },
     onFlowchartEdgeDisconnect: (FlowEdgeId) -> Unit = {},
     onFlowchartNodeFieldUpdate: (FlowNodeId, String, String) -> Unit = { _, _, _ -> },
+    onFlowchartNodeTypeReplace: (FlowNodeId, String) -> Unit = { _, _ -> },
     onFlowchartIfBranchAdd: (FlowNodeId) -> Unit = {},
     onFlowchartIfBranchRemove: (FlowNodeId) -> Unit = {},
     onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
@@ -1665,6 +1683,7 @@ private fun WorkspacePanelContent(
             connectionOptionsFor = flowchartConnectionOptionsFor,
             onEdgeDisconnect = onFlowchartEdgeDisconnect,
             onNodeFieldUpdate = onFlowchartNodeFieldUpdate,
+            onNodeTypeReplace = onFlowchartNodeTypeReplace,
             onIfBranchAdd = onFlowchartIfBranchAdd,
             onIfBranchRemove = onFlowchartIfBranchRemove,
             onViewChanged = onFlowchartViewChanged,
@@ -2177,6 +2196,7 @@ private fun FlowchartPanel(
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption>,
     onEdgeDisconnect: (FlowEdgeId) -> Unit,
     onNodeFieldUpdate: (FlowNodeId, String, String) -> Unit,
+    onNodeTypeReplace: (FlowNodeId, String) -> Unit,
     onIfBranchAdd: (FlowNodeId) -> Unit,
     onIfBranchRemove: (FlowNodeId) -> Unit,
     onViewChanged: (FlowViewDocument) -> Unit,
@@ -2238,6 +2258,7 @@ private fun FlowchartPanel(
         connectionOptionsFor = connectionOptionsFor,
         onDisconnectEdge = onEdgeDisconnect,
         onUpdateNodeField = onNodeFieldUpdate,
+        onReplaceNodeType = onNodeTypeReplace,
         onAddIfBranch = onIfBranchAdd,
         onRemoveIfBranch = onIfBranchRemove,
         onViewChanged = onViewChanged,

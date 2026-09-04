@@ -14,6 +14,8 @@ import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.domain.WorkspacePoint
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
 import de.visualtasker.blockeditor.domain.allConnections
+import de.visualtasker.blockeditor.domain.newBlockId
+import de.visualtasker.blockeditor.domain.rootOffset
 import de.visualtasker.blockeditor.domain.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
@@ -37,7 +39,10 @@ data class FlowchartConnectionOption(
 )
 
 sealed interface FlowchartWorkspaceMutation {
-    data class AddNode(val definitionId: String) : FlowchartWorkspaceMutation
+    data class AddNode(
+        val definitionId: String,
+        val afterNodeId: FlowNodeId? = null,
+    ) : FlowchartWorkspaceMutation
     data class DeleteNode(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
     data class DeleteNodes(val nodeIds: Set<FlowNodeId>) : FlowchartWorkspaceMutation
     data class DisconnectEdge(
@@ -66,6 +71,11 @@ sealed interface FlowchartWorkspaceMutation {
         val rawValue: String,
     ) : FlowchartWorkspaceMutation
 
+    data class ReplaceNodeType(
+        val nodeId: FlowNodeId,
+        val definitionId: String,
+    ) : FlowchartWorkspaceMutation
+
     data class AddIfBranch(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
     data class RemoveIfBranch(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
     data class SyncViewPositions(val viewDocument: FlowViewDocument) : FlowchartWorkspaceMutation
@@ -82,7 +92,11 @@ fun applyFlowchartWorkspaceMutation(
     mutation: FlowchartWorkspaceMutation,
 ): FlowchartWorkspaceMutationResult {
     val updated = when (mutation) {
-        is FlowchartWorkspaceMutation.AddNode -> addFlowchartNodeToWorkspace(document, mutation.definitionId)
+        is FlowchartWorkspaceMutation.AddNode -> addFlowchartNodeToWorkspace(
+            document,
+            mutation.definitionId,
+            mutation.afterNodeId,
+        )
         is FlowchartWorkspaceMutation.DeleteNode -> deleteFlowchartNodeFromWorkspace(document, mutation.nodeId)
         is FlowchartWorkspaceMutation.DeleteNodes -> deleteFlowchartNodesFromWorkspace(document, mutation.nodeIds)
         is FlowchartWorkspaceMutation.DisconnectEdge -> disconnectFlowchartEdgeFromWorkspace(document, mutation.graph, mutation.edgeId)
@@ -107,6 +121,11 @@ fun applyFlowchartWorkspaceMutation(
             fieldKey = mutation.fieldKey,
             rawValue = mutation.rawValue,
         )
+        is FlowchartWorkspaceMutation.ReplaceNodeType -> replaceFlowchartNodeTypeInWorkspace(
+            document = document,
+            nodeId = mutation.nodeId,
+            definitionId = mutation.definitionId,
+        )
         is FlowchartWorkspaceMutation.AddIfBranch -> addFlowchartIfBranchInWorkspace(document, mutation.nodeId)
         is FlowchartWorkspaceMutation.RemoveIfBranch -> removeFlowchartIfBranchInWorkspace(document, mutation.nodeId)
         is FlowchartWorkspaceMutation.SyncViewPositions -> syncRootPositionsFromFlowchartView(document, mutation.viewDocument)
@@ -121,14 +140,39 @@ fun applyFlowchartWorkspaceMutation(
 fun addFlowchartNodeToWorkspace(
     document: WorkspaceDocument,
     definitionId: String,
+    afterNodeId: FlowNodeId? = null,
 ): WorkspaceDocument {
-    val x = 96f
-    val y = 120f + (document.rootBlocks.size * 32f)
-    return WorkspaceReducer.reduce(
-        document,
-        WorkspaceAction.InstantiateBlock(definitionId, x, y),
-        DefaultBlockRegistry.asFactory(),
+    val afterBlockId = afterNodeId?.toWorkspaceBlockId()
+    val afterBlock = afterBlockId?.let { document.blocks[it] }
+    val anchor = afterBlockId?.let { document.rootOffset(it) }
+    val x = anchor?.x?.plus(180f) ?: 96f
+    val y = anchor?.y ?: (120f + document.rootBlocks.size * 32f)
+    val (withNode, insertedId) = instantiateFlowchartBlock(document, definitionId, x, y)
+        ?: return document
+    if (afterBlock == null || afterBlock.next == null) return withNode
+    val inserted = withNode.blocks[insertedId] ?: return withNode
+    val source = withNode.blocks[afterBlockId]?.next?.id ?: return withNode
+    val target = inserted.previous?.id ?: return withNode
+    return WorkspaceReducer.reduce(withNode, WorkspaceAction.Connect(source, target))
+}
+
+private fun instantiateFlowchartBlock(
+    document: WorkspaceDocument,
+    definitionId: String,
+    x: Float,
+    y: Float,
+): Pair<WorkspaceDocument, BlockId>? {
+    val id = newBlockId()
+    val block = DefaultBlockRegistry.getDefinition(definitionId)?.createNode(id) ?: return null
+    val withBlock = document.copy(
+        version = document.version + 1,
+        blocks = document.blocks + (id to block),
     )
+    val roots = WorkspaceGraph.pruneRootBlocks(withBlock, document.rootBlocks + id)
+    return withBlock.copy(
+        rootBlocks = roots,
+        rootPositions = withBlock.rootPositions + (id to WorkspacePoint(x, y)),
+    ) to id
 }
 
 fun deleteFlowchartNodeFromWorkspace(
@@ -271,9 +315,28 @@ fun connectFlowchartNodesInWorkspace(
         FlowEdgeKind.CONDITION -> {
             val inputName = label ?: defaultValueInputName(targetBlock.type, kind) ?: return document
             val source = sourceBlock.output?.id ?: return document
-            val target = targetBlock.valueInputs.firstOrNull { it.name == inputName }?.connection?.id
+            val targetConnection = targetBlock.valueInputs.firstOrNull { it.name == inputName }?.connection
                 ?: return document
-            WorkspaceAction.Connect(source, target)
+            val formerReporterBlockId = targetConnection.connectedTo
+                ?.let { WorkspaceGraph.findConnection(document, it) }
+                ?.takeIf { (_, connection) -> connection.kind == ConnectionKind.Output }
+                ?.first
+            val prepared = if (targetConnection.connectedTo != null && targetConnection.connectedTo != source) {
+                val disconnected = WorkspaceReducer.reduce(document, WorkspaceAction.Disconnect(targetConnection.id))
+                if (formerReporterBlockId != null && formerReporterBlockId in disconnected.blocks) {
+                    disconnected.copy(
+                        rootBlocks = WorkspaceGraph.pruneRootBlocks(
+                            disconnected,
+                            disconnected.rootBlocks + formerReporterBlockId,
+                        ),
+                    )
+                } else {
+                    disconnected
+                }
+            } else {
+                document
+            }
+            return WorkspaceReducer.reduce(prepared, WorkspaceAction.Connect(source, targetConnection.id))
         }
         else -> return document
     }
@@ -337,6 +400,65 @@ fun updateFlowchartNodeFieldInWorkspace(
         }
     }
     return WorkspaceReducer.reduce(document, WorkspaceAction.UpdateField(blockId, fieldKey, parsed))
+}
+
+fun replaceFlowchartNodeTypeInWorkspace(
+    document: WorkspaceDocument,
+    nodeId: FlowNodeId,
+    definitionId: String,
+): WorkspaceDocument {
+    val blockId = nodeId.toWorkspaceBlockId() ?: return document
+    val source = document.blocks[blockId] ?: return document
+    if (source.type == definitionId) return document
+    val targetDefinition = DefaultBlockRegistry.getDefinition(definitionId) ?: return document
+    val targetTemplate = targetDefinition.createNode(blockId)
+    if (!source.hasCompatibleEditorSurface(targetTemplate)) return document
+    val targetConnectionIds = targetTemplate.allConnections().map { it.id }.toSet()
+    val blocks = document.blocks.toMutableMap()
+    val promotedRoots = mutableListOf<BlockId>()
+
+    source.allConnections()
+        .filter { it.id !in targetConnectionIds }
+        .forEach { removedConnection ->
+            val partnerId = removedConnection.connectedTo ?: return@forEach
+            val (partnerBlockId, partnerConnection) = WorkspaceGraph.findConnection(document, partnerId)
+                ?: return@forEach
+            blocks[partnerBlockId] = blocks[partnerBlockId]
+                ?.withConnectionUpdated(partnerConnection.id) { it.copy(connectedTo = null) }
+                ?: return@forEach
+            if (partnerConnection.kind == ConnectionKind.Previous ||
+                partnerConnection.kind == ConnectionKind.Output
+            ) {
+                promotedRoots += partnerBlockId
+            }
+        }
+
+    val sourceValueInputs = source.valueInputs.associateBy { it.name }
+    val sourceStatementInputs = source.statementInputs.associateBy { it.name }
+    blocks[blockId] = targetTemplate.copy(
+        fields = targetTemplate.fields + source.fields.filterKeys { it in targetTemplate.fields },
+        previous = source.previous?.takeIf { targetTemplate.previous != null },
+        next = source.next?.takeIf { targetTemplate.next != null },
+        output = source.output?.takeIf { targetTemplate.output != null },
+        valueInputs = targetTemplate.valueInputs.map { input ->
+            sourceValueInputs[input.name]?.let { existing ->
+                input.copy(connection = existing.connection)
+            } ?: input
+        },
+        statementInputs = targetTemplate.statementInputs.map { input ->
+            sourceStatementInputs[input.name]?.let { existing ->
+                input.copy(connection = existing.connection)
+            } ?: input
+        },
+        metadata = source.metadata,
+        collapsed = source.collapsed,
+    )
+    val updated = document.copy(
+        version = document.version + 1,
+        blocks = blocks,
+        rootBlocks = WorkspaceGraph.pruneRootBlocks(document.copy(blocks = blocks), document.rootBlocks + promotedRoots),
+    )
+    return updated.copy(rootPositions = updated.rootPositions.filterKeys { it in updated.rootBlocks })
 }
 
 fun addFlowchartIfBranchInWorkspace(
@@ -462,6 +584,18 @@ private fun BlockNode.statementInputFor(slotName: String, kind: FlowEdgeKind): S
             FlowEdgeKind.ELSE_IF_BRANCH -> statementInputs.firstOrNull { it.name.startsWith("ELIF_") }
             else -> null
         }
+
+private fun BlockNode.hasCompatibleEditorSurface(target: BlockNode): Boolean {
+    val sourceIsReporter = output != null
+    val targetIsReporter = target.output != null
+    val sourceIsStatement = previous != null || next != null || statementInputs.isNotEmpty()
+    val targetIsStatement = target.previous != null || target.next != null || target.statementInputs.isNotEmpty()
+    return when {
+        sourceIsReporter || targetIsReporter -> sourceIsReporter == targetIsReporter
+        sourceIsStatement || targetIsStatement -> sourceIsStatement == targetIsStatement
+        else -> false
+    }
+}
 
 private fun statementSlotDisplayLabel(slotName: String): String =
     when (slotName) {

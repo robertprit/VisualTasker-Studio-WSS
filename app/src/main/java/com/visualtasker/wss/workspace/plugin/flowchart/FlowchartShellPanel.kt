@@ -129,6 +129,7 @@ fun FlowchartShellPanel(
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<FlowchartConnectionOption> = { _, _ -> emptyList() },
     onDisconnectEdge: ((FlowEdgeId) -> Unit)? = null,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)? = null,
+    onReplaceNodeType: ((FlowNodeId, String) -> Unit)? = null,
     onAddIfBranch: ((FlowNodeId) -> Unit)? = null,
     onRemoveIfBranch: ((FlowNodeId) -> Unit)? = null,
     onViewChanged: ((FlowViewDocument) -> Unit)? = null,
@@ -367,8 +368,10 @@ fun FlowchartShellPanel(
             selectedEdgeId = selectedEdgeId,
             runtimeSnapshot = runtimeSnapshot,
             onUpdateNodeField = onUpdateNodeField,
+            onReplaceNodeType = onReplaceNodeType,
             onAddIfBranch = onAddIfBranch,
             onRemoveIfBranch = onRemoveIfBranch,
+            onDisconnectEdge = onDisconnectEdge,
         )
         FlowchartConnectionMenu(
             expanded = connectionMenu != null,
@@ -495,8 +498,10 @@ private fun FlowchartRuntimeInspectorBottomSheet(
     selectedEdgeId: FlowEdgeId?,
     runtimeSnapshot: FlowRuntimeSnapshot?,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
+    onReplaceNodeType: ((FlowNodeId, String) -> Unit)?,
     onAddIfBranch: ((FlowNodeId) -> Unit)?,
     onRemoveIfBranch: ((FlowNodeId) -> Unit)?,
+    onDisconnectEdge: ((FlowEdgeId) -> Unit)?,
 ) {
     val node = selectedNodeId?.let { id -> session.graphDocument.nodes.firstOrNull { it.id == id } }
     val edge = selectedEdgeId?.let { id -> session.graphDocument.edges.firstOrNull { it.id == id } }
@@ -550,6 +555,7 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                         edges = session.graphDocument.edges,
                         runtimeSnapshot = runtimeSnapshot,
                         onUpdateNodeField = onUpdateNodeField,
+                        onReplaceNodeType = onReplaceNodeType,
                         onAddIfBranch = onAddIfBranch,
                         onRemoveIfBranch = onRemoveIfBranch,
                     )
@@ -557,6 +563,7 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                     FlowchartEdgeInspectorRows(
                         edge = edge,
                         runtimeSnapshot = runtimeSnapshot,
+                        onDisconnectEdge = onDisconnectEdge,
                     )
                 }
             }
@@ -572,6 +579,7 @@ private fun FlowchartNodeInspectorRows(
     edges: List<FlowGraphEdge>,
     runtimeSnapshot: FlowRuntimeSnapshot?,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
+    onReplaceNodeType: ((FlowNodeId, String) -> Unit)?,
     onAddIfBranch: ((FlowNodeId) -> Unit)?,
     onRemoveIfBranch: ((FlowNodeId) -> Unit)?,
 ) {
@@ -621,6 +629,11 @@ private fun FlowchartNodeInspectorRows(
     commandCapabilities?.let { InspectorLine("Capability", it) }
     commandPluginOwner?.let { InspectorLine("Plugin", it) }
     InspectorLine("Block", "$blockType / $blockId")
+    FlowchartNodeTypeMenu(
+        node = node,
+        currentBlockType = blockType,
+        onReplaceNodeType = onReplaceNodeType,
+    )
     sourceLine?.let { line ->
         InspectorLine("Quelle", "EMScript Zeile $line${sourceColumn?.let { ", Spalte $it" }.orEmpty()}")
     }
@@ -673,6 +686,66 @@ private fun FlowchartNodeInspectorRows(
     }
 }
 
+@Composable
+private fun FlowchartNodeTypeMenu(
+    node: FlowGraphNode,
+    currentBlockType: String,
+    onReplaceNodeType: ((FlowNodeId, String) -> Unit)?,
+) {
+    val currentSurface = currentBlockType.editorSurface()
+    val entries = remember(currentBlockType) {
+        flowchartNodePaletteEntries()
+            .filter { it.definitionId != currentBlockType }
+            .filter { it.definitionId.editorSurface() == currentSurface }
+    }
+    if (entries.isEmpty()) return
+    var expanded by remember(node.id) { mutableStateOf(false) }
+    Box {
+        TextButton(
+            onClick = { expanded = true },
+            enabled = onReplaceNodeType != null,
+        ) {
+            Text("Typ ändern")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            entries.forEach { entry ->
+                DropdownMenuItem(
+                    text = { Text(entry.label) },
+                    leadingIcon = { FlowchartNodeGlyph(entry = entry, modifier = Modifier.size(22.dp)) },
+                    onClick = {
+                        expanded = false
+                        onReplaceNodeType?.invoke(node.id, entry.definitionId)
+                    },
+                )
+            }
+        }
+    }
+}
+
+private enum class FlowchartEditorSurface {
+    Statement,
+    Reporter,
+    Unknown,
+}
+
+private fun String.editorSurface(): FlowchartEditorSurface =
+    when {
+        startsWith("logic.") ||
+            startsWith("variable.") ||
+            startsWith("variables.") ||
+            startsWith("literal.") -> FlowchartEditorSurface.Reporter
+        startsWith("event.") ||
+            startsWith("action.") ||
+            startsWith("control.") ||
+            startsWith("debug.") ||
+            startsWith("feedback.") ||
+            startsWith("command.") -> FlowchartEditorSurface.Statement
+        else -> FlowchartEditorSurface.Unknown
+    }
+
 private data class EditableFlowchartNodeField(
     val label: String,
     val fieldKey: String,
@@ -717,6 +790,7 @@ private fun VisualDescriptor.describeForInspector(): String =
 private fun FlowchartEdgeInspectorRows(
     edge: FlowGraphEdge,
     runtimeSnapshot: FlowRuntimeSnapshot?,
+    onDisconnectEdge: ((FlowEdgeId) -> Unit)?,
 ) {
     val status = if (edge.id in runtimeSnapshot?.traversedEdgeIds.orEmpty()) "TRAVERSED" else "NOT TRAVERSED"
     InspectorLine("Status", status)
@@ -727,6 +801,12 @@ private fun FlowchartEdgeInspectorRows(
     val diagnostics = runtimeSnapshot?.diagnostics.orEmpty().filter { it.edgeId == edge.id }
     if (diagnostics.isNotEmpty()) {
         InspectorLine("Diagnose", diagnostics.joinToString { it.message })
+    }
+    TextButton(
+        onClick = { onDisconnectEdge?.invoke(edge.id) },
+        enabled = onDisconnectEdge != null,
+    ) {
+        Text("Verbindung trennen")
     }
 }
 

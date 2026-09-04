@@ -45,6 +45,48 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `add flowchart node after selected statement inserts into existing sequence`() {
+        val document = twoConnectedStatementBlocks()
+        val firstId = document.rootBlocks.single()
+        val secondId = document.blocks.keys.single { it != firstId }
+
+        val updated = addFlowchartNodeToWorkspace(
+            document = document,
+            definitionId = BlockTypes.DEBUG_LOG,
+            afterNodeId = FlowNodeId("block:${firstId.value}"),
+        )
+        val insertedId = updated.blocks.keys.single { it != firstId && it != secondId }
+
+        assertNotEquals(document, updated)
+        assertEquals(BlockTypes.DEBUG_LOG, updated.blocks.getValue(insertedId).type)
+        assertEquals(
+            updated.blocks.getValue(insertedId).previous!!.id,
+            updated.blocks.getValue(firstId).next!!.connectedTo,
+        )
+        assertEquals(
+            updated.blocks.getValue(secondId).previous!!.id,
+            updated.blocks.getValue(insertedId).next!!.connectedTo,
+        )
+        assertEquals(listOf(firstId), updated.rootBlocks)
+    }
+
+    @Test
+    fun `add flowchart node after non statement node falls back to root add`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-add-after-reporter-test"), BlockTypes.LITERAL_NUMBER, 10f, 20f)
+        val reporterId = document.blocks.keys.single()
+
+        val updated = addFlowchartNodeToWorkspace(
+            document = document,
+            definitionId = BlockTypes.ACTION_WAIT,
+            afterNodeId = FlowNodeId("block:${reporterId.value}"),
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(2, updated.rootBlocks.size)
+        assertTrue(updated.blocks.values.any { it.type == BlockTypes.ACTION_WAIT })
+    }
+
+    @Test
     fun `delete flowchart node removes projected workspace block`() {
         val document = addFlowchartNodeToWorkspace(
             WorkspaceDocument(id = "flowchart-delete-test"),
@@ -225,6 +267,38 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `connect flowchart condition edge replaces occupied value port and promotes former reporter`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-condition-replace-test"), BlockTypes.LITERAL_BOOLEAN, 10f, 20f)
+        val firstReporterId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.CONTROL_IF, 40f, 80f)
+        val ifId = document.blocks.keys.single { it != firstReporterId }
+        document = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${firstReporterId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+            kind = FlowEdgeKind.CONDITION,
+        )
+        document = instantiate(document, BlockTypes.LOGIC_BOOLEAN, 80f, 120f)
+        val secondReporterId = document.blocks.keys.single { it != firstReporterId && it != ifId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${secondReporterId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+            kind = FlowEdgeKind.CONDITION,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(ifId).valueInputs.single { it.name == "CONDITION" }.connection.id,
+            updated.blocks.getValue(secondReporterId).output!!.connectedTo,
+        )
+        assertEquals(null, updated.blocks.getValue(firstReporterId).output!!.connectedTo)
+        assertTrue(firstReporterId in updated.rootBlocks)
+        assertFalse(secondReporterId in updated.rootBlocks)
+    }
+
+    @Test
     fun `connect incompatible flowchart data edge leaves workspace unchanged`() {
         var document = instantiate(WorkspaceDocument(id = "flowchart-incompatible-connect-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
         val waitId = document.blocks.keys.single()
@@ -344,6 +418,68 @@ class WorkspaceFlowchartMutationsTest {
 
         assertNotEquals(document, updated)
         assertEquals(FieldValue.Number(1500.0), updated.blocks.getValue(waitId).fields["ms"])
+    }
+
+    @Test
+    fun `replace flowchart statement node type preserves compatible sequence connections`() {
+        val document = twoConnectedStatementBlocks()
+        val firstId = document.rootBlocks.single()
+        val secondId = document.blocks.keys.single { it != firstId }
+
+        val updated = replaceFlowchartNodeTypeInWorkspace(
+            document = document,
+            nodeId = FlowNodeId("block:${firstId.value}"),
+            definitionId = BlockTypes.DEBUG_LOG,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(BlockTypes.DEBUG_LOG, updated.blocks.getValue(firstId).type)
+        assertEquals(
+            updated.blocks.getValue(secondId).previous!!.id,
+            updated.blocks.getValue(firstId).next!!.connectedTo,
+        )
+        assertEquals(listOf(firstId), updated.rootBlocks)
+    }
+
+    @Test
+    fun `replace flowchart reporter node type preserves occupied value connection`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-reporter-replace-test"), BlockTypes.LITERAL_BOOLEAN, 10f, 20f)
+        val reporterId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.CONTROL_IF, 40f, 80f)
+        val ifId = document.blocks.keys.single { it != reporterId }
+        document = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${reporterId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+            kind = FlowEdgeKind.CONDITION,
+        )
+
+        val updated = replaceFlowchartNodeTypeInWorkspace(
+            document = document,
+            nodeId = FlowNodeId("block:${reporterId.value}"),
+            definitionId = BlockTypes.LOGIC_BOOLEAN,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(BlockTypes.LOGIC_BOOLEAN, updated.blocks.getValue(reporterId).type)
+        assertEquals(
+            updated.blocks.getValue(ifId).valueInputs.single { it.name == "CONDITION" }.connection.id,
+            updated.blocks.getValue(reporterId).output!!.connectedTo,
+        )
+    }
+
+    @Test
+    fun `replace flowchart node type rejects incompatible editor surfaces`() {
+        val document = instantiate(WorkspaceDocument(id = "flowchart-incompatible-replace-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val waitId = document.blocks.keys.single()
+
+        val updated = replaceFlowchartNodeTypeInWorkspace(
+            document = document,
+            nodeId = FlowNodeId("block:${waitId.value}"),
+            definitionId = BlockTypes.LITERAL_BOOLEAN,
+        )
+
+        assertEquals(document, updated)
     }
 
     @Test
