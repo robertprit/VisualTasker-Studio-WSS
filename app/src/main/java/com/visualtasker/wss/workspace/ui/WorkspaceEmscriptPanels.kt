@@ -75,6 +75,7 @@ internal fun EmscriptTextEditorPanel(
     currentFlowGraph: FlowGraphDocument,
     onWorkspaceJsonChange: (String) -> Unit,
     onDryRunRuntimeSnapshot: (FlowRuntimeSnapshot) -> Unit = {},
+    syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
     val parser = remember { EmscriptParserSlice() }
@@ -238,7 +239,7 @@ internal fun EmscriptTextEditorPanel(
             "EMScript Parser-Slice ist integriert (LET/SET/Literale/Variablen/Arithmetik/Compare/IF).",
             "Generierte Projektion: ${latestEmscriptProjected.length} Zeichen."
         ),
-        syntaxPaletteOverride = SyntaxHighlighter.Palette(
+        syntaxPaletteOverride = syntaxPaletteOverride ?: SyntaxHighlighter.Palette(
             keyword = M3EColors.Oceanneon,
             control = M3EColors.Ultraviolet,
             parameter = Color(0xFFFFB74D),

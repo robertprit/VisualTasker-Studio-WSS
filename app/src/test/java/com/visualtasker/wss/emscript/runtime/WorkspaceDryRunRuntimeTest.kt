@@ -93,4 +93,34 @@ class WorkspaceDryRunRuntimeTest {
         assertTrue(success.events.any { it.kind == "click" && it.message.contains("\"fallback\"") })
         assertTrue(success.events.none { it.kind == "log" && it.message == "nested-then" })
     }
+
+    @Test
+    fun dryRunMarksWorkspaceCatalogAdaptersAsCapabilityWarnings() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            findTemplate("button.png", 0.8, 1000)
+            Termux.shell("echo ok")
+            """.trimIndent(),
+            workspaceId = "workspace-dry-run-capabilities",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val result = WorkspaceDryRunRuntime().run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        val events = (result as EmscriptDryRunResult.Success).events
+        assertTrue(events.any {
+            it.blockId != null &&
+                it.kind == "capability" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING &&
+                it.command == "findTemplate" &&
+                it.capability == "VISION"
+        })
+        assertTrue(events.any {
+            it.blockId != null &&
+                it.kind == "capability" &&
+                it.command == "Termux.shell" &&
+                it.pluginOwner == "visualtasker.termux"
+        })
+    }
 }

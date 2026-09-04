@@ -23,6 +23,10 @@ data class IrGraphRuntimeEvent(
     val nodeId: IrGraphNodeId? = null,
     val edgeId: IrGraphEdgeId? = null,
     val edgeKind: IrGraphEdgeKind? = null,
+    val severity: String = "INFO",
+    val command: String? = null,
+    val capability: String? = null,
+    val pluginOwner: String? = null,
 )
 
 object EmscriptDryRunIrGraphRuntimeMapper {
@@ -100,6 +104,10 @@ object EmscriptDryRunIrGraphRuntimeMapper {
             nodeId = nodeId,
             edgeId = edgeId,
             edgeKind = edgeKind,
+            severity = severity.name,
+            command = command,
+            capability = capability,
+            pluginOwner = pluginOwner,
         )
     }
 }

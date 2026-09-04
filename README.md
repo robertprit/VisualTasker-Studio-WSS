@@ -18,6 +18,10 @@ Die Architektur folgt dem Vertrag in `VISUALTASKER_ARCHITECTURE_CONTRACT.md`:
 
 `Workspace UI -> PanelAction -> Adapter -> WorkflowDocumentAction -> WorkflowDocument -> Projektionen -> Panels`
 
+Worldview, Projekt-Skills und die Prompt-Uebernahme sind gesondert beschrieben:
+- `docs/WORLDVIEW_ARCHITECTURE.md`
+- `docs/WSS_PROMPTS_AND_SKILLS.md`
+
 Kurz gesagt:
 - Workspace verwaltet Panel-UI und Interaktion
 - Fachliche Workflow-Wahrheit bleibt ausserhalb der Workspace-Shell

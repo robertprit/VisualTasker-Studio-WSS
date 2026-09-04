@@ -1,6 +1,7 @@
 package com.visualtasker.wss.flowchart
 
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunEventSeverity
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
 import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
@@ -39,9 +40,25 @@ object EmscriptDryRunFlowRuntimeMapper {
         val activeNodeId = irRuntime.activeNodeId
             ?.let { FlowNodeId(it.value) }
             ?.takeIf { candidate -> graph.nodes.any { it.id == candidate } }
-        val diagnostics = when (result) {
-            is EmscriptDryRunResult.Success -> emptyList()
-            is EmscriptDryRunResult.Failure -> listOf(
+        val diagnostics = buildList {
+            irRuntime.events
+                .filter { it.severity != EmscriptDryRunEventSeverity.INFO.name }
+                .forEach { event ->
+                    add(
+                        FlowRuntimeDiagnostic(
+                            id = FlowDiagnosticId("dry-run-event:${sequence}:${event.index}"),
+                            severity = when (event.severity) {
+                                EmscriptDryRunEventSeverity.ERROR.name -> FlowDiagnosticSeverity.ERROR
+                                else -> FlowDiagnosticSeverity.WARNING
+                            },
+                            code = event.capability?.let { "CAPABILITY_$it" } ?: "EMSCRIPT_RUNTIME_NOTICE",
+                            message = event.message,
+                            nodeId = event.nodeId?.let { FlowNodeId(it.value) },
+                            edgeId = event.edgeId?.let { FlowEdgeId(it.value) },
+                        )
+                    )
+                }
+            if (result is EmscriptDryRunResult.Failure) add(
                 FlowRuntimeDiagnostic(
                     id = FlowDiagnosticId("dry-run-failure:$sequence"),
                     severity = FlowDiagnosticSeverity.ERROR,
@@ -87,6 +104,10 @@ object EmscriptDryRunFlowRuntimeMapper {
                     event.nodeId?.let { put("nodeId", FlowSemanticValue.StringValue(it.value)) }
                     event.edgeId?.let { put("irEdgeId", FlowSemanticValue.StringValue(it.value)) }
                     event.edgeKind?.let { put("edgeKind", FlowSemanticValue.StringValue(it.name)) }
+                    put("severity", FlowSemanticValue.StringValue(event.severity))
+                    event.command?.let { put("command", FlowSemanticValue.StringValue(it)) }
+                    event.capability?.let { put("capability", FlowSemanticValue.StringValue(it)) }
+                    event.pluginOwner?.let { put("pluginOwner", FlowSemanticValue.StringValue(it)) }
                 }
             )
         }

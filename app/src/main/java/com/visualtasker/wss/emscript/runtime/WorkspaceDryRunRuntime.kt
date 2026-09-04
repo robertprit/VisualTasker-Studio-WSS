@@ -11,6 +11,7 @@ import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.domain.asString
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import com.visualtasker.wss.emscript.parser.EmscriptBinaryOp
 import com.visualtasker.wss.emscript.parser.EmscriptIrExpression
 import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
@@ -112,9 +113,10 @@ private class WorkspaceInterpreter(
             BlockTypes.CONTROL_IF,
             BlockTypes.CONTROL_IF_ELSE,
             BlockTypes.CONTROL_IF_ELSEIF_ELSE -> executeIf(blockId, block)
+            BlockTypes.ACTION_FIND_TEMPLATE -> emitCatalogBlock(blockId, block)
             else -> if (block.type.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX)) {
                 val command = block.fieldText("command").ifBlank { block.type.removePrefix(BlockTypes.EMSCRIPT_COMMAND_PREFIX) }
-                emitBlock(blockId, "command", "würde $command(${block.fieldText("args")}) ausführen")
+                emitCommandBlock(blockId, block, command, block.fieldText("args"))
             } else {
                 emitBlock(blockId, "unsupported", "Unsupported block type: ${block.type}")
             }
@@ -293,11 +295,16 @@ private class WorkspaceInterpreter(
     }
 
     private fun emitBlock(blockId: BlockId, kind: String, message: String) {
+        val entry = document.blocks[blockId]?.let { block -> VisualTaskerCommandCatalog.findByBlockType(block.type) }
+        val gate = entry?.runtime?.liveCapabilityGate
         events += EmscriptDryRunEvent(
             index = events.size + 1,
             kind = kind,
             message = message,
             blockId = blockId.value,
+            command = entry?.canonicalName,
+            capability = gate?.name,
+            pluginOwner = entry?.pluginOwner,
         )
     }
 
@@ -314,6 +321,48 @@ private class WorkspaceInterpreter(
 
     private fun emit(kind: String, message: String) {
         events += EmscriptDryRunEvent(events.size + 1, kind, message)
+    }
+
+    private fun emitCommandBlock(blockId: BlockId, block: BlockNode, command: String, arguments: String) {
+        val entry = VisualTaskerCommandCatalog.findByBlockType(block.type)
+            ?: VisualTaskerCommandCatalog.findByCanonicalName(command)
+            ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
+        val gate = entry?.runtime?.liveCapabilityGate
+        val adapterGated = entry?.runtime?.dryRunBehavior == "adapter-gated"
+        val severity = if (adapterGated || gate.isRuntimeBlocked()) {
+            EmscriptDryRunEventSeverity.WARNING
+        } else {
+            EmscriptDryRunEventSeverity.INFO
+        }
+        val message = when {
+            entry == null -> "bekannt im Workspace, aber kein Katalogeintrag für $command"
+            adapterGated -> "Adapter noch nicht live: ${entry.canonicalName}($arguments) [${gate?.name ?: "UNKNOWN"} via ${entry.pluginOwner}]"
+            gate.isRuntimeBlocked() -> "Live-Capability noch blockiert: ${entry.canonicalName}($arguments) [${gate?.name ?: "UNKNOWN"}]"
+            else -> "würde ${entry.canonicalName}($arguments) ausführen"
+        }
+        events += EmscriptDryRunEvent(
+            index = events.size + 1,
+            kind = if (severity == EmscriptDryRunEventSeverity.WARNING) "capability" else "command",
+            message = message,
+            blockId = blockId.value,
+            severity = severity,
+            command = entry?.canonicalName ?: command,
+            capability = gate?.name,
+            pluginOwner = entry?.pluginOwner,
+        )
+    }
+
+    private fun emitCatalogBlock(blockId: BlockId, block: BlockNode) {
+        val entry = VisualTaskerCommandCatalog.findByBlockType(block.type)
+        val command = entry?.canonicalName ?: block.type
+        val arguments = entry?.arguments
+            ?.joinToString(",") { argument ->
+                block.fieldText(argument.name).ifBlank { argument.defaultValue.orEmpty() }
+            }
+            ?: block.fields.entries
+                .sortedBy { it.key }
+                .joinToString(",") { it.value.asString() }
+        emitCommandBlock(blockId, block, command, arguments)
     }
 
     private fun BlockNode.fieldText(key: String): String =

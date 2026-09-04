@@ -36,6 +36,86 @@ data class FlowchartConnectionOption(
     val displayLabel: String,
 )
 
+sealed interface FlowchartWorkspaceMutation {
+    data class AddNode(val definitionId: String) : FlowchartWorkspaceMutation
+    data class DeleteNode(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
+    data class DisconnectEdge(
+        val graph: FlowGraphDocument,
+        val edgeId: FlowEdgeId,
+    ) : FlowchartWorkspaceMutation
+
+    data class ConnectNodes(
+        val sourceNodeId: FlowNodeId,
+        val targetNodeId: FlowNodeId,
+        val kind: FlowEdgeKind = FlowEdgeKind.SEQUENCE,
+        val label: String? = null,
+    ) : FlowchartWorkspaceMutation
+
+    data class ConnectPorts(
+        val sourceNodeId: FlowNodeId,
+        val sourcePortName: String,
+        val targetNodeId: FlowNodeId,
+        val targetPortName: String,
+        val fallbackKind: FlowEdgeKind,
+    ) : FlowchartWorkspaceMutation
+
+    data class UpdateNodeField(
+        val nodeId: FlowNodeId,
+        val fieldKey: String,
+        val rawValue: String,
+    ) : FlowchartWorkspaceMutation
+
+    data class AddIfBranch(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
+    data class RemoveIfBranch(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
+    data class SyncViewPositions(val viewDocument: FlowViewDocument) : FlowchartWorkspaceMutation
+}
+
+data class FlowchartWorkspaceMutationResult(
+    val document: WorkspaceDocument,
+    val applied: Boolean,
+    val mutation: FlowchartWorkspaceMutation,
+)
+
+fun applyFlowchartWorkspaceMutation(
+    document: WorkspaceDocument,
+    mutation: FlowchartWorkspaceMutation,
+): FlowchartWorkspaceMutationResult {
+    val updated = when (mutation) {
+        is FlowchartWorkspaceMutation.AddNode -> addFlowchartNodeToWorkspace(document, mutation.definitionId)
+        is FlowchartWorkspaceMutation.DeleteNode -> deleteFlowchartNodeFromWorkspace(document, mutation.nodeId)
+        is FlowchartWorkspaceMutation.DisconnectEdge -> disconnectFlowchartEdgeFromWorkspace(document, mutation.graph, mutation.edgeId)
+        is FlowchartWorkspaceMutation.ConnectNodes -> connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = mutation.sourceNodeId,
+            targetNodeId = mutation.targetNodeId,
+            kind = mutation.kind,
+            label = mutation.label,
+        )
+        is FlowchartWorkspaceMutation.ConnectPorts -> connectFlowchartPortsInWorkspace(
+            document = document,
+            sourceNodeId = mutation.sourceNodeId,
+            sourcePortName = mutation.sourcePortName,
+            targetNodeId = mutation.targetNodeId,
+            targetPortName = mutation.targetPortName,
+            fallbackKind = mutation.fallbackKind,
+        )
+        is FlowchartWorkspaceMutation.UpdateNodeField -> updateFlowchartNodeFieldInWorkspace(
+            document = document,
+            nodeId = mutation.nodeId,
+            fieldKey = mutation.fieldKey,
+            rawValue = mutation.rawValue,
+        )
+        is FlowchartWorkspaceMutation.AddIfBranch -> addFlowchartIfBranchInWorkspace(document, mutation.nodeId)
+        is FlowchartWorkspaceMutation.RemoveIfBranch -> removeFlowchartIfBranchInWorkspace(document, mutation.nodeId)
+        is FlowchartWorkspaceMutation.SyncViewPositions -> syncRootPositionsFromFlowchartView(document, mutation.viewDocument)
+    }
+    return FlowchartWorkspaceMutationResult(
+        document = updated,
+        applied = updated != document,
+        mutation = mutation,
+    )
+}
+
 fun addFlowchartNodeToWorkspace(
     document: WorkspaceDocument,
     definitionId: String,

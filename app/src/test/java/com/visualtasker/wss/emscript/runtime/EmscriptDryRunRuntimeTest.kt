@@ -57,4 +57,28 @@ class EmscriptDryRunRuntimeTest {
         result as EmscriptDryRunResult.Failure
         assertTrue(result.message.contains("WHILE"))
     }
+
+    @Test
+    fun `dry run marks catalog adapter commands as capability warnings`() {
+        val result = EmscriptDryRunRuntime().run(
+            """
+                findTemplate("button.png", 0.8, 1000)
+                Termux.shell("echo ok")
+            """.trimIndent(),
+        )
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        result as EmscriptDryRunResult.Success
+        assertTrue(result.events.any {
+            it.kind == "capability" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING &&
+                it.command == "findTemplate" &&
+                it.capability == "VISION"
+        })
+        assertTrue(result.events.any {
+            it.kind == "capability" &&
+                it.command == "Termux.shell" &&
+                it.pluginOwner == "visualtasker.termux"
+        })
+    }
 }

@@ -1,5 +1,9 @@
 package com.visualtasker.wss.emscript.parser
 
+import com.visualtasker.wss.emscript.editor.EditorDefaults
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
+import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
@@ -7,9 +11,12 @@ import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.ir.validateIntegrity
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.CommandArgument
+import de.visualtasker.blockeditor.registry.CommandArgumentType
+import de.visualtasker.blockeditor.registry.CommandCatalogKind
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
-import com.visualtasker.wss.emscript.editor.EditorDefaults
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -343,6 +350,73 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun commandCatalogBreadthScript_survivesParserWorkspaceIrFlowchartAndDryRun() {
+        val source = EditorDefaults.commandCatalogBreadthTestScript
+        val parsed = EmscriptParserSlice().parse(source)
+        assertTrue(parsed.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, parsed.isSuccess)
+        assertTrue(flattenStatements(parsed.ir!!.statements).filterIsInstance<EmscriptIrStatement.CommandCall>().size >= 60)
+
+        val imported = EmscriptWorkspaceImporter().import(source)
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val serialized = WorkspaceSerializer.serialize(imported.document!!)
+        val decoded = WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded
+        val document = decoded.document
+        val irGraph = IrGraphGenerator().generate(document)
+        val flowchart = IrGraphFlowchartProjector.project(irGraph).graph
+
+        assertTrue(irGraph.validateIntegrity().joinToString { it.message }, irGraph.validateIntegrity().isEmpty())
+        assertTrue(flowchart.diagnostics.joinToString { it.message }, flowchart.diagnostics.none { it.severity.name == "ERROR" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}chromeTab.open" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}tasker.runTask" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}shizuku.exec" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}termux.run" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}scrcpy.start" })
+        assertTrue(document.blocks.values.any { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}chart.create" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "ChromeTab.open" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Tasker.runTask" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Shizuku.exec" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Termux.run" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Scrcpy.start" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Chart.create" })
+
+        val regenerated = EmscriptGenerator(IrGenerator()).generate(document, scriptName = "catalog-breadth")
+        assertTrue(regenerated.contains("ChromeTab.open(\"https://example.com\");"))
+        assertTrue(regenerated.contains("Tasker.runTask(\"VT_Test\",{\"value\":result});"))
+        assertTrue(regenerated.contains("Shizuku.exec(\"cmd\",[\"package\",\"list\"]);"))
+        assertTrue(regenerated.contains("Termux.run(\"/data/data/com.termux/files/home/vt.sh\",[\"catalog\"]);"))
+        assertTrue(regenerated.contains("Scrcpy.start(\"default\");"))
+        assertTrue(regenerated.contains("Chart.create(\"line\",{\"labels\":[\"a\",\"b\"],\"values\":[1,2]});"))
+
+        assertTrue(EmscriptDryRunRuntime().run(source) is EmscriptDryRunResult.Success)
+        assertTrue(WorkspaceDryRunRuntime().run(document) is EmscriptDryRunResult.Success)
+    }
+
+    @Test
+    fun statementCommandCatalog_survivesParserWorkspaceAndDryRun() {
+        val entries = VisualTaskerCommandCatalog.allEntries()
+            .filter { it.kind == CommandCatalogKind.STATEMENT && it.block != null }
+            .sortedBy { it.canonicalName }
+        val source = entries.joinToString(separator = "\n") { entry ->
+            "${entry.canonicalName}(${entry.arguments.joinToString(",") { it.sampleArgument() }})"
+        }
+
+        val parsed = EmscriptParserSlice().parse(source)
+        assertTrue(parsed.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, parsed.isSuccess)
+
+        val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "catalog-generated-smoke")
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val document = imported.document!!
+        val dryRun = WorkspaceDryRunRuntime().run(document)
+
+        assertTrue(dryRun is EmscriptDryRunResult.Success)
+        val events = (dryRun as EmscriptDryRunResult.Success).events
+        val missing = entries
+            .map { it.canonicalName }
+            .filterNot { command -> events.any { it.command == command || it.message.contains(command) } }
+        assertEquals(emptyList<String>(), missing)
+    }
+
+    @Test
     fun roundtrip_integrationScriptSurvivesWorkspaceSerializationIrAndFlowchartProjection() {
         val imported = EmscriptWorkspaceImporter().import(EditorDefaults.integrationTestScript)
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
@@ -367,4 +441,32 @@ class EmscriptParserSliceTest {
         assertTrue(regenerated.contains("vibrate("))
         assertTrue(regenerated.contains("click(\"Start\")"))
     }
+
+    private fun flattenStatements(statements: List<EmscriptIrStatement>): List<EmscriptIrStatement> =
+        statements.flatMap { statement ->
+            when (statement) {
+                is EmscriptIrStatement.If -> listOf(statement) +
+                    flattenStatements(statement.thenBranch) +
+                    statement.elseIfBranches.flatMap { flattenStatements(it.body) } +
+                    flattenStatements(statement.elseBranch)
+                is EmscriptIrStatement.Loop -> listOf(statement) + flattenStatements(statement.body)
+                is EmscriptIrStatement.While -> listOf(statement) + flattenStatements(statement.body)
+                else -> listOf(statement)
+            }
+        }
+
+    private fun CommandArgument.sampleArgument(): String =
+        when (type) {
+            CommandArgumentType.BOOLEAN -> defaultValue ?: "true"
+            CommandArgumentType.NUMBER,
+            CommandArgumentType.DURATION_MS,
+            CommandArgumentType.FREQUENCY_HZ,
+            CommandArgumentType.PERCENT -> defaultValue ?: "1"
+            CommandArgumentType.TEXT,
+            CommandArgumentType.VARIABLE_REF,
+            CommandArgumentType.IMAGE_TEMPLATE,
+            CommandArgumentType.REGION -> "\"${defaultValue ?: name}\""
+            CommandArgumentType.ANY -> defaultValue?.takeIf { it.isNotBlank() } ?: "{}"
+            CommandArgumentType.STATEMENT_BODY -> "{}"
+        }
 }

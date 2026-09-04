@@ -24,7 +24,33 @@ class WorkspaceWorkflowStateTest {
         assertTrue(state.emscriptProjection.isSuccess)
         assertEquals(document.rootBlocks.size, state.document.rootBlocks.size)
         assertTrue(state.flowchartProjection.graph.nodes.isNotEmpty())
+        assertTrue(state.resources.resources.isEmpty())
         assertEquals("test", state.mutationSource)
+    }
+
+    @Test
+    fun carriesResourcesBesideEditorProjections() {
+        val document = WorkspaceBootstrap.starter()
+        val resources = WorkspaceResourceReducer.upsert(
+            WorkspaceResourceBundle(),
+            WorkspaceResource(
+                id = "marker:start",
+                kind = WorkspaceResourceKind.Marker,
+                label = "Start",
+                markerMode = WorkspaceMarkerMode.Point,
+                point = WorkspacePointBounds(0.5f, 0.5f),
+            )
+        )
+
+        val state = WorkspaceWorkflowState.fromDocument(
+            document = document,
+            mutationSource = "resource-test",
+            resources = resources,
+        )
+
+        assertEquals(resources, state.resources)
+        assertTrue(state.emscriptProjection.isSuccess)
+        assertTrue(state.flowchartProjection.graph.nodes.isNotEmpty())
     }
 
     @Test

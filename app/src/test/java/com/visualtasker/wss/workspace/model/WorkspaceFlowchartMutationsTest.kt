@@ -374,6 +374,47 @@ class WorkspaceFlowchartMutationsTest {
         assertEquals(document, updated)
     }
 
+    @Test
+    fun `flowchart workspace mutation dispatcher applies editor commands through one contract`() {
+        val initial = WorkspaceDocument(id = "flowchart-dispatcher-test")
+        val added = applyFlowchartWorkspaceMutation(
+            initial,
+            FlowchartWorkspaceMutation.AddNode(BlockTypes.ACTION_WAIT),
+        )
+        val waitId = added.document.blocks.keys.single()
+        val fieldUpdated = applyFlowchartWorkspaceMutation(
+            added.document,
+            FlowchartWorkspaceMutation.UpdateNodeField(
+                nodeId = FlowNodeId("block:${waitId.value}"),
+                fieldKey = "ms",
+                rawValue = "750",
+            ),
+        )
+        val deleted = applyFlowchartWorkspaceMutation(
+            fieldUpdated.document,
+            FlowchartWorkspaceMutation.DeleteNode(FlowNodeId("block:${waitId.value}")),
+        )
+
+        assertTrue(added.applied)
+        assertTrue(fieldUpdated.applied)
+        assertEquals(FieldValue.Number(750.0), fieldUpdated.document.blocks.getValue(waitId).fields["ms"])
+        assertTrue(deleted.applied)
+        assertTrue(deleted.document.blocks.isEmpty())
+    }
+
+    @Test
+    fun `flowchart workspace mutation dispatcher reports unapplied invalid commands`() {
+        val document = WorkspaceDocument(id = "flowchart-dispatcher-invalid-test")
+
+        val result = applyFlowchartWorkspaceMutation(
+            document,
+            FlowchartWorkspaceMutation.DeleteNode(FlowNodeId("runtime:external")),
+        )
+
+        assertFalse(result.applied)
+        assertEquals(document, result.document)
+    }
+
     private fun flowView(
         nodeId: String,
         x: Double,

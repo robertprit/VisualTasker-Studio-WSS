@@ -541,7 +541,7 @@ private class Parser(private val tokens: List<Token>) {
     private fun parseQualifiedIdentifier(first: Token): Token {
         var lexeme = first.lexeme
         while (match(TokenType.DOT)) {
-            val part = consume(TokenType.IDENT, "Identifier nach '.' erwartet.")
+            val part = consumeIdentifierPart("Identifier nach '.' erwartet.")
             lexeme += ".${part.lexeme}"
         }
         return first.copy(lexeme = lexeme)
@@ -808,6 +808,14 @@ private class Parser(private val tokens: List<Token>) {
         throw ParseException(token.line, token.column, message)
     }
 
+    private fun consumeIdentifierPart(message: String): Token {
+        val token = peek()
+        if (token.type == TokenType.IDENT || token.type in identifierPartKeywords) {
+            return advance()
+        }
+        throw ParseException(token.line, token.column, message)
+    }
+
     private fun check(type: TokenType): Boolean =
         if (type == TokenType.EOF) {
             peek().type == TokenType.EOF
@@ -825,6 +833,19 @@ private class Parser(private val tokens: List<Token>) {
     private fun peek(): Token = tokens[current]
 
     private fun previous(): Token = tokens[current - 1]
+
+    private val identifierPartKeywords = setOf(
+        TokenType.LET,
+        TokenType.SET,
+        TokenType.IF,
+        TokenType.ELSEIF,
+        TokenType.ELSE,
+        TokenType.LOOP,
+        TokenType.WHILE,
+        TokenType.END,
+        TokenType.TRUE,
+        TokenType.FALSE,
+    )
 }
 
 private class ParseException(

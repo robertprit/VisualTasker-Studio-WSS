@@ -5,11 +5,19 @@ import com.visualtasker.wss.emscript.parser.EmscriptIrExpression
 import com.visualtasker.wss.emscript.parser.EmscriptIrScript
 import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
+import de.visualtasker.blockeditor.registry.CommandCapability
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 
 data class EmscriptDryRunConfig(
     val maxSteps: Int = 2_000,
     val maxLoopIterations: Int = 500,
 )
+
+enum class EmscriptDryRunEventSeverity {
+    INFO,
+    WARNING,
+    ERROR,
+}
 
 data class EmscriptDryRunEvent(
     val index: Int,
@@ -19,6 +27,10 @@ data class EmscriptDryRunEvent(
     val edgeSourceBlockId: String? = null,
     val edgeTargetBlockId: String? = null,
     val edgeKind: String? = null,
+    val severity: EmscriptDryRunEventSeverity = EmscriptDryRunEventSeverity.INFO,
+    val command: String? = null,
+    val capability: String? = null,
+    val pluginOwner: String? = null,
 )
 
 sealed interface EmscriptDryRunResult {
@@ -82,7 +94,7 @@ private class Interpreter(
         guardStep()
         when (statement) {
             is EmscriptIrStatement.CommandCall -> {
-                emit("command", "würde ${statement.command}(${statement.arguments}) ausführen")
+                emitCommand(statement.command, statement.arguments)
             }
             is EmscriptIrStatement.Let -> {
                 val value = evaluate(statement.value)
@@ -200,7 +212,44 @@ private class Interpreter(
     private fun emit(kind: String, message: String) {
         events += EmscriptDryRunEvent(events.size + 1, kind, message)
     }
+
+    private fun emitCommand(command: String, arguments: String) {
+        val entry = VisualTaskerCommandCatalog.findByCanonicalName(command)
+            ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
+        val gate = entry?.runtime?.liveCapabilityGate
+        val adapterGated = entry?.runtime?.dryRunBehavior == "adapter-gated"
+        val pluginOwner = entry?.pluginOwner
+        val severity = if (adapterGated || gate.isRuntimeBlocked()) {
+            EmscriptDryRunEventSeverity.WARNING
+        } else {
+            EmscriptDryRunEventSeverity.INFO
+        }
+        val kind = if (severity == EmscriptDryRunEventSeverity.WARNING) "capability" else "command"
+        val detail = when {
+            entry == null -> "bekannt im Parser, aber kein Katalogeintrag für $command"
+            adapterGated -> "Adapter noch nicht live: ${entry.canonicalName}(${arguments}) [${gate?.name ?: "UNKNOWN"} via ${entry.pluginOwner}]"
+            gate.isRuntimeBlocked() -> "Live-Capability noch blockiert: ${entry.canonicalName}(${arguments}) [${gate?.name ?: "UNKNOWN"}]"
+            else -> "würde ${entry.canonicalName}(${arguments}) ausführen"
+        }
+        events += EmscriptDryRunEvent(
+            index = events.size + 1,
+            kind = kind,
+            message = detail,
+            severity = severity,
+            command = entry?.canonicalName ?: command,
+            capability = gate?.name,
+            pluginOwner = pluginOwner,
+        )
+    }
 }
+
+internal fun CommandCapability?.isRuntimeBlocked(): Boolean =
+    this != null &&
+        this !in setOf(
+            CommandCapability.CORE,
+            CommandCapability.TIMING,
+            CommandCapability.DEBUG,
+        )
 
 private fun EmscriptValue.asDouble(context: String): Double =
     when (this) {

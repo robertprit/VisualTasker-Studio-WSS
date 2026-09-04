@@ -1,7 +1,16 @@
 package com.visualtasker.wss.workspace.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +36,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -107,6 +119,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -124,6 +137,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.visualtasker.wss.components.IconMotionConfig
+import com.visualtasker.wss.components.IconMotionEngine
 import com.visualtasker.wss.components.DarkPanel
 import com.visualtasker.wss.components.FabAction
 import com.visualtasker.wss.components.M3EExpandableFAB
@@ -146,18 +163,11 @@ import com.visualtasker.wss.logging.StudioLogStore
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_APPLY
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
+import com.visualtasker.wss.workspace.model.FlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
-import com.visualtasker.wss.workspace.model.addFlowchartIfBranchInWorkspace
-import com.visualtasker.wss.workspace.model.addFlowchartNodeToWorkspace
-import com.visualtasker.wss.workspace.model.connectFlowchartNodesInWorkspace
-import com.visualtasker.wss.workspace.model.connectFlowchartPortsInWorkspace
-import com.visualtasker.wss.workspace.model.deleteFlowchartNodeFromWorkspace
-import com.visualtasker.wss.workspace.model.disconnectFlowchartEdgeFromWorkspace
+import com.visualtasker.wss.workspace.model.applyFlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.flowchartConnectionOptions
-import com.visualtasker.wss.workspace.model.removeFlowchartIfBranchInWorkspace
-import com.visualtasker.wss.workspace.model.syncRootPositionsFromFlowchartView
-import com.visualtasker.wss.workspace.model.updateFlowchartNodeFieldInWorkspace
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
@@ -190,6 +200,8 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
+import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
+import de.visualtasker.blockeditor.compose.theme.setBlockCategoryColorOverride
 import de.visualtasker.blockeditor.domain.BlockId
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
@@ -206,6 +218,7 @@ import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -227,6 +240,33 @@ private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_tes
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
+
+private data class WorkspaceAppearance(
+    val syntaxKeyword: Color = Color(0xFF82B1FF),
+    val syntaxControl: Color = Color(0xFFCE93D8),
+    val syntaxString: Color = Color(0xFF81C784),
+    val syntaxNumber: Color = Color(0xFF81C784),
+    val syntaxComment: Color = Color(0xFF9E9E9E),
+    val syntaxOperator: Color = Color(0xFFFFB74D),
+    val syntaxPlain: Color = Color(0xFFE0E0E0),
+    val flowEvent: Color = Color(0xFF5B470A),
+    val flowControl: Color = Color(0xFF6C3F16),
+    val flowLogic: Color = Color(0xFF1E4C71),
+    val flowVariable: Color = Color(0xFF1F5A36),
+    val blockEvent: Color = defaultBlockCategoryColor(BlockCategories.EVENT),
+    val blockAction: Color = defaultBlockCategoryColor(BlockCategories.ACTION),
+    val blockEmscript: Color = defaultBlockCategoryColor(BlockCategories.EMSCRIPT),
+    val blockInput: Color = defaultBlockCategoryColor(BlockCategories.INPUT),
+    val blockPerception: Color = defaultBlockCategoryColor(BlockCategories.PERCEPTION),
+    val blockControl: Color = defaultBlockCategoryColor(BlockCategories.CONTROL),
+    val blockLogic: Color = defaultBlockCategoryColor(BlockCategories.LOGIC),
+    val blockVariables: Color = defaultBlockCategoryColor(BlockCategories.VARIABLES),
+    val blockFlow: Color = defaultBlockCategoryColor(BlockCategories.FLOW),
+    val blockRuntime: Color = defaultBlockCategoryColor(BlockCategories.RUNTIME),
+    val blockDebug: Color = defaultBlockCategoryColor(BlockCategories.DEBUG),
+    val blockVariable: Color = defaultBlockCategoryColor(BlockCategories.VARIABLE),
+    val blockCustom: Color = defaultBlockCategoryColor(BlockCategories.CUSTOM),
+)
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -260,6 +300,36 @@ fun WorkspaceScreen(
     var useLargeGrid by remember { mutableStateOf(uiPrefs.getBoolean("grid_large", false)) }
     var uiScale by remember { mutableStateOf(uiPrefs.getFloat("ui_scale", 1f).coerceIn(0.7f, 1.5f)) }
     var snapEnabled by remember { mutableStateOf(uiPrefs.getBoolean("snap_enabled", true)) }
+    var appearance by remember(uiPrefs) {
+        mutableStateOf(
+            WorkspaceAppearance(
+                syntaxKeyword = loadColorPref(uiPrefs, "color.syntax.keyword", Color(0xFF82B1FF)),
+                syntaxControl = loadColorPref(uiPrefs, "color.syntax.control", Color(0xFFCE93D8)),
+                syntaxString = loadColorPref(uiPrefs, "color.syntax.string", Color(0xFF81C784)),
+                syntaxNumber = loadColorPref(uiPrefs, "color.syntax.number", Color(0xFF81C784)),
+                syntaxComment = loadColorPref(uiPrefs, "color.syntax.comment", Color(0xFF9E9E9E)),
+                syntaxOperator = loadColorPref(uiPrefs, "color.syntax.operator", Color(0xFFFFB74D)),
+                syntaxPlain = loadColorPref(uiPrefs, "color.syntax.plain", Color(0xFFE0E0E0)),
+                flowEvent = loadColorPref(uiPrefs, "color.flow.event", loadColorPref(uiPrefs, "color.block.event", Color(0xFF5B470A))),
+                flowControl = loadColorPref(uiPrefs, "color.flow.control", loadColorPref(uiPrefs, "color.block.control", Color(0xFF6C3F16))),
+                flowLogic = loadColorPref(uiPrefs, "color.flow.logic", loadColorPref(uiPrefs, "color.block.logic", Color(0xFF1E4C71))),
+                flowVariable = loadColorPref(uiPrefs, "color.flow.variable", loadColorPref(uiPrefs, "color.block.variable", Color(0xFF1F5A36))),
+                blockEvent = loadColorPref(uiPrefs, "color.block.event", defaultBlockCategoryColor(BlockCategories.EVENT)),
+                blockAction = loadColorPref(uiPrefs, "color.block.action", defaultBlockCategoryColor(BlockCategories.ACTION)),
+                blockEmscript = loadColorPref(uiPrefs, "color.block.emscript", defaultBlockCategoryColor(BlockCategories.EMSCRIPT)),
+                blockInput = loadColorPref(uiPrefs, "color.block.input", defaultBlockCategoryColor(BlockCategories.INPUT)),
+                blockPerception = loadColorPref(uiPrefs, "color.block.perception", defaultBlockCategoryColor(BlockCategories.PERCEPTION)),
+                blockControl = loadColorPref(uiPrefs, "color.block.control", defaultBlockCategoryColor(BlockCategories.CONTROL)),
+                blockLogic = loadColorPref(uiPrefs, "color.block.logic", defaultBlockCategoryColor(BlockCategories.LOGIC)),
+                blockVariables = loadColorPref(uiPrefs, "color.block.variables", defaultBlockCategoryColor(BlockCategories.VARIABLES)),
+                blockFlow = loadColorPref(uiPrefs, "color.block.flow", defaultBlockCategoryColor(BlockCategories.FLOW)),
+                blockRuntime = loadColorPref(uiPrefs, "color.block.runtime", defaultBlockCategoryColor(BlockCategories.RUNTIME)),
+                blockDebug = loadColorPref(uiPrefs, "color.block.debug", defaultBlockCategoryColor(BlockCategories.DEBUG)),
+                blockVariable = loadColorPref(uiPrefs, "color.block.variable", defaultBlockCategoryColor(BlockCategories.VARIABLE)),
+                blockCustom = loadColorPref(uiPrefs, "color.block.custom", defaultBlockCategoryColor(BlockCategories.CUSTOM)),
+            )
+        )
+    }
     var blockPaletteInsertMode by remember {
         mutableStateOf(
             runCatching {
@@ -371,99 +441,84 @@ fun WorkspaceScreen(
             true
         }
     }
-    val addFlowchartNode: (String) -> Unit = { definitionId ->
-        val nextDocument = addFlowchartNodeToWorkspace(workflowState.document, definitionId)
-        if (nextDocument != workflowState.document) {
+    fun applyFlowchartMutation(
+        mutation: FlowchartWorkspaceMutation,
+        sourceSuffix: String,
+    ) {
+        val result = applyFlowchartWorkspaceMutation(workflowState.document, mutation)
+        if (result.applied) {
             applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX$definitionId"
+                WorkspaceSerializer.serialize(result.document),
+                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX$sourceSuffix"
             )
         }
+    }
+
+    val addFlowchartNode: (String) -> Unit = { definitionId ->
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.AddNode(definitionId),
+            definitionId,
+        )
     }
     val deleteFlowchartNode: (FlowNodeId) -> Unit = { nodeId ->
-        val nextDocument = deleteFlowchartNodeFromWorkspace(workflowState.document, nodeId)
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:delete"
-            )
-        }
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.DeleteNode(nodeId),
+            "${nodeId.value}:delete",
+        )
     }
     val disconnectFlowchartEdge: (FlowEdgeId) -> Unit = { edgeId ->
-        val nextDocument = disconnectFlowchartEdgeFromWorkspace(
-            document = workflowState.document,
-            graph = workflowState.flowchartProjection.graph,
-            edgeId = edgeId,
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.DisconnectEdge(
+                graph = workflowState.flowchartProjection.graph,
+                edgeId = edgeId,
+            ),
+            "${edgeId.value}:disconnect",
         )
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${edgeId.value}:disconnect"
-            )
-        }
     }
     val connectFlowchartNodes: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { sourceNodeId, targetNodeId, kind, label ->
-        val nextDocument = connectFlowchartNodesInWorkspace(
-            document = workflowState.document,
-            sourceNodeId = sourceNodeId,
-            targetNodeId = targetNodeId,
-            kind = kind,
-            label = label,
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.ConnectNodes(
+                sourceNodeId = sourceNodeId,
+                targetNodeId = targetNodeId,
+                kind = kind,
+                label = label,
+            ),
+            "${sourceNodeId.value}:${targetNodeId.value}:connect",
         )
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${sourceNodeId.value}:${targetNodeId.value}:connect"
-            )
-        }
     }
     val connectFlowchartPorts: (FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit = { sourceNodeId, sourcePortName, targetNodeId, targetPortName, fallbackKind ->
-        val nextDocument = connectFlowchartPortsInWorkspace(
-            document = workflowState.document,
-            sourceNodeId = sourceNodeId,
-            sourcePortName = sourcePortName,
-            targetNodeId = targetNodeId,
-            targetPortName = targetPortName,
-            fallbackKind = fallbackKind,
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.ConnectPorts(
+                sourceNodeId = sourceNodeId,
+                sourcePortName = sourcePortName,
+                targetNodeId = targetNodeId,
+                targetPortName = targetPortName,
+                fallbackKind = fallbackKind,
+            ),
+            "${sourceNodeId.value}:$sourcePortName:${targetNodeId.value}:$targetPortName:connect",
         )
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${sourceNodeId.value}:$sourcePortName:${targetNodeId.value}:$targetPortName:connect"
-            )
-        }
     }
     val updateFlowchartNodeField: (FlowNodeId, String, String) -> Unit = { nodeId, fieldKey, rawValue ->
-        val nextDocument = updateFlowchartNodeFieldInWorkspace(
-            document = workflowState.document,
-            nodeId = nodeId,
-            fieldKey = fieldKey,
-            rawValue = rawValue,
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.UpdateNodeField(
+                nodeId = nodeId,
+                fieldKey = fieldKey,
+                rawValue = rawValue,
+            ),
+            "${nodeId.value}:$fieldKey:update-field",
         )
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:$fieldKey:update-field"
-            )
-        }
     }
     val addFlowchartIfBranch: (FlowNodeId) -> Unit = { nodeId ->
-        val nextDocument = addFlowchartIfBranchInWorkspace(workflowState.document, nodeId)
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:add-branch"
-            )
-        }
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.AddIfBranch(nodeId),
+            "${nodeId.value}:add-branch",
+        )
     }
     val removeFlowchartIfBranch: (FlowNodeId) -> Unit = { nodeId ->
-        val nextDocument = removeFlowchartIfBranchInWorkspace(workflowState.document, nodeId)
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${nodeId.value}:remove-branch"
-            )
-        }
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.RemoveIfBranch(nodeId),
+            "${nodeId.value}:remove-branch",
+        )
     }
     val flowchartConnectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption> = { sourceNodeId, targetNodeId ->
         flowchartConnectionOptions(
@@ -473,13 +528,10 @@ fun WorkspaceScreen(
         )
     }
     val syncFlowchartView: (FlowViewDocument) -> Unit = { viewDocument ->
-        val nextDocument = syncRootPositionsFromFlowchartView(workflowState.document, viewDocument)
-        if (nextDocument != workflowState.document) {
-            applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(nextDocument),
-                "$WORKFLOW_SOURCE_FLOWCHART_PREFIX${viewDocument.surfaceId.value}:move"
-            )
-        }
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.SyncViewPositions(viewDocument),
+            "${viewDocument.surfaceId.value}:move",
+        )
     }
     val latestEmscriptProjected = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
     val latestEmscriptGenerationFailure = workflowState.emscriptProjection.exceptionOrNull()?.message
@@ -558,6 +610,16 @@ fun WorkspaceScreen(
             sequence = workspaceDryRunSequence,
         )
         flowRuntimeSnapshot = snapshot
+        snapshot.diagnostics.forEach { diagnostic ->
+            studioLogStore.append(
+                level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
+                source = source,
+                message = "Runtime-Diagnose ${diagnostic.code}",
+                details = diagnostic.message,
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:dry-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}"
+            )
+        }
         when (result) {
             is EmscriptDryRunResult.Success -> {
                 val preview = result.events.takeLast(8).joinToString(separator = "\n") {
@@ -680,6 +742,48 @@ fun WorkspaceScreen(
             .putFloat("ui_scale", uiScale)
             .putString(BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY, blockPaletteInsertMode.name)
             .apply()
+    }
+    LaunchedEffect(appearance) {
+        uiPrefs.edit()
+            .putColor("color.syntax.keyword", appearance.syntaxKeyword)
+            .putColor("color.syntax.control", appearance.syntaxControl)
+            .putColor("color.syntax.string", appearance.syntaxString)
+            .putColor("color.syntax.number", appearance.syntaxNumber)
+            .putColor("color.syntax.comment", appearance.syntaxComment)
+            .putColor("color.syntax.operator", appearance.syntaxOperator)
+            .putColor("color.syntax.plain", appearance.syntaxPlain)
+            .putColor("color.flow.event", appearance.flowEvent)
+            .putColor("color.flow.control", appearance.flowControl)
+            .putColor("color.flow.logic", appearance.flowLogic)
+            .putColor("color.flow.variable", appearance.flowVariable)
+            .putColor("color.block.event", appearance.blockEvent)
+            .putColor("color.block.action", appearance.blockAction)
+            .putColor("color.block.emscript", appearance.blockEmscript)
+            .putColor("color.block.input", appearance.blockInput)
+            .putColor("color.block.perception", appearance.blockPerception)
+            .putColor("color.block.control", appearance.blockControl)
+            .putColor("color.block.logic", appearance.blockLogic)
+            .putColor("color.block.variables", appearance.blockVariables)
+            .putColor("color.block.flow", appearance.blockFlow)
+            .putColor("color.block.runtime", appearance.blockRuntime)
+            .putColor("color.block.debug", appearance.blockDebug)
+            .putColor("color.block.variable", appearance.blockVariable)
+            .putColor("color.block.custom", appearance.blockCustom)
+            .apply()
+
+        setBlockCategoryColorOverride(BlockCategories.EVENT, appearance.blockEvent)
+        setBlockCategoryColorOverride(BlockCategories.ACTION, appearance.blockAction)
+        setBlockCategoryColorOverride(BlockCategories.EMSCRIPT, appearance.blockEmscript)
+        setBlockCategoryColorOverride(BlockCategories.INPUT, appearance.blockInput)
+        setBlockCategoryColorOverride(BlockCategories.PERCEPTION, appearance.blockPerception)
+        setBlockCategoryColorOverride(BlockCategories.CONTROL, appearance.blockControl)
+        setBlockCategoryColorOverride(BlockCategories.LOGIC, appearance.blockLogic)
+        setBlockCategoryColorOverride(BlockCategories.VARIABLES, appearance.blockVariables)
+        setBlockCategoryColorOverride(BlockCategories.FLOW, appearance.blockFlow)
+        setBlockCategoryColorOverride(BlockCategories.RUNTIME, appearance.blockRuntime)
+        setBlockCategoryColorOverride(BlockCategories.DEBUG, appearance.blockDebug)
+        setBlockCategoryColorOverride(BlockCategories.VARIABLE, appearance.blockVariable)
+        setBlockCategoryColorOverride(BlockCategories.CUSTOM, appearance.blockCustom)
     }
     LaunchedEffect(hideSystemBars, context) {
         val activity = context as? Activity ?: return@LaunchedEffect
@@ -940,6 +1044,7 @@ fun WorkspaceScreen(
                         paletteInsertMode = blockPaletteInsertMode,
                         emscriptSession = emscriptSession,
                         emscriptEditorUiState = emscriptEditorUiState,
+                        appearance = appearance,
                         latestEmscriptProjected = latestEmscriptProjected,
                         latestEmscriptGenerationFailure = latestEmscriptGenerationFailure,
                         flowRuntimeSnapshot = flowRuntimeSnapshot,
@@ -1104,6 +1209,8 @@ fun WorkspaceScreen(
             onUiScaleChange = { uiScale = it.coerceIn(0.7f, 1.5f) },
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
+            appearance = appearance,
+            onAppearanceChange = { appearance = it },
             blockPaletteInsertMode = blockPaletteInsertMode,
             onBlockPaletteInsertModeChange = { blockPaletteInsertMode = it },
             onResetPanels = {
@@ -1120,6 +1227,16 @@ fun WorkspaceScreen(
                     focusedPanelId = focusedPanelId,
                     topInsetPx = workspaceTopGuardPx
                 )
+            },
+            onColorPick = { color ->
+                updatePanel(panels, focusedPanelId) { it.copy(accentColor = color) }
+            },
+            onToggleIconEngine = {
+                IconMotionConfig.engine = if (IconMotionConfig.engine == IconMotionEngine.MATERIAL) {
+                    IconMotionEngine.RIVE
+                } else {
+                    IconMotionEngine.MATERIAL
+                }
             },
             onDismiss = { showSettingsSheet = false }
         )
@@ -1274,6 +1391,7 @@ private fun WorkspacePanelContent(
     paletteInsertMode: BlockPaletteInsertMode,
     emscriptSession: EmscriptEditorSession,
     emscriptEditorUiState: EmscriptEditorUiState,
+    appearance: WorkspaceAppearance,
     latestEmscriptProjected: String,
     latestEmscriptGenerationFailure: String?,
     flowRuntimeSnapshot: FlowRuntimeSnapshot?,
@@ -1350,7 +1468,17 @@ private fun WorkspacePanelContent(
             workspaceJson = workflowState.serializedJson,
             currentFlowGraph = workflowState.flowchartProjection.graph,
             onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_APPLY) },
-            onDryRunRuntimeSnapshot = onFlowRuntimeSnapshotChange
+            onDryRunRuntimeSnapshot = onFlowRuntimeSnapshotChange,
+            syntaxPaletteOverride = SyntaxHighlighter.Palette(
+                keyword = appearance.syntaxKeyword,
+                control = appearance.syntaxControl,
+                parameter = Color(0xFFFFB74D),
+                string = appearance.syntaxString,
+                number = appearance.syntaxNumber,
+                comment = appearance.syntaxComment,
+                operator = appearance.syntaxOperator,
+                plain = appearance.syntaxPlain,
+            )
         )
         PanelType.RuntimeLog,
         PanelType.LogConsole -> LogConsolePanel(
@@ -1395,8 +1523,17 @@ private fun WorkspacePanelContent(
                 addAll(syncReport.messages.take(5))
                 val capabilityReport = RuntimeCapabilityGate().inspect(workflowState.document)
                 add(capabilityReport.summary)
-                capabilityReport.capabilities.take(6).forEach { capability ->
+                capabilityReport.capabilities
+                    .groupingBy { it.status }
+                    .eachCount()
+                    .entries
+                    .sortedBy { it.key.name }
+                    .forEach { (status, count) -> add("Runtime $status: $count") }
+                capabilityReport.capabilities.take(10).forEach { capability ->
                     add("${capability.command}: ${capability.status} - ${capability.details}")
+                }
+                flowRuntimeSnapshot?.diagnostics?.take(8)?.forEach { diagnostic ->
+                    add("${diagnostic.severity.name} ${diagnostic.code}: ${diagnostic.message}")
                 }
                 latestEmscriptGenerationFailure?.let(::add)
             }
@@ -2122,10 +2259,10 @@ private fun loadInitialTextEditorDraft(
     val persisted = uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, null)
     if (loadedVersion < EditorDefaults.integrationTestScriptVersion || persisted.isNullOrBlank()) {
         uiPrefs.edit()
-            .putString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.integrationTestScript)
+            .putString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.commandCatalogBreadthTestScript)
             .putInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
             .apply()
-        return EditorDefaults.integrationTestScript
+        return EditorDefaults.commandCatalogBreadthTestScript
     }
     return persisted
 }
@@ -2133,7 +2270,7 @@ private fun loadInitialTextEditorDraft(
 private fun importAndPersistIntegrationWorkspace(
     uiPrefs: android.content.SharedPreferences,
 ): String? = EmscriptWorkspaceImporter()
-    .import(EditorDefaults.integrationTestScript, workspaceId = "workflow-main")
+    .import(EditorDefaults.commandCatalogBreadthTestScript, workspaceId = "workflow-main")
     .document
     ?.let { document ->
         val serialized = WorkspaceSerializer.serialize(document)
@@ -2224,10 +2361,14 @@ private fun WorkspaceSettingsBottomSheet(
     onUiScaleChange: (Float) -> Unit,
     themeMode: String,
     onThemeModeChange: (String) -> Unit,
+    appearance: WorkspaceAppearance,
+    onAppearanceChange: (WorkspaceAppearance) -> Unit,
     blockPaletteInsertMode: BlockPaletteInsertMode,
     onBlockPaletteInsertModeChange: (BlockPaletteInsertMode) -> Unit,
     onResetPanels: () -> Unit,
     onAutoArrange: () -> Unit,
+    onColorPick: (Color) -> Unit,
+    onToggleIconEngine: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -2318,22 +2459,45 @@ private fun WorkspaceSettingsBottomSheet(
             ) {
                 Text("Fokus-Panel: Workspace", color = M3EColors.Amber)
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Syntax Highlighting", style = MaterialTheme.typography.labelLarge)
+                ColorAssignmentRow("Keyword", appearance.syntaxKeyword) { onAppearanceChange(appearance.copy(syntaxKeyword = it)) }
+                ColorAssignmentRow("Control", appearance.syntaxControl) { onAppearanceChange(appearance.copy(syntaxControl = it)) }
+                ColorAssignmentRow("String", appearance.syntaxString) { onAppearanceChange(appearance.copy(syntaxString = it)) }
+                ColorAssignmentRow("Number", appearance.syntaxNumber) { onAppearanceChange(appearance.copy(syntaxNumber = it)) }
+                ColorAssignmentRow("Comment", appearance.syntaxComment) { onAppearanceChange(appearance.copy(syntaxComment = it)) }
+                ColorAssignmentRow("Operator", appearance.syntaxOperator) { onAppearanceChange(appearance.copy(syntaxOperator = it)) }
+                ColorAssignmentRow("Plain Text", appearance.syntaxPlain) { onAppearanceChange(appearance.copy(syntaxPlain = it)) }
+                Spacer(Modifier.height(8.dp))
                 Text("Gemeinsame Kategorien (Flowchart + Blockeditor)", style = MaterialTheme.typography.labelLarge)
-                WorkspaceColorPreviewRow("Event", M3EColors.Limepop)
-                WorkspaceColorPreviewRow("Control", M3EColors.Sunsetcoral)
-                WorkspaceColorPreviewRow("Logic", M3EColors.Oceanneon)
-                WorkspaceColorPreviewRow("Variable", M3EColors.Mint)
+                ColorAssignmentRow("Event", appearance.blockEvent) {
+                    onAppearanceChange(appearance.copy(blockEvent = it, flowEvent = it))
+                }
+                ColorAssignmentRow("Control", appearance.blockControl) {
+                    onAppearanceChange(appearance.copy(blockControl = it, flowControl = it))
+                }
+                ColorAssignmentRow("Logic", appearance.blockLogic) {
+                    onAppearanceChange(appearance.copy(blockLogic = it, flowLogic = it))
+                }
+                ColorAssignmentRow("Variable", appearance.blockVariable) {
+                    onAppearanceChange(appearance.copy(blockVariable = it, flowVariable = it))
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Block Kategorien", style = MaterialTheme.typography.labelLarge)
+                ColorAssignmentRow("Action", appearance.blockAction) { onAppearanceChange(appearance.copy(blockAction = it)) }
+                ColorAssignmentRow("EMScript", appearance.blockEmscript) { onAppearanceChange(appearance.copy(blockEmscript = it)) }
+                ColorAssignmentRow("Input", appearance.blockInput) { onAppearanceChange(appearance.copy(blockInput = it)) }
+                ColorAssignmentRow("Perception", appearance.blockPerception) { onAppearanceChange(appearance.copy(blockPerception = it)) }
+                ColorAssignmentRow("Control", appearance.blockControl) { onAppearanceChange(appearance.copy(blockControl = it)) }
+                ColorAssignmentRow("Logic", appearance.blockLogic) { onAppearanceChange(appearance.copy(blockLogic = it)) }
+                ColorAssignmentRow("Variables", appearance.blockVariables) { onAppearanceChange(appearance.copy(blockVariables = it)) }
+                ColorAssignmentRow("Flow", appearance.blockFlow) { onAppearanceChange(appearance.copy(blockFlow = it)) }
+                ColorAssignmentRow("Runtime", appearance.blockRuntime) { onAppearanceChange(appearance.copy(blockRuntime = it)) }
+                ColorAssignmentRow("Debug", appearance.blockDebug) { onAppearanceChange(appearance.copy(blockDebug = it)) }
+                ColorAssignmentRow("Variable", appearance.blockVariable) { onAppearanceChange(appearance.copy(blockVariable = it)) }
+                ColorAssignmentRow("Custom", appearance.blockCustom) { onAppearanceChange(appearance.copy(blockCustom = it)) }
                 Spacer(Modifier.height(8.dp))
                 Text("Panel-Akzent", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(M3EColors.Limepop, M3EColors.Oceanneon, M3EColors.Ultraviolet, M3EColors.Amber).forEach { color ->
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .background(color, RoundedCornerShape(14.dp))
-                        )
-                    }
-                }
+                ColorPalettePicker(onSelect = onColorPick)
             }
 
             1 -> WorkspaceSettingsInfoTab("Flowchart", listOf("Flowchart-Panels sind direkt im Workspace-FAB und in der linken Rail verfügbar."))
@@ -2343,8 +2507,62 @@ private fun WorkspaceSettingsBottomSheet(
             )
             3 -> WorkspaceSettingsInfoTab("Texteditor", listOf("Die Workspace-Shell hält Texteditor-Funktionalität außerhalb der Shell-Plugin-Panels."))
             4 -> WorkspaceSettingsInfoTab("Browser", listOf("Browser-Panels sind in dieser Shell nicht als Platzhalter angeboten."))
-            5 -> WorkspaceSettingsInfoTab("Extras", listOf("Keine Platzhalter-Panels im Workspace-Menü."))
-            else -> WorkspaceSettingsInfoTab("Keypad", listOf("Keypad-Mapping bleibt im MainScreen-Studio gebunden."))
+            5 -> ExtrasPermissionsTab()
+            else -> WorkspaceSettingsInfoTab(
+                title = "Keypad",
+                messages = listOf("Keypad-Mapping wird als eigenes Workspace-Panel/Plugin migriert. Icon-Engine kann hier bereits umgeschaltet werden."),
+                actionLabel = "Icon-Engine: ${IconMotionConfig.engine.name}",
+                onAction = onToggleIconEngine
+            )
+        }
+    }
+}
+
+@Composable
+private fun ColorAssignmentRow(
+    label: String,
+    current: Color,
+    onAssign: (Color) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .background(current, RoundedCornerShape(10.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp)),
+            )
+        }
+        ColorPalettePicker(onSelect = onAssign)
+    }
+}
+
+@Composable
+private fun ColorPalettePicker(
+    onSelect: (Color) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(8),
+        modifier = Modifier.height(92.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        items(M3EColors.allColors) { color ->
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .background(color, RoundedCornerShape(11.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(11.dp))
+                    .clickable { onSelect(color) },
+            )
         }
     }
 }
@@ -2422,7 +2640,12 @@ private fun BlockEditorSettingsTab(
 }
 
 @Composable
-private fun WorkspaceSettingsInfoTab(title: String, messages: List<String>) {
+private fun WorkspaceSettingsInfoTab(
+    title: String,
+    messages: List<String>,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2434,8 +2657,270 @@ private fun WorkspaceSettingsInfoTab(title: String, messages: List<String>) {
         messages.forEach { message ->
             Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (actionLabel != null && onAction != null) {
+            AssistChip(
+                onClick = onAction,
+                label = { Text(actionLabel) },
+            )
+        }
     }
 }
+
+private data class PermissionEntry(
+    val label: String,
+    val granted: Boolean,
+    val open: () -> Unit,
+)
+
+@Composable
+private fun ExtrasPermissionsTab() {
+    val context = LocalContext.current
+    val packageName = context.packageName
+    val overlayGranted = Settings.canDrawOverlays(context)
+    val fileAccessGranted = isFileAccessGranted(context)
+    val batteryGranted = isBatteryOptimizationDisabled(context)
+    val notificationsGranted = isNotificationAccessGranted(context)
+    val microphoneGranted = hasPermission(context, Manifest.permission.RECORD_AUDIO)
+    val accessibilityGranted = isAccessibilityEnabledForApp(context)
+    val shizukuGranted = isPackageInstalled(context, "moe.shizuku.privileged.api")
+    val rootGranted = isRootAvailable()
+
+    val entries = listOf(
+        PermissionEntry(
+            label = "Overlay",
+            granted = overlayGranted,
+            open = {
+                context.safeStartActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName"),
+                    ),
+                )
+            },
+        ),
+        PermissionEntry(
+            label = "Dateizugriff",
+            granted = fileAccessGranted,
+            open = {
+                val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Intent(
+                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:$packageName"),
+                    )
+                } else {
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName"),
+                    )
+                }
+                context.safeStartActivity(intent)
+            },
+        ),
+        PermissionEntry(
+            label = "Akku Optimierung",
+            granted = batteryGranted,
+            open = {
+                context.safeStartActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName"),
+                    ),
+                )
+            },
+        ),
+        PermissionEntry(
+            label = "Benachrichtigungen",
+            granted = notificationsGranted,
+            open = {
+                context.safeStartActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    },
+                )
+            },
+        ),
+        PermissionEntry(
+            label = "Mikrofon",
+            granted = microphoneGranted,
+            open = {
+                context.safeStartActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName"),
+                    ),
+                )
+            },
+        ),
+        PermissionEntry(
+            label = "Bedienungshilfen",
+            granted = accessibilityGranted,
+            open = {
+                context.safeStartActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+        ),
+        PermissionEntry(
+            label = "Shizuku",
+            granted = shizukuGranted,
+            open = {
+                val intent = if (shizukuGranted) {
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:moe.shizuku.privileged.api"),
+                    )
+                } else {
+                    Intent(Settings.ACTION_SETTINGS)
+                }
+                context.safeStartActivity(intent)
+            },
+        ),
+        PermissionEntry(
+            label = "Root",
+            granted = rootGranted,
+            open = {
+                context.safeStartActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+            },
+        ),
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Permissions und Capabilities", style = MaterialTheme.typography.titleMedium)
+                entries.forEach { entry ->
+                    PermissionStatusRow(entry = entry)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionStatusRow(entry: PermissionEntry) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(entry.label, style = MaterialTheme.typography.labelLarge)
+            Text(
+                if (entry.granted) "Status: erteilt" else "Status: ausstehend",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (entry.granted) Color(0xFF81C784) else MaterialTheme.colorScheme.error,
+            )
+        }
+        AssistChip(
+            onClick = entry.open,
+            label = { Text("Öffnen") },
+        )
+    }
+}
+
+private fun Context.safeStartActivity(intent: Intent) {
+    runCatching {
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
+
+private fun hasPermission(context: Context, permission: String): Boolean =
+    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun isFileAccessGranted(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+        return true
+    }
+    val legacy = hasPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE)
+    if (legacy) return true
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        return hasPermission(context, Manifest.permission.READ_MEDIA_IMAGES) ||
+            hasPermission(context, Manifest.permission.READ_MEDIA_VIDEO) ||
+            hasPermission(context, Manifest.permission.READ_MEDIA_AUDIO)
+    }
+    return false
+}
+
+private fun isBatteryOptimizationDisabled(context: Context): Boolean {
+    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+    return manager.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+private fun isNotificationAccessGranted(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        hasPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+
+private fun isAccessibilityEnabledForApp(context: Context): Boolean {
+    val enabled = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+    ).orEmpty()
+    return enabled.contains(context.packageName, ignoreCase = true)
+}
+
+private fun isPackageInstalled(context: Context, packageName: String): Boolean =
+    runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(0L),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(packageName, 0)
+        }
+    }.isSuccess
+
+private fun isRootAvailable(): Boolean {
+    val paths = listOf(
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/sbin/su",
+        "/vendor/bin/su",
+    )
+    return paths.any { File(it).exists() }
+}
+
+private fun loadColorPref(prefs: SharedPreferences, key: String, fallback: Color): Color {
+    val argbKey = "color.argb.${key.removePrefix("color.")}"
+    if (prefs.contains(argbKey)) {
+        return Color(prefs.getInt(argbKey, fallback.toArgb()))
+    }
+    if (!prefs.contains(key)) return fallback
+    val legacyRaw = runCatching { prefs.getLong(key, fallback.toArgb().toLong()) }.getOrNull()
+        ?: return fallback
+    val legacyPackedColor = runCatching { Color(legacyRaw.toULong()) }.getOrNull()
+    return legacyPackedColor ?: Color(legacyRaw.toInt())
+}
+
+private fun SharedPreferences.Editor.putColor(key: String, color: Color): SharedPreferences.Editor =
+    putLong(key, color.value.toLong())
+        .putInt("color.argb.${key.removePrefix("color.")}", color.toArgb())
 
 @Composable
 private fun statusColor(status: StepStatus): Color = when (status) {

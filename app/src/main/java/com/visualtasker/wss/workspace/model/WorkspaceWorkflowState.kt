@@ -14,6 +14,8 @@ data class WorkspaceWorkflowState(
     val irGraph: IrGraph,
     val emscriptProjection: Result<String>,
     val flowchartProjection: FlowchartProjectionResult,
+    val resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
+    val worldview: WorldviewDocument = WorldviewDocument.fromResources(resources),
     val mutationSource: String,
 ) {
     val revision: Int = serializedJson.hashCode()
@@ -22,14 +24,16 @@ data class WorkspaceWorkflowState(
         fun fromSerialized(
             serializedJson: String,
             mutationSource: String = WORKFLOW_SOURCE_INITIAL,
+            resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
             val document = WorkspaceSerializer.deserialize(serializedJson)
-            return fromDocument(document, mutationSource)
+            return fromDocument(document, mutationSource, resources)
         }
 
         fun fromDocument(
             document: WorkspaceDocument,
             mutationSource: String,
+            resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
             val normalizedJson = WorkspaceSerializer.serialize(document)
             val irGraph = IrGraphGenerator().generate(document)
@@ -39,6 +43,8 @@ data class WorkspaceWorkflowState(
                 irGraph = irGraph,
                 emscriptProjection = runCatching { EmscriptGenerator().generate(document) },
                 flowchartProjection = IrGraphFlowchartProjector.project(irGraph),
+                resources = resources,
+                worldview = WorldviewDocument.fromResources(resources),
                 mutationSource = mutationSource,
             )
         }

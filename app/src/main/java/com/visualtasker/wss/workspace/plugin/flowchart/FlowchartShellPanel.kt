@@ -538,12 +538,29 @@ private fun FlowchartNodeInspectorRows(
     }
     val nodeEvents = runtimeSnapshot?.runtimeEventsFor(node.id).orEmpty()
     val lastEvent = nodeEvents.lastOrNull()
+    val lastNotice = nodeEvents.lastOrNull { it.severity != "INFO" }
     val branchEvent = nodeEvents.lastOrNull { it.kind in setOf("if", "elseif", "else", "while", "loop") }
     val variables = runtimeSnapshot?.runtimeVariables().orEmpty()
+    val commandId = node.properties.stringValue("commandId")
+    val commandName = node.properties.stringValue("commandName") ?: lastEvent?.command
+    val commandKind = node.properties.stringValue("commandKind")
+    val commandCapabilities = node.properties.stringValue("commandCapabilities") ?: lastEvent?.capability
+    val commandPluginOwner = node.properties.stringValue("commandPluginOwner") ?: lastEvent?.pluginOwner
+    val sourceLine = node.properties.stringValue("sourceLine")
+    val sourceColumn = node.properties.stringValue("sourceColumn")
     InspectorLine("Label", node.label)
     InspectorLine("Status", status)
+    commandId?.let { InspectorLine("Command-ID", it) }
+    commandName?.let { InspectorLine("Command", it) }
+    commandKind?.let { InspectorLine("Command-Typ", it) }
+    commandCapabilities?.let { InspectorLine("Capability", it) }
+    commandPluginOwner?.let { InspectorLine("Plugin", it) }
     InspectorLine("Block", "$blockType / $blockId")
+    sourceLine?.let { line ->
+        InspectorLine("Quelle", "EMScript Zeile $line${sourceColumn?.let { ", Spalte $it" }.orEmpty()}")
+    }
     InspectorLine("Kanten", "in $traversedIncoming/$incoming, out $traversedOutgoing/$outgoing")
+    lastNotice?.let { InspectorLine("Runtime", "${it.severity}: ${it.message}") }
     branchEvent?.let { InspectorLine("Entscheidung", "#${it.index} ${it.kind}: ${it.message}") }
     InspectorLine("Event", lastEvent?.let { "#${it.index} ${it.kind}: ${it.message}" } ?: "-")
     if (nodeEvents.size > 1) {
@@ -560,7 +577,7 @@ private fun FlowchartNodeInspectorRows(
     }
     val diagnostics = runtimeSnapshot?.diagnostics.orEmpty().filter { it.nodeId == node.id }
     if (diagnostics.isNotEmpty()) {
-        InspectorLine("Diagnose", diagnostics.joinToString { it.message })
+        InspectorLine("Diagnose", diagnostics.joinToString { "${it.severity.name} ${it.code}: ${it.message}" })
     }
     editableNodeFields(node).forEach { field ->
         OutlinedTextField(
@@ -1089,6 +1106,10 @@ private data class FlowRuntimeEventSummary(
     val index: Int,
     val kind: String,
     val message: String,
+    val severity: String,
+    val command: String?,
+    val capability: String?,
+    val pluginOwner: String?,
 )
 
 private fun FlowRuntimeSnapshot.runtimeEventsFor(nodeId: FlowNodeId): List<FlowRuntimeEventSummary> =
@@ -1106,6 +1127,10 @@ private fun FlowRuntimeSnapshot.runtimeEventsFor(nodeId: FlowNodeId): List<FlowR
                 index = values.numberValue("index")?.toIntOrNull() ?: 0,
                 kind = values.stringValue("kind") ?: "?",
                 message = values.stringValue("message") ?: "",
+                severity = values.stringValue("severity") ?: "INFO",
+                command = values.stringValue("command"),
+                capability = values.stringValue("capability"),
+                pluginOwner = values.stringValue("pluginOwner"),
             )
         }
         .sortedBy { it.index }

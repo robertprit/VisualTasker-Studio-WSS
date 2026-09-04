@@ -80,11 +80,18 @@ class IrGraphFlowchartProjectorTest {
         assertTrue(facetNodes.any { node ->
             node.kind.standard == FlowNodeKind.SYNTHETIC &&
                 node.properties["facetKind"] == FlowSemanticValue.StringValue("COLLAPSE_GROUP") &&
-                node.properties["collapsed"] == FlowSemanticValue.BooleanValue(true)
+                node.properties["collapsed"] == FlowSemanticValue.BooleanValue(true) &&
+                node.properties["flowFacet"] == FlowSemanticValue.BooleanValue(true) &&
+                node.properties["flowFacetRole"] == FlowSemanticValue.StringValue("collapse.group") &&
+                node.properties["flowFacetNodeCount"] == FlowSemanticValue.NumberValue("1")
         })
         assertTrue(facetNodes.any { node ->
             node.kind.standard == FlowNodeKind.SYNTHETIC &&
-                node.properties["facetKind"] == FlowSemanticValue.StringValue("VARIABLE_BULK")
+                node.properties["facetKind"] == FlowSemanticValue.StringValue("VARIABLE_BULK") &&
+                node.properties["flowFacetRole"] == FlowSemanticValue.StringValue("bulk.variables")
+        })
+        assertTrue(facetNodes.all { node ->
+            node.extensions.any { it.key == "visualtasker.ir-facet-nodes" }
         })
     }
 

@@ -7,6 +7,7 @@ import de.visualtasker.blockeditor.ir.IrGraphFacetKind
 import de.visualtasker.blockeditor.ir.IrGraphNodeKind
 import de.visualtasker.blockeditor.ir.IrGraphSourceRef
 import de.visualtasker.blockeditor.ir.validateIntegrity
+import de.visualtasker.blockeditor.ir.validateSemantics
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowDocumentId
@@ -25,7 +26,7 @@ import de.visualtasker.flowchart.domain.FlowSemanticValue
 
 object IrGraphFlowchartProjector {
     fun project(graph: IrGraph): FlowchartProjectionResult {
-        val irDiagnostics = graph.diagnostics + graph.validateIntegrity()
+        val irDiagnostics = graph.diagnostics + graph.validateIntegrity() + graph.validateSemantics()
         val diagnostics = irDiagnostics.mapIndexed { index, diagnostic ->
             FlowGraphDiagnostic(
                 id = FlowDiagnosticId("ir:${index}:${diagnostic.code}"),
@@ -236,13 +237,26 @@ object IrGraphFlowchartProjector {
                 put("nodeIds", FlowSemanticValue.ListValue(facet.nodeIds.map { FlowSemanticValue.StringValue(it.value) }))
                 facet.scopeId?.let { put("scopeId", FlowSemanticValue.StringValue(it)) }
                 facet.ownerNodeId?.let { put("ownerNodeId", FlowSemanticValue.StringValue(it.value)) }
+                put("flowFacet", FlowSemanticValue.BooleanValue(true))
+                put("flowFacetRole", FlowSemanticValue.StringValue(flowFacetRole(facet.kind)))
+                put("flowFacetNodeCount", FlowSemanticValue.NumberValue(facet.nodeIds.size.toString()))
                 facet.properties.forEach { (key, value) -> put(key, nodeProperty(key, value)) }
             },
             extensions = listOf(
                 FlowGraphExtension("visualtasker.ir-facet-kind", FlowSemanticValue.StringValue(facet.kind.name)),
+                FlowGraphExtension("visualtasker.ir-facet-role", FlowSemanticValue.StringValue(flowFacetRole(facet.kind))),
+                FlowGraphExtension("visualtasker.ir-facet-nodes", FlowSemanticValue.ListValue(facet.nodeIds.map { FlowSemanticValue.StringValue(it.value) })),
                 FlowGraphExtension("visualtasker.ir-source", sourceExtension(facet.source)),
             ),
         )
+
+    private fun flowFacetRole(kind: IrGraphFacetKind): String = when (kind) {
+        IrGraphFacetKind.BRANCH_REGION -> "region.branch"
+        IrGraphFacetKind.COLLAPSE_GROUP -> "collapse.group"
+        IrGraphFacetKind.COMMENT_MARKER -> "marker.comment"
+        IrGraphFacetKind.VARIABLE_BULK -> "bulk.variables"
+        IrGraphFacetKind.FUNCTION_REGION -> "region.function"
+    }
 
     private fun sourceReference(
         graph: IrGraph,

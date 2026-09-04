@@ -72,7 +72,7 @@ class BlockEditorShellEditorSession(
     }
 
     override fun open(input: ShellEditorInput) {
-        Log.d(BLOCK_SHELL_LOG_TAG, "open session=${input.sessionId.value} disposed=$disposed initialized=${::controller.isInitialized}")
+        logBlockShell("open session=${input.sessionId.value} disposed=$disposed initialized=${::controller.isInitialized}")
         check(!disposed) { "Blockeditor session is already disposed." }
         require(input.sessionId == sessionId) {
             "Blockeditor session cannot be reopened with another session id."
@@ -106,11 +106,11 @@ class BlockEditorShellEditorSession(
             initialDocument = document,
             callbacks = callbacks()
         )
-        Log.d(BLOCK_SHELL_LOG_TAG, "open complete session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
+        logBlockShell("open complete session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
     }
 
     fun replaceInputDocument(input: ShellEditorInput) {
-        Log.d(BLOCK_SHELL_LOG_TAG, "replaceInputDocument session=${input.sessionId.value} disposed=$disposed initialized=${::controller.isInitialized}")
+        logBlockShell("replaceInputDocument session=${input.sessionId.value} disposed=$disposed initialized=${::controller.isInitialized}")
         check(!disposed) { "Blockeditor session is already disposed." }
         require(input.sessionId == sessionId) {
             "Blockeditor session cannot be updated with another session id."
@@ -146,7 +146,7 @@ class BlockEditorShellEditorSession(
             focusBlockId = null,
             selectFocusedBlock = false,
         )
-        Log.d(BLOCK_SHELL_LOG_TAG, "replaceInputDocument complete session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
+        logBlockShell("replaceInputDocument complete session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
     }
 
     override fun requestSave(): ShellEditorOutput {
@@ -183,12 +183,12 @@ class BlockEditorShellEditorSession(
 
     override fun onActivated() {
         active = true
-        Log.d(BLOCK_SHELL_LOG_TAG, "activated session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
+        logBlockShell("activated session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
     }
 
     override fun onDeactivated() {
         active = false
-        Log.d(BLOCK_SHELL_LOG_TAG, "deactivated session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
+        logBlockShell("deactivated session=${sessionId.value} controllerDisposed=${controller.isDisposed}")
         if (::controller.isInitialized) {
             controller.cancelActiveDrag()
         }
@@ -196,7 +196,7 @@ class BlockEditorShellEditorSession(
 
     override fun dispose() {
         if (disposed) return
-        Log.d(BLOCK_SHELL_LOG_TAG, "dispose session=${sessionId.value} controllerInitialized=${::controller.isInitialized}")
+        logBlockShell("dispose session=${sessionId.value} controllerInitialized=${::controller.isInitialized}")
         disposed = true
         active = false
         controller.close()
@@ -266,6 +266,12 @@ class BlockEditorShellEditorSession(
         if (dirtyState == next) return
         dirtyState = next
         hostServices.reportDirtyState(sessionId, dirtyState)
+    }
+}
+
+private fun logBlockShell(message: String) {
+    runCatching {
+        Log.d(BLOCK_SHELL_LOG_TAG, message)
     }
 }
 

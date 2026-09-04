@@ -173,6 +173,54 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         assertTrue(FlowRuntimeSnapshotValidator.validate(graph, snapshot).isValid)
     }
 
+    @Test
+    fun mapsCapabilityWarningsToRuntimeDiagnostics() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            findTemplate("button.png", 0.8, 1000)
+            Termux.shell("echo ok")
+            """.trimIndent(),
+            workspaceId = "runtime-flowchart-capabilities",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val (irGraph, graph) = project(imported.document!!)
+        val dryRun = WorkspaceDryRunRuntime().run(imported.document!!)
+        assertTrue(dryRun is EmscriptDryRunResult.Success)
+
+        val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
+            graph = graph,
+            result = dryRun,
+            sequence = 8,
+            capturedAtEpochMs = 42,
+        )
+
+        assertTrue(snapshot.diagnostics.any {
+            it.severity.name == "WARNING" &&
+                it.code == "CAPABILITY_VISION" &&
+                it.message.contains("findTemplate")
+        })
+        assertTrue(snapshot.diagnostics.any {
+            it.severity.name == "WARNING" &&
+                it.code == "CAPABILITY_TERMUX" &&
+                it.message.contains("Termux.shell")
+        })
+        val runtimeEvents = snapshot.runtimeEvents()
+        assertTrue(runtimeEvents.any {
+            it["severity"] == "WARNING" &&
+                it["command"] == "findTemplate" &&
+                it["capability"] == "VISION" &&
+                it["pluginOwner"] == "visualtasker.core"
+        })
+        assertTrue(runtimeEvents.any {
+            it["severity"] == "WARNING" &&
+                it["command"] == "Termux.shell" &&
+                it["capability"] == "TERMUX" &&
+                it["pluginOwner"] == "visualtasker.termux"
+        })
+        assertTrue(FlowRuntimeSnapshotValidator.validate(graph, snapshot).isValid)
+    }
+
     private fun project(document: WorkspaceDocument): Pair<IrGraph, de.visualtasker.flowchart.domain.FlowGraphDocument> {
         val irGraph = IrGraphGenerator().generate(document)
         return irGraph to IrGraphFlowchartProjector.project(irGraph).graph
@@ -190,4 +238,19 @@ class EmscriptDryRunFlowRuntimeMapperTest {
                 key to rendered
             }
             .toMap()
+
+    private fun de.visualtasker.flowchart.domain.FlowRuntimeSnapshot.runtimeEvents(): List<Map<String, String>> =
+        extensions
+            .firstOrNull { it.key == "visualtasker.runtime-events" }
+            ?.value
+            ?.let { it as? FlowSemanticValue.ListValue }
+            ?.values
+            .orEmpty()
+            .mapNotNull { it as? FlowSemanticValue.ObjectValue }
+            .map { event ->
+                event.values.mapNotNull { (key, value) ->
+                    val rendered = (value as? FlowSemanticValue.StringValue)?.value ?: return@mapNotNull null
+                    key to rendered
+                }.toMap()
+            }
 }
