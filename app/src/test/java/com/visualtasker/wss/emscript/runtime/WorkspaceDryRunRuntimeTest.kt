@@ -2,6 +2,7 @@ package com.visualtasker.wss.emscript.runtime
 
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -122,5 +123,48 @@ class WorkspaceDryRunRuntimeTest {
                 it.command == "Termux.shell" &&
                 it.pluginOwner == "visualtasker.termux"
         })
+    }
+
+    @Test
+    fun dryRunDoesNotMarkImplementedCoreCatalogCommandsAsAdapterWarnings() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            clickPoint(120, 240, 1)
+            swipe([120, 640, 120, 220], 1)
+            screenshot("screen.png")
+            Clipboard.set("alpha")
+            Clipboard.get()
+            Cache.clear()
+            Sys.info()
+            Env.get("SDK_INT")
+            File.writeText("state.txt", "ok")
+            File.readText("state.txt")
+            touch(["down", 120, 240, "up"])
+            """.trimIndent(),
+            workspaceId = "workspace-dry-run-core-catalog",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val result = WorkspaceDryRunRuntime().run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        val events = (result as EmscriptDryRunResult.Success).events
+        val capabilityWarnings = events.filter {
+            it.kind == "capability" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING
+        }
+        assertFalse(capabilityWarnings.any { it.command in setOf("clickPoint", "swipe", "screenshot") })
+        assertFalse(capabilityWarnings.any {
+            it.command in setOf(
+                "Clipboard.set",
+                "Clipboard.get",
+                "Cache.clear",
+                "Sys.info",
+                "Env.get",
+                "File.writeText",
+                "File.readText",
+            )
+        })
+        assertTrue(capabilityWarnings.any { it.command == "touch" })
     }
 }

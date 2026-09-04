@@ -5,7 +5,10 @@ import de.visualtasker.blockeditor.registry.CommandCapability
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 
-class RuntimeCapabilityGate {
+class RuntimeCapabilityGate(
+    private val realRunCapabilities: Set<CommandCapability> = BasicRealRunCapabilities,
+    private val realRunCommandNames: Set<String> = BasicRealRunCommandNames,
+) {
     fun inspect(document: WorkspaceDocument): RuntimeCapabilityReport {
         val commands = document.blocks.values
             .mapNotNull { block -> VisualTaskerCommandCatalog.findByBlockType(block.type) }
@@ -18,6 +21,13 @@ class RuntimeCapabilityGate {
     private fun CommandCatalogEntry.runtimeCapability(): RuntimeCapability {
         val command = canonicalName
         val gate = runtime?.liveCapabilityGate
+        if (command.lowercase() in realRunCommandNames && gate in realRunCapabilities) {
+            return RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.REAL_RUN_READY,
+                details = "Live-Adapter lokal verfügbar.",
+            )
+        }
         if (runtime?.dryRunBehavior == "adapter-gated") {
             return RuntimeCapability(
                 command = command,
@@ -30,10 +40,14 @@ class RuntimeCapabilityGate {
             CommandCapability.TIMING,
             CommandCapability.FEEDBACK,
             CommandCapability.DEBUG,
-            -> RuntimeCapability(
+            -> if (gate in realRunCapabilities) RuntimeCapability(
                 command = command,
                 status = RuntimeCapabilityStatus.REAL_RUN_READY,
                 details = "Basic-Run lokal ausführbar.",
+            ) else RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.BLOCKED,
+                details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
             )
             CommandCapability.A11Y -> RuntimeCapability(
                 command = command,
@@ -51,6 +65,54 @@ class RuntimeCapabilityGate {
                 details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
             )
         }
+    }
+
+    companion object {
+        val BasicRealRunCapabilities: Set<CommandCapability> = setOf(
+            CommandCapability.CORE,
+            CommandCapability.TIMING,
+            CommandCapability.FEEDBACK,
+            CommandCapability.DEBUG,
+        )
+
+        val BasicRealRunCommandNames: Set<String> = setOf(
+            "onstart",
+            "wait",
+            "beep",
+            "vibrate",
+            "log",
+            "file.readtext",
+            "file.writetext",
+            "clipboard.get",
+            "clipboard.set",
+            "cache.clear",
+            "sys.info",
+            "env.get",
+            "let",
+            "set",
+            "get",
+            "repeat",
+            "while",
+            "if",
+            "boolean",
+            "and",
+            "or",
+            "operate",
+            "compare",
+            "number",
+            "string",
+        )
+
+        fun withAccessibilityAdapter(): RuntimeCapabilityGate =
+            RuntimeCapabilityGate(
+                realRunCapabilities = BasicRealRunCapabilities + CommandCapability.A11Y + CommandCapability.SCREEN_CAPTURE,
+                realRunCommandNames = BasicRealRunCommandNames + setOf(
+                    "click",
+                    "clickpoint",
+                    "swipe",
+                    "screenshot",
+                ),
+            )
     }
 }
 

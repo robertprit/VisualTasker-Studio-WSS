@@ -34,6 +34,13 @@ class RuntimeCapabilityGateTest {
             log("ok")
             beep(440, 30, 25)
             vibrate(10,20)
+            Clipboard.set("ready")
+            Clipboard.get()
+            Cache.clear()
+            Sys.info()
+            Env.get("SDK_INT")
+            File.writeText("state.txt", "ok")
+            File.readText("state.txt")
             """.trimIndent(),
         )
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
@@ -42,7 +49,7 @@ class RuntimeCapabilityGateTest {
 
         assertTrue(report.realRunAllowed)
         val commands = report.capabilities.map { it.command }.toSet()
-        assertTrue(commands.containsAll(setOf("beep", "log", "set", "vibrate", "wait")))
+        assertTrue(commands.containsAll(setOf("beep", "log", "set", "vibrate", "wait", "Clipboard.set", "Clipboard.get", "Cache.clear", "Sys.info", "Env.get", "File.writeText", "File.readText")))
         assertTrue(report.capabilities.all { it.status == RuntimeCapabilityStatus.REAL_RUN_READY })
     }
 
@@ -59,5 +66,28 @@ class RuntimeCapabilityGateTest {
             emptySet<String>(),
             report.capabilities.map { it.command }.filterNot { it.lowercase() in runtimeNames }.toSet(),
         )
+    }
+
+    @Test
+    fun accessibilityAdapterEnablesOnlyImplementedA11yCommands() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            click("Start")
+            clickPoint(120, 240, 1)
+            swipe([120, 640, 120, 220], 1)
+            screenshot("screen.png")
+            touch(["down", 120, 240, "up"])
+            """.trimIndent(),
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val report = RuntimeCapabilityGate.withAccessibilityAdapter().inspect(imported.document!!)
+        val states = report.capabilities.associate { it.command to it.status }
+
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["click"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["clickPoint"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["swipe"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["screenshot"])
+        assertEquals(RuntimeCapabilityStatus.BLOCKED, states["touch"])
     }
 }

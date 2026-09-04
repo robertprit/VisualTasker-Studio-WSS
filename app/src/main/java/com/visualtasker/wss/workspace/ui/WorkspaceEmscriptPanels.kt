@@ -75,6 +75,9 @@ internal fun EmscriptTextEditorPanel(
     currentFlowGraph: FlowGraphDocument,
     onWorkspaceJsonChange: (String) -> Unit,
     onDryRunRuntimeSnapshot: (FlowRuntimeSnapshot) -> Unit = {},
+    onLiveRun: () -> Unit = {},
+    canLiveRun: Boolean = false,
+    liveRunStatus: String = "",
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
@@ -217,6 +220,14 @@ internal fun EmscriptTextEditorPanel(
         onCompileCheck = ::compileCheck,
         onDryRun = ::dryRun,
         canDryRun = session.activeTab.content.isNotBlank(),
+        onLiveRun = {
+            dryRunDiagnostics = listOf(
+                "Live-Run nutzt das gemeinsame WorkspaceDocument.",
+                "Lokale Textaenderungen zuerst mit Apply uebernehmen."
+            )
+            onLiveRun()
+        },
+        canLiveRun = canLiveRun,
         canApplyDraft = session.activeTab.id == EmscriptEditorSession.MANUAL_TAB_ID,
         onRequestApplyPreview = ::buildApplyPreview,
         onConfirmApply = {
@@ -235,7 +246,8 @@ internal fun EmscriptTextEditorPanel(
                 pendingApplyJson = null
             }
         },
-        diagnostics = applyDiagnostics + dryRunDiagnostics + listOf(
+        diagnostics = applyDiagnostics + dryRunDiagnostics + listOfNotNull(
+            liveRunStatus.takeIf { it.isNotBlank() }?.let { "Live-Run: $it" },
             "EMScript Parser-Slice ist integriert (LET/SET/Literale/Variablen/Arithmetik/Compare/IF).",
             "Generierte Projektion: ${latestEmscriptProjected.length} Zeichen."
         ),

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextIncrease
@@ -105,6 +106,8 @@ fun EmScriptEditorScreen(
     onCompileCheck: () -> Unit = {},
     onDryRun: () -> Unit = {},
     canDryRun: Boolean = session.activeTab.content.isNotBlank(),
+    onLiveRun: () -> Unit = {},
+    canLiveRun: Boolean = false,
     canApplyDraft: Boolean,
     onRequestApplyPreview: () -> String?,
     onConfirmApply: () -> Unit,
@@ -247,6 +250,7 @@ fun EmScriptEditorScreen(
                 ) {
                     EditorToolbarIconButton(Icons.Default.Build, "Compile Check", onCompileCheck, enabled = activeTab.content.isNotBlank())
                     EditorToolbarIconButton(Icons.Default.PlayArrow, "Run Dry", onDryRun, enabled = canDryRun)
+                    EditorToolbarIconButton(Icons.Default.PlayCircle, "Run Live", onLiveRun, enabled = canLiveRun)
                     EditorToolbarIconButton(Icons.Default.Pause, "Pause (NOT_IMPLEMENTED)", {}, enabled = false)
                     EditorToolbarIconButton(Icons.Default.Stop, "Stop (NOT_IMPLEMENTED)", {}, enabled = false)
                     EditorToolbarIconButton(Icons.Default.Done, "Apply", {

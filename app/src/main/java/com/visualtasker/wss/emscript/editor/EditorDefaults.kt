@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 6
+    const val integrationTestScriptVersion: Int = 7
 
     val sampleScript: String = """
         LET v1 = 1
@@ -117,28 +117,23 @@ object EditorDefaults {
     """.trimIndent()
 
     val commandCatalogBreadthTestScript: String = """
-        REM @vt.group.start id="catalog:variables" label="Katalog Variablen" kind="variable-bulk"
+        REM @vt.group.start id="core:variables" label="Core Variablen" kind="variable-bulk"
         LET catalogIndex = 0
         LET thresholdLow = 2
         LET thresholdHigh = 6
         LET result = 0
-        REM @vt.group.end id="catalog:variables"
+        REM @vt.group.end id="core:variables"
 
-        log("catalog-breadth-start")
+        log("core-runtime-start")
         wait(50)
         click("Start")
         clickPoint(120, 240, 1)
-        touch(["down", 120, 240, "up"])
         swipe([120, 640, 120, 220], 1)
-        screenshot("catalog-screen.png")
-        findTemplate("button.png", 0.82, 1000)
-        ocr("", 1500)
-        findText("Login", 1500)
-        highlight("0,0,220,120")
+        screenshot("core-screen.png")
         Clipboard.set("visualtasker")
         Clipboard.get()
-        File.writeText("catalog.txt", "hello")
-        File.readText("catalog.txt")
+        File.writeText("core-runtime.txt", "hello")
+        File.readText("core-runtime.txt")
         Cache.clear()
         Sys.info()
         Env.get("ANDROID_VERSION")
@@ -146,100 +141,51 @@ object EditorDefaults {
         LOOP 3
             SET catalogIndex = catalogIndex + 1
             SET result = result + catalogIndex
-            log("catalog-loop")
+            log("core-loop")
             beep(880, 80, 60)
             vibrate(0, 30, 20, 30)
 
             IF (result + catalogIndex) < thresholdLow
-                Tasker.setVariable("%VT_LOW", result)
-                ChromeTab.isSupported()
-                ChromeTab.bind()
-                ChromeTab.create("https://example.com", {"toolbar":"compact"})
-                ChromeTab.mayLaunchUrl("session", "https://example.com", [])
+                SET result = result + 1
+                log("low branch")
+                click("low branch")
             ELSEIF (result + catalogIndex) >= thresholdHigh
-                Tasker.runTask("VT_Test", {"value":result})
-                Tasker.getVariable("%VT_LOW", 0)
-                Tasker.getVariables(["%VT_LOW", "%VT_HIGH"])
-                Shizuku.isInstalled()
-                Shizuku.isAvailable()
-                Shizuku.permissionState()
-                Shizuku.exec("cmd", ["package", "list"])
+                SET result = result * 2
+                vibrate(40)
+                log("high branch")
 
                 IF result >= 8
-                    Scrcpy.hostAvailable()
-                    Scrcpy.devices()
-                    Scrcpy.connect("127.0.0.1:5555")
-                    Scrcpy.start("default")
-                    Scrcpy.touch("session", "tap", [120, 240])
-                    Scrcpy.key("session", "HOME")
+                    SET result = result + catalogIndex
+                    beep(660, 60, 45)
+                    clickPoint(160, 260, 1)
                 ELSE
-                    Termux.isInstalled()
-                    Termux.canRunCommands()
-                    Termux.run("/data/data/com.termux/files/home/vt.sh", ["catalog"])
-                    Termux.shell("echo vt")
-                    Termux.api("battery-status")
+                    SET result = result - 1
+                    wait(30)
                 END IF
             ELSE
-                Tasker.isInstalled()
-                Tasker.isEnabled()
-                Tasker.action("Flash", {"text":"Catalog"}, false, 0)
-                Tasker.pluginAction("pkg", "action", {}, 0)
-                Tasker.emitEvent("VT_EVENT", {"source":"catalog"})
-                Tasker.profileEnable("VT_Profile")
-                Tasker.profileState("VT_Profile")
+                SET result = result + thresholdLow
+                beep()
+                log("middle branch")
 
                 IF (catalogIndex + result) != thresholdHigh
-                    Chart.create("line", {"labels":["a","b"], "values":[1,2]})
-                    Chart.setData("chart1", {"values":[catalogIndex,result]})
-                    Chart.setOptions("chart1", {"theme":"dark"})
-                    Chart.show("chart1")
-                    Chart.capture("chart1", "chart.png")
+                    SET result = result + 2
+                    vibrate(25)
                 ELSE
-                    Chart.exists("chart1")
-                    Chart.add("chart1", {"x":catalogIndex, "y":result})
-                    Chart.update("chart1", {"title":"Catalog"})
-                    Chart.removeData("chart1", "last")
-                    Chart.clear("chart1")
-                    Chart.export("chart1", "chart.json")
+                    SET result = result + 1
+                    beep(440, 60, 35)
+                    click("fallback")
                 END IF
             END IF
         END LOOP
 
         WHILE catalogIndex < 5
             SET catalogIndex = catalogIndex + 1
-            log("catalog-while")
-            ChromeTab.requestPostMessageChannel("session", "https://example.com")
-            ChromeTab.postMessage("session", "ping", {})
-            ChromeTab.validateRelationship("session", 1, "https://example.com")
-            ChromeTab.open("https://example.com")
-            ChromeTab.unbind()
-            Shizuku.getUid()
-            Shizuku.requestPermission(42)
-            Shizuku.bindUserService("demo")
-            Shizuku.systemService("activity")
-            Shizuku.call("activity", "android.app.IActivityManager", "getTasks", [])
-            Shizuku.unbindUserService("demo")
-            Termux.writeStdin("session", "exit")
-            Termux.get("session")
-            Termux.cancel("session")
-            Scrcpy.text("session", "hello")
-            Scrcpy.scroll("session", 0, -4)
-            Scrcpy.setClipboard("session", "clip")
-            Scrcpy.setScreenPower("session", true)
-            Scrcpy.rotate("session")
-            Scrcpy.get("session")
-            Scrcpy.stop("session")
-            Scrcpy.disconnect("127.0.0.1:5555")
-            Tasker.profileToggle("VT_Profile")
-            Tasker.profileDisable("VT_Profile")
-            Tasker.clearVariable("%VT_LOW")
-            Tasker.cancel("VT_Test")
+            SET result = result + catalogIndex
+            log("core-while")
+            wait(20)
         END WHILE
 
-        Chart.get("chart1")
-        Chart.hide("chart1")
-        Chart.remove("chart1")
-        log("catalog-breadth-end")
+        log("core-runtime-end")
     """.trimIndent()
 
     val allSamples: Map<String, String> = mapOf(

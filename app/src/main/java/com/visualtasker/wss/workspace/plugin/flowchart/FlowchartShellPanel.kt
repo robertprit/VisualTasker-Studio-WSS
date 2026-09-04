@@ -4,6 +4,13 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.view.HapticFeedbackConstants
 import android.view.SoundEffectConstants
+import com.visualtasker.wss.visual.descriptor.VisualDescriptor
+import com.visualtasker.wss.visual.policy.DefaultVisualPolicyResolver
+import com.visualtasker.wss.visual.projections.FlowchartNodeVisualAdapter
+import com.visualtasker.wss.visual.projections.FlowchartNodeVisualSubject
+import com.visualtasker.wss.visual.semantics.ProjectionKind
+import com.visualtasker.wss.visual.semantics.VisualContext
+import com.visualtasker.wss.visual.semantics.VisualSemanticState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -538,6 +545,8 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                 if (node != null) {
                     FlowchartNodeInspectorRows(
                         node = node,
+                        graphDocument = session.graphDocument,
+                        selectedNodeId = selectedNodeId,
                         edges = session.graphDocument.edges,
                         runtimeSnapshot = runtimeSnapshot,
                         onUpdateNodeField = onUpdateNodeField,
@@ -558,6 +567,8 @@ private fun FlowchartRuntimeInspectorBottomSheet(
 @Composable
 private fun FlowchartNodeInspectorRows(
     node: FlowGraphNode,
+    graphDocument: de.visualtasker.flowchart.domain.FlowGraphDocument,
+    selectedNodeId: FlowNodeId?,
     edges: List<FlowGraphEdge>,
     runtimeSnapshot: FlowRuntimeSnapshot?,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
@@ -587,8 +598,23 @@ private fun FlowchartNodeInspectorRows(
     val commandPluginOwner = node.properties.stringValue("commandPluginOwner") ?: lastEvent?.pluginOwner
     val sourceLine = node.properties.stringValue("sourceLine")
     val sourceColumn = node.properties.stringValue("sourceColumn")
+    val visualState = FlowchartNodeVisualAdapter.map(
+        FlowchartNodeVisualSubject(
+            node = node,
+            graph = graphDocument,
+            runtimeSnapshot = runtimeSnapshot,
+            selectedNodeId = selectedNodeId,
+        ),
+        VisualContext(projection = ProjectionKind.Flowchart),
+    )
+    val visualDescriptor = DefaultVisualPolicyResolver.resolve(
+        visualState,
+        VisualContext(projection = ProjectionKind.Flowchart),
+    )
     InspectorLine("Label", node.label)
     InspectorLine("Status", status)
+    InspectorLine("VAL State", visualState.describeForInspector())
+    InspectorLine("VAL Descriptor", visualDescriptor.describeForInspector())
     commandId?.let { InspectorLine("Command-ID", it) }
     commandName?.let { InspectorLine("Command", it) }
     commandKind?.let { InspectorLine("Command-Typ", it) }
@@ -667,6 +693,25 @@ private fun editableNodeFields(node: FlowGraphNode): List<EditableFlowchartNodeF
         node.properties.textFor("literalBoolean")?.let { EditableFlowchartNodeField("Wert", "value", it) },
         node.properties.textFor("variableLabel")?.let { EditableFlowchartNodeField("Variable", "variableLabel", it) },
     )
+
+private fun VisualSemanticState.describeForInspector(): String =
+    listOf(
+        "role=${role.name}",
+        "activity=${activity.name}",
+        "validation=${validation.name}",
+        "focus=${focus.name}",
+        "authority=${authority.name}",
+        "certainty=${certainty.name}",
+    ).joinToString(" | ")
+
+private fun VisualDescriptor.describeForInspector(): String =
+    listOf(
+        "shape=${shapeRole.name}",
+        "surface=${surfaceRole.name}",
+        "outline=${outlineRole.name}",
+        "motion=${motionRole.name}",
+        "badges=${badges.joinToString { it.role.name }.ifBlank { "-" }}",
+    ).joinToString(" | ")
 
 @Composable
 private fun FlowchartEdgeInspectorRows(

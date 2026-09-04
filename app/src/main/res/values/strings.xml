@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">VisualTasker Studio WSS</string>
     <string name="ime_name">VisualTasker Studio WSS Tastatur</string>
+    <string name="accessibility_service_description">Erlaubt VisualTasker Studio WSS, UI-Elemente fuer Live-Automation zu erkennen und Touch-Gesten auszufuehren.</string>
 </resources>

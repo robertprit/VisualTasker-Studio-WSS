@@ -249,6 +249,8 @@ internal fun CommandCapability?.isRuntimeBlocked(): Boolean =
             CommandCapability.CORE,
             CommandCapability.TIMING,
             CommandCapability.FEEDBACK,
+            CommandCapability.A11Y,
+            CommandCapability.SCREEN_CAPTURE,
             CommandCapability.DEBUG,
         )
 

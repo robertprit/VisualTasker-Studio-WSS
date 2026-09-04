@@ -2,7 +2,10 @@ package com.visualtasker.wss.workspace.ui
 
 import android.Manifest
 import android.app.Activity
+import android.media.AudioAttributes
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.ToneGenerator
 import android.content.Context
 import android.content.Intent
@@ -16,6 +19,8 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
+import kotlin.math.PI
+import kotlin.math.sin
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -145,6 +150,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.visualtasker.wss.accessibility.RuntimePoint
+import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
 import com.visualtasker.wss.components.IconMotionConfig
 import com.visualtasker.wss.components.IconMotionEngine
 import com.visualtasker.wss.components.DarkPanel
@@ -206,6 +213,7 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartNodeToolboxRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
+import com.visualtasker.wss.visual.debug.VisualSemanticsReporter
 import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
@@ -391,10 +399,11 @@ fun WorkspaceScreen(
     val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
     val workspaceBasicRuntime = remember(context, toneGenerator, vibrator) {
         WorkspaceBasicRuntime(
+            capabilityGate = { workspaceRuntimeCapabilityGate() },
             environment = WorkspaceBasicRuntimeEnvironment(
                 delayMs = { ms -> delay(ms.coerceAtLeast(0L)) },
-                playBeep = { _, durationMs, _ ->
-                    toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, durationMs.coerceIn(10, 10_000))
+                playBeep = { frequencyHz, durationMs, volumePercent ->
+                    playRuntimeBeep(frequencyHz, durationMs, volumePercent)
                 },
                 vibrate = { patternMs ->
                     val sanitized = patternMs.map { it.coerceAtLeast(0L) }.filter { it > 0L }
@@ -414,6 +423,64 @@ fun WorkspaceScreen(
                         message = message,
                         groupKey = "workspace:basic-runtime:log:$message",
                     )
+                },
+                clickText = { text ->
+                    VisualTaskerAccessibilityService.current()?.clickText(text) ?: false
+                },
+                clickPoint = { x, y ->
+                    VisualTaskerAccessibilityService.current()?.clickPoint(x, y) ?: false
+                },
+                swipe = { points, durationMs ->
+                    VisualTaskerAccessibilityService.current()
+                        ?.swipe(points.map { RuntimePoint(it.x, it.y) }, durationMs)
+                        ?: false
+                },
+                clipboardGet = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                    clipboard?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                },
+                clipboardSet = { text ->
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("VisualTasker", text))
+                },
+                cacheClear = {
+                    clearRuntimeDirectory(context.cacheDir)
+                },
+                systemInfo = {
+                    "package=${context.packageName}; sdk=${Build.VERSION.SDK_INT}; device=${Build.MANUFACTURER} ${Build.MODEL}"
+                },
+                envGet = { name ->
+                    when (name.uppercase()) {
+                        "PACKAGE_NAME" -> context.packageName
+                        "ANDROID_VERSION" -> Build.VERSION.RELEASE.orEmpty()
+                        "SDK_INT" -> Build.VERSION.SDK_INT.toString()
+                        "DEVICE_MODEL" -> "${Build.MANUFACTURER} ${Build.MODEL}"
+                        "FILES_DIR" -> runtimeFilesRoot(context).absolutePath
+                        "CACHE_DIR" -> context.cacheDir.absolutePath
+                        else -> ""
+                    }
+                },
+                fileReadText = { path ->
+                    runtimeFileFor(context, path)
+                        ?.takeIf { it.isFile }
+                        ?.readText()
+                },
+                fileWriteText = { path, text ->
+                    runtimeFileFor(context, path)?.let { file ->
+                        file.parentFile?.mkdirs()
+                        runCatching {
+                            file.writeText(text)
+                            true
+                        }.getOrDefault(false)
+                    } ?: false
+                },
+                screenshot = { path ->
+                    val target = runtimeFileFor(context, path.ifBlank { "screenshots/latest.png" })
+                    if (target != null) {
+                        VisualTaskerAccessibilityService.current()?.takeScreenshotTo(target) ?: false
+                    } else {
+                        false
+                    }
                 },
             ),
         )
@@ -722,7 +789,7 @@ fun WorkspaceScreen(
                 level = StudioLogLevel.INFO,
                 source = source,
                 message = "Workspace Basic-Run gestartet",
-                details = RuntimeCapabilityGate().inspect(workflowState.document).summary,
+                details = workspaceRuntimeCapabilityGate().inspect(workflowState.document).summary,
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:basic-run:start:${workflowState.revision}"
             )
@@ -1593,27 +1660,33 @@ private fun WorkspacePanelContent(
             onSessionReady = onFlowchartSessionReady
         )
         PanelType.TextEditor,
-        PanelType.Emscript -> EmscriptTextEditorPanel(
-            session = emscriptSession,
-            uiState = emscriptEditorUiState,
-            latestEmscriptProjected = latestEmscriptProjected,
-            onSessionChange = onEmscriptSessionChange,
-            logStore = logStore,
-            workspaceJson = workflowState.serializedJson,
-            currentFlowGraph = workflowState.flowchartProjection.graph,
-            onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_APPLY) },
-            onDryRunRuntimeSnapshot = onFlowRuntimeSnapshotChange,
-            syntaxPaletteOverride = SyntaxHighlighter.Palette(
-                keyword = appearance.syntaxKeyword,
-                control = appearance.syntaxControl,
-                parameter = Color(0xFFFFB74D),
-                string = appearance.syntaxString,
-                number = appearance.syntaxNumber,
-                comment = appearance.syntaxComment,
-                operator = appearance.syntaxOperator,
-                plain = appearance.syntaxPlain,
+        PanelType.Emscript -> {
+            val capabilityReport = workspaceRuntimeCapabilityGate().inspect(workflowState.document)
+            EmscriptTextEditorPanel(
+                session = emscriptSession,
+                uiState = emscriptEditorUiState,
+                latestEmscriptProjected = latestEmscriptProjected,
+                onSessionChange = onEmscriptSessionChange,
+                logStore = logStore,
+                workspaceJson = workflowState.serializedJson,
+                currentFlowGraph = workflowState.flowchartProjection.graph,
+                onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_APPLY) },
+                onDryRunRuntimeSnapshot = onFlowRuntimeSnapshotChange,
+                onLiveRun = { onRunWorkspaceLive() },
+                canLiveRun = capabilityReport.realRunAllowed,
+                liveRunStatus = capabilityReport.summary,
+                syntaxPaletteOverride = SyntaxHighlighter.Palette(
+                    keyword = appearance.syntaxKeyword,
+                    control = appearance.syntaxControl,
+                    parameter = Color(0xFFFFB74D),
+                    string = appearance.syntaxString,
+                    number = appearance.syntaxNumber,
+                    comment = appearance.syntaxComment,
+                    operator = appearance.syntaxOperator,
+                    plain = appearance.syntaxPlain,
+                )
             )
-        )
+        }
         PanelType.RuntimeLog,
         PanelType.LogConsole -> LogConsolePanel(
             store = logStore,
@@ -1655,7 +1728,7 @@ private fun WorkspacePanelContent(
                 val syncReport = WorkspaceSyncGuard().inspect(workflowState.serializedJson)
                 add(if (syncReport.isValid) "Workspace Sync Guard: OK" else "Workspace Sync Guard: BLOCKED")
                 addAll(syncReport.messages.take(5))
-                val capabilityReport = RuntimeCapabilityGate().inspect(workflowState.document)
+                val capabilityReport = workspaceRuntimeCapabilityGate().inspect(workflowState.document)
                 add(capabilityReport.summary)
                 capabilityReport.capabilities
                     .groupingBy { it.status }
@@ -1666,6 +1739,12 @@ private fun WorkspacePanelContent(
                 capabilityReport.capabilities.take(10).forEach { capability ->
                     add("${capability.command}: ${capability.status} - ${capability.details}")
                 }
+                addAll(
+                    VisualSemanticsReporter.summarizeFlowchart(
+                        graph = workflowState.flowchartProjection.graph,
+                        runtimeSnapshot = flowRuntimeSnapshot,
+                    )
+                )
                 flowRuntimeSnapshot?.diagnostics?.take(8)?.forEach { diagnostic ->
                     add("${diagnostic.severity.name} ${diagnostic.code}: ${diagnostic.message}")
                 }
@@ -3019,6 +3098,77 @@ private fun isAccessibilityEnabledForApp(context: Context): Boolean {
         Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
     ).orEmpty()
     return enabled.contains(context.packageName, ignoreCase = true)
+}
+
+private fun workspaceRuntimeCapabilityGate(): RuntimeCapabilityGate =
+    if (VisualTaskerAccessibilityService.isConnected()) {
+        RuntimeCapabilityGate.withAccessibilityAdapter()
+    } else {
+        RuntimeCapabilityGate()
+    }
+
+private fun runtimeFilesRoot(context: Context): java.io.File =
+    java.io.File(context.filesDir, "emscript-runtime").apply { mkdirs() }
+
+private fun runtimeFileFor(context: Context, rawPath: String): java.io.File? {
+    val clean = rawPath.trim().trim('"').replace('\\', '/').trimStart('/')
+    if (clean.isBlank() || clean.contains("..")) return null
+    val root = runtimeFilesRoot(context)
+    val file = java.io.File(root, clean)
+    return if (file.canonicalPath.startsWith(root.canonicalPath)) file else null
+}
+
+private fun clearRuntimeDirectory(directory: java.io.File): Int {
+    if (!directory.exists()) return 0
+    var removed = 0
+    directory.listFiles().orEmpty().forEach { child ->
+        if (child.deleteRecursively()) removed += 1
+    }
+    return removed
+}
+
+private fun playRuntimeBeep(frequencyHz: Int, durationMs: Int, volumePercent: Int) {
+    val sampleRate = 44_100
+    val safeFrequency = frequencyHz.coerceIn(20, 20_000)
+    val safeDurationMs = durationMs.coerceIn(10, 10_000)
+    val amplitude = (volumePercent.coerceIn(0, 100) / 100.0 * Short.MAX_VALUE * 0.65).toInt()
+    val sampleCount = (sampleRate * safeDurationMs / 1_000.0).toInt().coerceAtLeast(1)
+    val samples = ShortArray(sampleCount) { index ->
+        val envelope = when {
+            index < sampleRate / 200 -> index / (sampleRate / 200.0)
+            index > sampleCount - sampleRate / 200 -> (sampleCount - index).coerceAtLeast(0) / (sampleRate / 200.0)
+            else -> 1.0
+        }.coerceIn(0.0, 1.0)
+        (sin(2.0 * PI * safeFrequency * index / sampleRate) * amplitude * envelope).toInt().toShort()
+    }
+    Thread {
+        runCatching {
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                )
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(samples.size * Short.SIZE_BYTES)
+                .build()
+            try {
+                track.write(samples, 0, samples.size)
+                track.play()
+                Thread.sleep(safeDurationMs.toLong() + 40L)
+            } finally {
+                track.release()
+            }
+        }
+    }.start()
 }
 
 private fun isPackageInstalled(context: Context, packageName: String): Boolean =
