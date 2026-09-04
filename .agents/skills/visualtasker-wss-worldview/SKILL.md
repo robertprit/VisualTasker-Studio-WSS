@@ -1,7 +1,6 @@
 ---
 name: visualtasker-wss-worldview
 description: Guides Worldview architecture work for VisualTasker Studio WSS. Use for Scene, Entity, Observation, Relation, Record, Resource, Ambiguity, Inspector, Data, Context, RAG boundaries, ScreenshotCanvas, Marker, Template, Vision, and Recorder features.
-disable-model-invocation: true
 ---
 
 # VisualTasker WSS Worldview
@@ -14,6 +13,7 @@ disable-model-invocation: true
 - Recorder produces `Record` and Observations first, not accepted Workflow.
 - AI produces `ProposedResolution`; it never mutates Workflow or Worldview directly.
 - RAG/Context retrieves from structured Workflow/Worldview data; it is not a separate data world.
+- Accessibility trees, OCR results, OpenCV matches, YOLO detections, DOM nodes, markers, templates, and screenshots are provider/resource inputs, not the Worldview itself.
 
 ## Required Concepts
 
@@ -55,3 +55,9 @@ Add optional concepts only when a vertical slice proves they are needed:
 Build domain contracts and tests before broad UI. Prove changes with a vertical
 slice: Observation -> Entity -> Scene -> Record -> WorkflowProposal -> Runtime
 Record -> Ambiguity -> Human Resolution.
+
+## Related Skills
+
+- Use `visualtasker-wss-perception` for provider observations and coordinate spaces.
+- Use `visualtasker-wss-resources-data` for screenshots, templates, markers, datasets, and provenance.
+- Use `visualtasker-wss-perugger-context` for ambiguity/context/AI/RAG flows.

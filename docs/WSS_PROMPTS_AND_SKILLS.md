@@ -48,18 +48,30 @@ assumptions with the WSS plugin/shell architecture.
 ## Project Skills To Keep As WSS Variants
 
 - `visualtasker-wss-orchestrator`
+- `visualtasker-wss-workflow-graph`
 - `visualtasker-wss-quality-ops`
 - `visualtasker-wss-worldview`
+- `visualtasker-wss-perception`
+- `visualtasker-wss-resources-data`
+- `visualtasker-wss-runtime-capabilities`
+- `visualtasker-wss-recording-record`
+- `visualtasker-wss-perugger-context`
+- `visualtasker-wss-visual-abstraction`
+- `visualtasker-wss-plugin-host`
 - `visualtasker-wss-emscript`
 - `visualtasker-wss-flowchart`
 - `visualtasker-wss-blockeditor`
 
-Future skills once implementation starts:
+Future skills once plugin implementation is concrete enough to justify separate
+provider-specific guidance:
 
-- `visualtasker-wss-vision`
 - `visualtasker-wss-tasker-bridge`
 - `visualtasker-wss-custom-tabs`
-- `visualtasker-wss-rag-context`
+- `visualtasker-wss-shizuku`
+- `visualtasker-wss-termux`
+- `visualtasker-wss-scrcpy`
+- `visualtasker-wss-charts`
+- `visualtasker-wss-yolo`
 
 ## Project Prompts
 
@@ -81,12 +93,31 @@ Workspace Shell plugin architecture.
 
 ## Skill Trigger Guidance
 
-Use `visualtasker-wss-orchestrator` for cross-module migration and architecture
-work.
+Use `.agents/SKILLS.md` as the router. Use `visualtasker-wss-orchestrator` for
+cross-module migration and architecture work.
+
+Use `visualtasker-wss-workflow-graph` for Workflow/Workspace intent authority,
+ports, branches, typed mutations, source mapping, and roundtrip guarantees.
 
 Use `visualtasker-wss-worldview` for Scene, Entity, Observation, Record,
 Resource, Ambiguity, Inspector, Data, Context, RAG boundaries, ScreenshotCanvas,
 Marker, Template, Vision, and Recorder work.
+
+Use `visualtasker-wss-perception` for provider observation mechanics such as
+Accessibility, OCR, OpenCV, YOLO, DOM, screenshots, template matching,
+coordinate spaces, confidence, and provider diagnostics.
+
+Use `visualtasker-wss-runtime-capabilities` for dry-run/live-run boundaries,
+capability gates, permissions, provider selection, fallback, retry, timeout,
+cancellation, and runtime observability.
+
+Use `visualtasker-wss-plugin-host` for panel registration, editor sessions,
+save/dirty/validation/toolbar contracts, lifecycle, capability exposure, and
+versioning.
+
+Use `visualtasker-wss-visual-abstraction` when domain semantics must be mapped
+to visual roles, badges, icons, shapes, outlines, motion, opacity, or Material 3
+Expressive policy.
 
 Use editor-specific skills when work is limited to one editor plugin.
 
@@ -110,3 +141,31 @@ Use `visualtasker-wss-quality-ops` before finalizing implementation work.
 - M5 command catalog: the EMScript command registry exposes schema diagnostics
   for duplicate ids, duplicate block bindings, missing categories, argument
   clashes, runtime capability mismatches, and missing return types.
+
+## Skill Architecture Status
+
+Current:
+
+- `.agents/SKILLS.md` is the project skill router.
+- Existing WSS skills are the canonical project variants.
+- Desktop masterprompts remain long-form reference material.
+- Local ad-hoc Codex skills with non-WSS names should not become a competing
+  source of truth.
+
+Coverage:
+
+- Well covered: Orchestrator, WorkflowGraph, EMScript, BlockEditor, Flowchart,
+  Worldview, Runtime capabilities, Plugin host, Quality ops, Visual Abstraction.
+- Covered as shared architecture rather than provider-specific skills:
+  Perception, Resources/Data, Recording/Record, Perugger/Context.
+- Deferred provider-specific skills: Tasker, Custom Tabs, Shizuku, Termux,
+  scrcpy, Charts, YOLO.
+
+Conflict notes:
+
+- `WorkspaceDocument` is the current concrete workflow document type, while
+  `WorkflowDocument`/`WorkflowGraph` describe the architectural role.
+- `IrGraph` is the current semantic read/projection layer for Flowchart and
+  EMScript bridge work; it should not be treated as a second editor-owned truth.
+- RAG remains deferred until Worldview, Resource, Record, Inspector, and runtime
+  trace foundations are stable.
