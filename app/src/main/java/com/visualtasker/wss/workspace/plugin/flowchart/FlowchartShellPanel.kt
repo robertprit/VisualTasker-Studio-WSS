@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeviceHub
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -107,6 +108,7 @@ fun FlowchartShellPanel(
     runtimeSnapshot: FlowRuntimeSnapshot? = null,
     onSave: (() -> Unit)? = null,
     onRunDry: (() -> Unit)? = null,
+    onRunLive: (() -> Unit)? = null,
     onStepBack: (() -> Unit)? = null,
     onStepForward: (() -> Unit)? = null,
     canStepBack: Boolean = false,
@@ -333,6 +335,7 @@ fun FlowchartShellPanel(
                 onDisconnectEdge?.let { disconnectEdge -> { disconnectEdge(edgeId) } }
             },
             onRunDry = onRunDry,
+            onRunLive = onRunLive,
             onStepBack = onStepBack,
             onStepForward = onStepForward,
             canStepBack = canStepBack,
@@ -838,6 +841,7 @@ private fun FlowchartShellToolbar(
     onBeginConnect: (() -> Unit)?,
     onDeleteSelected: (() -> Unit)?,
     onRunDry: (() -> Unit)?,
+    onRunLive: (() -> Unit)?,
     onStepBack: (() -> Unit)?,
     onStepForward: (() -> Unit)?,
     canStepBack: Boolean,
@@ -926,6 +930,9 @@ private fun FlowchartShellToolbar(
             }
             FlowchartToolbarButton("Run Dry", onRunDry ?: {}, enabled = onRunDry != null) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
+            }
+            FlowchartToolbarButton("Run Live", onRunLive ?: {}, enabled = onRunLive != null) {
+                Icon(Icons.Default.PlayCircle, contentDescription = null)
             }
             FlowchartToolbarButton("Step zurück", onStepBack ?: {}, enabled = onStepBack != null && canStepBack) {
                 Icon(Icons.Default.SkipPrevious, contentDescription = null)

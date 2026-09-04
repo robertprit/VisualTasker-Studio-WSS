@@ -18,23 +18,23 @@ class RuntimeCapabilityGate {
     private fun CommandCatalogEntry.runtimeCapability(): RuntimeCapability {
         val command = canonicalName
         val gate = runtime?.liveCapabilityGate
+        if (runtime?.dryRunBehavior == "adapter-gated") {
+            return RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.BLOCKED,
+                details = "Real-Run benötigt den Adapter ${pluginOwner}.",
+            )
+        }
         return when (gate) {
             CommandCapability.CORE,
             CommandCapability.TIMING,
             CommandCapability.FEEDBACK,
             CommandCapability.DEBUG,
-            -> when (command) {
-                "log", "let", "set", "wait", "beep", "vibrate" -> RuntimeCapability(
-                    command = command,
-                    status = RuntimeCapabilityStatus.DRY_RUN_READY,
-                    details = "Dry-Run verfügbar; Real-Run benötigt den Runtime-Scheduler.",
-                )
-                else -> RuntimeCapability(
-                    command = command,
-                    status = RuntimeCapabilityStatus.DRY_RUN_READY,
-                    details = "Dry-Run verfügbar; Real-Run Adapter noch nicht finalisiert.",
-                )
-            }
+            -> RuntimeCapability(
+                command = command,
+                status = RuntimeCapabilityStatus.REAL_RUN_READY,
+                details = "Basic-Run lokal ausführbar.",
+            )
             CommandCapability.A11Y -> RuntimeCapability(
                 command = command,
                 status = RuntimeCapabilityStatus.BLOCKED,

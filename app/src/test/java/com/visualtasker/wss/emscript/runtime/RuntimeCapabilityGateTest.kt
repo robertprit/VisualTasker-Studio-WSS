@@ -17,11 +17,33 @@ class RuntimeCapabilityGateTest {
         val report = RuntimeCapabilityGate().inspect(imported.document!!)
 
         assertFalse(report.realRunAllowed)
-        assertTrue(report.capabilities.any { it.command == "wait" && it.status == RuntimeCapabilityStatus.DRY_RUN_READY })
+        assertTrue(report.capabilities.any { it.command == "wait" && it.status == RuntimeCapabilityStatus.REAL_RUN_READY })
         assertTrue(report.capabilities.any { it.command == "click" && it.status == RuntimeCapabilityStatus.BLOCKED })
-        assertTrue(report.capabilities.any { it.command == "beep" && it.status == RuntimeCapabilityStatus.DRY_RUN_READY })
-        assertTrue(report.capabilities.any { it.command == "vibrate" && it.status == RuntimeCapabilityStatus.DRY_RUN_READY })
+        assertTrue(report.capabilities.any { it.command == "beep" && it.status == RuntimeCapabilityStatus.REAL_RUN_READY })
+        assertTrue(report.capabilities.any { it.command == "vibrate" && it.status == RuntimeCapabilityStatus.REAL_RUN_READY })
         assertTrue(report.summary.contains("Runtime Gates"))
+    }
+
+    @Test
+    fun inspectAllowsBasicRealRunWithoutAdapterCommands() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            LET count = 1
+            SET count = count + 1
+            wait(10)
+            log("ok")
+            beep(440, 30, 25)
+            vibrate(10,20)
+            """.trimIndent(),
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val report = RuntimeCapabilityGate().inspect(imported.document!!)
+
+        assertTrue(report.realRunAllowed)
+        val commands = report.capabilities.map { it.command }.toSet()
+        assertTrue(commands.containsAll(setOf("beep", "log", "set", "vibrate", "wait")))
+        assertTrue(report.capabilities.all { it.status == RuntimeCapabilityStatus.REAL_RUN_READY })
     }
 
     @Test

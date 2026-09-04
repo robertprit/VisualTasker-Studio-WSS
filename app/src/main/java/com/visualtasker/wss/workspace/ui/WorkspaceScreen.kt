@@ -2,6 +2,8 @@ package com.visualtasker.wss.workspace.ui
 
 import android.Manifest
 import android.app.Activity
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -10,6 +12,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -112,6 +117,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -152,6 +158,8 @@ import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
+import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
+import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.data.PanelState as MainPanelState
@@ -217,7 +225,9 @@ import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -278,8 +288,21 @@ fun WorkspaceScreen(
     onMainScreenRequested: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val uiPrefs = remember(context) { context.getSharedPreferences("panel_ui_options", Context.MODE_PRIVATE) }
     val sessionStore = remember(context) { WorkspaceSessionStore(context) }
+    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }
+    DisposableEffect(toneGenerator) {
+        onDispose { toneGenerator.release() }
+    }
+    val vibrator = remember(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
     val saved = remember { sessionStore.load() }
     val panels = remember {
         mutableStateListOf<PanelState>().apply {
@@ -364,7 +387,37 @@ fun WorkspaceScreen(
         )
     }
     val emscriptEditorUiState = remember { EmscriptEditorUiState() }
+    val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
     val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
+    val workspaceBasicRuntime = remember(context, toneGenerator, vibrator) {
+        WorkspaceBasicRuntime(
+            environment = WorkspaceBasicRuntimeEnvironment(
+                delayMs = { ms -> delay(ms.coerceAtLeast(0L)) },
+                playBeep = { _, durationMs, _ ->
+                    toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, durationMs.coerceIn(10, 10_000))
+                },
+                vibrate = { patternMs ->
+                    val sanitized = patternMs.map { it.coerceAtLeast(0L) }.filter { it > 0L }
+                    if (sanitized.isNotEmpty()) {
+                        val effect = if (sanitized.size == 1) {
+                            VibrationEffect.createOneShot(sanitized.single(), VibrationEffect.DEFAULT_AMPLITUDE)
+                        } else {
+                            VibrationEffect.createWaveform(sanitized.toLongArray(), -1)
+                        }
+                        vibrator?.vibrate(effect)
+                    }
+                },
+                log = { message ->
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = "RUNTIME",
+                        message = message,
+                        groupKey = "workspace:basic-runtime:log:$message",
+                    )
+                },
+            ),
+        )
+    }
     val workspaceSyncGuard = remember { WorkspaceSyncGuard() }
     var workspaceDryRunSequence by remember { mutableStateOf(0L) }
     var workspaceDryRunResult by remember { mutableStateOf<EmscriptDryRunResult?>(null) }
@@ -379,7 +432,6 @@ fun WorkspaceScreen(
             }
         }
     }
-    val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
     val logConsoleState = remember { LogConsoleUiState() }
     fun replaceWorkflowStateFromJson(updated: String, source: String) {
         workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
@@ -649,6 +701,76 @@ fun WorkspaceScreen(
                     documentRevision = workflowState.revision.toLong(),
                     groupKey = "workspace:dry-run:failure:${snapshot.sequence}"
                 )
+            }
+        }
+    }
+    fun runCurrentWorkspaceLive(source: String) {
+        if (workflowState.emscriptProjection.isFailure) {
+            val message = workflowState.emscriptProjection.exceptionOrNull()?.message ?: "EMScript-Projektion nicht verfügbar."
+            studioLogStore.append(
+                level = StudioLogLevel.ERROR,
+                source = source,
+                message = "Basic-Run abgebrochen",
+                details = message,
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:basic-run:projection-missing"
+            )
+            return
+        }
+        coroutineScope.launch {
+            studioLogStore.append(
+                level = StudioLogLevel.INFO,
+                source = source,
+                message = "Workspace Basic-Run gestartet",
+                details = RuntimeCapabilityGate().inspect(workflowState.document).summary,
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:basic-run:start:${workflowState.revision}"
+            )
+            val result = workspaceBasicRuntime.run(workflowState.document)
+            workspaceDryRunResult = result
+            workspaceDryRunStepIndex = dryRunEventCount(result)
+            workspaceDryRunSequence += 1
+            val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+                irGraph = workflowState.irGraph,
+                graph = workflowState.flowchartProjection.graph,
+                result = result,
+                sequence = workspaceDryRunSequence,
+            )
+            flowRuntimeSnapshot = snapshot
+            snapshot.diagnostics.forEach { diagnostic ->
+                studioLogStore.append(
+                    level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
+                    source = source,
+                    message = "Runtime-Diagnose ${diagnostic.code}",
+                    details = diagnostic.message,
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "workspace:basic-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}"
+                )
+            }
+            when (result) {
+                is EmscriptDryRunResult.Success -> {
+                    val preview = result.events.takeLast(8).joinToString(separator = "\n") {
+                        "#${it.index} ${it.kind.uppercase()}: ${it.message}"
+                    }
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = source,
+                        message = "Workspace Basic-Run erfolgreich",
+                        details = "Events=${result.events.size}\n$preview",
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "workspace:basic-run:success:${snapshot.sequence}"
+                    )
+                }
+                is EmscriptDryRunResult.Failure -> {
+                    studioLogStore.append(
+                        level = StudioLogLevel.ERROR,
+                        source = source,
+                        message = "Workspace Basic-Run fehlgeschlagen",
+                        details = result.message,
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "workspace:basic-run:failure:${snapshot.sequence}"
+                    )
+                }
             }
         }
     }
@@ -1080,6 +1202,7 @@ fun WorkspaceScreen(
                             }
                         },
                         onRunWorkspaceDry = { runCurrentWorkspaceDryRun("FLOWCHART") },
+                        onRunWorkspaceLive = { runCurrentWorkspaceLive("FLOWCHART") },
                         onDryRunStepBack = { renderWorkspaceDryRunStep(workspaceDryRunStepIndex - 1) },
                         onDryRunStepForward = {
                             if (workspaceDryRunResult == null) {
@@ -1408,6 +1531,7 @@ private fun WorkspacePanelContent(
     onBlockEditorSessionReady: (BlockEditorShellEditorSession?) -> Unit = {},
     onFlowchartSessionReady: (FlowchartShellEditorSession?) -> Unit = {},
     onRunWorkspaceDry: () -> Unit = {},
+    onRunWorkspaceLive: () -> Unit = {},
     onDryRunStepBack: () -> Unit = {},
     onDryRunStepForward: () -> Unit = {},
     canDryRunStepBack: Boolean = false,
@@ -1447,6 +1571,7 @@ private fun WorkspacePanelContent(
             graphContent = FlowGraphJsonCodec().encodeCanonical(workflowState.flowchartProjection.graph),
             runtimeSnapshot = flowRuntimeSnapshot,
             onRunDry = onRunWorkspaceDry,
+            onRunLive = onRunWorkspaceLive,
             onStepBack = onDryRunStepBack,
             onStepForward = onDryRunStepForward,
             canStepBack = canDryRunStepBack,
@@ -1946,6 +2071,7 @@ private fun FlowchartPanel(
     graphContent: String,
     runtimeSnapshot: FlowRuntimeSnapshot?,
     onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
     onStepBack: () -> Unit,
     onStepForward: () -> Unit,
     canStepBack: Boolean,
@@ -2006,6 +2132,7 @@ private fun FlowchartPanel(
         session = session,
         runtimeSnapshot = runtimeSnapshot,
         onRunDry = onRunDry,
+        onRunLive = onRunLive,
         onStepBack = onStepBack,
         onStepForward = onStepForward,
         canStepBack = canStepBack,
