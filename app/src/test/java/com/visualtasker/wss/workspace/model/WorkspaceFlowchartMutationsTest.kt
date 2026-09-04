@@ -72,6 +72,38 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `delete flowchart node group removes only dragged workspace blocks`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-delete-group-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
+        val firstId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_CLICK_TEXT, 40f, 80f)
+        val secondId = document.blocks.keys.single { it != firstId }
+        document = instantiate(document, BlockTypes.DEBUG_LOG, 80f, 140f)
+        val thirdId = document.blocks.keys.single { it != firstId && it != secondId }
+        document = WorkspaceReducer.reduce(
+            document,
+            WorkspaceAction.Connect(document.blocks.getValue(firstId).next!!.id, document.blocks.getValue(secondId).previous!!.id),
+        )
+        document = WorkspaceReducer.reduce(
+            document,
+            WorkspaceAction.Connect(document.blocks.getValue(secondId).next!!.id, document.blocks.getValue(thirdId).previous!!.id),
+        )
+
+        val updated = deleteFlowchartNodesFromWorkspace(
+            document,
+            setOf(
+                FlowNodeId("block:${firstId.value}"),
+                FlowNodeId("block:${secondId.value}"),
+            ),
+        )
+
+        assertFalse(firstId in updated.blocks)
+        assertFalse(secondId in updated.blocks)
+        assertTrue(thirdId in updated.blocks)
+        assertEquals(null, updated.blocks.getValue(thirdId).previous?.connectedTo)
+        assertEquals(listOf(thirdId), updated.rootBlocks)
+    }
+
+    @Test
     fun `disconnect flowchart sequence edge removes workspace next connection`() {
         val document = twoConnectedStatementBlocks()
         val graph = BlockEditorFlowchartProjector.project(document).graph

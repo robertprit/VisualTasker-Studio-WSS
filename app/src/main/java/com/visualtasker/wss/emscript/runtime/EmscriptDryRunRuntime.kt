@@ -248,6 +248,7 @@ internal fun CommandCapability?.isRuntimeBlocked(): Boolean =
         this !in setOf(
             CommandCapability.CORE,
             CommandCapability.TIMING,
+            CommandCapability.FEEDBACK,
             CommandCapability.DEBUG,
         )
 

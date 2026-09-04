@@ -39,6 +39,7 @@ data class FlowchartConnectionOption(
 sealed interface FlowchartWorkspaceMutation {
     data class AddNode(val definitionId: String) : FlowchartWorkspaceMutation
     data class DeleteNode(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
+    data class DeleteNodes(val nodeIds: Set<FlowNodeId>) : FlowchartWorkspaceMutation
     data class DisconnectEdge(
         val graph: FlowGraphDocument,
         val edgeId: FlowEdgeId,
@@ -83,6 +84,7 @@ fun applyFlowchartWorkspaceMutation(
     val updated = when (mutation) {
         is FlowchartWorkspaceMutation.AddNode -> addFlowchartNodeToWorkspace(document, mutation.definitionId)
         is FlowchartWorkspaceMutation.DeleteNode -> deleteFlowchartNodeFromWorkspace(document, mutation.nodeId)
+        is FlowchartWorkspaceMutation.DeleteNodes -> deleteFlowchartNodesFromWorkspace(document, mutation.nodeIds)
         is FlowchartWorkspaceMutation.DisconnectEdge -> disconnectFlowchartEdgeFromWorkspace(document, mutation.graph, mutation.edgeId)
         is FlowchartWorkspaceMutation.ConnectNodes -> connectFlowchartNodesInWorkspace(
             document = document,
@@ -136,6 +138,45 @@ fun deleteFlowchartNodeFromWorkspace(
     val blockId = nodeId.toWorkspaceBlockId() ?: return document
     if (blockId !in document.blocks) return document
     return WorkspaceReducer.reduce(document, WorkspaceAction.DeleteBlock(blockId))
+}
+
+fun deleteFlowchartNodesFromWorkspace(
+    document: WorkspaceDocument,
+    nodeIds: Collection<FlowNodeId>,
+): WorkspaceDocument {
+    val toRemove = nodeIds
+        .mapNotNull { it.toWorkspaceBlockId() }
+        .filterTo(mutableSetOf()) { it in document.blocks }
+    if (toRemove.isEmpty()) return document
+
+    var blocks = document.blocks.toMutableMap()
+    val promotedRoots = mutableListOf<BlockId>()
+    toRemove.forEach { removedId ->
+        document.blocks[removedId]?.allConnections().orEmpty().forEach { connection ->
+            val partnerId = connection.connectedTo ?: return@forEach
+            val (partnerBlockId, partnerConnection) = WorkspaceGraph.findConnection(document, partnerId) ?: return@forEach
+            if (partnerBlockId !in toRemove) {
+                blocks[partnerBlockId] = blocks[partnerBlockId]
+                    ?.withConnectionUpdated(partnerId) { it.copy(connectedTo = null) }
+                    ?: return@forEach
+                if (partnerConnection.kind == ConnectionKind.Previous) {
+                    promotedRoots += partnerBlockId
+                }
+            }
+        }
+    }
+    toRemove.forEach(blocks::remove)
+    val reduced = document.copy(
+        version = document.version + 1,
+        blocks = blocks,
+        rootBlocks = document.rootBlocks.filter { it !in toRemove },
+        rootPositions = document.rootPositions - toRemove,
+    )
+    val roots = WorkspaceGraph.pruneRootBlocks(reduced, reduced.rootBlocks + promotedRoots)
+    return reduced.copy(
+        rootBlocks = roots,
+        rootPositions = reduced.rootPositions.filterKeys { it in roots },
+    )
 }
 
 fun disconnectFlowchartEdgeFromWorkspace(

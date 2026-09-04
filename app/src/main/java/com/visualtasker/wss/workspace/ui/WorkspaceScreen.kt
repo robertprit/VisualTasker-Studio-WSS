@@ -466,6 +466,12 @@ fun WorkspaceScreen(
             "${nodeId.value}:delete",
         )
     }
+    val deleteFlowchartNodes: (Set<FlowNodeId>) -> Unit = { nodeIds ->
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.DeleteNodes(nodeIds),
+            "${nodeIds.joinToString(separator = ",") { it.value }}:delete-group",
+        )
+    }
     val disconnectFlowchartEdge: (FlowEdgeId) -> Unit = { edgeId ->
         applyFlowchartMutation(
             FlowchartWorkspaceMutation.DisconnectEdge(
@@ -1088,6 +1094,7 @@ fun WorkspaceScreen(
                         onFlowchartNodeSelected = ::focusBlockFromFlowNode,
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
+                        onFlowchartNodesDelete = deleteFlowchartNodes,
                         onFlowchartNodesConnect = connectFlowchartNodes,
                         onFlowchartPortsConnect = connectFlowchartPorts,
                         flowchartConnectionOptionsFor = flowchartConnectionOptionsFor,
@@ -1409,6 +1416,7 @@ private fun WorkspacePanelContent(
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
+    onFlowchartNodesDelete: (Set<FlowNodeId>) -> Unit = {},
     onFlowchartNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { _, _, _, _ -> },
     onFlowchartPortsConnect: (FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit = { _, _, _, _, _ -> },
     flowchartConnectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption> = { _, _ -> emptyList() },
@@ -1446,6 +1454,7 @@ private fun WorkspacePanelContent(
             stepLabel = dryRunStepLabel,
             onNodeSelected = onFlowchartNodeSelected,
             onNodeDelete = onFlowchartNodeDelete,
+            onNodesDelete = onFlowchartNodesDelete,
             onNodesConnect = onFlowchartNodesConnect,
             onPortsConnect = onFlowchartPortsConnect,
             connectionOptionsFor = flowchartConnectionOptionsFor,
@@ -1944,6 +1953,7 @@ private fun FlowchartPanel(
     stepLabel: String?,
     onNodeSelected: (FlowNodeId) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
+    onNodesDelete: (Set<FlowNodeId>) -> Unit,
     onNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit,
     onPortsConnect: (FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit,
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<com.visualtasker.wss.workspace.model.FlowchartConnectionOption>,
@@ -2003,6 +2013,7 @@ private fun FlowchartPanel(
         stepLabel = stepLabel,
         onNodeSelected = onNodeSelected,
         onDeleteNode = onNodeDelete,
+        onDeleteNodes = onNodesDelete,
         onConnectNodes = onNodesConnect,
         onConnectPorts = onPortsConnect,
         connectionOptionsFor = connectionOptionsFor,

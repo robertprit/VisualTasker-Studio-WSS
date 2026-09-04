@@ -21,9 +21,10 @@ class RuntimeCapabilityGate {
         return when (gate) {
             CommandCapability.CORE,
             CommandCapability.TIMING,
+            CommandCapability.FEEDBACK,
             CommandCapability.DEBUG,
             -> when (command) {
-                "log", "let", "set", "wait" -> RuntimeCapability(
+                "log", "let", "set", "wait", "beep", "vibrate" -> RuntimeCapability(
                     command = command,
                     status = RuntimeCapabilityStatus.DRY_RUN_READY,
                     details = "Dry-Run verfügbar; Real-Run benötigt den Runtime-Scheduler.",
@@ -38,11 +39,6 @@ class RuntimeCapabilityGate {
                 command = command,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Real-Run benötigt Accessibility/Shizuku-Ausführungsadapter und Capability-Freigabe.",
-            )
-            CommandCapability.FEEDBACK -> RuntimeCapability(
-                command = command,
-                status = RuntimeCapabilityStatus.BLOCKED,
-                details = "Dry-Run verfügbar; Real-Run benötigt Feedback-Bridge und Nutzereinstellung.",
             )
             null -> RuntimeCapability(
                 command = command,

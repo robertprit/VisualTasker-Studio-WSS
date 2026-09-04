@@ -1,5 +1,9 @@
 package com.visualtasker.wss.workspace.plugin.flowchart
 
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.view.HapticFeedbackConstants
+import android.view.SoundEffectConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,8 +71,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.visualtasker.wss.workspace.model.FlowchartConnectionOption
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
 import de.visualtasker.flowchart.compose.FlowchartHost
@@ -106,6 +114,7 @@ fun FlowchartShellPanel(
     stepLabel: String? = null,
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
     onDeleteNode: ((FlowNodeId) -> Unit)? = null,
+    onDeleteNodes: ((Set<FlowNodeId>) -> Unit)? = null,
     onConnectNodes: ((FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit)? = null,
     onConnectPorts: ((FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit)? = null,
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<FlowchartConnectionOption> = { _, _ -> emptyList() },
@@ -128,6 +137,8 @@ fun FlowchartShellPanel(
     var draggedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
     val density = LocalDensity.current
+    val platformView = LocalView.current
+    val hapticFeedback = LocalHapticFeedback.current
     val trashSizePx = with(density) { 96.dp.toPx() }
     val trashMarginPx = with(density) { 16.dp.toPx() }
     fun isOverTrash(point: FlowPoint): Boolean {
@@ -148,6 +159,7 @@ fun FlowchartShellPanel(
         session,
         onNodeSelected,
         onDeleteNode,
+        onDeleteNodes,
         onConnectNodes,
         onConnectPorts,
         connectionOptionsFor,
@@ -196,13 +208,18 @@ fun FlowchartShellPanel(
                 draggedNodeId = nodeId
                 draggedNodePoint = point
             },
-            onNodeDragFinished = { nodeId, point ->
-                if (onDeleteNode != null && isOverTrash(point)) {
+            onNodeDragFinished = { nodeId, nodeIds, point ->
+                if (isOverTrash(point) && (onDeleteNodes != null || onDeleteNode != null)) {
+                    playFlowchartDeleteFeedback(platformView, hapticFeedback)
                     selectedNodeId = null
                     selectedEdgeId = null
                     pendingConnectionStart = null
                     connectionMenu = null
-                    onDeleteNode(nodeId)
+                    if (nodeIds.size > 1) {
+                        onDeleteNodes?.invoke(nodeIds) ?: nodeIds.forEach { onDeleteNode?.invoke(it) }
+                    } else {
+                        onDeleteNode?.invoke(nodeId)
+                    }
                 }
             },
         )
@@ -218,6 +235,8 @@ fun FlowchartShellPanel(
             zoomEnabled = true,
             panEnabled = true,
             nodeDraggingEnabled = true,
+            soundEffectsEnabled = true,
+            hapticFeedbackEnabled = true,
             colorTokens = FlowchartColorTokens(
                 background = Color.Transparent,
                 nodeFill = Color(0xFF24212B),
@@ -240,7 +259,7 @@ fun FlowchartShellPanel(
             shapeTokens = FlowchartShapeTokens(
                 nodeCornerRadiusDp = 8f,
                 nodeStrokeWidthDp = 1.4f,
-                edgeStrokeWidthDp = 2f,
+                edgeStrokeWidthDp = 2.8f,
                 connectorRadiusDp = 5.8f,
             ),
         )
@@ -351,6 +370,23 @@ fun FlowchartShellPanel(
                 onConnectNodes?.invoke(pending.sourceNodeId, pending.targetNodeId, option.kind, option.label)
             },
         )
+    }
+}
+
+private fun playFlowchartDeleteFeedback(
+    platformView: android.view.View,
+    haptic: HapticFeedback,
+) {
+    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    platformView.performHapticFeedback(
+        HapticFeedbackConstants.LONG_PRESS,
+        HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING,
+    )
+    platformView.playSoundEffect(SoundEffectConstants.CLICK)
+    runCatching {
+        val generator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 32)
+        generator.startTone(ToneGenerator.TONE_PROP_NACK, 54)
+        platformView.postDelayed({ generator.release() }, 94L)
     }
 }
 

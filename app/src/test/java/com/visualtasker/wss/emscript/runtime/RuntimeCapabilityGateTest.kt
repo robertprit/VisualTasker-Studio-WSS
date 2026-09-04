@@ -19,7 +19,8 @@ class RuntimeCapabilityGateTest {
         assertFalse(report.realRunAllowed)
         assertTrue(report.capabilities.any { it.command == "wait" && it.status == RuntimeCapabilityStatus.DRY_RUN_READY })
         assertTrue(report.capabilities.any { it.command == "click" && it.status == RuntimeCapabilityStatus.BLOCKED })
-        assertTrue(report.capabilities.any { it.command == "beep" && it.status == RuntimeCapabilityStatus.BLOCKED })
+        assertTrue(report.capabilities.any { it.command == "beep" && it.status == RuntimeCapabilityStatus.DRY_RUN_READY })
+        assertTrue(report.capabilities.any { it.command == "vibrate" && it.status == RuntimeCapabilityStatus.DRY_RUN_READY })
         assertTrue(report.summary.contains("Runtime Gates"))
     }
 
