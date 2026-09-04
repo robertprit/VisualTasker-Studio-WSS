@@ -16,6 +16,8 @@ import com.visualtasker.wss.workspace.plugin.ShellPluginHostServices
 import com.visualtasker.wss.workspace.plugin.ShellPluginId
 import com.visualtasker.wss.workspace.plugin.ShellPluginRuntimeState
 import com.visualtasker.wss.workspace.plugin.ShellPluginSessionId
+import com.visualtasker.wss.workspace.plugin.ShellRuntimePhase
+import com.visualtasker.wss.workspace.plugin.ShellRuntimeSeverity
 import com.visualtasker.wss.workspace.plugin.ShellSaveAcknowledgmentResult
 import com.visualtasker.wss.workspace.plugin.ShellSaveRequest
 import com.visualtasker.wss.workspace.plugin.ShellValidationResult
@@ -179,15 +181,31 @@ class FlowchartShellEditorSession(
     }
 
     private fun reportStatus(status: FlowchartStatus) {
+        val blocked = status.code in setOf(
+            FlowchartStatusCode.INVALID_GRAPH,
+            FlowchartStatusCode.RUNTIME_REJECTED,
+            FlowchartStatusCode.CLOSED,
+        )
         hostServices.reportRuntimeState(
             sessionId,
             ShellPluginRuntimeState(
                 status = status.code.name,
-                blocked = status.code in setOf(
-                    FlowchartStatusCode.INVALID_GRAPH,
-                    FlowchartStatusCode.RUNTIME_REJECTED,
-                    FlowchartStatusCode.CLOSED
-                )
+                blocked = blocked,
+                phase = status.code.toShellRuntimePhase(),
+                severity = when {
+                    blocked -> ShellRuntimeSeverity.ERROR
+                    status.code == FlowchartStatusCode.STALE_VIEW_DISCARDED || status.diagnostics.isNotEmpty() ->
+                        ShellRuntimeSeverity.WARNING
+                    else -> ShellRuntimeSeverity.INFO
+                },
+                warningCount = if (!blocked && status.code == FlowchartStatusCode.STALE_VIEW_DISCARDED) {
+                    status.diagnostics.size.coerceAtLeast(1)
+                } else if (!blocked) {
+                    status.diagnostics.size
+                } else {
+                    0
+                },
+                errorCount = if (blocked) status.diagnostics.size.coerceAtLeast(1) else 0,
             )
         )
         if (status.diagnostics.isNotEmpty()) {
@@ -219,3 +237,15 @@ class FlowchartShellEditorSession(
             is FlowDecodeResult.UnsupportedSchema -> error("Unsupported flowchart graph schema: ${decoded.version}")
         }
 }
+
+private fun FlowchartStatusCode.toShellRuntimePhase(): ShellRuntimePhase =
+    when (this) {
+        FlowchartStatusCode.ATTACHED,
+        FlowchartStatusCode.STALE_VIEW_DISCARDED,
+        FlowchartStatusCode.RUNTIME_ATTACHED,
+        -> ShellRuntimePhase.COMPLETED
+        FlowchartStatusCode.INVALID_GRAPH,
+        FlowchartStatusCode.RUNTIME_REJECTED,
+        FlowchartStatusCode.CLOSED,
+        -> ShellRuntimePhase.BLOCKED
+    }

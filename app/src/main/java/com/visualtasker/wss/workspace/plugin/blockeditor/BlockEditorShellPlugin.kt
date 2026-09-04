@@ -14,6 +14,8 @@ import com.visualtasker.wss.workspace.plugin.ShellPluginHostServices
 import com.visualtasker.wss.workspace.plugin.ShellPluginId
 import com.visualtasker.wss.workspace.plugin.ShellPluginRuntimeState
 import com.visualtasker.wss.workspace.plugin.ShellPluginSessionId
+import com.visualtasker.wss.workspace.plugin.ShellRuntimePhase
+import com.visualtasker.wss.workspace.plugin.ShellRuntimeSeverity
 import com.visualtasker.wss.workspace.plugin.ShellSaveAcknowledgmentResult
 import com.visualtasker.wss.workspace.plugin.ShellSaveRequest
 import com.visualtasker.wss.workspace.plugin.ShellValidationResult
@@ -246,7 +248,17 @@ class BlockEditorShellEditorSession(
                     sessionId,
                     ShellPluginRuntimeState(
                         status = state.status.name,
-                        blocked = state.status == BlockEditorRuntimeStatus.BLOCKED
+                        blocked = state.status == BlockEditorRuntimeStatus.BLOCKED,
+                        phase = when (state.status) {
+                            BlockEditorRuntimeStatus.RUNNING_WITH_GUARDS -> ShellRuntimePhase.VALIDATING
+                            BlockEditorRuntimeStatus.RUNNING -> ShellRuntimePhase.RUNNING_DRY
+                            BlockEditorRuntimeStatus.BLOCKED -> ShellRuntimePhase.BLOCKED
+                        },
+                        severity = when (state.status) {
+                            BlockEditorRuntimeStatus.BLOCKED -> ShellRuntimeSeverity.ERROR
+                            BlockEditorRuntimeStatus.RUNNING_WITH_GUARDS -> ShellRuntimeSeverity.WARNING
+                            BlockEditorRuntimeStatus.RUNNING -> ShellRuntimeSeverity.INFO
+                        },
                     )
                 )
             }

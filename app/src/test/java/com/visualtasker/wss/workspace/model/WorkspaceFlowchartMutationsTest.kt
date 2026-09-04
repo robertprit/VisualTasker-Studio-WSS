@@ -362,6 +362,55 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `connect flowchart elseif branch uses dynamic elseif slot after branch growth`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-dynamic-elseif-connect-test"), BlockTypes.CONTROL_IF, 10f, 20f)
+        val ifId = document.blocks.keys.single()
+        document = addFlowchartIfBranchInWorkspace(document, FlowNodeId("block:${ifId.value}"))
+        document = addFlowchartIfBranchInWorkspace(document, FlowNodeId("block:${ifId.value}"))
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val waitId = document.blocks.keys.single { it != ifId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${ifId.value}"),
+            targetNodeId = FlowNodeId("block:${waitId.value}"),
+            kind = FlowEdgeKind.ELSE_IF_BRANCH,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(waitId).previous!!.id,
+            updated.blocks.getValue(ifId).statementInputs.single { it.name == "ELIF_1" }.connection.connectedTo,
+        )
+    }
+
+    @Test
+    fun `flowchart connection options expose dynamic elseif branch and condition slots`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-dynamic-elseif-options-test"), BlockTypes.CONTROL_IF, 10f, 20f)
+        val ifId = document.blocks.keys.single()
+        document = addFlowchartIfBranchInWorkspace(document, FlowNodeId("block:${ifId.value}"))
+        document = addFlowchartIfBranchInWorkspace(document, FlowNodeId("block:${ifId.value}"))
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val waitId = document.blocks.keys.single { it != ifId }
+        document = instantiate(document, BlockTypes.LITERAL_BOOLEAN, 80f, 120f)
+        val booleanId = document.blocks.keys.single { it != ifId && it != waitId }
+
+        val branchOptions = flowchartConnectionOptions(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${ifId.value}"),
+            targetNodeId = FlowNodeId("block:${waitId.value}"),
+        )
+        val conditionOptions = flowchartConnectionOptions(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${booleanId.value}"),
+            targetNodeId = FlowNodeId("block:${ifId.value}"),
+        )
+
+        assertTrue(branchOptions.any { it.kind == FlowEdgeKind.ELSE_IF_BRANCH && it.label == "ELIF_1" })
+        assertTrue(conditionOptions.any { it.kind == FlowEdgeKind.CONDITION && it.label == "ELIF_CONDITION_1" })
+    }
+
+    @Test
     fun `sync root positions from flowchart view updates workspace roots`() {
         val document = addFlowchartNodeToWorkspace(
             WorkspaceDocument(id = "flowchart-move-test"),

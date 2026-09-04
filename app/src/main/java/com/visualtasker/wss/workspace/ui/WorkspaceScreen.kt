@@ -168,6 +168,7 @@ import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
+import com.visualtasker.wss.emscript.runtime.traceSummary
 import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.data.PanelState as MainPanelState
 import com.visualtasker.wss.data.PanelType as MainPanelType
@@ -747,24 +748,30 @@ fun WorkspaceScreen(
         }
         when (result) {
             is EmscriptDryRunResult.Success -> {
+                val summary = result.traceSummary()
                 val preview = result.events.takeLast(8).joinToString(separator = "\n") {
                     "#${it.index} ${it.kind.uppercase()}: ${it.message}"
                 }
                 studioLogStore.append(
-                    level = StudioLogLevel.INFO,
+                    level = if (summary.hasWarnings || summary.hasErrors) StudioLogLevel.WARNING else StudioLogLevel.INFO,
                     source = source,
-                    message = "Workspace Dry-Run erfolgreich",
-                    details = "Events=${result.events.size}\n$preview",
+                    message = if (summary.hasWarnings || summary.hasErrors) {
+                        "Workspace Dry-Run mit Hinweisen abgeschlossen"
+                    } else {
+                        "Workspace Dry-Run erfolgreich"
+                    },
+                    details = "${summary.message}\n$preview",
                     documentRevision = workflowState.revision.toLong(),
                     groupKey = "workspace:dry-run:success:${snapshot.sequence}"
                 )
             }
             is EmscriptDryRunResult.Failure -> {
+                val summary = result.traceSummary()
                 studioLogStore.append(
                     level = StudioLogLevel.ERROR,
                     source = source,
                     message = "Workspace Dry-Run fehlgeschlagen",
-                    details = result.message,
+                    details = summary.message,
                     documentRevision = workflowState.revision.toLong(),
                     groupKey = "workspace:dry-run:failure:${snapshot.sequence}"
                 )
@@ -816,24 +823,30 @@ fun WorkspaceScreen(
             }
             when (result) {
                 is EmscriptDryRunResult.Success -> {
+                    val summary = result.traceSummary()
                     val preview = result.events.takeLast(8).joinToString(separator = "\n") {
                         "#${it.index} ${it.kind.uppercase()}: ${it.message}"
                     }
                     studioLogStore.append(
-                        level = StudioLogLevel.INFO,
+                        level = if (summary.hasWarnings || summary.hasErrors) StudioLogLevel.WARNING else StudioLogLevel.INFO,
                         source = source,
-                        message = "Workspace Basic-Run erfolgreich",
-                        details = "Events=${result.events.size}\n$preview",
+                        message = if (summary.hasWarnings || summary.hasErrors) {
+                            "Workspace Basic-Run mit Hinweisen abgeschlossen"
+                        } else {
+                            "Workspace Basic-Run erfolgreich"
+                        },
+                        details = "${summary.message}\n$preview",
                         documentRevision = workflowState.revision.toLong(),
                         groupKey = "workspace:basic-run:success:${snapshot.sequence}"
                     )
                 }
                 is EmscriptDryRunResult.Failure -> {
+                    val summary = result.traceSummary()
                     studioLogStore.append(
                         level = StudioLogLevel.ERROR,
                         source = source,
                         message = "Workspace Basic-Run fehlgeschlagen",
-                        details = result.message,
+                        details = summary.message,
                         documentRevision = workflowState.revision.toLong(),
                         groupKey = "workspace:basic-run:failure:${snapshot.sequence}"
                     )

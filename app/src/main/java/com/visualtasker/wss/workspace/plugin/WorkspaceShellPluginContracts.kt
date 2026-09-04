@@ -38,6 +38,48 @@ enum class ShellSaveAcknowledgmentResult {
     STALE
 }
 
+enum class ShellRuntimePhase {
+    IDLE,
+    VALIDATING,
+    RUNNING_DRY,
+    RUNNING_LIVE,
+    COMPLETED,
+    BLOCKED,
+    FAILED
+}
+
+enum class ShellRuntimeSeverity {
+    INFO,
+    WARNING,
+    ERROR
+}
+
+enum class ShellCapabilityStatus {
+    AVAILABLE,
+    MISSING_PERMISSION,
+    MISSING_ADAPTER,
+    UNSUPPORTED
+}
+
+data class ShellCapabilityRequirement(
+    val capabilityId: String,
+    val label: String,
+    val status: ShellCapabilityStatus = ShellCapabilityStatus.AVAILABLE,
+    val pluginOwner: String? = null,
+) {
+    init {
+        require(capabilityId.isNotBlank() && capabilityId == capabilityId.trim()) {
+            "ShellCapabilityRequirement capabilityId must be nonblank and trimmed."
+        }
+        require(label.isNotBlank() && label == label.trim()) {
+            "ShellCapabilityRequirement label must be nonblank and trimmed."
+        }
+        require(pluginOwner == null || pluginOwner.isNotBlank()) {
+            "ShellCapabilityRequirement pluginOwner must be null or nonblank."
+        }
+    }
+}
+
 enum class ShellToolbarActionPlacement {
     PANEL_RAIL,
     PANEL_HEADER,
@@ -117,11 +159,30 @@ data class ShellValidationResult(
 
 data class ShellPluginRuntimeState(
     val status: String,
-    val blocked: Boolean = false
+    val blocked: Boolean = false,
+    val phase: ShellRuntimePhase = if (blocked) ShellRuntimePhase.BLOCKED else ShellRuntimePhase.IDLE,
+    val severity: ShellRuntimeSeverity = if (blocked) ShellRuntimeSeverity.ERROR else ShellRuntimeSeverity.INFO,
+    val eventCount: Int = 0,
+    val warningCount: Int = 0,
+    val errorCount: Int = 0,
+    val activeCommand: String? = null,
+    val requiredCapabilities: List<ShellCapabilityRequirement> = emptyList(),
 ) {
     init {
         require(status.isNotBlank() && status == status.trim()) {
             "ShellPluginRuntimeState status must be nonblank and trimmed."
+        }
+        require(eventCount >= 0) {
+            "ShellPluginRuntimeState eventCount must be nonnegative."
+        }
+        require(warningCount >= 0) {
+            "ShellPluginRuntimeState warningCount must be nonnegative."
+        }
+        require(errorCount >= 0) {
+            "ShellPluginRuntimeState errorCount must be nonnegative."
+        }
+        require(activeCommand == null || activeCommand.isNotBlank()) {
+            "ShellPluginRuntimeState activeCommand must be null or nonblank."
         }
     }
 }

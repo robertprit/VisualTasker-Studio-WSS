@@ -10,6 +10,7 @@ import kotlin.math.roundToInt
 class WorkspaceBasicRuntime(
     private val dryRunRuntime: WorkspaceDryRunRuntime = WorkspaceDryRunRuntime(),
     private val capabilityGate: () -> RuntimeCapabilityGate = { RuntimeCapabilityGate() },
+    private val config: WorkspaceBasicRuntimeConfig = WorkspaceBasicRuntimeConfig(),
     private val environment: WorkspaceBasicRuntimeEnvironment,
 ) {
     suspend fun run(document: WorkspaceDocument): EmscriptDryRunResult {
@@ -40,23 +41,40 @@ class WorkspaceBasicRuntime(
             is EmscriptDryRunResult.Success -> {
                 val liveEvents = mutableListOf<EmscriptDryRunEvent>()
                 dryRun.events.forEach { event ->
-                    executeEvent(document, event)?.let { message ->
+                    executeEvent(document, event)?.let { outcome ->
                         liveEvents += EmscriptDryRunEvent(
                             index = dryRun.events.size + liveEvents.size + 1,
                             kind = "live",
-                            message = message,
+                            message = outcome.message,
                             blockId = event.blockId,
+                            severity = outcome.severity,
                             command = event.command,
                             capability = event.capability,
                             pluginOwner = event.pluginOwner,
                         )
+                        if (config.stopOnLiveWarning && outcome.severity == EmscriptDryRunEventSeverity.WARNING) {
+                            return EmscriptDryRunResult.Failure(
+                                message = outcome.message,
+                                events = dryRun.events + liveEvents,
+                            )
+                        }
                     }
                 }
+                val warningCount = liveEvents.count { it.severity == EmscriptDryRunEventSeverity.WARNING }
                 EmscriptDryRunResult.Success(
                     events = dryRun.events + liveEvents + EmscriptDryRunEvent(
                         index = dryRun.events.size + liveEvents.size + 1,
                         kind = "done",
-                        message = "Workspace Basic-Run abgeschlossen: ${liveEvents.size} Live-Effekte.",
+                        message = if (warningCount > 0) {
+                            "Workspace Basic-Run abgeschlossen: ${liveEvents.size} Live-Effekte, $warningCount Warnungen."
+                        } else {
+                            "Workspace Basic-Run abgeschlossen: ${liveEvents.size} Live-Effekte."
+                        },
+                        severity = if (warningCount > 0) {
+                            EmscriptDryRunEventSeverity.WARNING
+                        } else {
+                            EmscriptDryRunEventSeverity.INFO
+                        },
                     ),
                     variables = dryRun.variables,
                 )
@@ -64,44 +82,48 @@ class WorkspaceBasicRuntime(
         }
     }
 
-    private suspend fun executeEvent(document: WorkspaceDocument, event: EmscriptDryRunEvent): String? {
+    private suspend fun executeEvent(document: WorkspaceDocument, event: EmscriptDryRunEvent): LiveExecutionOutcome? {
         val block = event.blockId?.let { document.blocks[de.visualtasker.blockeditor.domain.BlockId(it)] }
         val command = event.command.orEmpty().lowercase()
         return when (event.kind) {
             "wait" -> {
                 val ms = block?.fieldNumber("ms")?.toLong()?.coerceAtLeast(0L) ?: 0L
                 environment.delayMs(ms)
-                "wait($ms) ausgeführt"
+                LiveExecutionOutcome("wait($ms) ausgeführt")
             }
             "log" -> {
                 environment.log(event.message)
-                "log ausgeführt: ${event.message}"
+                LiveExecutionOutcome("log ausgeführt: ${event.message}")
             }
             "click" -> {
                 val text = block?.fieldText("text").orEmpty()
-                if (environment.clickText(text)) "click(\"$text\") ausgeführt" else "click(\"$text\") fehlgeschlagen"
+                if (environment.clickText(text)) {
+                    LiveExecutionOutcome("click(\"$text\") ausgeführt")
+                } else {
+                    LiveExecutionOutcome("click(\"$text\") fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                }
             }
             "beep" -> {
                 val hz = block?.fieldNumber("frequency")?.toInt()?.coerceIn(20, 20_000) ?: 1_000
                 val durationMs = block?.fieldNumber("durationMs")?.toInt()?.coerceIn(10, 10_000) ?: 200
                 val volume = block?.fieldNumber("volume")?.toInt()?.coerceIn(0, 100) ?: 100
                 environment.playBeep(hz, durationMs, volume)
-                "beep($hz,$durationMs,$volume) ausgeführt"
+                LiveExecutionOutcome("beep($hz,$durationMs,$volume) ausgeführt")
             }
             "vibrate" -> {
                 val pattern = block?.fieldLongList("pattern") ?: listOf(80L)
                 environment.vibrate(pattern)
-                "vibrate(${pattern.joinToString(",")}) ausgeführt"
+                LiveExecutionOutcome("vibrate(${pattern.joinToString(",")}) ausgeführt")
             }
             "let",
-            "set" -> "Variable ${event.message} gesetzt"
+            "set" -> LiveExecutionOutcome("Variable ${event.message} gesetzt")
             "command",
             "capability" -> executeCommandEvent(block, command)
             else -> null
         }
     }
 
-    private suspend fun executeCommandEvent(block: BlockNode?, command: String): String? =
+    private suspend fun executeCommandEvent(block: BlockNode?, command: String): LiveExecutionOutcome? =
         when (command) {
             "clickpoint" -> {
                 val args = block?.numberArguments().orEmpty()
@@ -116,7 +138,11 @@ class WorkspaceBasicRuntime(
                 repeat(repeat) {
                     success = environment.clickPoint(x, y) || success
                 }
-                if (success) "clickPoint($x,$y,$repeat) ausgeführt" else "clickPoint($x,$y,$repeat) fehlgeschlagen"
+                if (success) {
+                    LiveExecutionOutcome("clickPoint($x,$y,$repeat) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("clickPoint($x,$y,$repeat) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                }
             }
             "swipe" -> {
                 val args = block?.numberArguments().orEmpty()
@@ -133,54 +159,62 @@ class WorkspaceBasicRuntime(
                 repeat(repeat) {
                     success = environment.swipe(points, 250L) || success
                 }
-                if (success) "swipe(${points.size} Punkte,$repeat) ausgeführt" else "swipe(${points.size} Punkte,$repeat) fehlgeschlagen"
+                if (success) {
+                    LiveExecutionOutcome("swipe(${points.size} Punkte,$repeat) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("swipe(${points.size} Punkte,$repeat) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                }
             }
             "clipboard.get" -> {
                 val value = environment.clipboardGet()
                 environment.log("Clipboard.get -> ${value.length} Zeichen")
-                "Clipboard.get ausgeführt: ${value.length} Zeichen"
+                LiveExecutionOutcome("Clipboard.get ausgeführt: ${value.length} Zeichen")
             }
             "clipboard.set" -> {
                 val text = block.stringArgument(fieldName = "text")
                 environment.clipboardSet(text)
-                "Clipboard.set ausgeführt: ${text.length} Zeichen"
+                LiveExecutionOutcome("Clipboard.set ausgeführt: ${text.length} Zeichen")
             }
             "cache.clear" -> {
                 val removed = environment.cacheClear()
-                "Cache.clear ausgeführt: $removed Einträge entfernt"
+                LiveExecutionOutcome("Cache.clear ausgeführt: $removed Einträge entfernt")
             }
             "sys.info" -> {
                 val info = environment.systemInfo()
                 environment.log(info)
-                "Sys.info ausgeführt"
+                LiveExecutionOutcome("Sys.info ausgeführt")
             }
             "env.get" -> {
                 val name = block.stringArgument(fieldName = "name")
                 val value = environment.envGet(name)
                 environment.log("Env.get($name) -> $value")
-                "Env.get($name) ausgeführt"
+                LiveExecutionOutcome("Env.get($name) ausgeführt")
             }
             "file.readtext" -> {
                 val path = block.stringArgument(fieldName = "path")
                 val text = environment.fileReadText(path)
                 environment.log("File.readText($path) -> ${text?.length ?: 0} Zeichen")
-                if (text != null) "File.readText($path) ausgeführt" else "File.readText($path) fehlgeschlagen"
+                if (text != null) {
+                    LiveExecutionOutcome("File.readText($path) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("File.readText($path) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                }
             }
             "file.writetext" -> {
                 val path = block.stringArgument(fieldName = "path")
                 val text = block.stringArgument(index = 1, fieldName = "text")
                 if (environment.fileWriteText(path, text)) {
-                    "File.writeText($path) ausgeführt: ${text.length} Zeichen"
+                    LiveExecutionOutcome("File.writeText($path) ausgeführt: ${text.length} Zeichen")
                 } else {
-                    "File.writeText($path) fehlgeschlagen"
+                    LiveExecutionOutcome("File.writeText($path) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
                 }
             }
             "screenshot" -> {
                 val path = block.stringArgument(fieldName = "path").ifBlank { "screenshots/latest.png" }
                 if (environment.screenshot(path)) {
-                    "screenshot($path) ausgeführt"
+                    LiveExecutionOutcome("screenshot($path) ausgeführt")
                 } else {
-                    "screenshot($path) fehlgeschlagen"
+                    LiveExecutionOutcome("screenshot($path) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
                 }
             }
             else -> null
@@ -243,6 +277,15 @@ class WorkspaceBasicRuntime(
             if (pair.size == 2) RuntimeAutomationPoint(pair[0].roundToInt(), pair[1].roundToInt()) else null
         }
 }
+
+data class WorkspaceBasicRuntimeConfig(
+    val stopOnLiveWarning: Boolean = false,
+)
+
+private data class LiveExecutionOutcome(
+    val message: String,
+    val severity: EmscriptDryRunEventSeverity = EmscriptDryRunEventSeverity.INFO,
+)
 
 data class WorkspaceBasicRuntimeEnvironment(
     val delayMs: suspend (Long) -> Unit,

@@ -116,7 +116,24 @@ class WorkspaceShellPluginHostCoordinatorTest {
             )
         )
         host.reportDiagnostics(sessionId, ShellValidationResult(emptyList()))
-        host.reportRuntimeState(sessionId, ShellPluginRuntimeState("RUNNING_WITH_GUARDS"))
+        host.reportRuntimeState(
+            sessionId,
+            ShellPluginRuntimeState(
+                status = "RUNNING_WITH_GUARDS",
+                phase = ShellRuntimePhase.RUNNING_LIVE,
+                eventCount = 12,
+                warningCount = 1,
+                activeCommand = "click",
+                requiredCapabilities = listOf(
+                    ShellCapabilityRequirement(
+                        capabilityId = "a11y",
+                        label = "Accessibility",
+                        status = ShellCapabilityStatus.AVAILABLE,
+                        pluginOwner = "visualtasker.core",
+                    )
+                ),
+            ),
+        )
         val toolbarAction = ShellToolbarAction(
             id = ShellToolbarActionId("save"),
             label = "Save",
@@ -128,7 +145,13 @@ class WorkspaceShellPluginHostCoordinatorTest {
         assertEquals(1, host.recordedSaveRequests().size)
         assertEquals(ShellEditorOutputDisposition.DRAFT_EXPORT, host.recordedOutputs().single().disposition)
         assertTrue(host.recordedDiagnostics().single().second.isValid)
-        assertEquals("RUNNING_WITH_GUARDS", host.recordedRuntimeStates().single().second.status)
+        val runtimeState = host.recordedRuntimeStates().single().second
+        assertEquals("RUNNING_WITH_GUARDS", runtimeState.status)
+        assertEquals(ShellRuntimePhase.RUNNING_LIVE, runtimeState.phase)
+        assertEquals(12, runtimeState.eventCount)
+        assertEquals(1, runtimeState.warningCount)
+        assertEquals("click", runtimeState.activeCommand)
+        assertEquals("a11y", runtimeState.requiredCapabilities.single().capabilityId)
         assertEquals(listOf(sessionId to listOf(toolbarAction)), host.recordedToolbarActions())
     }
 
@@ -146,6 +169,17 @@ class WorkspaceShellPluginHostCoordinatorTest {
             )
         )
         assertEquals("session-1", session.status().title)
+    }
+
+    @Test
+    fun runtimeStateKeepsBackwardsCompatibleDefaults() {
+        val idle = ShellPluginRuntimeState("IDLE")
+        val blocked = ShellPluginRuntimeState("BLOCKED", blocked = true)
+
+        assertEquals(ShellRuntimePhase.IDLE, idle.phase)
+        assertEquals(ShellRuntimeSeverity.INFO, idle.severity)
+        assertEquals(ShellRuntimePhase.BLOCKED, blocked.phase)
+        assertEquals(ShellRuntimeSeverity.ERROR, blocked.severity)
     }
 
     private fun sampleInput(

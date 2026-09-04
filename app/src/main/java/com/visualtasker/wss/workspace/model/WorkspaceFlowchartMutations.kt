@@ -262,7 +262,7 @@ fun connectFlowchartNodesInWorkspace(
         FlowEdgeKind.ELSE_IF_BRANCH,
         FlowEdgeKind.LOOP_BODY -> {
             val slotName = label ?: defaultStatementSlotName(sourceBlock.type, kind) ?: return document
-            val source = sourceBlock.statementInputs.firstOrNull { it.name == slotName }?.connection?.id
+            val source = sourceBlock.statementInputFor(slotName, kind)?.connection?.id
                 ?: return document
             val target = targetBlock.previous?.id ?: return document
             WorkspaceAction.Connect(source, target)
@@ -386,7 +386,7 @@ fun flowchartConnectionOptions(
         }
         if (sourceBlock.output != null) {
             targetBlock.valueInputs.forEach { input ->
-                val kind = if (input.name == "CONDITION") {
+                val kind = if (input.name == "CONDITION" || input.name.startsWith("ELIF_CONDITION")) {
                     FlowEdgeKind.CONDITION
                 } else {
                     FlowEdgeKind.DATA_FLOW
@@ -453,8 +453,15 @@ private fun statementSlotEdgeKind(sourceBlockType: String, slotName: String): Fl
         BlockTypes.SLOT_ELIF -> FlowEdgeKind.ELSE_IF_BRANCH
         BlockTypes.SLOT_DO -> if (sourceBlockType == BlockTypes.CONTROL_REPEAT) FlowEdgeKind.LOOP_BODY else null
         BlockTypes.SLOT_BODY -> if (sourceBlockType == BlockTypes.CONTROL_WHILE) FlowEdgeKind.LOOP_BODY else null
-        else -> null
+        else -> if (slotName.startsWith("ELIF_")) FlowEdgeKind.ELSE_IF_BRANCH else null
     }
+
+private fun BlockNode.statementInputFor(slotName: String, kind: FlowEdgeKind): StatementInput? =
+    statementInputs.firstOrNull { it.name == slotName }
+        ?: when (kind) {
+            FlowEdgeKind.ELSE_IF_BRANCH -> statementInputs.firstOrNull { it.name.startsWith("ELIF_") }
+            else -> null
+        }
 
 private fun statementSlotDisplayLabel(slotName: String): String =
     when (slotName) {
@@ -463,7 +470,11 @@ private fun statementSlotDisplayLabel(slotName: String): String =
         BlockTypes.SLOT_ELSE -> "Branch: else"
         BlockTypes.SLOT_DO -> "Loop: do"
         BlockTypes.SLOT_BODY -> "Loop: body"
-        else -> "Branch: $slotName"
+        else -> if (slotName.startsWith("ELIF_")) {
+            "Branch: elseif ${slotName.removePrefix("ELIF_")}"
+        } else {
+            "Branch: $slotName"
+        }
     }
 
 private fun valueInputDisplayLabel(inputName: String): String =
@@ -476,7 +487,11 @@ private fun valueInputDisplayLabel(inputName: String): String =
         "B" -> "Input: B"
         "Input1" -> "Input: 1"
         "Input2" -> "Input: 2"
-        else -> "Input: $inputName"
+        else -> if (inputName.startsWith("ELIF_CONDITION_")) {
+            "Elseif condition ${inputName.removePrefix("ELIF_CONDITION_")}"
+        } else {
+            "Input: $inputName"
+        }
     }
 
 private fun defaultValueInputName(targetBlockType: String, kind: FlowEdgeKind): String? =

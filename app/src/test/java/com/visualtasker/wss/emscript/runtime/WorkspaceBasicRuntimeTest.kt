@@ -128,6 +128,90 @@ class WorkspaceBasicRuntimeTest {
     }
 
     @Test
+    fun basicRuntimeMarksFailedLiveSideEffectsAsWarnings() = runBlocking {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            click("Missing")
+            clickPoint(12, 24, 1)
+            screenshot("missing.png")
+            """.trimIndent(),
+            workspaceId = "workspace-basic-runtime-live-warning",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val runtime = WorkspaceBasicRuntime(
+            capabilityGate = { RuntimeCapabilityGate.withAccessibilityAdapter() },
+            environment = WorkspaceBasicRuntimeEnvironment(
+                delayMs = {},
+                playBeep = { _, _, _ -> },
+                vibrate = {},
+                log = {},
+                clickText = { false },
+                clickPoint = { _, _ -> false },
+                screenshot = { false },
+            ),
+        )
+
+        val result = runtime.run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        val events = (result as EmscriptDryRunResult.Success).events
+        assertTrue(events.any {
+            it.kind == "live" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING &&
+                it.message.contains("click(\"Missing\") fehlgeschlagen")
+        })
+        assertTrue(events.any {
+            it.kind == "live" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING &&
+                it.message.contains("clickPoint(12,24,1) fehlgeschlagen")
+        })
+        assertTrue(events.any {
+            it.kind == "live" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING &&
+                it.message.contains("screenshot(missing.png) fehlgeschlagen")
+        })
+        assertTrue(events.any {
+            it.kind == "done" &&
+                it.severity == EmscriptDryRunEventSeverity.WARNING &&
+                it.message.contains("Warnungen")
+        })
+        val summary = result.traceSummary()
+        assertTrue(summary.completed)
+        assertEquals(4, summary.warningCount)
+        assertEquals(0, summary.errorCount)
+    }
+
+    @Test
+    fun basicRuntimeCanStopOnFailedLiveSideEffects() = runBlocking {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            click("Missing")
+            log("after")
+            """.trimIndent(),
+            workspaceId = "workspace-basic-runtime-stop-on-warning",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val calls = mutableListOf<String>()
+        val runtime = WorkspaceBasicRuntime(
+            capabilityGate = { RuntimeCapabilityGate.withAccessibilityAdapter() },
+            config = WorkspaceBasicRuntimeConfig(stopOnLiveWarning = true),
+            environment = WorkspaceBasicRuntimeEnvironment(
+                delayMs = {},
+                playBeep = { _, _, _ -> },
+                vibrate = {},
+                log = { calls += it },
+                clickText = { false },
+            ),
+        )
+
+        val result = runtime.run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Failure)
+        assertTrue((result as EmscriptDryRunResult.Failure).message.contains("fehlgeschlagen"))
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
     fun basicRuntimeExecutesCoreSystemCommands() = runBlocking {
         val imported = EmscriptWorkspaceImporter().import(
             """
