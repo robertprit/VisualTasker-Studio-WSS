@@ -73,6 +73,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -131,6 +132,7 @@ fun FlowchartShellPanel(
     onConnectPorts: ((FlowNodeId, String, FlowNodeId, String, FlowEdgeKind) -> Unit)? = null,
     connectionOptionsFor: (FlowNodeId, FlowNodeId) -> List<FlowchartConnectionOption> = { _, _ -> emptyList() },
     onDisconnectEdge: ((FlowEdgeId) -> Unit)? = null,
+    onSelectionChanged: ((FlowNodeId?, FlowEdgeId?) -> Unit)? = null,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)? = null,
     onReplaceNodeType: ((FlowNodeId, String) -> Unit)? = null,
     onAddIfBranch: ((FlowNodeId) -> Unit)? = null,
@@ -138,6 +140,8 @@ fun FlowchartShellPanel(
     onViewChanged: ((FlowViewDocument) -> Unit)? = null,
     onUndoWorkspace: (() -> Boolean)? = null,
     onRedoWorkspace: (() -> Boolean)? = null,
+    showMiniMap: Boolean = true,
+    showTopToolbar: Boolean = true,
 ) {
     val controller = session.controller
     var gridVisible by remember(session.sessionId) { mutableStateOf(true) }
@@ -179,6 +183,7 @@ fun FlowchartShellPanel(
         pendingConnectionStart,
         panelSize,
         handleViewChanged,
+        onSelectionChanged,
     ) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
@@ -190,6 +195,7 @@ fun FlowchartShellPanel(
                     pendingConnectionStart = null
                     selectedNodeId = it
                     selectedEdgeId = null
+                    onSelectionChanged?.invoke(it, null)
                     when (options.size) {
                         0 -> Unit
                         1 -> options.single().let { option ->
@@ -201,6 +207,7 @@ fun FlowchartShellPanel(
                 } else {
                     selectedNodeId = it
                     if (it != null) selectedEdgeId = null
+                    onSelectionChanged?.invoke(it, null)
                     if (it != null) onNodeSelected?.invoke(it)
                 }
             },
@@ -209,12 +216,14 @@ fun FlowchartShellPanel(
                 if (it != null) selectedNodeId = null
                 if (it != null) pendingConnectionStart = null
                 if (it != null) connectionMenu = null
+                onSelectionChanged?.invoke(null, it)
             },
             onPortConnectionRequested = { source, target ->
                 selectedNodeId = target.nodeId
                 selectedEdgeId = null
                 pendingConnectionStart = null
                 connectionMenu = null
+                onSelectionChanged?.invoke(target.nodeId, null)
                 onConnectPorts?.invoke(source.nodeId, source.portName, target.nodeId, target.portName, source.kind)
             },
             onNodeDragChanged = { nodeId, point ->
@@ -228,6 +237,7 @@ fun FlowchartShellPanel(
                     selectedEdgeId = null
                     pendingConnectionStart = null
                     connectionMenu = null
+                    onSelectionChanged?.invoke(null, null)
                     if (nodeIds.size > 1) {
                         onDeleteNodes?.invoke(nodeIds) ?: nodeIds.forEach { onDeleteNode?.invoke(it) }
                     } else {
@@ -306,6 +316,24 @@ fun FlowchartShellPanel(
                 .align(Alignment.BottomEnd)
                 .padding(18.dp),
         )
+        FlowchartFloatingViewportControls(
+            onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
+            onZoomOut = { controller.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0))) },
+            onCenter = { controller.attachGraph(controller.snapshot().graph ?: session.graphDocument, null) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 32.dp, bottom = 124.dp),
+        )
+        if (showMiniMap) {
+            FlowchartMiniMap(
+                viewDocument = session.viewDocument ?: controller.snapshot().view,
+                panelSize = panelSize,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 62.dp, end = 14.dp),
+            )
+        }
+        if (showTopToolbar) {
         FlowchartShellToolbar(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -355,6 +383,7 @@ fun FlowchartShellPanel(
             gridVisible = gridVisible,
             connecting = pendingConnectionStart != null,
         )
+        }
         FlowchartProjectionDiagnostics(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -386,6 +415,97 @@ fun FlowchartShellPanel(
                 onConnectNodes?.invoke(pending.sourceNodeId, pending.targetNodeId, option.kind, option.label)
             },
         )
+    }
+}
+
+@Composable
+private fun FlowchartFloatingViewportControls(
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onCenter: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = Color(0xFF221C2C).copy(alpha = 0.92f),
+        contentColor = Color(0xFFECE6F3),
+        tonalElevation = 3.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            FlowchartToolbarButton("Zoom +", onZoomIn) { Icon(Icons.Default.ZoomIn, contentDescription = null) }
+            FlowchartToolbarButton("Zoom -", onZoomOut) { Icon(Icons.Default.ZoomOut, contentDescription = null) }
+            FlowchartToolbarButton("Zentrieren", onCenter) { Icon(Icons.Default.CenterFocusStrong, contentDescription = null) }
+        }
+    }
+}
+
+@Composable
+private fun FlowchartMiniMap(
+    viewDocument: FlowViewDocument?,
+    panelSize: IntSize,
+    modifier: Modifier = Modifier,
+) {
+    if (viewDocument == null) return
+    val nodes = viewDocument.nodeViews
+    if (nodes.size <= 1 || panelSize.width <= 0 || panelSize.height <= 0) return
+    val left = nodes.minOf { it.position.x }.toFloat()
+    val top = nodes.minOf { it.position.y }.toFloat()
+    val right = nodes.maxOf { it.position.x + (it.size?.width ?: 160.0) }.toFloat()
+    val bottom = nodes.maxOf { it.position.y + (it.size?.height ?: 72.0) }.toFloat()
+    val contentWidth = (right - left).coerceAtLeast(1f)
+    val contentHeight = (bottom - top).coerceAtLeast(1f)
+    val viewport = viewDocument.viewport
+    Surface(
+        modifier = modifier.size(width = 118.dp, height = 82.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFF221C2C).copy(alpha = 0.68f),
+        contentColor = Color(0xFFECE6F3),
+        tonalElevation = 2.dp,
+    ) {
+        Canvas(Modifier.fillMaxSize().padding(7.dp)) {
+            val scale = minOf(size.width / contentWidth, size.height / contentHeight)
+            val drawWidth = contentWidth * scale
+            val drawHeight = contentHeight * scale
+            val offsetX = (size.width - drawWidth) / 2f
+            val offsetY = (size.height - drawHeight) / 2f
+            nodes.forEach { node ->
+                val nodeWidth = (node.size?.width ?: 160.0).toFloat()
+                val nodeHeight = (node.size?.height ?: 72.0).toFloat()
+                drawRoundRect(
+                    color = Color(0xFF63C7FF).copy(alpha = 0.64f),
+                    topLeft = Offset(
+                        offsetX + (node.position.x.toFloat() - left) * scale,
+                        offsetY + (node.position.y.toFloat() - top) * scale,
+                    ),
+                    size = Size(
+                        (nodeWidth * scale).coerceAtLeast(2f),
+                        (nodeHeight * scale).coerceAtLeast(2f),
+                    ),
+                    cornerRadius = CornerRadius(2f, 2f),
+                )
+            }
+            val visibleLeft = (-viewport.pan.x / viewport.zoom).toFloat()
+            val visibleTop = (-viewport.pan.y / viewport.zoom).toFloat()
+            val visibleRight = ((panelSize.width - viewport.pan.x) / viewport.zoom).toFloat()
+            val visibleBottom = ((panelSize.height - viewport.pan.y) / viewport.zoom).toFloat()
+            drawRect(
+                color = Color(0xFFBDA7FF),
+                topLeft = Offset(
+                    offsetX + (visibleLeft - left) * scale,
+                    offsetY + (visibleTop - top) * scale,
+                ),
+                size = Size(
+                    ((visibleRight - visibleLeft) * scale).coerceAtLeast(4f),
+                    ((visibleBottom - visibleTop) * scale).coerceAtLeast(4f),
+                ),
+                style = Stroke(width = 1.4.dp.toPx()),
+            )
+        }
     }
 }
 

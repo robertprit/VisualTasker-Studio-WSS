@@ -2,6 +2,7 @@ package com.visualtasker.wss.workspace.ui
 
 import android.Manifest
 import android.app.Activity
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -27,6 +28,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +55,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +63,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
@@ -64,6 +73,7 @@ import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.FilterList
@@ -74,27 +84,37 @@ import androidx.compose.material.icons.filled.Minimize
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Polyline
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.ViewKanban
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
@@ -128,11 +148,21 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -141,6 +171,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -220,7 +251,9 @@ import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
 import de.visualtasker.blockeditor.compose.theme.setBlockCategoryColorOverride
 import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.blockeditor.registry.BlockDefinition
 import de.visualtasker.blockeditor.registry.BlockCategories
+import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
@@ -230,19 +263,28 @@ import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
+import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
+import de.visualtasker.flowchart.layout.FlowLayoutConfig
+import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -257,9 +299,269 @@ private const val WORKSPACE_PANEL_MARGIN_DP = 12f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
+private const val BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY = "blockeditor_minimap_visible"
+private const val FLOWCHART_MINIMAP_VISIBLE_PREF_KEY = "flowchart_minimap_visible"
 private const val PANEL_RAIL_EXPANDED_PREF_PREFIX = "workspace_panel_rail_expanded:"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
+
+private data class ScreenshotCanvasAsset(
+    val file: File,
+    val label: String,
+    val app: String = "VisualTasker",
+    val scene: String = "Screenshot",
+) {
+    val id: String = file.absolutePath
+    val dateLabel: String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(file.lastModified()))
+}
+
+private data class ScreenshotCanvasRegion(
+    val x: Int,
+    val y: Int,
+    val width: Int,
+    val height: Int,
+)
+
+private data class ScreenshotCanvasSavedMarker(
+    val id: String,
+    val label: String,
+    val assetId: String?,
+    val assetLabel: String?,
+    val region: ScreenshotCanvasRegion,
+    val markerMode: ScreenshotCanvasMarkerMode,
+    val matchKind: ScreenshotCanvasMatchKind,
+    val processingMode: ScreenshotCanvasProcessingMode,
+    val threshold: Float,
+    val rotationDegrees: Float,
+    val matchReadMe: String,
+    val colourHex: String,
+    val updatedAt: Long,
+)
+
+private enum class ScreenshotCanvasMarkerMode { Template, Region, Point, Swipe, Path }
+
+private enum class ScreenshotCanvasMatchKind { OCR, OCV }
+
+private enum class ScreenshotCanvasProcessingMode { Original, Grayscale, HighContrast, Edge, Inverse }
+
+private enum class ScreenshotCanvasOverlayHandle { ScanType, Close, ResizeBottomLeft, ResizeBottomRight, None }
+
+private enum class ScreenshotCanvasTouchMode { Create, Move, ResizeBottomLeft, ResizeBottomRight, TapHandle, PointTap }
+
+private data class ScreenshotCanvasGestureSetup(
+    val mode: ScreenshotCanvasTouchMode,
+    val createAnchorImage: Offset,
+    val regionStart: ScreenshotCanvasRegion?,
+    val handle: ScreenshotCanvasOverlayHandle,
+)
+
+private class ScreenshotViewState {
+    var selectedAssetId by mutableStateOf<String?>(null)
+    var assetRevision by mutableIntStateOf(0)
+    var zoom by mutableFloatStateOf(1f)
+    var selectedRegion by mutableStateOf<ScreenshotCanvasRegion?>(null)
+    var showScreenshotBg by mutableStateOf(true)
+    var filterHideClickable by mutableStateOf(false)
+    var filterHideInvisible by mutableStateOf(false)
+    var filterHideNonFocusable by mutableStateOf(false)
+    var showAccessibilityNodes by mutableStateOf(true)
+    var showDomNodes by mutableStateOf(false)
+    var showOcrNodes by mutableStateOf(true)
+    var showVisionTemplateNodes by mutableStateOf(true)
+    var showYoloNodes by mutableStateOf(true)
+    var showMarkers by mutableStateOf(true)
+    var inspectorVisible by mutableStateOf(true)
+}
+
+private class MarkerConsoleState {
+    var markerMode by mutableStateOf(ScreenshotCanvasMarkerMode.Region)
+    var matchKind by mutableStateOf(ScreenshotCanvasMatchKind.OCR)
+    var processingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
+    var templateName by mutableStateOf("Marker")
+    var threshold by mutableFloatStateOf(0.85f)
+    var rotationDegrees by mutableFloatStateOf(0f)
+    var matchReadMe by mutableStateOf("")
+    var colourHex by mutableStateOf("#4FC3F7")
+    var markerStatusMessage by mutableStateOf("")
+    val savedMarkers = mutableStateListOf<ScreenshotCanvasSavedMarker>()
+    var selectedSavedMarkerId by mutableStateOf<String?>(null)
+}
+
+private class VisionCropState {
+    var visualTestScore by mutableStateOf<Float?>(null)
+    var referenceMarkerId by mutableStateOf<String?>(null)
+    var liveProcessingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
+    var referenceProcessingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
+}
+
+private class ScreenshotCanvasUiState(
+    val screenshot: ScreenshotViewState = ScreenshotViewState(),
+    val marker: MarkerConsoleState = MarkerConsoleState(),
+    val vision: VisionCropState = VisionCropState(),
+) {
+    var selectedAssetId: String?
+        get() = screenshot.selectedAssetId
+        set(value) {
+            screenshot.selectedAssetId = value
+        }
+    var assetRevision: Int
+        get() = screenshot.assetRevision
+        set(value) {
+            screenshot.assetRevision = value
+        }
+    var zoom: Float
+        get() = screenshot.zoom
+        set(value) {
+            screenshot.zoom = value
+        }
+    var selectedRegion: ScreenshotCanvasRegion?
+        get() = screenshot.selectedRegion
+        set(value) {
+            screenshot.selectedRegion = value
+        }
+    var markerMode: ScreenshotCanvasMarkerMode
+        get() = marker.markerMode
+        set(value) {
+            marker.markerMode = value
+        }
+    var matchKind: ScreenshotCanvasMatchKind
+        get() = marker.matchKind
+        set(value) {
+            marker.matchKind = value
+        }
+    var processingMode: ScreenshotCanvasProcessingMode
+        get() = marker.processingMode
+        set(value) {
+            marker.processingMode = value
+        }
+    var templateName: String
+        get() = marker.templateName
+        set(value) {
+            marker.templateName = value
+        }
+    var threshold: Float
+        get() = marker.threshold
+        set(value) {
+            marker.threshold = value
+        }
+    var rotationDegrees: Float
+        get() = marker.rotationDegrees
+        set(value) {
+            marker.rotationDegrees = value
+        }
+    var matchReadMe: String
+        get() = marker.matchReadMe
+        set(value) {
+            marker.matchReadMe = value
+        }
+    var colourHex: String
+        get() = marker.colourHex
+        set(value) {
+            marker.colourHex = value
+        }
+    var visualTestScore: Float?
+        get() = vision.visualTestScore
+        set(value) {
+            vision.visualTestScore = value
+        }
+    var referenceMarkerId: String?
+        get() = vision.referenceMarkerId
+        set(value) {
+            vision.referenceMarkerId = value
+        }
+    var liveProcessingMode: ScreenshotCanvasProcessingMode
+        get() = vision.liveProcessingMode
+        set(value) {
+            vision.liveProcessingMode = value
+        }
+    var referenceProcessingMode: ScreenshotCanvasProcessingMode
+        get() = vision.referenceProcessingMode
+        set(value) {
+            vision.referenceProcessingMode = value
+        }
+    var markerStatusMessage: String
+        get() = marker.markerStatusMessage
+        set(value) {
+            marker.markerStatusMessage = value
+        }
+    val savedMarkers get() = marker.savedMarkers
+    var selectedSavedMarkerId: String?
+        get() = marker.selectedSavedMarkerId
+        set(value) {
+            marker.selectedSavedMarkerId = value
+        }
+    var showScreenshotBg: Boolean
+        get() = screenshot.showScreenshotBg
+        set(value) {
+            screenshot.showScreenshotBg = value
+        }
+    var filterHideClickable: Boolean
+        get() = screenshot.filterHideClickable
+        set(value) {
+            screenshot.filterHideClickable = value
+        }
+    var filterHideInvisible: Boolean
+        get() = screenshot.filterHideInvisible
+        set(value) {
+            screenshot.filterHideInvisible = value
+        }
+    var filterHideNonFocusable: Boolean
+        get() = screenshot.filterHideNonFocusable
+        set(value) {
+            screenshot.filterHideNonFocusable = value
+        }
+    var showAccessibilityNodes: Boolean
+        get() = screenshot.showAccessibilityNodes
+        set(value) {
+            screenshot.showAccessibilityNodes = value
+        }
+    var showDomNodes: Boolean
+        get() = screenshot.showDomNodes
+        set(value) {
+            screenshot.showDomNodes = value
+        }
+    var showOcrNodes: Boolean
+        get() = screenshot.showOcrNodes
+        set(value) {
+            screenshot.showOcrNodes = value
+        }
+    var showVisionTemplateNodes: Boolean
+        get() = screenshot.showVisionTemplateNodes
+        set(value) {
+            screenshot.showVisionTemplateNodes = value
+        }
+    var showYoloNodes: Boolean
+        get() = screenshot.showYoloNodes
+        set(value) {
+            screenshot.showYoloNodes = value
+        }
+    var showMarkers: Boolean
+        get() = screenshot.showMarkers
+        set(value) {
+            screenshot.showMarkers = value
+        }
+    var inspectorVisible: Boolean
+        get() = screenshot.inspectorVisible
+        set(value) {
+            screenshot.inspectorVisible = value
+        }
+
+    fun zoomIn() {
+        zoom = (zoom * 1.2f).coerceIn(1f, 5f)
+    }
+
+    fun zoomOut() {
+        zoom = (zoom / 1.2f).coerceIn(1f, 5f)
+    }
+
+    fun center() {
+        zoom = 1f
+    }
+
+    fun refreshAssets() {
+        assetRevision += 1
+    }
+}
 
 private data class WorkspaceAppearance(
     val syntaxKeyword: Color = Color(0xFF82B1FF),
@@ -374,6 +676,12 @@ fun WorkspaceScreen(
                 )
             }.getOrDefault(BlockPaletteInsertMode.TapToAdd)
         )
+    }
+    var blockEditorMiniMapVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY, true))
+    }
+    var flowchartMiniMapVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_MINIMAP_VISIBLE_PREF_KEY, true))
     }
     var showAddPanelDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -494,6 +802,8 @@ fun WorkspaceScreen(
     var workspaceDryRunStepIndex by remember { mutableIntStateOf(0) }
     val activeBlockEditorSessionState = remember { mutableStateOf<BlockEditorShellEditorSession?>(null) }
     val activeFlowchartSessionState = remember { mutableStateOf<FlowchartShellEditorSession?>(null) }
+    var selectedFlowchartNodeId by remember { mutableStateOf<FlowNodeId?>(null) }
+    var selectedFlowchartEdgeId by remember { mutableStateOf<FlowEdgeId?>(null) }
     val emscriptFileManager = remember {
         EmscriptFileManagerUiState().apply {
             scripts["draft"] = initialTextEditorDraft
@@ -902,6 +1212,22 @@ fun WorkspaceScreen(
     }
     // Workspace shell stays truth-neutral: external projection wins over demo data.
     val projectedSteps = recorderStepsProjection?.invoke() ?: demoRecorderSteps
+    val workspaceCanvasState = remember(context) {
+        ScreenshotCanvasUiState().apply {
+            savedMarkers.addAll(loadScreenshotCanvasSavedMarkers(context))
+            selectedSavedMarkerId = savedMarkers.firstOrNull()?.id
+        }
+    }
+    LaunchedEffect(workspaceCanvasState) {
+        snapshotFlow { workspaceCanvasState.savedMarkers.toList() }
+            .debounce(250)
+            .collect { markers ->
+                persistScreenshotCanvasSavedMarkers(context, markers)
+            }
+    }
+    val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
+        loadScreenshotCanvasAssets(context)
+    }
 
     val bridge = remember(actionSink, recorderStepsProjection, demoRecorderSteps) {
         object : PanelActionSink {
@@ -924,16 +1250,24 @@ fun WorkspaceScreen(
     }
     val openPanel: (PanelType) -> Unit = { type ->
         val id = "panel-${nextId++}"
-        val title = "${displayNameForPanelType(type)} ${id.removePrefix("panel-")}"
+        val title = displayNameForPanelType(type)
         panels.add(
             PanelState(
                 id = id,
                 type = type,
                 title = title,
-                x = 96f,
+                x = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) 32f else 96f,
                 y = max(96f, workspaceTopGuardPx),
-                width = PANEL_DEFAULT_W,
-                height = PANEL_DEFAULT_H,
+                width = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) {
+                    ((surfaceSize.width / density) - 64f).coerceAtLeast(PANEL_DEFAULT_W)
+                } else {
+                    PANEL_DEFAULT_W
+                },
+                height = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) {
+                    ((surfaceSize.height / density) - (workspaceTopGuardPx / density) - 48f).coerceAtLeast(PANEL_DEFAULT_H)
+                } else {
+                    PANEL_DEFAULT_H
+                },
                 zIndex = nextZ++,
                 minimized = false,
                 accentColor = defaultAccentForPanelType(type)
@@ -955,7 +1289,16 @@ fun WorkspaceScreen(
             .debounce(300)
             .collect { sessionStore.save(it) }
     }
-    LaunchedEffect(hideSystemBars, dockAtTop, useLargeGrid, snapEnabled, uiScale, blockPaletteInsertMode) {
+    LaunchedEffect(
+        hideSystemBars,
+        dockAtTop,
+        useLargeGrid,
+        snapEnabled,
+        uiScale,
+        blockPaletteInsertMode,
+        blockEditorMiniMapVisible,
+        flowchartMiniMapVisible,
+    ) {
         uiPrefs.edit()
             .putBoolean("hide_system_bars", hideSystemBars)
             .putBoolean("dock_top", dockAtTop)
@@ -963,6 +1306,8 @@ fun WorkspaceScreen(
             .putBoolean("snap_enabled", snapEnabled)
             .putFloat("ui_scale", uiScale)
             .putString(BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY, blockPaletteInsertMode.name)
+            .putBoolean(BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY, blockEditorMiniMapVisible)
+            .putBoolean(FLOWCHART_MINIMAP_VISIBLE_PREF_KEY, flowchartMiniMapVisible)
             .apply()
     }
     LaunchedEffect(appearance) {
@@ -1033,6 +1378,13 @@ fun WorkspaceScreen(
                 .onSizeChanged { surfaceSize = it }
         ) {
             GridBackground(visible = snapEnabled, stepDp = gridSizeDp.toFloat())
+            WorkspaceScreenshotCanvasBackground(
+                state = workspaceCanvasState,
+                assets = workspaceCanvasAssets,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = WORKSPACE_TOP_BAR_HEIGHT_DP.dp)
+            )
 
             WorkspaceTopAppBar(
                 snapEnabled = snapEnabled,
@@ -1061,10 +1413,17 @@ fun WorkspaceScreen(
                 val maxHeightDp = ((surfaceSize.height - panelTopPx - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
+                val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore
                 val isLogConsolePanel = panel.type == PanelType.LogConsole || panel.type == PanelType.RuntimeLog
                 val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
                 val flowchartSessionState = remember(panel.id) { mutableStateOf<FlowchartShellEditorSession?>(null) }
+                val panelScreenshotCanvasState = remember(panel.id) { ScreenshotCanvasUiState() }
+                val screenshotCanvasState = if (isScreenshotPanel) workspaceCanvasState else panelScreenshotCanvasState
+                val panelScreenshotAssets = remember(panel.id, panelScreenshotCanvasState.assetRevision) {
+                    loadScreenshotCanvasAssets(context)
+                }
+                val screenshotAssets = if (isScreenshotPanel) workspaceCanvasAssets else panelScreenshotAssets
                 var railExpanded by remember(panel.id) {
                     mutableStateOf(loadPanelRailExpanded(uiPrefs, panel.id))
                 }
@@ -1075,29 +1434,64 @@ fun WorkspaceScreen(
                     isActiveTarget = panel.id == focusedPanelId,
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
+                    minPositionYPx = workspaceTopGuardPx,
+                    maxPositionXPx = max(0f, surfaceSize.width - panel.width * density - 16f),
+                    maxPositionYPx = max(workspaceTopGuardPx, surfaceSize.height - panel.height * density - 16f),
                     showRail = true,
                     railExpandedOverride = railExpanded,
                     onRailExpandedChange = { expanded ->
                         railExpanded = expanded
                         persistPanelRailExpanded(uiPrefs, panel.id, expanded)
                     },
-                    showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
-                    showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
+                    showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
+                    showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
                     railExpandedWidth = when {
                         isBlockEditorPanel -> 300.dp
                         isFlowchartPanel -> 236.dp
                         isLogConsolePanel -> 220.dp
                         isEmscriptPanel -> 240.dp
+                        isScreenshotPanel -> 220.dp
                         else -> 186.dp
                     },
-                    railExpandedFillHeight = isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel,
+                    railExpandedFillHeight = isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
                     compactRailContent = { onExpandRequested ->
                         when {
+                            isScreenshotPanel -> ScreenshotCanvasCompactRail(
+                                state = screenshotCanvasState,
+                                onExpandRequested = onExpandRequested,
+                            )
                             isBlockEditorPanel -> BlockEditorCompactCategoryRail(
                                 session = blockEditorSessionState.value,
-                                onExpandRequested = onExpandRequested
+                                onExpandRequested = onExpandRequested,
+                                onSave = {
+                                    blockEditorSessionState.value?.let { persistBlockEditorSession(uiPrefs, it) }
+                                }
                             )
-                            isFlowchartPanel -> FlowchartCompactNodeRail(onExpandRequested = onExpandRequested)
+                            isFlowchartPanel -> FlowchartCompactActionRail(
+                                session = flowchartSessionState.value,
+                                selectedNodeId = selectedFlowchartNodeId,
+                                selectedEdgeId = selectedFlowchartEdgeId,
+                                onExpandRequested = onExpandRequested,
+                                onSave = {
+                                    flowchartSessionState.value?.let { persistFlowchartViewSession(uiPrefs, it) }
+                                },
+                                onRunDry = { runCurrentWorkspaceDryRun("FLOWCHART") },
+                                onRunLive = { runCurrentWorkspaceLive("FLOWCHART") },
+                                onStepBack = { renderWorkspaceDryRunStep(workspaceDryRunStepIndex - 1) },
+                                onStepForward = {
+                                    if (workspaceDryRunResult == null) {
+                                        runCurrentWorkspaceDryRun("FLOWCHART")
+                                    } else {
+                                        renderWorkspaceDryRunStep(workspaceDryRunStepIndex + 1)
+                                    }
+                                },
+                                canStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
+                                canStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
+                                onDeleteNode = deleteFlowchartNode,
+                                onDisconnectEdge = disconnectFlowchartEdge,
+                                onUndoWorkspace = undoWorkspaceChange,
+                                onRedoWorkspace = redoWorkspaceChange,
+                            )
                             isLogConsolePanel -> LogConsoleCompactRail(
                                 store = studioLogStore,
                                 uiState = logConsoleState
@@ -1143,6 +1537,28 @@ fun WorkspaceScreen(
                     },
                     railContent = {
                         when {
+                            isScreenshotPanel -> ScreenshotCanvasRail(
+                                state = screenshotCanvasState,
+                                assets = screenshotAssets,
+                                selectedAssetId = screenshotCanvasState.selectedAssetId,
+                                onSelect = { screenshotCanvasState.selectedAssetId = it },
+                                onRefresh = { screenshotCanvasState.refreshAssets() },
+                                onCapture = {
+                                    val target = File(runtimeFilesRoot(context), "screenshots/capture-${System.currentTimeMillis()}.png")
+                                    target.parentFile?.mkdirs()
+                                    coroutineScope.launch {
+                                        val ok = VisualTaskerAccessibilityService.current()?.takeScreenshotTo(target) ?: false
+                                        studioLogStore.append(
+                                            level = if (ok) StudioLogLevel.INFO else StudioLogLevel.ERROR,
+                                            source = "SCREENSHOT",
+                                            message = if (ok) "Screenshot gespeichert" else "Screenshot fehlgeschlagen",
+                                            details = target.absolutePath,
+                                            groupKey = "screenshot:capture"
+                                        )
+                                        screenshotCanvasState.refreshAssets()
+                                    }
+                                }
+                            )
                             isBlockEditorPanel -> BlockEditorPanelRail(
                                 session = blockEditorSessionState.value,
                                 paletteInsertMode = blockPaletteInsertMode
@@ -1278,6 +1694,8 @@ fun WorkspaceScreen(
                         latestEmscriptProjected = latestEmscriptProjected,
                         latestEmscriptGenerationFailure = latestEmscriptGenerationFailure,
                         flowRuntimeSnapshot = flowRuntimeSnapshot,
+                        blockEditorMiniMapVisible = blockEditorMiniMapVisible,
+                        flowchartMiniMapVisible = flowchartMiniMapVisible,
                         onEmscriptSessionChange = { updated ->
                             emscriptSession = updated
                             val manual = updated.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -1318,7 +1736,14 @@ fun WorkspaceScreen(
                         dryRunStepLabel = workspaceDryRunResult?.let { "${workspaceDryRunStepIndex}/${dryRunEventCount(it)}" },
                         onFlowchartNodeSelected = { nodeId ->
                             selectedFlowchartNodeForInsert = nodeId
+                            selectedFlowchartNodeId = nodeId
+                            selectedFlowchartEdgeId = null
                             focusBlockFromFlowNode(nodeId)
+                        },
+                        onFlowchartSelectionChanged = { nodeId, edgeId ->
+                            selectedFlowchartNodeId = nodeId
+                            selectedFlowchartEdgeId = edgeId
+                            selectedFlowchartNodeForInsert = nodeId
                         },
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
@@ -1345,6 +1770,8 @@ fun WorkspaceScreen(
                                 groupKey = "flowchart:runtime-snapshot:${snapshot.sequence}"
                             )
                         },
+                        screenshotCanvasState = screenshotCanvasState,
+                        screenshotAssets = screenshotAssets,
                         onWorkspaceJsonChange = applyWorkspaceJsonChange
                     )
                 }
@@ -1358,10 +1785,10 @@ fun WorkspaceScreen(
                 focusedPanelId = id
             },
             modifier = Modifier
-                .align(if (dockAtTop) Alignment.TopStart else Alignment.BottomStart)
+                .align(if (dockAtTop) Alignment.TopEnd else Alignment.BottomEnd)
                 .padding(
-                    start = 52.dp,
-                    end = 12.dp,
+                    start = 12.dp,
+                    end = 84.dp,
                     top = if (dockAtTop) (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP).dp else 0.dp,
                     bottom = if (dockAtTop) 0.dp else 12.dp
                 )
@@ -1387,6 +1814,27 @@ fun WorkspaceScreen(
                     color = M3EColors.Oceanneon
                 ) {
                     openPanel(PanelType.Flowchart)
+                },
+                FabAction(
+                    icon = Icons.Default.Photo,
+                    label = "Canvas öffnen",
+                    color = M3EColors.Mint
+                ) {
+                    openPanel(PanelType.Screenshot)
+                },
+                FabAction(
+                    icon = Icons.Default.CenterFocusStrong,
+                    label = "Vision öffnen",
+                    color = M3EColors.Oceanneon
+                ) {
+                    openPanel(PanelType.Vision)
+                },
+                FabAction(
+                    icon = Icons.Default.FolderOpen,
+                    label = "Datastore öffnen",
+                    color = M3EColors.Violet
+                ) {
+                    openPanel(PanelType.Datastore)
                 },
                 FabAction(
                     icon = Icons.Default.AutoAwesomeMosaic,
@@ -1449,6 +1897,10 @@ fun WorkspaceScreen(
             onAppearanceChange = { appearance = it },
             blockPaletteInsertMode = blockPaletteInsertMode,
             onBlockPaletteInsertModeChange = { blockPaletteInsertMode = it },
+            blockEditorMiniMapVisible = blockEditorMiniMapVisible,
+            onBlockEditorMiniMapVisibleChange = { blockEditorMiniMapVisible = it },
+            flowchartMiniMapVisible = flowchartMiniMapVisible,
+            onFlowchartMiniMapVisibleChange = { flowchartMiniMapVisible = it },
             onResetPanels = {
                 panels.clear()
                 panels.addAll(defaultPanels())
@@ -1562,7 +2014,7 @@ private fun WorkspaceFloatingPanel(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = panel.title,
+                        text = displayTitleForPanel(panel),
                         modifier = Modifier
                             .weight(1f)
                             .padding(start = 8.dp),
@@ -1631,6 +2083,8 @@ private fun WorkspacePanelContent(
     latestEmscriptProjected: String,
     latestEmscriptGenerationFailure: String?,
     flowRuntimeSnapshot: FlowRuntimeSnapshot?,
+    blockEditorMiniMapVisible: Boolean,
+    flowchartMiniMapVisible: Boolean,
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     logConsoleState: LogConsoleUiState,
@@ -1644,6 +2098,7 @@ private fun WorkspacePanelContent(
     canDryRunStepForward: Boolean = false,
     dryRunStepLabel: String? = null,
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
+    onFlowchartSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit = { _, _ -> },
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
     onFlowchartNodesDelete: (Set<FlowNodeId>) -> Unit = {},
@@ -1659,6 +2114,8 @@ private fun WorkspacePanelContent(
     onWorkspaceUndo: () -> Boolean = { false },
     onWorkspaceRedo: () -> Boolean = { false },
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
+    screenshotCanvasState: ScreenshotCanvasUiState = remember { ScreenshotCanvasUiState() },
+    screenshotAssets: List<ScreenshotCanvasAsset> = emptyList(),
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     when (panel.type) {
@@ -1668,6 +2125,7 @@ private fun WorkspacePanelContent(
             uiPrefs = uiPrefs,
             workflowState = workflowState,
             paletteInsertMode = paletteInsertMode,
+            showMiniMap = blockEditorMiniMapVisible,
             onSessionReady = onBlockEditorSessionReady,
             onBlockSelected = onBlockEditorBlockSelected,
             onWorkspaceJsonChange = onWorkspaceJsonChange
@@ -1684,7 +2142,9 @@ private fun WorkspacePanelContent(
             canStepBack = canDryRunStepBack,
             canStepForward = canDryRunStepForward,
             stepLabel = dryRunStepLabel,
+            showMiniMap = flowchartMiniMapVisible,
             onNodeSelected = onFlowchartNodeSelected,
+            onSelectionChanged = onFlowchartSelectionChanged,
             onNodeDelete = onFlowchartNodeDelete,
             onNodesDelete = onFlowchartNodesDelete,
             onNodesConnect = onFlowchartNodesConnect,
@@ -1792,11 +2252,2045 @@ private fun WorkspacePanelContent(
                 latestEmscriptGenerationFailure?.let(::add)
             }
         )
-        PanelType.Screenshot,
-        PanelType.Marker,
+        PanelType.Screenshot -> ScreenshotCanvasPanel(
+            state = screenshotCanvasState,
+            assets = screenshotAssets,
+            markerPanel = false,
+        )
+        PanelType.Marker -> MarkerCanvasPanel(
+            state = screenshotCanvasState,
+            assets = screenshotAssets,
+        )
+        PanelType.Vision -> VisionCropCanvasPanel(
+            state = screenshotCanvasState,
+            assets = screenshotAssets,
+        )
+        PanelType.Datastore -> DatastorePanel(
+            state = screenshotCanvasState,
+            assets = screenshotAssets,
+            workflowState = workflowState,
+            logStore = logStore,
+        )
         PanelType.M3Director -> Unit
     }
 }
+
+@Composable
+private fun ColumnScope.ScreenshotCanvasCompactRail(
+    state: ScreenshotCanvasUiState,
+    onExpandRequested: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = true)
+            .padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ScreenshotMarkerModeRailButton("Template", Icons.Default.CenterFocusStrong, state.markerMode == ScreenshotCanvasMarkerMode.Template) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Template
+        }
+        ScreenshotMarkerModeRailButton("Region", Icons.Default.GridView, state.markerMode == ScreenshotCanvasMarkerMode.Region) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Region
+        }
+        ScreenshotMarkerModeRailButton("Point", Icons.Default.TouchApp, state.markerMode == ScreenshotCanvasMarkerMode.Point) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Point
+        }
+        ScreenshotMarkerModeRailButton("Swipe", Icons.Default.ArrowForward, state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Swipe
+        }
+        ScreenshotMarkerModeRailButton("Path", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Path) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Path
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        TooltipIconButton(tooltip = "Screenshots und Marker", onClick = onExpandRequested, modifier = Modifier.size(34.dp)) {
+            Icon(Icons.Default.Photo, contentDescription = "Screenshots und Marker", modifier = Modifier.size(19.dp))
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.ScreenshotCanvasRail(
+    state: ScreenshotCanvasUiState,
+    assets: List<ScreenshotCanvasAsset>,
+    selectedAssetId: String?,
+    onSelect: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onCapture: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Screenshots",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        TooltipIconButton(tooltip = "Aktualisieren", onClick = onRefresh, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.CenterFocusStrong, contentDescription = "Aktualisieren", modifier = Modifier.size(17.dp))
+        }
+        TooltipIconButton(tooltip = "Aufnehmen", onClick = onCapture, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.Photo, contentDescription = "Aufnehmen", modifier = Modifier.size(17.dp))
+        }
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = true),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (assets.isEmpty()) {
+            item {
+                Text(
+                    text = "Noch keine gespeicherten Screenshots.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        items(assets, key = { it.id }) { asset ->
+            val selected = asset.id == selectedAssetId
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(asset.id) },
+                shape = RoundedCornerShape(8.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.84f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.56f)
+                },
+                tonalElevation = if (selected) 2.dp else 0.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(asset.label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    Text(
+                        asset.dateLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        item {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Text(
+                text = "Marker",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        if (state.savedMarkers.isEmpty()) {
+            item {
+                Text(
+                    text = "Noch keine gespeicherten Marker.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        items(state.savedMarkers, key = { it.id }) { marker ->
+            ScreenshotRailSavedMarkerItem(
+                marker = marker,
+                selected = marker.id == state.selectedSavedMarkerId,
+                onSelect = {
+                    state.selectedSavedMarkerId = marker.id
+                    state.selectedAssetId = marker.assetId ?: state.selectedAssetId
+                    state.selectedRegion = marker.region
+                    state.markerMode = marker.markerMode
+                    state.matchKind = marker.matchKind
+                    state.processingMode = marker.processingMode
+                    state.threshold = marker.threshold
+                    state.rotationDegrees = marker.rotationDegrees
+                    state.matchReadMe = marker.matchReadMe
+                    state.colourHex = marker.colourHex
+                    state.templateName = marker.label
+                    state.markerStatusMessage = "Marker geladen."
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotMarkerModeRailButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val container = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    TooltipIconButton(tooltip = label, onClick = onClick, modifier = Modifier.size(34.dp)) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(container),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = label, tint = content, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotRailSavedMarkerItem(
+    marker: ScreenshotCanvasSavedMarker,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    var expanded by remember(marker.id) { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onSelect()
+                expanded = !expanded
+            },
+        shape = RoundedCornerShape(9.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.84f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f)
+        },
+        tonalElevation = if (selected) 2.dp else 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(9.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = iconForMarkerMode(marker.markerMode),
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = marker.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${marker.markerMode.name} / ${marker.assetLabel ?: "Screenshot"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.Minimize else Icons.Default.AddCircle,
+                    contentDescription = if (expanded) "Einklappen" else "Ausklappen",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (expanded) {
+                val export = markerExportCode(marker)
+                Text(
+                    text = "Measure ${marker.region.x},${marker.region.y} ${marker.region.width}x${marker.region.height}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Mode ${marker.processingMode.name}  ${marker.matchKind.name}  ${"%.0f".format(marker.threshold * 100)}%",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(7.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f),
+                ) {
+                    Text(
+                        text = export,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(7.dp),
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                OutlinedButton(
+                    onClick = { clipboard.setText(AnnotatedString(export)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(32.dp),
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Text("Code Export", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+private fun iconForMarkerMode(mode: ScreenshotCanvasMarkerMode): androidx.compose.ui.graphics.vector.ImageVector =
+    when (mode) {
+        ScreenshotCanvasMarkerMode.Template -> Icons.Default.CenterFocusStrong
+        ScreenshotCanvasMarkerMode.Region -> Icons.Default.GridView
+        ScreenshotCanvasMarkerMode.Point -> Icons.Default.TouchApp
+        ScreenshotCanvasMarkerMode.Swipe -> Icons.Default.ArrowForward
+        ScreenshotCanvasMarkerMode.Path -> Icons.Default.Polyline
+    }
+
+private fun markerExportCode(marker: ScreenshotCanvasSavedMarker): String {
+    val region = marker.region
+    return when (marker.markerMode) {
+        ScreenshotCanvasMarkerMode.Template ->
+            "template(\"${marker.label}\", bbox(${region.x}, ${region.y}, ${region.width}, ${region.height}))"
+        ScreenshotCanvasMarkerMode.Region ->
+            "region(\"${marker.label}\", ${region.x}, ${region.y}, ${region.width}, ${region.height})"
+        ScreenshotCanvasMarkerMode.Point ->
+            "point(\"${marker.label}\", ${region.x + region.width / 2}, ${region.y + region.height / 2})"
+        ScreenshotCanvasMarkerMode.Swipe ->
+            "swipe(${region.x}, ${region.y}, ${region.x + region.width}, ${region.y + region.height})"
+        ScreenshotCanvasMarkerMode.Path ->
+            "path(${region.x}, ${region.y}, ${region.x + region.width}, ${region.y + region.height})"
+    }
+}
+
+@Composable
+private fun DatastorePanel(
+    state: ScreenshotCanvasUiState,
+    assets: List<ScreenshotCanvasAsset>,
+    workflowState: WorkspaceWorkflowState,
+    logStore: StudioLogStore,
+) {
+    val logChangeToken = logStore.changeToken
+    val logEntries = remember(logChangeToken) { logStore.allEntries() }
+    val selectedMarker = remember(state.selectedSavedMarkerId, state.savedMarkers.toList()) {
+        state.savedMarkers.firstOrNull { it.id == state.selectedSavedMarkerId }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Datastore", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                DatastoreSection("Dataset") {
+                    DatastoreMetric("Screenshots", assets.size.toString())
+                    DatastoreMetric("Marker", state.savedMarkers.size.toString())
+                    DatastoreMetric("Auswahl", selectedMarker?.label ?: "-")
+                    DatastoreMetric("Region", state.selectedRegion?.let { "${it.x},${it.y} ${it.width}x${it.height}" } ?: "-")
+                }
+            }
+            item {
+                DatastoreSection("Ressourcen") {
+                    DatastoreMetric("Workflow ID", workflowState.document.id)
+                    DatastoreMetric("Blöcke", workflowState.document.blocks.size.toString())
+                    DatastoreMetric("Roots", workflowState.document.rootBlocks.size.toString())
+                    DatastoreMetric("Revision", workflowState.revision.toString())
+                }
+            }
+            item {
+                DatastoreSection("Flowgraph") {
+                    DatastoreMetric("Nodes", workflowState.flowchartProjection.graph.nodes.size.toString())
+                    DatastoreMetric("Edges", workflowState.flowchartProjection.graph.edges.size.toString())
+                    DatastoreMetric("Quelle", workflowState.mutationSource)
+                }
+            }
+            item {
+                DatastoreSection("Logs") {
+                    DatastoreMetric("Einträge", logEntries.size.toString())
+                    DatastoreMetric("Quellen", logStore.availableSources().joinToString(", ").ifBlank { "-" })
+                    DatastoreMetric("Status", if (logStore.isPaused) "Pausiert" else "Aktiv")
+                }
+            }
+            if (state.savedMarkers.isNotEmpty()) {
+                item {
+                    DatastoreSection("Marker") {
+                        state.savedMarkers.take(8).forEach { marker ->
+                            DatastoreMetric(
+                                marker.label,
+                                "${marker.markerMode.name} ${marker.region.x},${marker.region.y} ${marker.region.width}x${marker.region.height}",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DatastoreSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun DatastoreMetric(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.width(98.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun MarkerCanvasPanel(
+    state: ScreenshotCanvasUiState,
+    assets: List<ScreenshotCanvasAsset>,
+) {
+    val selectedAsset = remember(assets, state.selectedAssetId) {
+        assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
+    }
+    LaunchedEffect(selectedAsset?.id) {
+        if (selectedAsset != null && state.selectedAssetId != selectedAsset.id) {
+            state.selectedAssetId = selectedAsset.id
+        }
+    }
+    val bitmap = remember(selectedAsset?.id, selectedAsset?.file?.lastModified()) {
+        selectedAsset?.file?.absolutePath?.let { path ->
+            runCatching { decodeScreenshotBitmap(path) }.getOrNull()
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ScreenshotCanvasInspector(
+            modifier = Modifier.fillMaxWidth(),
+            asset = selectedAsset,
+            imageSize = bitmap?.let { "${it.width} x ${it.height}px" } ?: "-",
+            state = state,
+            markerPanel = true,
+        )
+        MarkerUnderScreenshotPanel(
+            state = state,
+            asset = selectedAsset,
+            imageSize = bitmap?.let { it.width to it.height },
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun VisionCropCanvasPanel(
+    state: ScreenshotCanvasUiState,
+    assets: List<ScreenshotCanvasAsset>,
+) {
+    val selectedAsset = remember(assets, state.selectedAssetId) {
+        assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
+    }
+    val liveBitmap = remember(selectedAsset?.id, selectedAsset?.file?.lastModified()) {
+        selectedAsset?.file?.absolutePath?.let { path ->
+            runCatching { decodeScreenshotBitmap(path) }.getOrNull()
+        }
+    }
+    val compatibleMarkers = remember(state.savedMarkers.toList(), selectedAsset?.id) {
+        state.savedMarkers.filter { marker ->
+            marker.assetId == null || selectedAsset?.id == null || marker.assetId == selectedAsset.id
+        }
+    }
+    LaunchedEffect(compatibleMarkers.map { it.id }) {
+        if (state.referenceMarkerId == null || compatibleMarkers.none { it.id == state.referenceMarkerId }) {
+            state.referenceMarkerId = compatibleMarkers.firstOrNull()?.id
+        }
+    }
+    val referenceMarker = compatibleMarkers.firstOrNull { it.id == state.referenceMarkerId }
+    val referenceAsset = remember(assets, referenceMarker?.assetId) {
+        assets.firstOrNull { it.id == referenceMarker?.assetId } ?: selectedAsset
+    }
+    val referenceBitmap = remember(referenceAsset?.id, referenceAsset?.file?.lastModified()) {
+        referenceAsset?.file?.absolutePath?.let { path ->
+            runCatching { decodeScreenshotBitmap(path) }.getOrNull()
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF050509), RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp)),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+            tonalElevation = 3.dp,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("Vision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    text = state.visualTestScore?.let { "Match ${"%.1f".format(it * 100)}%" }
+                        ?: state.selectedRegion?.let { "${it.width}x${it.height}" }
+                        ?: "Kein Crop",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            VisionProcessingSelector(
+                label = "Live",
+                selected = state.liveProcessingMode,
+                onSelected = { state.liveProcessingMode = it },
+                modifier = Modifier.weight(1f),
+            )
+            VisionProcessingSelector(
+                label = "Referenz",
+                selected = state.referenceProcessingMode,
+                onSelected = { state.referenceProcessingMode = it },
+                modifier = Modifier.weight(1f),
+            )
+            Button(
+                onClick = {
+                    state.visualTestScore = compareScreenshotRegions(
+                        liveBitmap = liveBitmap,
+                        liveRegion = state.selectedRegion,
+                        liveMode = state.liveProcessingMode,
+                        referenceBitmap = referenceBitmap,
+                        referenceRegion = referenceMarker?.region,
+                        referenceMode = state.referenceProcessingMode,
+                    )
+                    state.markerStatusMessage = state.visualTestScore?.let { "Vision Match ${"%.1f".format(it * 100)}%" }
+                        ?: "Vision Match nicht möglich."
+                },
+                enabled = liveBitmap != null && state.selectedRegion != null && referenceBitmap != null && referenceMarker != null,
+                modifier = Modifier.height(34.dp),
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
+                Text("Test", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        if (compatibleMarkers.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(compatibleMarkers, key = { it.id }) { marker ->
+                    FilterChip(
+                        selected = marker.id == state.referenceMarkerId,
+                        onClick = { state.referenceMarkerId = marker.id },
+                        label = {
+                            Text(
+                                marker.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        modifier = Modifier.height(30.dp),
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+                .clipToBounds(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            VisionCropPreview(
+                title = "Live Crop",
+                bitmap = liveBitmap,
+                region = state.selectedRegion,
+                mode = state.liveProcessingMode,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+            VisionCropPreview(
+                title = "Referenz",
+                bitmap = referenceBitmap,
+                region = referenceMarker?.region,
+                mode = state.referenceProcessingMode,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VisionProcessingSelector(
+    label: String,
+    selected: ScreenshotCanvasProcessingMode,
+    onSelected: (ScreenshotCanvasProcessingMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ScreenshotCanvasProcessingMode.entries.forEach { mode ->
+            FilterChip(
+                selected = selected == mode,
+                onClick = { onSelected(mode) },
+                label = {
+                    Text(
+                        when (mode) {
+                            ScreenshotCanvasProcessingMode.Original -> "Original"
+                            ScreenshotCanvasProcessingMode.Grayscale -> "Grau"
+                            ScreenshotCanvasProcessingMode.HighContrast -> "Kontrast"
+                            ScreenshotCanvasProcessingMode.Edge -> "Kanten"
+                            ScreenshotCanvasProcessingMode.Inverse -> "Invers"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                modifier = Modifier.height(28.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VisionCropPreview(
+    title: String,
+    bitmap: android.graphics.Bitmap?,
+    region: ScreenshotCanvasRegion?,
+    mode: ScreenshotCanvasProcessingMode,
+    modifier: Modifier = Modifier,
+) {
+    val processedCrop = remember(bitmap, region, mode) {
+        createProcessedCropBitmap(bitmap, region, mode)?.asImageBitmap()
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(9.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.40f),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (processedCrop != null) {
+                VisionImageCanvas(
+                    bitmap = processedCrop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+            }
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp),
+                shape = RoundedCornerShape(7.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VisionImageCanvas(
+    bitmap: ImageBitmap,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        drawRect(Color.Black, size = size)
+        val scale = min(size.width / bitmap.width, size.height / bitmap.height)
+        val dstWidth = bitmap.width * scale
+        val dstHeight = bitmap.height * scale
+        drawImage(
+            image = bitmap,
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(bitmap.width, bitmap.height),
+            dstOffset = IntOffset(((size.width - dstWidth) / 2f).roundToInt(), ((size.height - dstHeight) / 2f).roundToInt()),
+            dstSize = IntSize(dstWidth.roundToInt().coerceAtLeast(1), dstHeight.roundToInt().coerceAtLeast(1)),
+        )
+        drawRect(
+            color = Color(0xFF4FC3F7),
+            topLeft = Offset(((size.width - dstWidth) / 2f), ((size.height - dstHeight) / 2f)),
+            size = Size(dstWidth, dstHeight),
+            style = Stroke(2.dp.toPx()),
+        )
+    }
+}
+
+@Composable
+private fun WorkspaceScreenshotCanvasBackground(
+    state: ScreenshotCanvasUiState,
+    assets: List<ScreenshotCanvasAsset>,
+    modifier: Modifier = Modifier,
+) {
+    val selectedAsset = remember(assets, state.selectedAssetId) {
+        assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
+    }
+    LaunchedEffect(selectedAsset?.id) {
+        if (selectedAsset != null && state.selectedAssetId != selectedAsset.id) {
+            state.selectedAssetId = selectedAsset.id
+        }
+    }
+    val bitmap = remember(selectedAsset?.id, selectedAsset?.file?.lastModified()) {
+        selectedAsset?.file?.absolutePath?.let { path ->
+            runCatching { decodeScreenshotBitmap(path)?.asImageBitmap() }.getOrNull()
+        }
+    }
+    Box(
+        modifier = modifier
+            .background(Color(0xFF050509))
+            .clipToBounds()
+    ) {
+        if (bitmap != null) {
+            ScreenshotRegionCanvas(
+                bitmap = bitmap,
+                asset = selectedAsset,
+                state = state,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            ScreenshotCanvasGrid(Modifier.matchParentSize())
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotCanvasPanel(
+    state: ScreenshotCanvasUiState,
+    assets: List<ScreenshotCanvasAsset>,
+    markerPanel: Boolean,
+) {
+    val selectedAsset = remember(assets, state.selectedAssetId) {
+        assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
+    }
+    LaunchedEffect(selectedAsset?.id) {
+        if (selectedAsset != null && state.selectedAssetId != selectedAsset.id) {
+            state.selectedAssetId = selectedAsset.id
+        }
+    }
+    val bitmap = remember(selectedAsset?.id, selectedAsset?.file?.lastModified()) {
+        selectedAsset?.file?.absolutePath?.let { path ->
+            runCatching { decodeScreenshotBitmap(path)?.asImageBitmap() }.getOrNull()
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+    ) {
+        ScreenshotCanvasActionBar(
+            modifier = Modifier.fillMaxWidth(),
+            state = state,
+            markerPanel = markerPanel,
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ScreenshotCanvasInspector(
+                modifier = Modifier.fillMaxWidth(),
+                asset = selectedAsset,
+                imageSize = bitmap?.let { "${it.width} x ${it.height}px" } ?: "-",
+                state = state,
+                markerPanel = markerPanel,
+            )
+            Text(
+                text = markerMetricsTitle(state.selectedRegion, state.markerMode, bitmap?.let { it.width to it.height }),
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (markerPanel) {
+            MarkerUnderScreenshotPanel(
+                state = state,
+                asset = selectedAsset,
+                imageSize = bitmap?.let { it.width to it.height },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(232.dp),
+            )
+            }
+        }
+    }
+}
+
+private data class ScreenshotFittedImageLayout(
+    val offsetX: Float,
+    val offsetY: Float,
+    val drawnWidth: Float,
+    val drawnHeight: Float,
+) {
+    val imageBounds: Rect
+        get() = Rect(offsetX, offsetY, offsetX + drawnWidth, offsetY + drawnHeight)
+
+    fun screenToImage(point: Offset, imageWidth: Int, imageHeight: Int): Offset? {
+        if (!imageBounds.contains(point)) return null
+        return Offset(
+            x = ((point.x - offsetX) / drawnWidth * imageWidth).coerceIn(0f, imageWidth.toFloat()),
+            y = ((point.y - offsetY) / drawnHeight * imageHeight).coerceIn(0f, imageHeight.toFloat()),
+        )
+    }
+
+    fun screenToImageClamped(point: Offset, imageWidth: Int, imageHeight: Int): Offset =
+        Offset(
+            x = ((point.x.coerceIn(imageBounds.left, imageBounds.right) - offsetX) / drawnWidth * imageWidth)
+                .coerceIn(0f, imageWidth.toFloat()),
+            y = ((point.y.coerceIn(imageBounds.top, imageBounds.bottom) - offsetY) / drawnHeight * imageHeight)
+                .coerceIn(0f, imageHeight.toFloat()),
+        )
+
+    fun regionToScreenRect(region: ScreenshotCanvasRegion, imageWidth: Int, imageHeight: Int): Rect =
+        Rect(
+            left = offsetX + region.x.toFloat() / imageWidth * drawnWidth,
+            top = offsetY + region.y.toFloat() / imageHeight * drawnHeight,
+            right = offsetX + (region.x + region.width).toFloat() / imageWidth * drawnWidth,
+            bottom = offsetY + (region.y + region.height).toFloat() / imageHeight * drawnHeight,
+        )
+}
+
+@Composable
+private fun ScreenshotRegionCanvas(
+    bitmap: ImageBitmap,
+    asset: ScreenshotCanvasAsset?,
+    state: ScreenshotCanvasUiState,
+    modifier: Modifier = Modifier,
+) {
+    var dragPreviewRegion by remember(asset?.id) { mutableStateOf<ScreenshotCanvasRegion?>(null) }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val imageWidth = bitmap.width
+    val imageHeight = bitmap.height
+    val displayRegion = dragPreviewRegion ?: state.selectedRegion
+    val layout = remember(canvasSize, imageWidth, imageHeight, state.zoom) {
+        fittedScreenshotLayout(
+            canvasWidth = canvasSize.width.toFloat(),
+            canvasHeight = canvasSize.height.toFloat(),
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            zoom = state.zoom,
+            selectedRegion = null,
+        )
+    }
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { canvasSize = it }
+            .pointerInput(asset?.id, canvasSize, imageWidth, imageHeight) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    down.consume()
+                    val startScreen = down.position
+                    val startImage = layout.screenToImage(startScreen, imageWidth, imageHeight) ?: return@awaitEachGesture
+                    val regionAtStart = state.selectedRegion
+                    val screenRect = regionAtStart?.let { layout.regionToScreenRect(it, imageWidth, imageHeight) }
+                    val handleRadiusPx = 26.dp.toPx()
+                    val pointHitRadiusPx = 32.dp.toPx()
+                    val pointMode = state.markerMode == ScreenshotCanvasMarkerMode.Point
+                    val setup = if (screenRect != null) {
+                        val handle = if (pointMode) {
+                            ScreenshotCanvasOverlayHandle.None
+                        } else {
+                            detectScreenshotOverlayHandle(startScreen, screenRect, handleRadiusPx)
+                        }
+                        val mode = when (handle) {
+                            ScreenshotCanvasOverlayHandle.ScanType,
+                            ScreenshotCanvasOverlayHandle.Close -> ScreenshotCanvasTouchMode.TapHandle
+                            ScreenshotCanvasOverlayHandle.ResizeBottomLeft -> ScreenshotCanvasTouchMode.ResizeBottomLeft
+                            ScreenshotCanvasOverlayHandle.ResizeBottomRight -> ScreenshotCanvasTouchMode.ResizeBottomRight
+                            ScreenshotCanvasOverlayHandle.None -> when {
+                                pointMode && (startScreen - screenRect.center).getDistance() <= pointHitRadiusPx -> ScreenshotCanvasTouchMode.Move
+                                pointMode -> ScreenshotCanvasTouchMode.PointTap
+                                screenRect.contains(startScreen) -> ScreenshotCanvasTouchMode.Move
+                                else -> ScreenshotCanvasTouchMode.Create
+                            }
+                        }
+                        ScreenshotCanvasGestureSetup(mode, startImage, regionAtStart, handle)
+                    } else {
+                        ScreenshotCanvasGestureSetup(
+                            mode = if (pointMode) ScreenshotCanvasTouchMode.PointTap else ScreenshotCanvasTouchMode.Create,
+                            createAnchorImage = startImage,
+                            regionStart = null,
+                            handle = ScreenshotCanvasOverlayHandle.None,
+                        )
+                    }
+
+                    if (setup.mode == ScreenshotCanvasTouchMode.TapHandle) {
+                        if (waitForUpOrCancellation() != null) {
+                            when (setup.handle) {
+                                ScreenshotCanvasOverlayHandle.ScanType -> {
+                                    state.matchKind = if (state.matchKind == ScreenshotCanvasMatchKind.OCR) {
+                                        ScreenshotCanvasMatchKind.OCV
+                                    } else {
+                                        ScreenshotCanvasMatchKind.OCR
+                                    }
+                                }
+                                ScreenshotCanvasOverlayHandle.Close -> state.selectedRegion = null
+                                else -> Unit
+                            }
+                        }
+                        return@awaitEachGesture
+                    }
+
+                    if (setup.mode == ScreenshotCanvasTouchMode.PointTap) {
+                        if (waitForUpOrCancellation() != null) {
+                            state.selectedRegion = pointRegion(startImage, imageWidth, imageHeight)
+                        }
+                        return@awaitEachGesture
+                    }
+
+                    var lastDragRegion: ScreenshotCanvasRegion? = null
+                    drag(down.id) { change ->
+                        change.consume()
+                        val currentImage = layout.screenToImageClamped(change.position, imageWidth, imageHeight)
+                        val newRegion = when (setup.mode) {
+                            ScreenshotCanvasTouchMode.Create -> regionFromPoints(setup.createAnchorImage, currentImage, imageWidth, imageHeight)
+                            ScreenshotCanvasTouchMode.Move -> {
+                                if (state.markerMode == ScreenshotCanvasMarkerMode.Point) {
+                                    pointRegion(currentImage, imageWidth, imageHeight)
+                                } else {
+                                    val base = setup.regionStart ?: return@drag
+                                    val dx = (currentImage.x - setup.createAnchorImage.x).roundToInt()
+                                    val dy = (currentImage.y - setup.createAnchorImage.y).roundToInt()
+                                    moveScreenshotRegion(base, dx, dy, imageWidth, imageHeight)
+                                }
+                            }
+                            ScreenshotCanvasTouchMode.ResizeBottomLeft -> resizeScreenshotRegionFromBottomLeft(
+                                setup.regionStart ?: return@drag,
+                                currentImage,
+                                imageWidth,
+                                imageHeight,
+                            )
+                            ScreenshotCanvasTouchMode.ResizeBottomRight -> resizeScreenshotRegionFromBottomRight(
+                                setup.regionStart ?: return@drag,
+                                currentImage,
+                                imageWidth,
+                                imageHeight,
+                            )
+                            ScreenshotCanvasTouchMode.TapHandle,
+                            ScreenshotCanvasTouchMode.PointTap -> return@drag
+                        }
+                        lastDragRegion = newRegion
+                        dragPreviewRegion = newRegion
+                    }
+                    dragPreviewRegion = null
+                    lastDragRegion?.let { state.selectedRegion = it }
+                }
+            }
+    ) {
+        drawRect(Color.Black, size = size)
+        drawImage(
+            image = bitmap,
+            dstOffset = IntOffset(layout.offsetX.roundToInt(), layout.offsetY.roundToInt()),
+            dstSize = IntSize(layout.drawnWidth.roundToInt().coerceAtLeast(1), layout.drawnHeight.roundToInt().coerceAtLeast(1)),
+            alpha = if (state.showScreenshotBg) 1f else 0.05f,
+        )
+        drawScreenshotRulers(layout = layout, imageWidth = imageWidth, imageHeight = imageHeight)
+        drawPanelEdgeRulers(imageWidth = imageWidth, imageHeight = imageHeight)
+        drawCanvasLayerHints(layout = layout, state = state)
+        drawScreenshotRegionOverlay(
+            layout = layout,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            region = displayRegion,
+            markerMode = state.markerMode,
+            matchKind = state.matchKind,
+        )
+    }
+}
+
+private fun fittedScreenshotLayout(
+    canvasWidth: Float,
+    canvasHeight: Float,
+    imageWidth: Int,
+    imageHeight: Int,
+    zoom: Float,
+    selectedRegion: ScreenshotCanvasRegion?,
+): ScreenshotFittedImageLayout {
+    val usableWidth = (canvasWidth - 36f).coerceAtLeast(1f)
+    val usableHeight = (canvasHeight - 36f).coerceAtLeast(1f)
+    val safeZoom = zoom.coerceIn(1f, 5f)
+    val scale = min(usableWidth / imageWidth, usableHeight / imageHeight) * safeZoom
+    val drawnWidth = imageWidth * scale
+    val drawnHeight = imageHeight * scale
+    val baseOffsetX = 28f + (usableWidth - drawnWidth) / 2f
+    val baseOffsetY = 8f + (usableHeight - drawnHeight) / 2f
+    if (selectedRegion == null || safeZoom <= 1f) {
+        return ScreenshotFittedImageLayout(baseOffsetX, baseOffsetY, drawnWidth, drawnHeight)
+    }
+    val regionCx = selectedRegion.x + selectedRegion.width / 2f
+    val regionCy = selectedRegion.y + selectedRegion.height / 2f
+    val screenCx = baseOffsetX + regionCx / imageWidth * drawnWidth
+    val screenCy = baseOffsetY + regionCy / imageHeight * drawnHeight
+    val maxPanX = max(0f, drawnWidth - usableWidth) / 2f
+    val maxPanY = max(0f, drawnHeight - usableHeight) / 2f
+    val panX = (canvasWidth / 2f - screenCx).coerceIn(-maxPanX, maxPanX)
+    val panY = (canvasHeight / 2f - screenCy).coerceIn(-maxPanY, maxPanY)
+    return ScreenshotFittedImageLayout(baseOffsetX + panX, baseOffsetY + panY, drawnWidth, drawnHeight)
+}
+
+private fun regionFromPoints(
+    start: Offset,
+    end: Offset,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasRegion {
+    val left = min(start.x, end.x).roundToInt().coerceIn(0, imageWidth - 1)
+    val top = min(start.y, end.y).roundToInt().coerceIn(0, imageHeight - 1)
+    val right = max(start.x, end.x).roundToInt().coerceIn(left + 1, imageWidth)
+    val bottom = max(start.y, end.y).roundToInt().coerceIn(top + 1, imageHeight)
+    return ScreenshotCanvasRegion(left, top, right - left, bottom - top)
+}
+
+private fun pointRegion(point: Offset, imageWidth: Int, imageHeight: Int): ScreenshotCanvasRegion {
+    val size = 48
+    val half = size / 2
+    val x = (point.x.roundToInt() - half).coerceIn(0, max(0, imageWidth - size))
+    val y = (point.y.roundToInt() - half).coerceIn(0, max(0, imageHeight - size))
+    return ScreenshotCanvasRegion(x, y, min(size, imageWidth - x), min(size, imageHeight - y))
+}
+
+private fun detectScreenshotOverlayHandle(
+    point: Offset,
+    rect: Rect,
+    radius: Float,
+): ScreenshotCanvasOverlayHandle = when {
+    (point - Offset(rect.left, rect.top)).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.ScanType
+    (point - Offset(rect.right, rect.top)).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.Close
+    (point - Offset(rect.left, rect.bottom)).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.ResizeBottomLeft
+    (point - Offset(rect.right, rect.bottom)).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.ResizeBottomRight
+    else -> ScreenshotCanvasOverlayHandle.None
+}
+
+private fun moveScreenshotRegion(
+    base: ScreenshotCanvasRegion,
+    dx: Int,
+    dy: Int,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasRegion {
+    val width = base.width.coerceIn(1, imageWidth)
+    val height = base.height.coerceIn(1, imageHeight)
+    val x = (base.x + dx).coerceIn(0, (imageWidth - width).coerceAtLeast(0))
+    val y = (base.y + dy).coerceIn(0, (imageHeight - height).coerceAtLeast(0))
+    return ScreenshotCanvasRegion(x, y, width, height)
+}
+
+private fun resizeScreenshotRegionFromBottomLeft(
+    base: ScreenshotCanvasRegion,
+    current: Offset,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasRegion {
+    val right = (base.x + base.width).coerceIn(1, imageWidth)
+    val top = base.y.coerceIn(0, imageHeight - 1)
+    val left = current.x.roundToInt().coerceIn(0, right - 1)
+    val bottom = current.y.roundToInt().coerceIn(top + 1, imageHeight)
+    return ScreenshotCanvasRegion(left, top, right - left, bottom - top)
+}
+
+private fun resizeScreenshotRegionFromBottomRight(
+    base: ScreenshotCanvasRegion,
+    current: Offset,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasRegion {
+    val left = base.x.coerceIn(0, imageWidth - 1)
+    val top = base.y.coerceIn(0, imageHeight - 1)
+    val right = current.x.roundToInt().coerceIn(left + 1, imageWidth)
+    val bottom = current.y.roundToInt().coerceIn(top + 1, imageHeight)
+    return ScreenshotCanvasRegion(left, top, right - left, bottom - top)
+}
+
+private fun DrawScope.drawCanvasLayerHints(
+    layout: ScreenshotFittedImageLayout,
+    state: ScreenshotCanvasUiState,
+) {
+    if (state.showAccessibilityNodes) {
+        drawRect(Color(0xFF4FC3F7).copy(alpha = 0.26f), topLeft = Offset(layout.imageBounds.left + 36f, layout.imageBounds.top + 42f), size = Size(180f, 72f), style = Stroke(2f))
+    }
+    if (state.showDomNodes) {
+        drawRect(Color(0xFFCE93D8).copy(alpha = 0.28f), topLeft = Offset(layout.imageBounds.right - 210f, layout.imageBounds.top + 96f), size = Size(160f, 56f), style = Stroke(2f))
+    }
+    if (state.showOcrNodes) {
+        drawLine(Color(0xFFFFF176).copy(alpha = 0.72f), Offset(layout.imageBounds.left + 18f, layout.imageBounds.center.y), Offset(layout.imageBounds.right - 18f, layout.imageBounds.center.y), 1.8f)
+    }
+    if (state.showVisionTemplateNodes) {
+        drawRect(Color(0xFF81C784).copy(alpha = 0.24f), topLeft = Offset(layout.imageBounds.left + 72f, layout.imageBounds.bottom - 132f), size = Size(210f, 72f), style = Stroke(2f))
+    }
+    if (state.showYoloNodes) {
+        drawCircle(Color(0xFFFF7043).copy(alpha = 0.34f), radius = 24f, center = Offset(layout.imageBounds.right - 88f, layout.imageBounds.top + 86f), style = Stroke(3f))
+    }
+}
+
+private fun DrawScope.drawScreenshotRegionOverlay(
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+    region: ScreenshotCanvasRegion?,
+    markerMode: ScreenshotCanvasMarkerMode,
+    matchKind: ScreenshotCanvasMatchKind,
+) {
+    if (region == null) {
+        drawCanvasHint(layout.imageBounds, if (markerMode == ScreenshotCanvasMarkerMode.Point) "Tippen zum Setzen des Punkts" else "Bereich ziehen zum Markieren")
+        return
+    }
+    val rect = layout.regionToScreenRect(region, imageWidth, imageHeight)
+    if (markerMode == ScreenshotCanvasMarkerMode.Point) {
+        val arm = 28f
+        drawLine(Color(0xFFFFEB3B), Offset(rect.center.x - arm, rect.center.y), Offset(rect.center.x + arm, rect.center.y), 2.5f, cap = StrokeCap.Round)
+        drawLine(Color(0xFFFFEB3B), Offset(rect.center.x, rect.center.y - arm), Offset(rect.center.x, rect.center.y + arm), 2.5f, cap = StrokeCap.Round)
+        drawCircle(Color(0xFFFF5722), radius = 11f, center = rect.center, style = Stroke(2.5f))
+        return
+    }
+    val dim = Color.Black.copy(alpha = 0.30f)
+    drawRect(dim, topLeft = Offset(layout.imageBounds.left, layout.imageBounds.top), size = Size(layout.imageBounds.width, (rect.top - layout.imageBounds.top).coerceAtLeast(0f)))
+    drawRect(dim, topLeft = Offset(layout.imageBounds.left, rect.bottom), size = Size(layout.imageBounds.width, (layout.imageBounds.bottom - rect.bottom).coerceAtLeast(0f)))
+    drawRect(dim, topLeft = Offset(layout.imageBounds.left, rect.top), size = Size((rect.left - layout.imageBounds.left).coerceAtLeast(0f), rect.height))
+    drawRect(dim, topLeft = Offset(rect.right, rect.top), size = Size((layout.imageBounds.right - rect.right).coerceAtLeast(0f), rect.height))
+    drawRect(Color(0xFF4FC3F7), topLeft = Offset(rect.left, rect.top), size = Size(rect.width, rect.height), style = Stroke(2.5f))
+    if (markerMode == ScreenshotCanvasMarkerMode.Swipe || markerMode == ScreenshotCanvasMarkerMode.Path) {
+        val color = if (markerMode == ScreenshotCanvasMarkerMode.Swipe) Color(0xFFFFD54F) else Color(0xFF69F0AE)
+        drawLine(color, Offset(rect.left, rect.top), Offset(rect.right, rect.bottom), 3.5f, cap = StrokeCap.Round)
+        drawCircle(color, radius = 6f, center = Offset(rect.left, rect.top))
+        drawCircle(color, radius = 8f, center = Offset(rect.right, rect.bottom), style = Stroke(2.5f))
+    }
+    drawCanvasHandle(rect.left, rect.top, if (matchKind == ScreenshotCanvasMatchKind.OCR) "OCR" else "OCV", Color(0xFF1976D2))
+    drawCanvasHandle(rect.right, rect.top, "X", Color(0xFFD32F2F))
+    drawCanvasHandle(rect.left, rect.bottom, "R", Color(0xFF2E7D32))
+    drawCanvasHandle(rect.right, rect.bottom, "R", Color(0xFF2E7D32))
+}
+
+private fun DrawScope.drawCanvasHandle(cx: Float, cy: Float, label: String, color: Color) {
+    drawCircle(color, radius = 9f, center = Offset(cx, cy))
+    drawCircle(Color.White, radius = 9f, center = Offset(cx, cy), style = Stroke(1.5f))
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        this.color = android.graphics.Color.WHITE
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = 10.dp.toPx()
+    }
+    drawContext.canvas.nativeCanvas.drawText(label, cx, cy - ((paint.descent() + paint.ascent()) / 2f), paint)
+}
+
+private fun DrawScope.drawCanvasHint(bounds: Rect, text: String) {
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.argb(150, 255, 255, 255)
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = 13.dp.toPx()
+    }
+    drawContext.canvas.nativeCanvas.drawText(text, bounds.center.x, bounds.bottom - 18.dp.toPx(), paint)
+}
+
+private fun DrawScope.drawScreenshotRulers(
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+) {
+    val bounds = layout.imageBounds
+    val rulerColor = Color(0xFFC9D3FF).copy(alpha = 0.68f)
+    val majorColor = Color(0xFFFFFFFF).copy(alpha = 0.84f)
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.argb(210, 255, 255, 255)
+        textSize = 9.dp.toPx()
+    }
+    fun xFor(value: Int): Float = bounds.left + value.toFloat() / imageWidth * bounds.width
+    fun yFor(value: Int): Float = bounds.top + value.toFloat() / imageHeight * bounds.height
+    val xStep = chooseRulerStep(imageWidth)
+    val yStep = chooseRulerStep(imageHeight)
+    var x = 0
+    while (x <= imageWidth) {
+        val sx = xFor(x)
+        val major = x % (xStep * 5) == 0
+        drawLine(if (major) majorColor else rulerColor, Offset(sx, bounds.top), Offset(sx, bounds.top + if (major) 14f else 8f), 1f)
+        drawLine(if (major) majorColor else rulerColor, Offset(sx, bounds.bottom), Offset(sx, bounds.bottom - if (major) 14f else 8f), 1f)
+        if (major) drawContext.canvas.nativeCanvas.drawText(x.toString(), sx + 2f, bounds.top + 26f, paint)
+        x += xStep
+    }
+    var y = 0
+    while (y <= imageHeight) {
+        val sy = yFor(y)
+        val major = y % (yStep * 5) == 0
+        drawLine(if (major) majorColor else rulerColor, Offset(bounds.left, sy), Offset(bounds.left + if (major) 14f else 8f, sy), 1f)
+        drawLine(if (major) majorColor else rulerColor, Offset(bounds.right, sy), Offset(bounds.right - if (major) 14f else 8f, sy), 1f)
+        if (major) drawContext.canvas.nativeCanvas.drawText(y.toString(), bounds.left + 18f, sy - 2f, paint)
+        y += yStep
+    }
+}
+
+private fun DrawScope.drawPanelEdgeRulers(
+    imageWidth: Int,
+    imageHeight: Int,
+) {
+    val rulerColor = Color(0xFF8EA0D4).copy(alpha = 0.48f)
+    val majorColor = Color.White.copy(alpha = 0.72f)
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.argb(185, 255, 255, 255)
+        textSize = 8.dp.toPx()
+    }
+    val left = 0f
+    val top = 0f
+    val right = size.width
+    val bottom = size.height
+    val xStep = chooseRulerStep(imageWidth)
+    val yStep = chooseRulerStep(imageHeight)
+    var x = 0
+    while (x <= imageWidth) {
+        val sx = x.toFloat() / imageWidth.coerceAtLeast(1) * right
+        val major = x % (xStep * 5) == 0
+        drawLine(if (major) majorColor else rulerColor, Offset(sx, top), Offset(sx, top + if (major) 18f else 10f), 1f)
+        drawLine(if (major) majorColor else rulerColor, Offset(sx, bottom), Offset(sx, bottom - if (major) 18f else 10f), 1f)
+        if (major && sx < right - 28f) {
+            drawContext.canvas.nativeCanvas.drawText(x.toString(), sx + 3f, top + 29f, paint)
+        }
+        x += xStep
+    }
+    var y = 0
+    while (y <= imageHeight) {
+        val sy = y.toFloat() / imageHeight.coerceAtLeast(1) * bottom
+        val major = y % (yStep * 5) == 0
+        drawLine(if (major) majorColor else rulerColor, Offset(left, sy), Offset(left + if (major) 18f else 10f, sy), 1f)
+        drawLine(if (major) majorColor else rulerColor, Offset(right, sy), Offset(right - if (major) 18f else 10f, sy), 1f)
+        if (major && sy > 12f) {
+            drawContext.canvas.nativeCanvas.drawText(y.toString(), left + 20f, sy - 3f, paint)
+        }
+        y += yStep
+    }
+}
+
+private fun chooseRulerStep(size: Int): Int = when {
+    size > 2400 -> 200
+    size > 1200 -> 100
+    size > 600 -> 50
+    else -> 25
+}
+
+private fun decodeScreenshotBitmap(path: String): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > 4096 || bounds.outHeight / sampleSize > 4096) {
+        sampleSize *= 2
+    }
+    return BitmapFactory.decodeFile(
+        path,
+        BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+        }
+    )
+}
+
+private fun createProcessedCropBitmap(
+    bitmap: android.graphics.Bitmap?,
+    region: ScreenshotCanvasRegion?,
+    mode: ScreenshotCanvasProcessingMode,
+): android.graphics.Bitmap? {
+    if (bitmap == null || region == null) return null
+    val safe = safeBitmapRegion(bitmap, region) ?: return null
+    val output = android.graphics.Bitmap.createBitmap(safe.width, safe.height, android.graphics.Bitmap.Config.ARGB_8888)
+    for (y in 0 until safe.height) {
+        for (x in 0 until safe.width) {
+            val sourceX = safe.x + x
+            val sourceY = safe.y + y
+            val pixel = bitmap.getPixel(sourceX, sourceY)
+            val value = processedPixelValue(bitmap, sourceX, sourceY, mode)
+            val color = when (mode) {
+                ScreenshotCanvasProcessingMode.Original -> pixel
+                ScreenshotCanvasProcessingMode.Grayscale,
+                ScreenshotCanvasProcessingMode.Edge,
+                ScreenshotCanvasProcessingMode.Inverse -> android.graphics.Color.rgb(value, value, value)
+                ScreenshotCanvasProcessingMode.HighContrast -> {
+                    if (value >= 128) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+                }
+            }
+            output.setPixel(x, y, color)
+        }
+    }
+    return output
+}
+
+private fun compareScreenshotRegions(
+    liveBitmap: android.graphics.Bitmap?,
+    liveRegion: ScreenshotCanvasRegion?,
+    liveMode: ScreenshotCanvasProcessingMode,
+    referenceBitmap: android.graphics.Bitmap?,
+    referenceRegion: ScreenshotCanvasRegion?,
+    referenceMode: ScreenshotCanvasProcessingMode,
+): Float? {
+    val liveSafe = liveBitmap?.let { safeBitmapRegion(it, liveRegion) } ?: return null
+    val referenceSafe = referenceBitmap?.let { safeBitmapRegion(it, referenceRegion) } ?: return null
+    val samplesX = min(32, min(liveSafe.width, referenceSafe.width)).coerceAtLeast(1)
+    val samplesY = min(32, min(liveSafe.height, referenceSafe.height)).coerceAtLeast(1)
+    var totalDelta = 0L
+    var count = 0
+    for (sampleY in 0 until samplesY) {
+        for (sampleX in 0 until samplesX) {
+            val liveX = liveSafe.x + ((sampleX + 0.5f) * liveSafe.width / samplesX).toInt().coerceIn(0, liveSafe.width - 1)
+            val liveY = liveSafe.y + ((sampleY + 0.5f) * liveSafe.height / samplesY).toInt().coerceIn(0, liveSafe.height - 1)
+            val refX = referenceSafe.x + ((sampleX + 0.5f) * referenceSafe.width / samplesX).toInt().coerceIn(0, referenceSafe.width - 1)
+            val refY = referenceSafe.y + ((sampleY + 0.5f) * referenceSafe.height / samplesY).toInt().coerceIn(0, referenceSafe.height - 1)
+            totalDelta += abs(
+                processedPixelValue(liveBitmap, liveX, liveY, liveMode) -
+                    processedPixelValue(referenceBitmap, refX, refY, referenceMode)
+            )
+            count++
+        }
+    }
+    if (count == 0) return null
+    val averageDelta = totalDelta.toFloat() / count.toFloat()
+    return (1f - averageDelta / 255f).coerceIn(0f, 1f)
+}
+
+private fun safeBitmapRegion(
+    bitmap: android.graphics.Bitmap,
+    region: ScreenshotCanvasRegion?,
+): ScreenshotCanvasRegion? {
+    if (region == null || bitmap.width <= 0 || bitmap.height <= 0) return null
+    val x = region.x.coerceIn(0, bitmap.width - 1)
+    val y = region.y.coerceIn(0, bitmap.height - 1)
+    val width = region.width.coerceIn(1, bitmap.width - x)
+    val height = region.height.coerceIn(1, bitmap.height - y)
+    return ScreenshotCanvasRegion(x, y, width, height)
+}
+
+private fun processedPixelValue(
+    bitmap: android.graphics.Bitmap,
+    x: Int,
+    y: Int,
+    mode: ScreenshotCanvasProcessingMode,
+): Int {
+    val gray = grayscaleValue(bitmap.getPixel(x.coerceIn(0, bitmap.width - 1), y.coerceIn(0, bitmap.height - 1)))
+    return when (mode) {
+        ScreenshotCanvasProcessingMode.Original,
+        ScreenshotCanvasProcessingMode.Grayscale -> gray
+        ScreenshotCanvasProcessingMode.HighContrast -> if (gray >= 128) 255 else 0
+        ScreenshotCanvasProcessingMode.Inverse -> 255 - gray
+        ScreenshotCanvasProcessingMode.Edge -> {
+            val right = grayscaleValue(bitmap.getPixel((x + 1).coerceAtMost(bitmap.width - 1), y))
+            val bottom = grayscaleValue(bitmap.getPixel(x, (y + 1).coerceAtMost(bitmap.height - 1)))
+            (abs(gray - right) + abs(gray - bottom)).coerceIn(0, 255)
+        }
+    }
+}
+
+private fun grayscaleValue(pixel: Int): Int {
+    val red = android.graphics.Color.red(pixel)
+    val green = android.graphics.Color.green(pixel)
+    val blue = android.graphics.Color.blue(pixel)
+    return ((red * 30 + green * 59 + blue * 11) / 100).coerceIn(0, 255)
+}
+
+@Composable
+private fun ScreenshotCanvasActionBar(
+    modifier: Modifier,
+    state: ScreenshotCanvasUiState,
+    markerPanel: Boolean,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 3.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TooltipIconButton(tooltip = "Undo", onClick = {}, modifier = Modifier.size(34.dp), enabled = false) {
+                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo", modifier = Modifier.size(18.dp))
+            }
+            TooltipIconButton(tooltip = "Redo", onClick = {}, modifier = Modifier.size(34.dp), enabled = false) {
+                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo", modifier = Modifier.size(18.dp))
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ScreenshotLayerChip("BG", state.showScreenshotBg) { state.showScreenshotBg = !state.showScreenshotBg }
+                ScreenshotLayerChip("A11Y", state.showAccessibilityNodes) { state.showAccessibilityNodes = !state.showAccessibilityNodes }
+                ScreenshotLayerChip("DOM", state.showDomNodes) { state.showDomNodes = !state.showDomNodes }
+                ScreenshotLayerChip("OCR", state.showOcrNodes) { state.showOcrNodes = !state.showOcrNodes }
+                ScreenshotLayerChip("TPL", state.showVisionTemplateNodes) { state.showVisionTemplateNodes = !state.showVisionTemplateNodes }
+                ScreenshotLayerChip("YOLO", state.showYoloNodes) { state.showYoloNodes = !state.showYoloNodes }
+                ScreenshotLayerChip("MRK", state.showMarkers) { state.showMarkers = !state.showMarkers }
+                ScreenshotLayerChip("INV", !state.filterHideInvisible) { state.filterHideInvisible = !state.filterHideInvisible }
+                ScreenshotLayerChip("CLK", !state.filterHideClickable) { state.filterHideClickable = !state.filterHideClickable }
+                ScreenshotLayerChip("FOC", !state.filterHideNonFocusable) { state.filterHideNonFocusable = !state.filterHideNonFocusable }
+                if (markerPanel) {
+                    ScreenshotLayerChip("TPL-M", state.markerMode == ScreenshotCanvasMarkerMode.Template) { state.markerMode = ScreenshotCanvasMarkerMode.Template }
+                    ScreenshotLayerChip("REG", state.markerMode == ScreenshotCanvasMarkerMode.Region) { state.markerMode = ScreenshotCanvasMarkerMode.Region }
+                    ScreenshotLayerChip("PT", state.markerMode == ScreenshotCanvasMarkerMode.Point) { state.markerMode = ScreenshotCanvasMarkerMode.Point }
+                    ScreenshotLayerChip("SWP", state.markerMode == ScreenshotCanvasMarkerMode.Swipe) { state.markerMode = ScreenshotCanvasMarkerMode.Swipe }
+                    ScreenshotLayerChip("PATH", state.markerMode == ScreenshotCanvasMarkerMode.Path) { state.markerMode = ScreenshotCanvasMarkerMode.Path }
+                }
+            }
+            TooltipIconButton(tooltip = "Zoom -", onClick = { state.zoomOut() }, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom -", modifier = Modifier.size(18.dp))
+            }
+            Text(
+                text = "${(state.zoom * 100).toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TooltipIconButton(tooltip = "Zoom +", onClick = { state.zoomIn() }, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom +", modifier = Modifier.size(18.dp))
+            }
+            TooltipIconButton(tooltip = "Zentrieren", onClick = { state.center() }, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Default.CenterFocusStrong, contentDescription = "Zentrieren", modifier = Modifier.size(18.dp))
+            }
+            TooltipIconButton(tooltip = "Inspector", onClick = { state.inspectorVisible = !state.inspectorVisible }, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "Inspector",
+                    tint = if (state.inspectorVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotLayerChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+            )
+        },
+        modifier = Modifier.height(30.dp),
+    )
+}
+
+@Composable
+private fun MarkerUnderScreenshotPanel(
+    state: ScreenshotCanvasUiState,
+    asset: ScreenshotCanvasAsset?,
+    imageSize: Pair<Int, Int>?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalButton(
+                onClick = {
+                    state.visualTestScore = if (state.selectedRegion == null) null else 0.91f
+                    state.markerStatusMessage = if (state.selectedRegion == null) {
+                        "Keine Region markiert."
+                    } else {
+                        "Pipeline-Test vorbereitet."
+                    }
+                },
+                enabled = state.selectedRegion != null,
+                modifier = Modifier.height(34.dp),
+            ) {
+                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, modifier = Modifier.size(14.dp))
+                Text("Crop", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 2.dp))
+            }
+            MarkerModeButton("Template", state.markerMode == ScreenshotCanvasMarkerMode.Template) {
+                state.markerMode = ScreenshotCanvasMarkerMode.Template
+            }
+            MarkerModeButton("Region", state.markerMode == ScreenshotCanvasMarkerMode.Region) {
+                state.markerMode = ScreenshotCanvasMarkerMode.Region
+            }
+            MarkerModeButton("Point", state.markerMode == ScreenshotCanvasMarkerMode.Point) {
+                state.markerMode = ScreenshotCanvasMarkerMode.Point
+            }
+            MarkerModeButton("Swipe", state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
+                state.markerMode = ScreenshotCanvasMarkerMode.Swipe
+            }
+            MarkerModeButton("Path", state.markerMode == ScreenshotCanvasMarkerMode.Path) {
+                state.markerMode = ScreenshotCanvasMarkerMode.Path
+            }
+        }
+        Text(
+            text = markerMetricsTitle(state.selectedRegion, state.markerMode, imageSize),
+            style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (state.savedMarkers.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(state.savedMarkers, key = { it.id }) { marker ->
+                    MarkerSavedItemCard(
+                        marker = marker,
+                        selected = marker.id == state.selectedSavedMarkerId,
+                        onClick = {
+                            state.selectedSavedMarkerId = marker.id
+                            state.selectedAssetId = marker.assetId ?: state.selectedAssetId
+                            state.selectedRegion = marker.region
+                            state.markerMode = marker.markerMode
+                            state.matchKind = marker.matchKind
+                            state.processingMode = marker.processingMode
+                            state.threshold = marker.threshold
+                            state.rotationDegrees = marker.rotationDegrees
+                            state.matchReadMe = marker.matchReadMe
+                            state.colourHex = marker.colourHex
+                            state.templateName = marker.label
+                            state.markerStatusMessage = "Marker geladen."
+                        },
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ScreenshotCanvasProcessingMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = state.processingMode == mode,
+                    onClick = { state.processingMode = mode },
+                    label = {
+                        Text(
+                            text = when (mode) {
+                                ScreenshotCanvasProcessingMode.Original -> "Original"
+                                ScreenshotCanvasProcessingMode.Grayscale -> "Graustufen"
+                                ScreenshotCanvasProcessingMode.HighContrast -> "Kontrast"
+                                ScreenshotCanvasProcessingMode.Edge -> "Kanten"
+                                ScreenshotCanvasProcessingMode.Inverse -> "Invers"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                    modifier = Modifier.height(28.dp),
+                )
+            }
+        }
+        OutlinedTextField(
+            value = state.templateName,
+            onValueChange = { state.templateName = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Name", style = MaterialTheme.typography.labelSmall) },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Rotation ${state.rotationDegrees.toInt()}°", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = state.rotationDegrees,
+                    onValueChange = { state.rotationDegrees = it },
+                    valueRange = 0f..360f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Schwelle ${"%.0f".format(state.threshold * 100)}%", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = state.threshold,
+                    onValueChange = { state.threshold = it },
+                    valueRange = 0.5f..0.99f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            OutlinedTextField(
+                value = state.matchReadMe,
+                onValueChange = { state.matchReadMe = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Match", style = MaterialTheme.typography.labelSmall) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = state.colourHex,
+                onValueChange = { state.colourHex = it },
+                modifier = Modifier.width(108.dp),
+                label = { Text("Colour", style = MaterialTheme.typography.labelSmall) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+        }
+        state.visualTestScore?.let { score ->
+            val passed = score >= state.threshold
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = if (passed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+            ) {
+                Text(
+                    text = "Pipeline-Test: ${"%.1f".format(score * 100)}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
+        }
+        if (state.markerStatusMessage.isNotBlank()) {
+            Text(
+                text = state.markerStatusMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            OutlinedButton(
+                onClick = {
+                    state.visualTestScore = if (state.selectedRegion == null) null else 0.91f
+                    state.markerStatusMessage = if (state.selectedRegion == null) "Keine Region markiert." else "Pipeline-Test OK."
+                },
+                enabled = state.selectedRegion != null,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(36.dp),
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text("PipelineTEST", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium)
+            }
+            Button(
+                onClick = {
+                    val region = state.selectedRegion
+                    state.markerStatusMessage = if (region == null) {
+                        "Keine Region markiert."
+                    } else {
+                        val now = System.currentTimeMillis()
+                        val id = state.selectedSavedMarkerId ?: "marker:${now}"
+                        val marker = ScreenshotCanvasSavedMarker(
+                            id = id,
+                            label = state.templateName.trim().ifBlank { "Marker" },
+                            assetId = asset?.id,
+                            assetLabel = asset?.label,
+                            region = region,
+                            markerMode = state.markerMode,
+                            matchKind = state.matchKind,
+                            processingMode = state.processingMode,
+                            threshold = state.threshold,
+                            rotationDegrees = state.rotationDegrees,
+                            matchReadMe = state.matchReadMe,
+                            colourHex = state.colourHex,
+                            updatedAt = now,
+                        )
+                        val index = state.savedMarkers.indexOfFirst { it.id == id }
+                        if (index >= 0) {
+                            state.savedMarkers[index] = marker
+                        } else {
+                            state.savedMarkers.add(0, marker)
+                        }
+                        state.selectedSavedMarkerId = id
+                        "${state.markerMode.name} '${marker.label}' gespeichert."
+                    }
+                },
+                enabled = state.selectedRegion != null,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(36.dp),
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text("SPEICHERN", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkerModeButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.height(34.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+        ),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun MarkerSavedItemCard(
+    marker: ScreenshotCanvasSavedMarker,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Surface(
+        modifier = Modifier
+            .width(132.dp)
+            .clickable(onClick = onClick),
+        shape = shape,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        tonalElevation = if (selected) 2.dp else 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = marker.label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${marker.markerMode.name} / ${marker.processingMode.name}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Text(
+                text = marker.assetLabel ?: "Kein Screenshot",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun markerMetricsTitle(
+    region: ScreenshotCanvasRegion?,
+    markerMode: ScreenshotCanvasMarkerMode,
+    imageSize: Pair<Int, Int>?,
+): String {
+    if (region == null) {
+        val size = imageSize?.let { "  image=${it.first}x${it.second}" }.orEmpty()
+        return when (markerMode) {
+            ScreenshotCanvasMarkerMode.Point -> "Punkt: x=-  y=-$size"
+            ScreenshotCanvasMarkerMode.Swipe -> "Swipe: start=-  end=-$size"
+            ScreenshotCanvasMarkerMode.Path -> "Path: punkte=-$size"
+            ScreenshotCanvasMarkerMode.Template -> "Template: bbox=-$size"
+            ScreenshotCanvasMarkerMode.Region -> "Region: x=-  y=-  w=-  h=-$size"
+        }
+    }
+    return when (markerMode) {
+        ScreenshotCanvasMarkerMode.Point -> {
+            val cx = region.x + region.width / 2
+            val cy = region.y + region.height / 2
+            "Punkt: x=$cx  y=$cy"
+        }
+        ScreenshotCanvasMarkerMode.Swipe -> "Swipe: start=(${region.x},${region.y})  end=(${region.x + region.width},${region.y + region.height})"
+        ScreenshotCanvasMarkerMode.Path -> "Path: start=(${region.x},${region.y})  end=(${region.x + region.width},${region.y + region.height})"
+        ScreenshotCanvasMarkerMode.Template -> "Template: bbox=${region.x},${region.y} ${region.width}x${region.height}"
+        ScreenshotCanvasMarkerMode.Region -> "Region: x=${region.x}  y=${region.y}  w=${region.width}  h=${region.height}"
+    }
+}
+
+@Composable
+private fun ScreenshotCanvasInspector(
+    modifier: Modifier,
+    asset: ScreenshotCanvasAsset?,
+    imageSize: String,
+    state: ScreenshotCanvasUiState,
+    markerPanel: Boolean,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(122.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        tonalElevation = 6.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text("Inspector", style = MaterialTheme.typography.titleSmall)
+            ScreenshotInspectorRow("Name", asset?.label ?: "-")
+            ScreenshotInspectorRow("Datum", asset?.dateLabel ?: "-")
+            ScreenshotInspectorRow("App / Scene", asset?.let { "${it.app} / ${it.scene}" } ?: "-")
+            ScreenshotInspectorRow("Bild", imageSize)
+            if (markerPanel) {
+                ScreenshotInspectorRow(
+                    "Marker",
+                    "${state.markerMode.name} / ${state.matchKind.name} / ${state.selectedRegion?.let { "${it.x},${it.y} ${it.width}x${it.height}" } ?: "-"}",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotInspectorRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.width(86.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ScreenshotCanvasGrid(modifier: Modifier = Modifier) {
+    val dotColor = Color(0xFF302743).copy(alpha = 0.62f)
+    Canvas(modifier = modifier) {
+        val spacing = 18.dp.toPx()
+        var x = 0f
+        while (x <= size.width) {
+            var y = 0f
+            while (y <= size.height) {
+                drawCircle(color = dotColor, radius = 1.1f, center = Offset(x, y))
+                y += spacing
+            }
+            x += spacing
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotOverlayGuide(
+    modifier: Modifier,
+    color: Color,
+    insetFraction: Float,
+) {
+    Canvas(modifier = modifier) {
+        val insetX = size.width * insetFraction
+        val insetY = size.height * insetFraction
+        drawLine(color.copy(alpha = 0.78f), Offset(insetX, insetY), Offset(size.width - insetX, insetY), 2.5f)
+        drawLine(color.copy(alpha = 0.78f), Offset(size.width - insetX, insetY), Offset(size.width - insetX, size.height - insetY), 2.5f)
+        drawLine(color.copy(alpha = 0.78f), Offset(size.width - insetX, size.height - insetY), Offset(insetX, size.height - insetY), 2.5f)
+        drawLine(color.copy(alpha = 0.78f), Offset(insetX, size.height - insetY), Offset(insetX, insetY), 2.5f)
+    }
+}
+
+private fun loadScreenshotCanvasAssets(context: Context): List<ScreenshotCanvasAsset> {
+    val roots = listOfNotNull(
+        File(runtimeFilesRoot(context), "screenshots"),
+        context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+        File(context.filesDir, "screenshots"),
+    )
+    return roots
+        .flatMap { root -> root.listFiles().orEmpty().asIterable() }
+        .filter { it.isFile && it.extension.lowercase(Locale.ROOT) in setOf("png", "jpg", "jpeg", "webp") }
+        .distinctBy { it.absolutePath }
+        .sortedByDescending { it.lastModified() }
+        .map { file ->
+            ScreenshotCanvasAsset(
+                file = file,
+                label = file.nameWithoutExtension.ifBlank { file.name },
+                app = "VisualTasker Studio WSS",
+                scene = file.parentFile?.name ?: "Screenshot",
+            )
+        }
+}
+
+private fun screenshotCanvasMarkerStoreFile(context: Context): File =
+    File(runtimeFilesRoot(context), "markers/saved-markers.json")
+
+private fun loadScreenshotCanvasSavedMarkers(context: Context): List<ScreenshotCanvasSavedMarker> {
+    val file = screenshotCanvasMarkerStoreFile(context)
+    if (!file.isFile) return emptyList()
+    return runCatching {
+        val root = JSONObject(file.readText())
+        val markers = root.optJSONArray("markers") ?: JSONArray()
+        buildList {
+            for (index in 0 until markers.length()) {
+                val item = markers.optJSONObject(index) ?: continue
+                val region = item.optJSONObject("region") ?: continue
+                val marker = ScreenshotCanvasSavedMarker(
+                    id = item.optString("id").takeIf { it.isNotBlank() } ?: "marker:${index}:${System.currentTimeMillis()}",
+                    label = item.optString("label", "Marker").ifBlank { "Marker" },
+                    assetId = item.optString("assetId").takeIf { it.isNotBlank() },
+                    assetLabel = item.optString("assetLabel").takeIf { it.isNotBlank() },
+                    region = ScreenshotCanvasRegion(
+                        x = region.optInt("x", 0),
+                        y = region.optInt("y", 0),
+                        width = region.optInt("width", 1).coerceAtLeast(1),
+                        height = region.optInt("height", 1).coerceAtLeast(1),
+                    ),
+                    markerMode = enumValueOrDefault(item.optString("markerMode"), ScreenshotCanvasMarkerMode.Region),
+                    matchKind = enumValueOrDefault(item.optString("matchKind"), ScreenshotCanvasMatchKind.OCR),
+                    processingMode = enumValueOrDefault(item.optString("processingMode"), ScreenshotCanvasProcessingMode.Original),
+                    threshold = item.optDouble("threshold", 0.85).toFloat().coerceIn(0f, 1f),
+                    rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat(),
+                    matchReadMe = item.optString("matchReadMe", ""),
+                    colourHex = item.optString("colourHex", "#4FC3F7"),
+                    updatedAt = item.optLong("updatedAt", 0L),
+                )
+                add(marker)
+            }
+        }.sortedByDescending { it.updatedAt }
+    }.getOrDefault(emptyList())
+}
+
+private fun persistScreenshotCanvasSavedMarkers(
+    context: Context,
+    markers: List<ScreenshotCanvasSavedMarker>,
+) {
+    runCatching {
+        val file = screenshotCanvasMarkerStoreFile(context)
+        file.parentFile?.mkdirs()
+        val root = JSONObject()
+        root.put("schemaVersion", 1)
+        val array = JSONArray()
+        markers.forEach { marker ->
+            val item = JSONObject()
+                .put("id", marker.id)
+                .put("label", marker.label)
+                .put("assetId", marker.assetId ?: "")
+                .put("assetLabel", marker.assetLabel ?: "")
+                .put("markerMode", marker.markerMode.name)
+                .put("matchKind", marker.matchKind.name)
+                .put("processingMode", marker.processingMode.name)
+                .put("threshold", marker.threshold.toDouble())
+                .put("rotationDegrees", marker.rotationDegrees.toDouble())
+                .put("matchReadMe", marker.matchReadMe)
+                .put("colourHex", marker.colourHex)
+                .put("updatedAt", marker.updatedAt)
+            item.put(
+                "region",
+                JSONObject()
+                    .put("x", marker.region.x)
+                    .put("y", marker.region.y)
+                    .put("width", marker.region.width)
+                    .put("height", marker.region.height)
+            )
+            array.put(item)
+        }
+        root.put("markers", array)
+        file.writeText(root.toString(2))
+    }
+}
+
+private inline fun <reified T : Enum<T>> enumValueOrDefault(raw: String?, fallback: T): T =
+    raw?.takeIf { it.isNotBlank() }
+        ?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() }
+        ?: fallback
 
 @Composable
 private fun WorkspaceTopAppBar(
@@ -1841,6 +4335,12 @@ private fun WorkspaceTopAppBar(
                 }
                 TooltipIconButton(tooltip = "TextEditor öffnen", onClick = { onOpenPanel(PanelType.TextEditor) }, modifier = Modifier.size(34.dp)) {
                     Icon(Icons.Default.Article, contentDescription = "TextEditor öffnen")
+                }
+                TooltipIconButton(tooltip = "Canvas öffnen", onClick = { onOpenPanel(PanelType.Screenshot) }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Photo, contentDescription = "Canvas öffnen")
+                }
+                TooltipIconButton(tooltip = "Marker öffnen", onClick = { onOpenPanel(PanelType.Marker) }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.TouchApp, contentDescription = "Marker öffnen")
                 }
             }
             Row(
@@ -1893,6 +4393,10 @@ private fun WorkspaceRail(
                 PanelType.RecorderSteps,
                 PanelType.BlockEditor,
                 PanelType.Flowchart,
+                PanelType.Screenshot,
+                PanelType.Marker,
+                PanelType.Vision,
+                PanelType.Datastore,
                 PanelType.TextEditor,
                 PanelType.LogConsole,
                 PanelType.DebugInfo
@@ -2027,6 +4531,7 @@ private fun BlockEditorPanel(
     uiPrefs: android.content.SharedPreferences,
     workflowState: WorkspaceWorkflowState,
     paletteInsertMode: BlockPaletteInsertMode,
+    showMiniMap: Boolean,
     onSessionReady: (BlockEditorShellEditorSession?) -> Unit,
     onBlockSelected: (BlockId?) -> Unit,
     onWorkspaceJsonChange: (String, String) -> Unit
@@ -2104,6 +4609,8 @@ private fun BlockEditorPanel(
             showToolbox = false,
             allowClearWorkspace = true,
             paletteInsertMode = paletteInsertMode,
+            showMiniMap = showMiniMap,
+            showTopIconBar = false,
             soundEffectsEnabled = true,
             hapticFeedbackEnabled = true
         ),
@@ -2114,11 +4621,9 @@ private fun BlockEditorPanel(
 @Composable
 private fun ColumnScope.BlockEditorCompactCategoryRail(
     session: BlockEditorShellEditorSession?,
-    onExpandRequested: () -> Unit
+    onExpandRequested: () -> Unit,
+    onSave: () -> Unit,
 ) {
-    val categories = remember {
-        BlockCategories.all.filter { it.id != BlockCategories.CUSTOM }
-    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2126,34 +4631,104 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
             .verticalScroll(rememberScrollState())
             .padding(top = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        categories.forEach { category ->
-            val accent = Color(category.accentArgb)
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (session?.controller?.expandedCategory == category.id) {
-                            accent.copy(alpha = 0.46f)
-                        } else {
-                            accent.copy(alpha = 0.30f)
-                        }
-                    )
-                    .clickable {
-                        session?.controller?.onCategoryClick(category.id)
-                        onExpandRequested()
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = CategoryIcons.forCategory(category.id),
-                    contentDescription = category.label,
-                    tint = if (session?.controller?.expandedCategory == category.id) Color.White else accent,
-                    modifier = Modifier.size(20.dp),
-                )
+        WorkspaceRailActionList(
+            listOf(
+                WorkspaceRailActionSpec("Speichern", Icons.Default.Save, enabled = session != null, onClick = onSave),
+                WorkspaceRailActionSpec("Undo", Icons.AutoMirrored.Filled.Undo, enabled = session != null) { session?.controller?.undo() },
+                WorkspaceRailActionSpec("Redo", Icons.AutoMirrored.Filled.Redo, enabled = session != null) { session?.controller?.redo() },
+                WorkspaceRailActionSpec("Zoom +", Icons.Default.ZoomIn, enabled = session != null) { session?.controller?.zoomIn() },
+                WorkspaceRailActionSpec("Zoom -", Icons.Default.ZoomOut, enabled = session != null) { session?.controller?.zoomOut() },
+                WorkspaceRailActionSpec("Einpassen", Icons.Default.CenterFocusStrong, enabled = session != null) {
+                    session?.controller?.fitWorkspaceToCanvas(force = true)
+                },
+                WorkspaceRailActionSpec("Auto anordnen", Icons.Default.AutoAwesomeMosaic, enabled = session != null) {
+                    session?.controller?.autoArrangeWorkspace()
+                },
+                WorkspaceRailActionSpec(
+                    label = if (session?.controller?.selectedBlockCollapsed == true) "Ausklappen" else "Einklappen",
+                    icon = if (session?.controller?.selectedBlockCollapsed == true) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    enabled = session?.controller?.canToggleSelectedBlockCollapse == true,
+                    selected = session?.controller?.selectedBlockCollapsed == true,
+                ) {
+                    session?.controller?.toggleSelectedBlockCollapse()
+                },
+                WorkspaceRailActionSpec(
+                    label = "Block löschen",
+                    icon = Icons.Default.DeleteSweep,
+                    enabled = session?.controller?.selectedBlockIds?.isNotEmpty() == true,
+                ) {
+                    session?.controller?.deleteSelectedBlock()
+                },
+                WorkspaceRailActionSpec("Blockdesigner", Icons.Default.GridView, enabled = session != null) {
+                    session?.controller?.openBlockFactory()
+                },
+                WorkspaceRailActionSpec("Workspace leeren", Icons.Default.DeleteSweep, enabled = session != null) {
+                    session?.controller?.clearWorkspace()
+                },
+            )
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        WorkspaceRailActionButton("Blockpalette", Icons.Default.AddCircle, enabled = session != null) {
+            if (session?.controller?.expandedCategory == null) {
+                session?.controller?.onCategoryClick(BlockCategories.ACTION)
             }
+            onExpandRequested()
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.WorkspaceRailActionList(
+    actions: List<WorkspaceRailActionSpec>,
+) {
+    actions.forEach { action ->
+        WorkspaceRailActionButton(
+            label = action.label,
+            icon = action.icon,
+            enabled = action.enabled,
+            selected = action.selected,
+            onClick = action.onClick,
+        )
+    }
+}
+
+private data class WorkspaceRailActionSpec(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val enabled: Boolean = true,
+    val selected: Boolean = false,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun WorkspaceRailActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val container = when {
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        enabled -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    }
+    val content = when {
+        selected -> MaterialTheme.colorScheme.onPrimaryContainer
+        enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+    }
+    TooltipIconButton(tooltip = label, onClick = onClick, modifier = Modifier.size(34.dp), enabled = enabled) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(container),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = label, tint = content, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -2171,17 +4746,288 @@ private fun BlockEditorPanelRail(
         )
         return
     }
-    CategoryPalettePanel(
-        category = session.controller.expandedCategory,
-        definitions = session.controller.definitionsForExpandedCategory(),
-        allDefinitions = session.controller.registry.allDefinitions(),
-        insertMode = paletteInsertMode,
-        onAddBlock = session.controller::addBlockFromPalette,
-        onCreateVariable = session.controller::createVariable,
-        onDismiss = session.controller::dismissCategory,
-        containerColor = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxHeight()
-    )
+    val allDefinitions = remember(session) {
+        session.controller.registry.allDefinitions()
+            .filter { it.paletteVisible }
+            .filter { it.category != BlockCategories.VARIABLE || it.id != BlockTypes.VARIABLE_GET }
+            .distinctBy { it.id }
+            .sortedWith(
+                compareBy<BlockDefinition>(
+                    { BlockCategories.metaFor(it.category).label },
+                    { it.paletteOrder },
+                    { it.label.lowercase() },
+                )
+            )
+    }
+    val categories = remember(allDefinitions) {
+        allDefinitions
+            .map { BlockCategories.metaFor(it.category) }
+            .distinctBy { it.id }
+            .sortedBy { it.label.lowercase() }
+    }
+    var activeCategory by remember(session) { mutableStateOf(session.controller.expandedCategory ?: BlockCategories.ACTION) }
+    var query by remember(session) { mutableStateOf("") }
+    val activeMeta = BlockCategories.metaFor(activeCategory)
+    val activeAccent = Color(activeMeta.accentArgb)
+    val filteredDefinitions = remember(allDefinitions, activeCategory, query) {
+        val needle = query.trim().lowercase()
+        allDefinitions.filter { definition ->
+            definition.category == activeCategory &&
+                (needle.isEmpty() ||
+                    definition.label.lowercase().contains(needle) ||
+                    definition.id.lowercase().contains(needle))
+        }
+    }
+    LaunchedEffect(session) {
+        if (session.controller.expandedCategory == null) {
+            session.controller.onCategoryClick(BlockCategories.ACTION)
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxHeight()
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(42.dp)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            categories.forEach { category ->
+                val selected = activeCategory == category.id
+                val accent = Color(category.accentArgb)
+                TooltipIconButton(
+                    tooltip = category.label,
+                    onClick = {
+                        activeCategory = category.id
+                        if (session.controller.expandedCategory != category.id) {
+                            session.controller.onCategoryClick(category.id)
+                        }
+                    },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(if (selected) accent.copy(alpha = 0.72f) else accent.copy(alpha = 0.26f))
+                            .border(
+                                width = if (selected) 2.dp else 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.onSurface else accent.copy(alpha = 0.55f),
+                                shape = CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = CategoryIcons.forCategory(category.id),
+                            contentDescription = category.label,
+                            tint = if (selected) Color.White else accent,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+            }
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = activeMeta.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = activeAccent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = if (paletteInsertMode == BlockPaletteInsertMode.DragFromPalette) {
+                    "Drag-from-palette vorbereitet"
+                } else {
+                    "Tippe zum Hinzufügen"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Suche") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Suche löschen")
+                        }
+                    }
+                },
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+            if (activeCategory == BlockCategories.VARIABLE) {
+                FilledTonalButton(
+                    onClick = { session.controller.createVariable("variable", "Any") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp),
+                ) {
+                    Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Text("Neue Variable", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 4.dp))
+                }
+            }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (filteredDefinitions.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Keine Blöcke in dieser Kategorie",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                items(filteredDefinitions, key = { it.id }) { definition ->
+                    BlockEditorRailBlockChip(
+                        definition = definition,
+                        onAddBlock = session.controller::addBlockFromPalette,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlockEditorRailBlockChip(
+    definition: BlockDefinition,
+    onAddBlock: (BlockDefinition) -> Unit,
+) {
+    val accent = Color(BlockCategories.metaFor(definition.category).accentArgb)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onAddBlock(definition) },
+        shape = RoundedCornerShape(8.dp),
+        color = accent.copy(alpha = 0.26f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = CategoryIcons.forCategory(definition.category),
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(15.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = definition.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = definition.id,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.FlowchartCompactActionRail(
+    session: FlowchartShellEditorSession?,
+    selectedNodeId: FlowNodeId?,
+    selectedEdgeId: FlowEdgeId?,
+    onExpandRequested: () -> Unit,
+    onSave: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    onStepBack: () -> Unit,
+    onStepForward: () -> Unit,
+    canStepBack: Boolean,
+    canStepForward: Boolean,
+    onDeleteNode: (FlowNodeId) -> Unit,
+    onDisconnectEdge: (FlowEdgeId) -> Unit,
+    onUndoWorkspace: () -> Boolean,
+    onRedoWorkspace: () -> Boolean,
+) {
+    val controller = session?.controller
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = true)
+            .verticalScroll(rememberScrollState())
+            .padding(top = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        WorkspaceRailActionList(
+            listOf(
+                WorkspaceRailActionSpec("Speichern", Icons.Default.Save, enabled = session != null, onClick = onSave),
+                WorkspaceRailActionSpec("Undo", Icons.AutoMirrored.Filled.Undo, enabled = session != null) {
+                    if (!onUndoWorkspace()) controller?.dispatch(FlowInteractionAction.UndoViewChange)
+                },
+                WorkspaceRailActionSpec("Redo", Icons.AutoMirrored.Filled.Redo, enabled = session != null) {
+                    if (!onRedoWorkspace()) controller?.dispatch(FlowInteractionAction.RedoViewChange)
+                },
+                WorkspaceRailActionSpec("Zoom +", Icons.Default.ZoomIn, enabled = session != null) {
+                    controller?.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0)))
+                },
+                WorkspaceRailActionSpec("Zoom -", Icons.Default.ZoomOut, enabled = session != null) {
+                    controller?.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0)))
+                },
+                WorkspaceRailActionSpec("Zentrieren", Icons.Default.CenterFocusStrong, enabled = session != null) {
+                    controller?.attachGraph(controller.snapshot().graph ?: session.graphDocument, null)
+                },
+                WorkspaceRailActionSpec("Auto anordnen", Icons.Default.AutoAwesomeMosaic, enabled = session != null) {
+                    controller?.replaceLayout(
+                        FlowLayoutConfig(
+                            layerSpacing = 148.0,
+                            nodeSpacing = 92.0,
+                            componentSpacing = 168.0,
+                            routingClearance = 36.0,
+                            pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+                        )
+                    )?.let { view -> session.onViewDocumentChanged(view) }
+                },
+                WorkspaceRailActionSpec("Dry Run", Icons.Default.PlayArrow, enabled = session != null, onClick = onRunDry),
+                WorkspaceRailActionSpec("Live Run", Icons.Default.PlayCircle, enabled = session != null, onClick = onRunLive),
+                WorkspaceRailActionSpec("Step zurück", Icons.Default.ArrowBack, enabled = session != null && canStepBack, onClick = onStepBack),
+                WorkspaceRailActionSpec("Step vor", Icons.Default.ArrowForward, enabled = session != null && canStepForward, onClick = onStepForward),
+                WorkspaceRailActionSpec(
+                    label = if (selectedEdgeId != null) "Kante löschen" else "Node löschen",
+                    icon = Icons.Default.DeleteSweep,
+                    enabled = session != null && (selectedNodeId != null || selectedEdgeId != null),
+                ) {
+                    selectedNodeId?.let(onDeleteNode) ?: selectedEdgeId?.let(onDisconnectEdge)
+                },
+            )
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        WorkspaceRailActionButton("Node-Palette", Icons.Default.AddCircle, enabled = session != null, onClick = onExpandRequested)
+    }
 }
 
 @Composable
@@ -2197,7 +5043,9 @@ private fun FlowchartPanel(
     canStepBack: Boolean,
     canStepForward: Boolean,
     stepLabel: String?,
+    showMiniMap: Boolean,
     onNodeSelected: (FlowNodeId) -> Unit,
+    onSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
     onNodesDelete: (Set<FlowNodeId>) -> Unit,
     onNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit,
@@ -2260,6 +5108,7 @@ private fun FlowchartPanel(
         canStepForward = canStepForward,
         stepLabel = stepLabel,
         onNodeSelected = onNodeSelected,
+        onSelectionChanged = onSelectionChanged,
         onDeleteNode = onNodeDelete,
         onDeleteNodes = onNodesDelete,
         onConnectNodes = onNodesConnect,
@@ -2273,6 +5122,8 @@ private fun FlowchartPanel(
         onViewChanged = onViewChanged,
         onUndoWorkspace = onWorkspaceUndo,
         onRedoWorkspace = onWorkspaceRedo,
+        showMiniMap = showMiniMap,
+        showTopToolbar = false,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },
         modifier = Modifier.fillMaxSize()
     )
@@ -2295,7 +5146,7 @@ private fun MinimizedDock(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             itemsIndexed(panels, key = { _, panel -> panel.id }) { _, panel ->
-                AssistChip(onClick = { onRestore(panel.id) }, label = { Text(panel.title) })
+                AssistChip(onClick = { onRestore(panel.id) }, label = { Text(displayTitleForPanel(panel)) })
             }
         }
     }
@@ -2320,10 +5171,10 @@ private fun GridBackground(visible: Boolean, stepDp: Float) {
 }
 
 private fun defaultPanels(): List<PanelState> = listOf(
-    workspacePanel("panel-1", PanelType.RecorderSteps, "Stepper 1", 84f, 112f, 360f, 360f, 1),
-    workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor 2", 470f, 124f, 360f, 300f, 2),
-    workspacePanel("panel-3", PanelType.Flowchart, "Flowchart 3", 470f, 460f, 360f, 300f, 3),
-    workspacePanel("panel-4", PanelType.LogConsole, "LogConsole 4", 860f, 150f, 320f, 240f, 4)
+    workspacePanel("panel-1", PanelType.RecorderSteps, "Stepper", 84f, 112f, 360f, 360f, 1),
+    workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor", 470f, 124f, 360f, 300f, 2),
+    workspacePanel("panel-3", PanelType.Flowchart, "Flowchart", 470f, 460f, 360f, 300f, 3),
+    workspacePanel("panel-4", PanelType.LogConsole, "LogConsole", 860f, 150f, 320f, 240f, 4)
 )
 
 private fun workspacePanel(
@@ -2407,6 +5258,8 @@ private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.Flowchart -> Icons.Default.Polyline
     PanelType.Screenshot -> Icons.Default.Photo
     PanelType.Marker -> Icons.Default.TouchApp
+    PanelType.Vision -> Icons.Default.CenterFocusStrong
+    PanelType.Datastore -> Icons.Default.FolderOpen
     PanelType.Emscript -> Icons.Default.Terminal
     PanelType.RuntimeLog -> Icons.Default.PlayArrow
     PanelType.TextEditor -> Icons.Default.Article
@@ -2425,6 +5278,10 @@ private fun AddPanelDialog(
         PanelType.RecorderSteps,
         PanelType.BlockEditor,
         PanelType.Flowchart,
+        PanelType.Screenshot,
+        PanelType.Marker,
+        PanelType.Vision,
+        PanelType.Datastore,
         PanelType.TextEditor,
         PanelType.LogConsole,
         PanelType.DebugInfo
@@ -2454,14 +5311,26 @@ private fun displayNameForPanelType(type: PanelType): String = when (type) {
     PanelType.RecorderSteps -> "Stepper"
     PanelType.BlockEditor -> "BlockEditor"
     PanelType.Flowchart -> "Flowchart"
-    PanelType.Screenshot -> "Screenshot"
+    PanelType.Screenshot -> "Canvas"
     PanelType.Marker -> "Marker"
+    PanelType.Vision -> "Vision"
+    PanelType.Datastore -> "Datastore"
     PanelType.Emscript -> "EMScript"
     PanelType.RuntimeLog -> "RuntimeLog"
     PanelType.TextEditor -> "TextEditor"
     PanelType.LogConsole -> "LogConsole"
     PanelType.DebugInfo -> "Debug"
     PanelType.M3Director -> "M3Director"
+}
+
+private fun displayTitleForPanel(panel: PanelState): String {
+    val canonical = displayNameForPanelType(panel.type)
+    val trailingNumber = Regex("^\\s*${Regex.escape(canonical)}\\s+\\d+\\s*$", RegexOption.IGNORE_CASE)
+    val generatedPanelTitle = supportedWorkspacePanelTypes.any { type ->
+        val name = displayNameForPanelType(type)
+        Regex("^\\s*${Regex.escape(name)}(?:\\s+\\d+)?\\s*$", RegexOption.IGNORE_CASE).matches(panel.title)
+    }
+    return if (trailingNumber.matches(panel.title) || generatedPanelTitle) canonical else panel.title
 }
 
 private fun PanelState.toMainPanelState(): MainPanelState =
@@ -2471,7 +5340,7 @@ private fun PanelState.toMainPanelState(): MainPanelState =
         width = width.toInt(),
         height = height.toInt(),
         accentColor = accentColor,
-        title = title,
+        title = displayTitleForPanel(this),
         panelType = toMainPanelType(type),
         zIndex = zIndex,
         isMinimized = minimized,
@@ -2489,6 +5358,8 @@ private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
     PanelType.DebugInfo -> MainPanelType.EMSCRIPT
     PanelType.Screenshot,
     PanelType.Marker,
+    PanelType.Vision,
+    PanelType.Datastore,
     PanelType.M3Director -> MainPanelType.LIST_TEST
 }
 
@@ -2640,6 +5511,10 @@ private fun WorkspaceSettingsBottomSheet(
     onAppearanceChange: (WorkspaceAppearance) -> Unit,
     blockPaletteInsertMode: BlockPaletteInsertMode,
     onBlockPaletteInsertModeChange: (BlockPaletteInsertMode) -> Unit,
+    blockEditorMiniMapVisible: Boolean,
+    onBlockEditorMiniMapVisibleChange: (Boolean) -> Unit,
+    flowchartMiniMapVisible: Boolean,
+    onFlowchartMiniMapVisibleChange: (Boolean) -> Unit,
     onResetPanels: () -> Unit,
     onAutoArrange: () -> Unit,
     onColorPick: (Color) -> Unit,
@@ -2775,10 +5650,15 @@ private fun WorkspaceSettingsBottomSheet(
                 ColorPalettePicker(onSelect = onColorPick)
             }
 
-            1 -> WorkspaceSettingsInfoTab("Flowchart", listOf("Flowchart-Panels sind direkt im Workspace-FAB und in der linken Rail verfügbar."))
+            1 -> FlowchartSettingsTab(
+                miniMapVisible = flowchartMiniMapVisible,
+                onMiniMapVisibleChange = onFlowchartMiniMapVisibleChange,
+            )
             2 -> BlockEditorSettingsTab(
                 paletteInsertMode = blockPaletteInsertMode,
-                onPaletteInsertModeChange = onBlockPaletteInsertModeChange
+                onPaletteInsertModeChange = onBlockPaletteInsertModeChange,
+                miniMapVisible = blockEditorMiniMapVisible,
+                onMiniMapVisibleChange = onBlockEditorMiniMapVisibleChange,
             )
             3 -> WorkspaceSettingsInfoTab("Texteditor", listOf("Die Workspace-Shell hält Texteditor-Funktionalität außerhalb der Shell-Plugin-Panels."))
             4 -> WorkspaceSettingsInfoTab("Browser", listOf("Browser-Panels sind in dieser Shell nicht als Platzhalter angeboten."))
@@ -2859,9 +5739,35 @@ private fun WorkspaceColorPreviewRow(label: String, color: Color) {
 }
 
 @Composable
+private fun FlowchartSettingsTab(
+    miniMapVisible: Boolean,
+    onMiniMapVisibleChange: (Boolean) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Flowchart", style = MaterialTheme.typography.titleSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Minimap anzeigen")
+            Switch(checked = miniMapVisible, onCheckedChange = onMiniMapVisibleChange)
+        }
+    }
+}
+
+@Composable
 private fun BlockEditorSettingsTab(
     paletteInsertMode: BlockPaletteInsertMode,
-    onPaletteInsertModeChange: (BlockPaletteInsertMode) -> Unit
+    onPaletteInsertModeChange: (BlockPaletteInsertMode) -> Unit,
+    miniMapVisible: Boolean,
+    onMiniMapVisibleChange: (Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -2871,6 +5777,14 @@ private fun BlockEditorSettingsTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Palette/Flyout", style = MaterialTheme.typography.titleSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Minimap anzeigen")
+            Switch(checked = miniMapVisible, onCheckedChange = onMiniMapVisibleChange)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(
                 onClick = { onPaletteInsertModeChange(BlockPaletteInsertMode.TapToAdd) },

@@ -80,6 +80,10 @@ internal val supportedWorkspacePanelTypes: Set<PanelType> = setOf(
     PanelType.RecorderSteps,
     PanelType.BlockEditor,
     PanelType.Flowchart,
+    PanelType.Screenshot,
+    PanelType.Marker,
+    PanelType.Vision,
+    PanelType.Datastore,
     PanelType.RuntimeLog,
     PanelType.TextEditor,
     PanelType.LogConsole,
@@ -96,6 +100,8 @@ internal fun defaultAccentForPanelType(type: PanelType): androidx.compose.ui.gra
     PanelType.DebugInfo -> androidx.compose.ui.graphics.Color(0xFFB39DDB)
     PanelType.Screenshot,
     PanelType.Marker,
+    PanelType.Vision,
+    PanelType.Datastore,
     PanelType.Emscript,
     PanelType.M3Director -> androidx.compose.ui.graphics.Color(0xFF6C5CE7)
 }

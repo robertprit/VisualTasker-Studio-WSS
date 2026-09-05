@@ -86,6 +86,9 @@ fun DarkPanel(
     maxWidth: Int,
     maxHeight: Int,
     showRail: Boolean = true,
+    minPositionYPx: Float = 0f,
+    maxPositionXPx: Float = Float.POSITIVE_INFINITY,
+    maxPositionYPx: Float = Float.POSITIVE_INFINITY,
     railExpandedOverride: Boolean? = null,
     onRailExpandedChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -99,6 +102,14 @@ fun DarkPanel(
     var internalRailExpanded by remember(panel.id) { mutableStateOf(false) }
     val railExpanded = railExpandedOverride ?: internalRailExpanded
     val density = LocalDensity.current.density
+    fun clampedPosition(candidate: Offset): Offset {
+        val maxX = if (maxPositionXPx.isFinite()) maxPositionXPx else Float.POSITIVE_INFINITY
+        val maxY = if (maxPositionYPx.isFinite()) maxPositionYPx else Float.POSITIVE_INFINITY
+        return Offset(
+            x = candidate.x.coerceIn(0f, maxX.coerceAtLeast(0f)),
+            y = candidate.y.coerceIn(minPositionYPx, maxY.coerceAtLeast(minPositionYPx))
+        )
+    }
     fun focusPanel() {
         if (isActiveTarget) return
         Log.d(DARK_PANEL_LOG_TAG, "focus panel=${panel.id} title=${panel.title} z=${panel.zIndex}")
@@ -108,7 +119,7 @@ fun DarkPanel(
 
     LaunchedEffect(panel.position) {
         if (!isDragging) {
-            position = panel.position
+            position = clampedPosition(panel.position)
         }
     }
     LaunchedEffect(panel.width, panel.height) {
@@ -223,7 +234,7 @@ fun DarkPanel(
                                     },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
-                                        position += dragAmount
+                                        position = clampedPosition(position + dragAmount)
                                         onPositionChange(position)
                                     }
                                 )
@@ -329,17 +340,42 @@ fun DarkPanel(
                     ResizeHandle(
                         modifier = Modifier.align(Alignment.BottomEnd),
                         accentColor = panel.accentColor,
+                        kind = ResizeHandleKind.CornerBottomEnd,
                         onResizeStart = { isResizing = true },
                         onResizeEnd = { isResizing = false },
-                        onResize = { delta ->
-                            val deltaWidthDp = (delta.x / density).roundToInt()
-                            val deltaHeightDp = (delta.y / density).roundToInt()
-                            val newWidth = (liveWidth + deltaWidthDp).coerceAtLeast(144)
-                            val newHeight = (liveHeight + deltaHeightDp).coerceAtLeast(144)
-                            liveWidth = newWidth
-                            liveHeight = newHeight
-                            onSizeChange(newWidth, newHeight)
-                        }
+                        onResize = { delta -> resizePanel(delta, ResizeAnchor.BottomEnd, density, position, liveWidth, liveHeight, maxWidth, maxHeight, onPositionChange, onSizeChange) { nextPosition, nextWidth, nextHeight ->
+                            position = nextPosition
+                            liveWidth = nextWidth
+                            liveHeight = nextHeight
+                        } }
+                    )
+                    ResizeHandle(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .height((animatedHeight - 72).coerceAtLeast(48).dp),
+                        accentColor = panel.accentColor,
+                        kind = ResizeHandleKind.EdgeRight,
+                        onResizeStart = { isResizing = true },
+                        onResizeEnd = { isResizing = false },
+                        onResize = { delta -> resizePanel(delta, ResizeAnchor.Right, density, position, liveWidth, liveHeight, maxWidth, maxHeight, onPositionChange, onSizeChange) { nextPosition, nextWidth, nextHeight ->
+                            position = nextPosition
+                            liveWidth = nextWidth
+                            liveHeight = nextHeight
+                        } }
+                    )
+                    ResizeHandle(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .width((animatedWidth - 72).coerceAtLeast(48).dp),
+                        accentColor = panel.accentColor,
+                        kind = ResizeHandleKind.EdgeBottom,
+                        onResizeStart = { isResizing = true },
+                        onResizeEnd = { isResizing = false },
+                        onResize = { delta -> resizePanel(delta, ResizeAnchor.Bottom, density, position, liveWidth, liveHeight, maxWidth, maxHeight, onPositionChange, onSizeChange) { nextPosition, nextWidth, nextHeight ->
+                            position = nextPosition
+                            liveWidth = nextWidth
+                            liveHeight = nextHeight
+                        } }
                     )
                 }
             }
@@ -348,6 +384,42 @@ fun DarkPanel(
 }
 
 private const val DARK_PANEL_LOG_TAG = "VTWSS/DarkPanel"
+private const val PANEL_MIN_SIZE_DP = 144
+
+private enum class ResizeAnchor { Right, Bottom, BottomEnd }
+
+private enum class ResizeHandleKind { EdgeRight, EdgeBottom, CornerBottomEnd }
+
+private fun resizePanel(
+    delta: Offset,
+    anchor: ResizeAnchor,
+    density: Float,
+    position: Offset,
+    liveWidth: Int,
+    liveHeight: Int,
+    maxWidth: Int,
+    maxHeight: Int,
+    onPositionChange: (Offset) -> Unit,
+    onSizeChange: (Int, Int) -> Unit,
+    applyLive: (Offset, Int, Int) -> Unit,
+) {
+    val deltaWidthDp = (delta.x / density).roundToInt()
+    val deltaHeightDp = (delta.y / density).roundToInt()
+    val nextWidth = when (anchor) {
+        ResizeAnchor.Right,
+        ResizeAnchor.BottomEnd -> (liveWidth + deltaWidthDp).coerceIn(PANEL_MIN_SIZE_DP, maxWidth)
+        ResizeAnchor.Bottom -> liveWidth
+    }
+    val nextHeight = when (anchor) {
+        ResizeAnchor.Bottom,
+        ResizeAnchor.BottomEnd -> (liveHeight + deltaHeightDp).coerceIn(PANEL_MIN_SIZE_DP, maxHeight)
+        ResizeAnchor.Right -> liveHeight
+    }
+    val nextPosition = position
+    applyLive(nextPosition, nextWidth, nextHeight)
+    if (nextPosition != position) onPositionChange(nextPosition)
+    if (nextWidth != liveWidth || nextHeight != liveHeight) onSizeChange(nextWidth, nextHeight)
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -371,14 +443,24 @@ private fun PanelIconButtonWithTooltip(
 @Composable
 private fun ResizeHandle(
     accentColor: Color,
+    kind: ResizeHandleKind,
     onResizeStart: () -> Unit,
     onResizeEnd: () -> Unit,
     onResize: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val handleModifier = when (kind) {
+        ResizeHandleKind.EdgeRight -> Modifier
+            .width(14.dp)
+            .fillMaxSize()
+        ResizeHandleKind.EdgeBottom -> Modifier
+            .height(14.dp)
+            .fillMaxSize()
+        else -> Modifier.size(28.dp)
+    }
     Box(
         modifier = modifier
-            .size(20.dp)
+            .then(handleModifier)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { onResizeStart() },
@@ -392,6 +474,14 @@ private fun ResizeHandle(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (kind == ResizeHandleKind.EdgeRight || kind == ResizeHandleKind.EdgeBottom) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(accentColor.copy(alpha = 0.001f))
+            )
+            return@Box
+        }
         Icon(
             imageVector = Icons.Default.DragHandle,
             contentDescription = "Resize",

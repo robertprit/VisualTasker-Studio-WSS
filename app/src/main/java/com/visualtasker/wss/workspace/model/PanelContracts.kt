@@ -23,6 +23,8 @@ enum class PanelType {
     Flowchart,
     Screenshot,
     Marker,
+    Vision,
+    Datastore,
     Emscript,
     RuntimeLog,
     TextEditor,
