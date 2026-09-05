@@ -765,13 +765,29 @@ private fun editableNodeFields(node: FlowGraphNode): List<EditableFlowchartNodeF
         node.properties.textFor("pattern")?.let { EditableFlowchartNodeField("Muster", "pattern", it) },
         node.properties.textFor("message")?.let { EditableFlowchartNodeField("Nachricht", "message", it) },
         node.properties.textFor("text")?.let { EditableFlowchartNodeField("Text", "text", it) },
-        node.properties.textFor("args")?.let { EditableFlowchartNodeField("Argumente", "args", it) },
+        node.properties.textFor("args")?.let { EditableFlowchartNodeField("Argumente", "args", it) }
+            ?.takeIf { node.properties.stringValue("commandId") == null },
         node.properties.textFor("operator")?.let { EditableFlowchartNodeField("Operator", "operator", it) },
         node.properties.textFor("literalNumber")?.let { EditableFlowchartNodeField("Wert", "value", it) },
         node.properties.textFor("literalString")?.let { EditableFlowchartNodeField("Wert", "value", it) },
         node.properties.textFor("literalBoolean")?.let { EditableFlowchartNodeField("Wert", "value", it) },
         node.properties.textFor("variableLabel")?.let { EditableFlowchartNodeField("Variable", "variableLabel", it) },
-    )
+    ) + editableCommandArgumentFields(node)
+
+private fun editableCommandArgumentFields(node: FlowGraphNode): List<EditableFlowchartNodeField> {
+    val commandId = node.properties.stringValue("commandId") ?: return emptyList()
+    val command = VisualTaskerCommandCatalog.findById(commandId) ?: return emptyList()
+    val rawArgs = splitInspectorArgs(node.properties.textFor("args").orEmpty())
+    return command.arguments
+        .filter { it.type != de.visualtasker.blockeditor.registry.CommandArgumentType.STATEMENT_BODY }
+        .mapIndexed { index, argument ->
+            EditableFlowchartNodeField(
+                label = argument.name,
+                fieldKey = "args:$index",
+                value = rawArgs.getOrNull(index) ?: argument.defaultValue.orEmpty(),
+            )
+        }
+}
 
 private fun VisualSemanticState.describeForInspector(): String =
     listOf(
@@ -1363,3 +1379,44 @@ private fun Map<String, FlowSemanticValue>.textFor(key: String): String? =
         is FlowSemanticValue.BooleanValue -> value.value.toString()
         else -> null
     }
+
+private fun splitInspectorArgs(raw: String): List<String> {
+    if (raw.isBlank()) return emptyList()
+    val result = mutableListOf<String>()
+    val current = StringBuilder()
+    var inString = false
+    var escape = false
+    var depth = 0
+    raw.forEach { char ->
+        when {
+            escape -> {
+                current.append(char)
+                escape = false
+            }
+            char == '\\' && inString -> {
+                current.append(char)
+                escape = true
+            }
+            char == '"' -> {
+                current.append(char)
+                inString = !inString
+            }
+            !inString && char in "([{<" -> {
+                current.append(char)
+                depth += 1
+            }
+            !inString && char in ")]}>" -> {
+                current.append(char)
+                depth = (depth - 1).coerceAtLeast(0)
+            }
+            !inString && depth == 0 && char == ',' -> {
+                result += current.toString().trim()
+                current.clear()
+            }
+            else -> current.append(char)
+        }
+    }
+    val tail = current.toString().trim()
+    if (tail.isNotEmpty() || result.isNotEmpty()) result += tail
+    return result
+}

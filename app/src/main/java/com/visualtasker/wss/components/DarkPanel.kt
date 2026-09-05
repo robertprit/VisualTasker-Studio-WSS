@@ -86,6 +86,8 @@ fun DarkPanel(
     maxWidth: Int,
     maxHeight: Int,
     showRail: Boolean = true,
+    railExpandedOverride: Boolean? = null,
+    onRailExpandedChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -94,7 +96,8 @@ fun DarkPanel(
     var isResizing by remember { mutableStateOf(false) }
     var liveWidth by remember(panel.id) { mutableIntStateOf(panel.width) }
     var liveHeight by remember(panel.id) { mutableIntStateOf(panel.height) }
-    var railExpanded by remember { mutableStateOf(false) }
+    var internalRailExpanded by remember(panel.id) { mutableStateOf(false) }
+    val railExpanded = railExpandedOverride ?: internalRailExpanded
     val density = LocalDensity.current.density
     fun focusPanel() {
         if (isActiveTarget) return
@@ -166,7 +169,11 @@ fun DarkPanel(
             if (!panel.isMinimized && showRail) {
                 CollapsibleIconRail(
                     isExpanded = railExpanded,
-                    onToggle = { railExpanded = !railExpanded },
+                    onToggle = {
+                        val next = !railExpanded
+                        internalRailExpanded = next
+                        onRailExpandedChange?.invoke(next)
+                    },
                     accentColor = panel.accentColor,
                     onColorChange = onColorChange,
                     showDefaultIcons = showDefaultRailIcons,

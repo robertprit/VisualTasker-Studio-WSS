@@ -257,6 +257,7 @@ private const val WORKSPACE_PANEL_MARGIN_DP = 12f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
+private const val PANEL_RAIL_EXPANDED_PREF_PREFIX = "workspace_panel_rail_expanded:"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
 
@@ -1064,6 +1065,9 @@ fun WorkspaceScreen(
                 val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
                 val flowchartSessionState = remember(panel.id) { mutableStateOf<FlowchartShellEditorSession?>(null) }
+                var railExpanded by remember(panel.id) {
+                    mutableStateOf(loadPanelRailExpanded(uiPrefs, panel.id))
+                }
                 DarkPanel(
                     panel = panel.toMainPanelState(),
                     snapEnabled = snapEnabled,
@@ -1072,6 +1076,11 @@ fun WorkspaceScreen(
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
                     showRail = true,
+                    railExpandedOverride = railExpanded,
+                    onRailExpandedChange = { expanded ->
+                        railExpanded = expanded
+                        persistPanelRailExpanded(uiPrefs, panel.id, expanded)
+                    },
                     showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
                     showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel),
                     railExpandedWidth = when {
@@ -2559,6 +2568,21 @@ private fun persistFlowchartViewSession(
         uiPrefs.edit().putString("flowchart_view_json", output.content).apply()
         session.acknowledgeSave(output)
     }
+}
+
+private fun loadPanelRailExpanded(
+    uiPrefs: android.content.SharedPreferences,
+    panelId: String
+): Boolean = uiPrefs.getBoolean(PANEL_RAIL_EXPANDED_PREF_PREFIX + panelId, false)
+
+private fun persistPanelRailExpanded(
+    uiPrefs: android.content.SharedPreferences,
+    panelId: String,
+    expanded: Boolean
+) {
+    uiPrefs.edit()
+        .putBoolean(PANEL_RAIL_EXPANDED_PREF_PREFIX + panelId, expanded)
+        .apply()
 }
 
 private class WorkspaceShellUiPluginHostAdapter : ShellPluginHostServices {

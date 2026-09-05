@@ -36,6 +36,21 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `add flowchart node can use explicit graph drop position`() {
+        val document = WorkspaceDocument(id = "flowchart-add-position-test")
+
+        val updated = addFlowchartNodeToWorkspace(
+            document = document,
+            definitionId = BlockTypes.ACTION_WAIT,
+            position = FlowPoint(320.0, 180.0),
+        )
+        val blockId = updated.blocks.keys.single()
+
+        assertEquals(320f, updated.rootPositions.getValue(blockId).x)
+        assertEquals(180f, updated.rootPositions.getValue(blockId).y)
+    }
+
+    @Test
     fun `unknown flowchart node definition leaves document unchanged`() {
         val document = WorkspaceDocument(id = "flowchart-add-test")
 
@@ -452,6 +467,30 @@ class WorkspaceFlowchartMutationsTest {
 
         assertNotEquals(document, updated)
         assertEquals(FieldValue.Number(1500.0), updated.blocks.getValue(waitId).fields["ms"])
+    }
+
+    @Test
+    fun `update flowchart generated command argument rewrites args field`() {
+        val document = instantiate(
+            WorkspaceDocument(id = "flowchart-command-arg-update-test"),
+            "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}chromeTab.create",
+            10f,
+            20f,
+        )
+        val commandId = document.blocks.keys.single()
+
+        val updated = updateFlowchartNodeFieldInWorkspace(
+            document = document,
+            nodeId = FlowNodeId("block:${commandId.value}"),
+            fieldKey = "args:1",
+            rawValue = "{incognito:true}",
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            FieldValue.Text("https://,{incognito:true}"),
+            updated.blocks.getValue(commandId).fields["args"],
+        )
     }
 
     @Test

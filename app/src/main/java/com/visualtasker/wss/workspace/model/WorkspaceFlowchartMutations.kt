@@ -25,6 +25,7 @@ import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowNodeId
+import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import kotlin.math.abs
 
@@ -42,6 +43,7 @@ sealed interface FlowchartWorkspaceMutation {
     data class AddNode(
         val definitionId: String,
         val afterNodeId: FlowNodeId? = null,
+        val position: FlowPoint? = null,
     ) : FlowchartWorkspaceMutation
     data class DeleteNode(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
     data class DeleteNodes(val nodeIds: Set<FlowNodeId>) : FlowchartWorkspaceMutation
@@ -96,6 +98,7 @@ fun applyFlowchartWorkspaceMutation(
             document,
             mutation.definitionId,
             mutation.afterNodeId,
+            mutation.position,
         )
         is FlowchartWorkspaceMutation.DeleteNode -> deleteFlowchartNodeFromWorkspace(document, mutation.nodeId)
         is FlowchartWorkspaceMutation.DeleteNodes -> deleteFlowchartNodesFromWorkspace(document, mutation.nodeIds)
@@ -141,12 +144,13 @@ fun addFlowchartNodeToWorkspace(
     document: WorkspaceDocument,
     definitionId: String,
     afterNodeId: FlowNodeId? = null,
+    position: FlowPoint? = null,
 ): WorkspaceDocument {
     val afterBlockId = afterNodeId?.toWorkspaceBlockId()
     val afterBlock = afterBlockId?.let { document.blocks[it] }
     val anchor = afterBlockId?.let { document.rootOffset(it) }
-    val x = anchor?.x?.plus(180f) ?: 96f
-    val y = anchor?.y ?: (120f + document.rootBlocks.size * 32f)
+    val x = position?.x?.toFloat() ?: anchor?.x?.plus(180f) ?: 96f
+    val y = position?.y?.toFloat() ?: anchor?.y ?: (120f + document.rootBlocks.size * 32f)
     val (withNode, insertedId) = instantiateFlowchartBlock(document, definitionId, x, y)
         ?: return document
     if (afterBlock == null || afterBlock.next == null) return withNode
@@ -387,6 +391,17 @@ fun updateFlowchartNodeFieldInWorkspace(
 ): WorkspaceDocument {
     val blockId = nodeId.toWorkspaceBlockId() ?: return document
     val block = document.blocks[blockId] ?: return document
+    if (fieldKey.startsWith("args:")) {
+        val index = fieldKey.removePrefix("args:").toIntOrNull() ?: return document
+        if (index < 0) return document
+        val args = splitFlowchartRawArguments((block.fields["args"] as? FieldValue.Text)?.value.orEmpty()).toMutableList()
+        while (args.size <= index) args += ""
+        args[index] = rawValue
+        return WorkspaceReducer.reduce(
+            document,
+            WorkspaceAction.UpdateField(blockId, "args", FieldValue.Text(args.joinToString(","))),
+        )
+    }
     val current = block.fields[fieldKey]
     val parsed = when (current) {
         is FieldValue.Number -> rawValue.toDoubleOrNull()?.let(FieldValue::Number) ?: return document
@@ -646,6 +661,47 @@ private fun defaultValueInputName(targetBlockType: String, kind: FlowEdgeKind): 
 
 private fun WorkspacePoint.closeTo(x: Float, y: Float): Boolean =
     abs(this.x - x) < 0.5f && abs(this.y - y) < 0.5f
+
+private fun splitFlowchartRawArguments(raw: String): List<String> {
+    if (raw.isBlank()) return emptyList()
+    val result = mutableListOf<String>()
+    val current = StringBuilder()
+    var inString = false
+    var escape = false
+    var depth = 0
+    raw.forEach { char ->
+        when {
+            escape -> {
+                current.append(char)
+                escape = false
+            }
+            char == '\\' && inString -> {
+                current.append(char)
+                escape = true
+            }
+            char == '"' -> {
+                current.append(char)
+                inString = !inString
+            }
+            !inString && char in "([{<" -> {
+                current.append(char)
+                depth += 1
+            }
+            !inString && char in ")]}>" -> {
+                current.append(char)
+                depth = (depth - 1).coerceAtLeast(0)
+            }
+            !inString && depth == 0 && char == ',' -> {
+                result += current.toString().trim()
+                current.clear()
+            }
+            else -> current.append(char)
+        }
+    }
+    val tail = current.toString().trim()
+    if (tail.isNotEmpty() || result.isNotEmpty()) result += tail
+    return result
+}
 
 private fun replaceFlowchartIfBranchShape(
     document: WorkspaceDocument,
