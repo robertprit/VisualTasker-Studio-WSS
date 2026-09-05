@@ -745,6 +745,7 @@ private fun String.editorSurface(): FlowchartEditorSurface =
             startsWith("control.") ||
             startsWith("debug.") ||
             startsWith("feedback.") ||
+            startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX) ||
             startsWith("command.") -> FlowchartEditorSurface.Statement
         else -> FlowchartEditorSurface.Unknown
     }
@@ -761,8 +762,10 @@ private fun editableNodeFields(node: FlowGraphNode): List<EditableFlowchartNodeF
         node.properties.textFor("frequency")?.let { EditableFlowchartNodeField("Frequenz", "frequency", it) },
         node.properties.textFor("durationMs")?.let { EditableFlowchartNodeField("Dauer ms", "durationMs", it) },
         node.properties.textFor("volume")?.let { EditableFlowchartNodeField("Lautstärke", "volume", it) },
+        node.properties.textFor("pattern")?.let { EditableFlowchartNodeField("Muster", "pattern", it) },
         node.properties.textFor("message")?.let { EditableFlowchartNodeField("Nachricht", "message", it) },
         node.properties.textFor("text")?.let { EditableFlowchartNodeField("Text", "text", it) },
+        node.properties.textFor("args")?.let { EditableFlowchartNodeField("Argumente", "args", it) },
         node.properties.textFor("operator")?.let { EditableFlowchartNodeField("Operator", "operator", it) },
         node.properties.textFor("literalNumber")?.let { EditableFlowchartNodeField("Wert", "value", it) },
         node.properties.textFor("literalString")?.let { EditableFlowchartNodeField("Wert", "value", it) },
