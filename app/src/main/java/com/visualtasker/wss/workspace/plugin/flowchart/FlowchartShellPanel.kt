@@ -580,6 +580,7 @@ private enum class FlowchartArrangeMode(
 ) {
     CodeFlow("Code Flow", "Vertikaler Hauptstamm, Branches treppenfoermig"),
     Compact("Kompakt", "Engere Abstaende fuer kleine Screens"),
+    Wrapped("Wrapped", "Lange Hauptketten in Spalten umbrechen"),
     Wide("Weit", "Mehr Abstand fuer Kanten-Lanes"),
     PreserveManual("Manuell", "Vorhandene Node-Positionen respektieren");
 
@@ -597,6 +598,14 @@ private enum class FlowchartArrangeMode(
                 nodeSpacing = 56.0,
                 componentSpacing = 112.0,
                 routingClearance = 22.0,
+                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+            )
+            Wrapped -> FlowLayoutConfig(
+                layerSpacing = 104.0,
+                nodeSpacing = 64.0,
+                componentSpacing = 128.0,
+                routingClearance = 28.0,
+                wrapAfterNodes = 11,
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Wide -> FlowLayoutConfig(
