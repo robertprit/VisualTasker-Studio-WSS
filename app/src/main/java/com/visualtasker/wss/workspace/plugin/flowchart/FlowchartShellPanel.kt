@@ -142,6 +142,12 @@ fun FlowchartShellPanel(
     onUndoWorkspace: (() -> Boolean)? = null,
     onRedoWorkspace: (() -> Boolean)? = null,
     showMiniMap: Boolean = true,
+    dataFlowVisible: Boolean = true,
+    runtimeLayerVisible: Boolean = true,
+    diagnosticsVisible: Boolean = true,
+    onDataFlowVisibleChange: (Boolean) -> Unit = {},
+    onRuntimeLayerVisibleChange: (Boolean) -> Unit = {},
+    onDiagnosticsVisibleChange: (Boolean) -> Unit = {},
     showTopToolbar: Boolean = true,
 ) {
     val controller = session.controller
@@ -150,7 +156,7 @@ fun FlowchartShellPanel(
     var selectedEdgeId by remember(session.sessionId) { mutableStateOf<FlowEdgeId?>(null) }
     var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var connectionMenu by remember(session.sessionId) { mutableStateOf<PendingConnectionMenu?>(null) }
-    var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.CodeFlow) }
+    var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.Wrapped) }
     var panelSize by remember(session.sessionId) { mutableStateOf(IntSize.Zero) }
     var draggedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
@@ -258,12 +264,15 @@ fun FlowchartShellPanel(
             flowchartMaterialNodePath(node = node, width = width, height = height)
         }
     }
-    val uiConfig = remember {
+    val uiConfig = remember(dataFlowVisible, runtimeLayerVisible, diagnosticsVisible) {
         FlowchartUiConfig(
             controlsEnabled = false,
             zoomEnabled = true,
             panEnabled = true,
             nodeDraggingEnabled = true,
+            runtimeOverlayEnabled = runtimeLayerVisible,
+            diagnosticMarkersEnabled = diagnosticsVisible,
+            dataFlowEdgesEnabled = dataFlowVisible,
             soundEffectsEnabled = true,
             hapticFeedbackEnabled = true,
             colorTokens = FlowchartColorTokens(
@@ -378,6 +387,9 @@ fun FlowchartShellPanel(
                 controller.replaceLayout(mode.layoutConfig())
             },
             onGridToggle = { gridVisible = !gridVisible },
+            onDataFlowToggle = { onDataFlowVisibleChange(!dataFlowVisible) },
+            onRuntimeLayerToggle = { onRuntimeLayerVisibleChange(!runtimeLayerVisible) },
+            onDiagnosticsToggle = { onDiagnosticsVisibleChange(!diagnosticsVisible) },
             onSave = { onSave?.invoke() ?: session.requestSave() },
             onBeginConnect = selectedNodeId?.let { nodeId ->
                 if (onConnectNodes == null) {
@@ -399,6 +411,9 @@ fun FlowchartShellPanel(
             canStepForward = canStepForward,
             stepLabel = stepLabel,
             gridVisible = gridVisible,
+            dataFlowVisible = dataFlowVisible,
+            runtimeLayerVisible = runtimeLayerVisible,
+            diagnosticsVisible = diagnosticsVisible,
             connecting = pendingConnectionStart != null,
         )
         }
@@ -1156,6 +1171,9 @@ private fun FlowchartShellToolbar(
     arrangeMode: FlowchartArrangeMode,
     onArrangeModeSelected: (FlowchartArrangeMode) -> Unit,
     onGridToggle: () -> Unit,
+    onDataFlowToggle: () -> Unit,
+    onRuntimeLayerToggle: () -> Unit,
+    onDiagnosticsToggle: () -> Unit,
     onSave: () -> Unit,
     onBeginConnect: (() -> Unit)?,
     onDeleteSelected: (() -> Unit)?,
@@ -1167,6 +1185,9 @@ private fun FlowchartShellToolbar(
     canStepForward: Boolean,
     stepLabel: String?,
     gridVisible: Boolean,
+    dataFlowVisible: Boolean,
+    runtimeLayerVisible: Boolean,
+    diagnosticsVisible: Boolean,
     connecting: Boolean,
 ) {
     var arrangeMenuExpanded by remember { mutableStateOf(false) }
@@ -1231,6 +1252,27 @@ private fun FlowchartShellToolbar(
                     Icons.Default.GridOn,
                     contentDescription = null,
                     tint = if (gridVisible) Color(0xFFA9D7FF) else Color(0xFF8F879B),
+                )
+            }
+            FlowchartToolbarButton("Dataflow", onDataFlowToggle) {
+                Icon(
+                    Icons.Default.AccountTree,
+                    contentDescription = null,
+                    tint = if (dataFlowVisible) Color(0xFF63C7FF) else Color(0xFF8F879B),
+                )
+            }
+            FlowchartToolbarButton("Runtime", onRuntimeLayerToggle) {
+                Icon(
+                    Icons.Default.PlayCircle,
+                    contentDescription = null,
+                    tint = if (runtimeLayerVisible) Color(0xFF68D391) else Color(0xFF8F879B),
+                )
+            }
+            FlowchartToolbarButton("Diagnose", onDiagnosticsToggle) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (diagnosticsVisible) Color(0xFFFFD166) else Color(0xFF8F879B),
                 )
             }
             FlowchartToolbarButton(
@@ -1381,13 +1423,14 @@ private fun flowchartPaletteShapeId(blockType: String, category: String): Int =
     when {
         blockType.startsWith("event.") -> 1
         blockType.startsWith("control.if") -> 4
-        blockType == BlockTypes.CONTROL_REPEAT -> 9
-        blockType == BlockTypes.CONTROL_WHILE -> 9
+        blockType == BlockTypes.CONTROL_REPEAT -> 15
+        blockType == BlockTypes.CONTROL_WHILE -> 16
         blockType == BlockTypes.LOGIC_COMPARE -> 5
-        blockType == BlockTypes.VARIABLE_GET || blockType == BlockTypes.VARIABLE_SET -> 6
-        blockType == BlockTypes.LOGIC_OPERATE || blockType == BlockTypes.LOGIC_AND || blockType == BlockTypes.LOGIC_OR -> 7
-        blockType.startsWith("feedback.") -> 8
-        category == BlockCategories.DEBUG -> 14
+        blockType == BlockTypes.VARIABLE_GET || blockType == BlockTypes.VARIABLE_SET -> 17
+        blockType == BlockTypes.LOGIC_OPERATE -> 18
+        blockType == BlockTypes.LOGIC_AND || blockType == BlockTypes.LOGIC_OR -> 19
+        blockType.startsWith("feedback.") -> 20
+        category == BlockCategories.DEBUG -> 21
         category == BlockCategories.VISION || category == BlockCategories.PERCEPTION -> 13
         category == BlockCategories.CHROME_TAB -> 12
         category == BlockCategories.TASKER -> 11
@@ -1426,8 +1469,8 @@ private fun flowchartFallbackShapeId(blockType: String, node: FlowGraphNode): In
         blockType.startsWith("termux.") || blockType.startsWith("shizuku.") || blockType.startsWith("scrcpy.") -> 10
         node.kind.standard == FlowNodeKind.ENTRY || node.kind.standard == FlowNodeKind.EXIT -> 1
         node.kind.standard == FlowNodeKind.DECISION -> 4
-        node.kind.standard == FlowNodeKind.LOOP_START || node.kind.standard == FlowNodeKind.LOOP_END -> 9
-        node.kind.standard == FlowNodeKind.ASSIGNMENT || node.kind.standard == FlowNodeKind.PROPERTY_ACCESS -> 6
+        node.kind.standard == FlowNodeKind.LOOP_START || node.kind.standard == FlowNodeKind.LOOP_END -> 15
+        node.kind.standard == FlowNodeKind.ASSIGNMENT || node.kind.standard == FlowNodeKind.PROPERTY_ACCESS -> 17
         node.kind.standard == FlowNodeKind.INPUT || node.kind.standard == FlowNodeKind.OUTPUT -> 5
         node.kind.standard == FlowNodeKind.ACTION -> 8
         else -> 2
@@ -1523,6 +1566,57 @@ private fun flowchartLegendShapePath(
             path.moveTo(w / 2f, 0f)
             path.lineTo(w, h)
             path.lineTo(0f, h)
+            path.close()
+        }
+        15 -> {
+            path.moveTo(w * 0.5f, 0f)
+            path.lineTo(w, h * 0.28f)
+            path.lineTo(w * 0.86f, h)
+            path.lineTo(w * 0.14f, h)
+            path.lineTo(0f, h * 0.28f)
+            path.close()
+        }
+        16 -> {
+            path.moveTo(w * 0.18f, 0f)
+            path.lineTo(w * 0.82f, 0f)
+            path.quadraticTo(w, 0f, w, h * 0.22f)
+            path.lineTo(w, h)
+            path.lineTo(0f, h)
+            path.lineTo(0f, h * 0.22f)
+            path.quadraticTo(0f, 0f, w * 0.18f, 0f)
+            path.close()
+        }
+        17 -> path.addRoundRect(RoundRect(Rect(0f, 0f, w, h), CornerRadius(h * 0.42f, h * 0.42f)))
+        18 -> {
+            path.moveTo(w * 0.12f, h * 0.08f)
+            path.lineTo(w * 0.88f, h * 0.08f)
+            path.quadraticTo(w, h * 0.5f, w * 0.88f, h * 0.92f)
+            path.lineTo(w * 0.12f, h * 0.92f)
+            path.quadraticTo(0f, h * 0.5f, w * 0.12f, h * 0.08f)
+            path.close()
+        }
+        19 -> {
+            path.moveTo(w * 0.5f, 0f)
+            path.quadraticTo(w * 0.78f, h * 0.18f, w, h * 0.5f)
+            path.quadraticTo(w * 0.78f, h * 0.82f, w * 0.5f, h)
+            path.quadraticTo(w * 0.22f, h * 0.82f, 0f, h * 0.5f)
+            path.quadraticTo(w * 0.22f, h * 0.18f, w * 0.5f, 0f)
+            path.close()
+        }
+        20 -> path.addOval(Rect(0f, 0f, w, h))
+        21 -> {
+            val spikes = 12
+            val cx = w / 2f
+            val cy = h / 2f
+            val outer = minOf(w, h) / 2f
+            val inner = outer * 0.72f
+            repeat(spikes * 2) { index ->
+                val angle = (-90.0 + index * 180.0 / spikes).toFloat()
+                val radius = if (index % 2 == 0) outer else inner
+                val x = cx + kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat() * radius
+                val y = cy + kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat() * radius
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
             path.close()
         }
         else -> path.addRoundRect(RoundRect(Rect(0f, 0f, w, h), CornerRadius(10f, 10f)))

@@ -22,11 +22,13 @@ import com.visualtasker.wss.workspace.plugin.ShellSaveAcknowledgmentResult
 import com.visualtasker.wss.workspace.plugin.ShellSaveRequest
 import com.visualtasker.wss.workspace.plugin.ShellValidationResult
 import de.visualtasker.flowchart.domain.FlowGraphDocument
+import de.visualtasker.flowchart.domain.FlowSize
 import de.visualtasker.flowchart.domain.FlowSurfaceId
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowchartController
 import de.visualtasker.flowchart.interaction.FlowchartStatus
 import de.visualtasker.flowchart.interaction.FlowchartStatusCode
+import de.visualtasker.flowchart.layout.FlowNodeMetrics
 import de.visualtasker.flowchart.serialization.FlowDecodeResult
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import de.visualtasker.flowchart.serialization.FlowViewJsonCodec
@@ -66,7 +68,10 @@ class FlowchartShellEditorSession(
             ShellEditorCloseState.UNSAVED_CHANGES
         }
 
-    val controller: FlowchartController = FlowchartController(FlowSurfaceId(input.sessionId.value))
+    val controller: FlowchartController = FlowchartController(
+        surfaceId = FlowSurfaceId(input.sessionId.value),
+        nodeMetrics = FlowNodeMetrics(emptyMap(), defaultSize = FlowSize(96.0, 44.0)),
+    )
     private var graphDocumentState: FlowGraphDocument? by mutableStateOf(null)
     val graphDocument: FlowGraphDocument
         get() = graphDocumentState ?: error("Flowchart graph is not initialized.")

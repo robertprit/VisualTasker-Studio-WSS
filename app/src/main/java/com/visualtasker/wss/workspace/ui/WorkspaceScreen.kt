@@ -101,6 +101,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.ViewKanban
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
@@ -311,6 +312,9 @@ private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_tes
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 private const val BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY = "blockeditor_minimap_visible"
 private const val FLOWCHART_MINIMAP_VISIBLE_PREF_KEY = "flowchart_minimap_visible"
+private const val FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY = "flowchart_dataflow_visible"
+private const val FLOWCHART_RUNTIME_VISIBLE_PREF_KEY = "flowchart_runtime_visible"
+private const val FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY = "flowchart_diagnostics_visible"
 private const val PANEL_RAIL_EXPANDED_PREF_PREFIX = "workspace_panel_rail_expanded:"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
@@ -749,6 +753,15 @@ fun WorkspaceScreen(
     }
     var flowchartMiniMapVisible by remember {
         mutableStateOf(uiPrefs.getBoolean(FLOWCHART_MINIMAP_VISIBLE_PREF_KEY, true))
+    }
+    var flowchartDataFlowVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY, true))
+    }
+    var flowchartRuntimeVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_RUNTIME_VISIBLE_PREF_KEY, true))
+    }
+    var flowchartDiagnosticsVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, true))
     }
     var showAddPanelDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -1573,6 +1586,9 @@ fun WorkspaceScreen(
         blockPaletteInsertMode,
         blockEditorMiniMapVisible,
         flowchartMiniMapVisible,
+        flowchartDataFlowVisible,
+        flowchartRuntimeVisible,
+        flowchartDiagnosticsVisible,
     ) {
         uiPrefs.edit()
             .putBoolean("hide_system_bars", hideSystemBars)
@@ -1583,6 +1599,9 @@ fun WorkspaceScreen(
             .putString(BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY, blockPaletteInsertMode.name)
             .putBoolean(BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY, blockEditorMiniMapVisible)
             .putBoolean(FLOWCHART_MINIMAP_VISIBLE_PREF_KEY, flowchartMiniMapVisible)
+            .putBoolean(FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY, flowchartDataFlowVisible)
+            .putBoolean(FLOWCHART_RUNTIME_VISIBLE_PREF_KEY, flowchartRuntimeVisible)
+            .putBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, flowchartDiagnosticsVisible)
             .apply()
     }
     LaunchedEffect(appearance) {
@@ -1766,6 +1785,12 @@ fun WorkspaceScreen(
                                 },
                                 canStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
                                 canStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
+                                dataFlowVisible = flowchartDataFlowVisible,
+                                runtimeVisible = flowchartRuntimeVisible,
+                                diagnosticsVisible = flowchartDiagnosticsVisible,
+                                onDataFlowToggle = { flowchartDataFlowVisible = !flowchartDataFlowVisible },
+                                onRuntimeToggle = { flowchartRuntimeVisible = !flowchartRuntimeVisible },
+                                onDiagnosticsToggle = { flowchartDiagnosticsVisible = !flowchartDiagnosticsVisible },
                                 onDeleteNode = deleteFlowchartNode,
                                 onDisconnectEdge = disconnectFlowchartEdge,
                                 onUndoWorkspace = undoWorkspaceChange,
@@ -1975,6 +2000,12 @@ fun WorkspaceScreen(
                         flowRuntimeSnapshot = flowRuntimeSnapshot,
                         blockEditorMiniMapVisible = blockEditorMiniMapVisible,
                         flowchartMiniMapVisible = flowchartMiniMapVisible,
+                        flowchartDataFlowVisible = flowchartDataFlowVisible,
+                        flowchartRuntimeVisible = flowchartRuntimeVisible,
+                        flowchartDiagnosticsVisible = flowchartDiagnosticsVisible,
+                        onFlowchartDataFlowVisibleChange = { flowchartDataFlowVisible = it },
+                        onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
+                        onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
                         onEmscriptSessionChange = { updated ->
                             emscriptSession = updated
                             val manual = updated.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -2376,6 +2407,12 @@ private fun WorkspacePanelContent(
     flowRuntimeSnapshot: FlowRuntimeSnapshot?,
     blockEditorMiniMapVisible: Boolean,
     flowchartMiniMapVisible: Boolean,
+    flowchartDataFlowVisible: Boolean,
+    flowchartRuntimeVisible: Boolean,
+    flowchartDiagnosticsVisible: Boolean,
+    onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
+    onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
+    onFlowchartDiagnosticsVisibleChange: (Boolean) -> Unit = {},
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     logConsoleState: LogConsoleUiState,
@@ -2435,6 +2472,9 @@ private fun WorkspacePanelContent(
             canStepForward = canDryRunStepForward,
             stepLabel = dryRunStepLabel,
             showMiniMap = flowchartMiniMapVisible,
+            dataFlowVisible = flowchartDataFlowVisible,
+            runtimeLayerVisible = flowchartRuntimeVisible,
+            diagnosticsVisible = flowchartDiagnosticsVisible,
             onNodeSelected = onFlowchartNodeSelected,
             onSelectionChanged = onFlowchartSelectionChanged,
             onNodeDelete = onFlowchartNodeDelete,
@@ -2450,6 +2490,9 @@ private fun WorkspacePanelContent(
             onViewChanged = onFlowchartViewChanged,
             onWorkspaceUndo = onWorkspaceUndo,
             onWorkspaceRedo = onWorkspaceRedo,
+            onDataFlowVisibleChange = onFlowchartDataFlowVisibleChange,
+            onRuntimeVisibleChange = onFlowchartRuntimeVisibleChange,
+            onDiagnosticsVisibleChange = onFlowchartDiagnosticsVisibleChange,
             onSessionReady = onFlowchartSessionReady
         )
         PanelType.TextEditor,
@@ -6220,6 +6263,12 @@ private fun ColumnScope.FlowchartCompactActionRail(
     onStepForward: () -> Unit,
     canStepBack: Boolean,
     canStepForward: Boolean,
+    dataFlowVisible: Boolean,
+    runtimeVisible: Boolean,
+    diagnosticsVisible: Boolean,
+    onDataFlowToggle: () -> Unit,
+    onRuntimeToggle: () -> Unit,
+    onDiagnosticsToggle: () -> Unit,
     onDeleteNode: (FlowNodeId) -> Unit,
     onDisconnectEdge: (FlowEdgeId) -> Unit,
     onUndoWorkspace: () -> Boolean,
@@ -6259,14 +6308,34 @@ private fun ColumnScope.FlowchartCompactActionRail(
                 WorkspaceRailActionSpec("Auto anordnen", Icons.Default.AutoAwesomeMosaic, enabled = session != null) {
                     controller?.replaceLayout(
                         FlowLayoutConfig(
-                            layerSpacing = 156.0,
-                            nodeSpacing = 112.0,
-                            componentSpacing = 192.0,
-                            routingClearance = 40.0,
+                            layerSpacing = 104.0,
+                            nodeSpacing = 64.0,
+                            componentSpacing = 128.0,
+                            routingClearance = 28.0,
+                            wrapAfterNodes = 11,
+                            semanticWrapEnabled = true,
                             pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
                         )
                     )
                 },
+                WorkspaceRailActionSpec(
+                    if (dataFlowVisible) "Dataflow aus" else "Dataflow an",
+                    if (dataFlowVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    enabled = session != null,
+                    onClick = onDataFlowToggle,
+                ),
+                WorkspaceRailActionSpec(
+                    if (runtimeVisible) "Runtime aus" else "Runtime an",
+                    if (runtimeVisible) Icons.Default.PlayCircle else Icons.Default.PlayArrow,
+                    enabled = session != null,
+                    onClick = onRuntimeToggle,
+                ),
+                WorkspaceRailActionSpec(
+                    if (diagnosticsVisible) "Diagnose aus" else "Diagnose an",
+                    if (diagnosticsVisible) Icons.Default.Warning else Icons.Default.Info,
+                    enabled = session != null,
+                    onClick = onDiagnosticsToggle,
+                ),
                 WorkspaceRailActionSpec("Dry Run", Icons.Default.PlayArrow, enabled = session != null, onClick = onRunDry),
                 WorkspaceRailActionSpec("Live Run", Icons.Default.PlayCircle, enabled = session != null, onClick = onRunLive),
                 WorkspaceRailActionSpec("Step zurück", Icons.Default.ArrowBack, enabled = session != null && canStepBack, onClick = onStepBack),
@@ -6323,6 +6392,9 @@ private fun FlowchartPanel(
     canStepForward: Boolean,
     stepLabel: String?,
     showMiniMap: Boolean,
+    dataFlowVisible: Boolean,
+    runtimeLayerVisible: Boolean,
+    diagnosticsVisible: Boolean,
     onNodeSelected: (FlowNodeId) -> Unit,
     onSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
@@ -6338,6 +6410,9 @@ private fun FlowchartPanel(
     onViewChanged: (FlowViewDocument) -> Unit,
     onWorkspaceUndo: () -> Boolean,
     onWorkspaceRedo: () -> Boolean,
+    onDataFlowVisibleChange: (Boolean) -> Unit,
+    onRuntimeVisibleChange: (Boolean) -> Unit,
+    onDiagnosticsVisibleChange: (Boolean) -> Unit,
     onSessionReady: (FlowchartShellEditorSession?) -> Unit
 ) {
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
@@ -6402,6 +6477,12 @@ private fun FlowchartPanel(
         onUndoWorkspace = onWorkspaceUndo,
         onRedoWorkspace = onWorkspaceRedo,
         showMiniMap = showMiniMap,
+        dataFlowVisible = dataFlowVisible,
+        runtimeLayerVisible = runtimeLayerVisible,
+        diagnosticsVisible = diagnosticsVisible,
+        onDataFlowVisibleChange = onDataFlowVisibleChange,
+        onRuntimeLayerVisibleChange = onRuntimeVisibleChange,
+        onDiagnosticsVisibleChange = onDiagnosticsVisibleChange,
         showTopToolbar = false,
         onSave = { persistFlowchartViewSession(uiPrefs, session) },
         modifier = Modifier.fillMaxSize()
