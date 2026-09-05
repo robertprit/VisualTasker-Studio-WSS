@@ -191,6 +191,9 @@ fun deleteFlowchartNodesFromWorkspace(
     val toRemove = nodeIds
         .mapNotNull { it.toWorkspaceBlockId() }
         .filterTo(mutableSetOf()) { it in document.blocks }
+        .flatMapTo(mutableSetOf()) { blockId ->
+            WorkspaceGraph.descendants(document, blockId) + blockId
+        }
     if (toRemove.isEmpty()) return document
 
     var blocks = document.blocks.toMutableMap()

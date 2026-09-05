@@ -114,7 +114,7 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
-    fun `delete flowchart node group removes only dragged workspace blocks`() {
+    fun `delete flowchart node group removes dragged blocks and descendants`() {
         var document = instantiate(WorkspaceDocument(id = "flowchart-delete-group-test"), BlockTypes.ACTION_WAIT, 10f, 20f)
         val firstId = document.blocks.keys.single()
         document = instantiate(document, BlockTypes.ACTION_CLICK_TEXT, 40f, 80f)
@@ -140,9 +140,8 @@ class WorkspaceFlowchartMutationsTest {
 
         assertFalse(firstId in updated.blocks)
         assertFalse(secondId in updated.blocks)
-        assertTrue(thirdId in updated.blocks)
-        assertEquals(null, updated.blocks.getValue(thirdId).previous?.connectedTo)
-        assertEquals(listOf(thirdId), updated.rootBlocks)
+        assertFalse(thirdId in updated.blocks)
+        assertTrue(updated.rootBlocks.isEmpty())
     }
 
     @Test
@@ -242,6 +241,41 @@ class WorkspaceFlowchartMutationsTest {
             updated.blocks.getValue(repeatId).statementInputs.single { it.name == BlockTypes.SLOT_DO }.connection.connectedTo,
         )
         assertFalse(waitId in updated.rootBlocks)
+    }
+
+    @Test
+    fun `connect flowchart branch edge inserts before existing branch stack`() {
+        var document = instantiate(WorkspaceDocument(id = "flowchart-branch-replace-test"), BlockTypes.CONTROL_REPEAT, 10f, 20f)
+        val repeatId = document.blocks.keys.single()
+        document = instantiate(document, BlockTypes.ACTION_WAIT, 40f, 80f)
+        val oldHeadId = document.blocks.keys.single { it != repeatId }
+        document = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${repeatId.value}"),
+            targetNodeId = FlowNodeId("block:${oldHeadId.value}"),
+            kind = FlowEdgeKind.LOOP_BODY,
+        )
+        document = instantiate(document, BlockTypes.DEBUG_LOG, 80f, 120f)
+        val newHeadId = document.blocks.keys.single { it != repeatId && it != oldHeadId }
+
+        val updated = connectFlowchartNodesInWorkspace(
+            document = document,
+            sourceNodeId = FlowNodeId("block:${repeatId.value}"),
+            targetNodeId = FlowNodeId("block:${newHeadId.value}"),
+            kind = FlowEdgeKind.LOOP_BODY,
+        )
+
+        assertNotEquals(document, updated)
+        assertEquals(
+            updated.blocks.getValue(newHeadId).previous!!.id,
+            updated.blocks.getValue(repeatId).statementInputs.single { it.name == BlockTypes.SLOT_DO }.connection.connectedTo,
+        )
+        assertEquals(
+            updated.blocks.getValue(oldHeadId).previous!!.id,
+            updated.blocks.getValue(newHeadId).next!!.connectedTo,
+        )
+        assertFalse(oldHeadId in updated.rootBlocks)
+        assertFalse(newHeadId in updated.rootBlocks)
     }
 
     @Test

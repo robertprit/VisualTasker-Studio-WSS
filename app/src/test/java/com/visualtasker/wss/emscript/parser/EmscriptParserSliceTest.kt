@@ -569,6 +569,26 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun adapterGatedCatalogCommands_dryRunAsWarningsInsteadOfErrors() {
+        val entries = VisualTaskerCommandCatalog.allEntries()
+            .filter { it.runtime?.dryRunBehavior == "adapter-gated" }
+            .sortedBy { it.canonicalName }
+        val source = entries.joinToString(separator = "\n") { entry ->
+            "${entry.canonicalName}(${entry.arguments.joinToString(",") { it.sampleArgument() }})"
+        }
+
+        val parsed = EmscriptParserSlice().parse(source)
+        val dryRun = EmscriptDryRunRuntime().run(source)
+
+        assertTrue(parsed.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, parsed.isSuccess)
+        assertTrue(dryRun is EmscriptDryRunResult.Success)
+        val events = (dryRun as EmscriptDryRunResult.Success).events
+        val warnings = events.filter { it.severity.name == "WARNING" }
+        assertEquals(entries.map { it.canonicalName }.toSet(), warnings.mapNotNull { it.command }.toSet())
+        assertTrue(warnings.all { it.message.contains("Adapter noch nicht live") || it.message.contains("Live-Capability noch blockiert") })
+    }
+
+    @Test
     fun roundtrip_integrationScriptSurvivesWorkspaceSerializationIrAndFlowchartProjection() {
         val imported = EmscriptWorkspaceImporter().import(EditorDefaults.integrationTestScript)
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
