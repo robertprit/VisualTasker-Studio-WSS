@@ -149,8 +149,8 @@ fun addFlowchartNodeToWorkspace(
     val afterBlockId = afterNodeId?.toWorkspaceBlockId()
     val afterBlock = afterBlockId?.let { document.blocks[it] }
     val anchor = afterBlockId?.let { document.rootOffset(it) }
-    val x = position?.x?.toFloat() ?: anchor?.x?.plus(180f) ?: 96f
-    val y = position?.y?.toFloat() ?: anchor?.y ?: (120f + document.rootBlocks.size * 32f)
+    val x = position?.x?.toFloat() ?: anchor?.x ?: 96f
+    val y = position?.y?.toFloat() ?: anchor?.y?.plus(96f) ?: (120f + document.rootBlocks.size * 32f)
     val (withNode, insertedId) = instantiateFlowchartBlock(document, definitionId, x, y)
         ?: return document
     if (afterBlock == null || afterBlock.next == null) return withNode

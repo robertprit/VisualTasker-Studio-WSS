@@ -4,6 +4,7 @@ import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceAction
 import de.visualtasker.blockeditor.domain.FieldValue
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
+import de.visualtasker.blockeditor.domain.rootOffset
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
@@ -48,6 +49,22 @@ class WorkspaceFlowchartMutationsTest {
 
         assertEquals(320f, updated.rootPositions.getValue(blockId).x)
         assertEquals(180f, updated.rootPositions.getValue(blockId).y)
+    }
+
+    @Test
+    fun `add flowchart root node after anchor keeps same column`() {
+        val document = instantiate(WorkspaceDocument(id = "flowchart-add-after-position-test"), BlockTypes.LITERAL_NUMBER, 420f, 180f)
+        val anchorId = document.blocks.keys.single()
+
+        val updated = addFlowchartNodeToWorkspace(
+            document = document,
+            definitionId = BlockTypes.DEBUG_LOG,
+            afterNodeId = FlowNodeId("block:${anchorId.value}"),
+        )
+        val insertedId = updated.blocks.keys.single { it != anchorId }
+
+        assertEquals(420f, updated.rootOffset(insertedId)!!.x)
+        assertEquals(276f, updated.rootOffset(insertedId)!!.y)
     }
 
     @Test
