@@ -130,19 +130,35 @@ private class WorkspaceInterpreter(
             executeStatementSlot(blockId, BlockTypes.SLOT_THEN, "TRUE_BRANCH")
             return
         }
-        val elseIfCondition = if (block.valueInputs.any { it.name == "ELIF_CONDITION" }) {
-            evaluateValueInput(block, "ELIF_CONDITION").asBooleanDryRun("elseif")
-        } else {
-            false
-        }
-        if (elseIfCondition) {
-            emitBlock(blockId, "elseif", "ELSEIF")
-            executeStatementSlot(blockId, BlockTypes.SLOT_ELIF, "ELSE_IF_BRANCH")
-            return
+        block.elseIfSlots().forEach { (conditionSlot, statementSlot) ->
+            if (evaluateValueInput(block, conditionSlot).asBooleanDryRun("elseif")) {
+                emitBlock(blockId, "elseif", "ELSEIF")
+                executeStatementSlot(blockId, statementSlot, "ELSE_IF_BRANCH")
+                return
+            }
         }
         emitBlock(blockId, "else", "ELSE")
         executeStatementSlot(blockId, BlockTypes.SLOT_ELSE, "FALSE_BRANCH")
     }
+
+    private fun BlockNode.elseIfSlots(): List<Pair<String, String>> =
+        valueInputs
+            .mapNotNull { input ->
+                when (input.name) {
+                    "ELIF_CONDITION" -> input.name to BlockTypes.SLOT_ELIF
+                    else -> input.name
+                        .removePrefix("ELIF_CONDITION_")
+                        .takeIf { it != input.name && it.toIntOrNull() != null }
+                        ?.let { input.name to "ELIF_$it" }
+                }
+            }
+            .sortedBy { (conditionSlot, _) ->
+                if (conditionSlot == "ELIF_CONDITION") {
+                    0
+                } else {
+                    conditionSlot.removePrefix("ELIF_CONDITION_").toIntOrNull() ?: Int.MAX_VALUE
+                }
+            }
 
     private fun executeStatementSlot(parentId: BlockId, slotName: String, edgeKind: String) {
         val head = WorkspaceGraph.statementStackHead(document, parentId, slotName) ?: return
@@ -172,6 +188,11 @@ private class WorkspaceInterpreter(
             BlockTypes.LITERAL_STRING -> block.fieldText("value").also {
                 emitBlock(blockId, "reporter", it)
             }.let(EmscriptValue::StringValue)
+            BlockTypes.LOGIC_SCREEN_CONTAINS -> {
+                val text = block.fieldText("text")
+                emitBlock(blockId, "reporter", "würde screenContains(\"$text\") auswerten")
+                EmscriptValue.BooleanValue(false)
+            }
             BlockTypes.VARIABLE_GET,
             BlockTypes.VARIABLE_VALUE,
             BlockTypes.VARIABLES_GET -> variableValue(blockId, block.fieldText("variable"))
@@ -256,6 +277,7 @@ private class WorkspaceInterpreter(
             is EmscriptIrExpression.NumberLiteral -> EmscriptValue.NumberValue(expression.value)
             is EmscriptIrExpression.StringLiteral -> EmscriptValue.StringValue(expression.value)
             is EmscriptIrExpression.BooleanLiteral -> EmscriptValue.BooleanValue(expression.value)
+            is EmscriptIrExpression.FunctionCall -> evaluateParsedFunctionCall(expression)
             is EmscriptIrExpression.Binary -> {
                 val left = evaluateParsedExpression(expression.left)
                 val right = evaluateParsedExpression(expression.right)
@@ -277,6 +299,16 @@ private class WorkspaceInterpreter(
             }
         }
 
+    private fun evaluateParsedFunctionCall(expression: EmscriptIrExpression.FunctionCall): EmscriptValue {
+        val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
+            ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
+        return when (entry?.returnType) {
+            "Number" -> EmscriptValue.NumberValue(0.0)
+            "Text" -> EmscriptValue.StringValue("")
+            else -> EmscriptValue.BooleanValue(false)
+        }
+    }
+
     private fun edgeKindFromNext(sourceId: BlockId): String =
         when (document.blocks[sourceId]?.type) {
             BlockTypes.CONTROL_REPEAT,
@@ -285,7 +317,7 @@ private class WorkspaceInterpreter(
         }
 
     private fun edgeKindFromValueInput(inputName: String): String =
-        if (inputName.endsWith("CONDITION")) "CONDITION" else "DATA_FLOW"
+        if (inputName == "CONDITION" || inputName.startsWith("ELIF_CONDITION")) "CONDITION" else "DATA_FLOW"
 
     private fun guardStep() {
         steps += 1

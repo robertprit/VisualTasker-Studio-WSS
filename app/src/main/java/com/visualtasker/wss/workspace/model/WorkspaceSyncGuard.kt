@@ -1,7 +1,10 @@
 package com.visualtasker.wss.workspace.model
 
+import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.blockeditor.ir.validateIntegrity
+import de.visualtasker.blockeditor.ir.validateSemantics
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 
@@ -39,8 +42,27 @@ class WorkspaceSyncGuard {
         } else {
             messages += "EMScript-Projektion OK (${emscript.getOrDefault("").length} Zeichen)."
         }
+        val emscriptReparse = emscript.getOrNull()?.let { generated -> EmscriptParserSlice().parse(generated) }
+        when {
+            emscriptReparse == null -> Unit
+            emscriptReparse.isSuccess -> messages += "EMScript-Reparse OK."
+            else -> messages += "EMScript-Reparse fehlgeschlagen: ${emscriptReparse.issues.joinToString { issue -> "${issue.line}:${issue.column} ${issue.message}" }}"
+        }
+        val irGraph = runCatching { IrGraphGenerator().generate(document) }
+        val irDiagnostics = irGraph
+            .getOrNull()
+            ?.let { graph -> graph.diagnostics + graph.validateIntegrity() + graph.validateSemantics() }
+            .orEmpty()
+        if (irGraph.isFailure) {
+            messages += "IR-Graph-Erzeugung fehlgeschlagen: ${irGraph.exceptionOrNull()?.message ?: "unknown"}"
+        } else {
+            messages += "IR-Graph OK (${irGraph.getOrThrow().nodes.size} Nodes, ${irGraph.getOrThrow().edges.size} Kanten, ${irDiagnostics.size} Diagnosen)."
+            irDiagnostics.take(3).forEach { diagnostic ->
+                messages += "${diagnostic.code}: ${diagnostic.message}"
+            }
+        }
         val flowchart = runCatching {
-            com.visualtasker.wss.flowchart.IrGraphFlowchartProjector.project(IrGraphGenerator().generate(document))
+            com.visualtasker.wss.flowchart.IrGraphFlowchartProjector.project(irGraph.getOrThrow())
         }
         if (flowchart.isFailure) {
             messages += "Flowchart-Projektion fehlgeschlagen: ${flowchart.exceptionOrNull()?.message ?: "unknown"}"
@@ -63,7 +85,12 @@ class WorkspaceSyncGuard {
             messages += "Fehlende Blockdefinitionen: ${missingDefinitions.joinToString()}"
         }
         return WorkspaceSyncGuardReport(
-            isValid = emscript.isSuccess && flowchart.isSuccess && missingDefinitions.isEmpty(),
+            isValid = emscript.isSuccess &&
+                (emscriptReparse?.isSuccess != false) &&
+                irGraph.isSuccess &&
+                irDiagnostics.isEmpty() &&
+                flowchart.isSuccess &&
+                missingDefinitions.isEmpty(),
             messages = messages,
         )
     }

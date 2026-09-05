@@ -1,15 +1,23 @@
 package com.visualtasker.wss.emscript.parser
 
 import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.blockeditor.domain.Connection
+import de.visualtasker.blockeditor.domain.ConnectionId
+import de.visualtasker.blockeditor.domain.ConnectionKind
 import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.blockeditor.domain.StatementInput
+import de.visualtasker.blockeditor.domain.ValueInput
 import de.visualtasker.blockeditor.domain.VariableDefinition
 import de.visualtasker.blockeditor.domain.VariableScope
 import de.visualtasker.blockeditor.domain.WorkspaceAction
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.CommandArgumentType
+import de.visualtasker.blockeditor.registry.CommandCatalogKind
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.asFactory
 
 data class EmscriptImportResult(
@@ -176,20 +184,25 @@ private class WorkspaceAssembler(workspaceId: String) {
                     statement.elseBranch.isNotEmpty() -> BlockTypes.CONTROL_IF_ELSE
                     else -> BlockTypes.CONTROL_IF
                 }
-                val ifBlock = instantiate(ifType)
+                val ifBlock = if (ifType == BlockTypes.CONTROL_IF_ELSEIF_ELSE) {
+                    instantiate(ifType).withElseIfBranches(statement.elseIfBranches.size)
+                } else {
+                    instantiate(ifType)
+                }
                 val conditionBlock = emitExpression(statement.condition)
                 connectValueInput(parent = ifBlock, inputName = "CONDITION", child = conditionBlock)
                 val thenHead = appendStatementChain(statement.thenBranch)
                 if (thenHead != null) {
                     connectStatementInput(parent = ifBlock, slotName = BlockTypes.SLOT_THEN, child = thenHead)
                 }
-                val elseIf = statement.elseIfBranches.firstOrNull()
-                if (elseIf != null) {
+                statement.elseIfBranches.forEachIndexed { index, elseIf ->
+                    val conditionSlot = if (index == 0) "ELIF_CONDITION" else "ELIF_CONDITION_$index"
+                    val statementSlot = if (index == 0) BlockTypes.SLOT_ELIF else "ELIF_$index"
                     val elseIfConditionBlock = emitExpression(elseIf.condition)
-                    connectValueInput(parent = ifBlock, inputName = "ELIF_CONDITION", child = elseIfConditionBlock)
+                    connectValueInput(parent = ifBlock, inputName = conditionSlot, child = elseIfConditionBlock)
                     val elseIfHead = appendStatementChain(elseIf.body)
                     if (elseIfHead != null) {
-                        connectStatementInput(parent = ifBlock, slotName = BlockTypes.SLOT_ELIF, child = elseIfHead)
+                        connectStatementInput(parent = ifBlock, slotName = statementSlot, child = elseIfHead)
                     }
                 }
                 val elseHead = appendStatementChain(statement.elseBranch)
@@ -222,8 +235,43 @@ private class WorkspaceAssembler(workspaceId: String) {
             is EmscriptIrExpression.BooleanLiteral -> emitLiteralBoolean(expression.value)
             is EmscriptIrExpression.NumberLiteral -> emitLiteralNumber(expression.value)
             is EmscriptIrExpression.StringLiteral -> emitLiteralString(expression.value)
+            is EmscriptIrExpression.FunctionCall -> emitFunctionExpression(expression)
             is EmscriptIrExpression.Binary -> emitBinaryExpression(expression)
         }
+    }
+
+    private fun emitFunctionExpression(expression: EmscriptIrExpression.FunctionCall): BlockId {
+        val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
+            ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
+            ?: error("Reporter '${expression.name}' ist nicht im Katalog.")
+        if (entry.kind !in setOf(CommandCatalogKind.REPORTER, CommandCatalogKind.OPERATOR)) {
+            error("'${expression.name}' ist kein Reporter.")
+        }
+        val blockType = entry.block?.blockType ?: error("Reporter '${expression.name}' hat keinen Block-Typ.")
+        val block = instantiate(blockType)
+        entry.arguments
+            .filter { it.type != CommandArgumentType.STATEMENT_BODY }
+            .zip(expression.arguments)
+            .forEach { (argument, value) ->
+                when (argument.type) {
+                    CommandArgumentType.NUMBER,
+                    CommandArgumentType.DURATION_MS,
+                    CommandArgumentType.FREQUENCY_HZ,
+                    CommandArgumentType.PERCENT,
+                    -> setNumberField(
+                        block,
+                        argument.name,
+                        expressionToNumber(value, fallback = argument.defaultValue?.toDoubleOrNull() ?: 0.0),
+                    )
+                    CommandArgumentType.BOOLEAN -> setBoolField(
+                        block,
+                        argument.name,
+                        expressionToBoolean(value, fallback = argument.defaultValue?.toBooleanStrictOrNull() ?: false),
+                    )
+                    else -> setTextField(block, argument.name, expressionToTextArgument(value))
+                }
+            }
+        return block
     }
 
     private fun emitBinaryExpression(expression: EmscriptIrExpression.Binary): BlockId {
@@ -339,6 +387,11 @@ private class WorkspaceAssembler(workspaceId: String) {
             is EmscriptIrExpression.BooleanLiteral -> "Boolean"
             is EmscriptIrExpression.StringLiteral -> "Text"
             is EmscriptIrExpression.VariableRef -> "Any"
+            is EmscriptIrExpression.FunctionCall -> {
+                val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
+                    ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
+                entry?.returnType ?: "Any"
+            }
             is EmscriptIrExpression.Binary -> when (expression.op) {
                 EmscriptBinaryOp.OR,
                 EmscriptBinaryOp.AND,
@@ -369,7 +422,19 @@ private class WorkspaceAssembler(workspaceId: String) {
             else -> expressionToInlineText(expression).toDoubleOrNull() ?: fallback
         }
 
+    private fun expressionToBoolean(expression: EmscriptIrExpression, fallback: Boolean): Boolean =
+        when (expression) {
+            is EmscriptIrExpression.BooleanLiteral -> expression.value
+            else -> expressionToInlineText(expression).toBooleanStrictOrNull() ?: fallback
+        }
+
     private fun expressionToOutputText(expression: EmscriptIrExpression): String =
+        when (expression) {
+            is EmscriptIrExpression.StringLiteral -> expression.value
+            else -> expressionToInlineText(expression)
+        }
+
+    private fun expressionToTextArgument(expression: EmscriptIrExpression): String =
         when (expression) {
             is EmscriptIrExpression.StringLiteral -> expression.value
             else -> expressionToInlineText(expression)
@@ -397,8 +462,11 @@ private class WorkspaceAssembler(workspaceId: String) {
         return when (expression) {
             is EmscriptIrExpression.VariableRef -> expression.name
             is EmscriptIrExpression.NumberLiteral -> expression.raw
-            is EmscriptIrExpression.StringLiteral -> "\"${expression.value}\""
+            is EmscriptIrExpression.StringLiteral -> "\"${expression.value.escapeEmscriptString()}\""
             is EmscriptIrExpression.BooleanLiteral -> expression.value.toString()
+            is EmscriptIrExpression.FunctionCall -> {
+                "${expression.name}(${expression.arguments.joinToString(",") { expressionToInlineText(it) }})"
+            }
             is EmscriptIrExpression.Binary -> {
                 "(${expressionToInlineText(expression.left)} ${inlineOperator(expression.op)} ${expressionToInlineText(expression.right)})"
             }
@@ -475,6 +543,16 @@ private class WorkspaceAssembler(workspaceId: String) {
         )
     }
 
+    private fun setBoolField(blockId: BlockId, key: String, value: Boolean) {
+        apply(
+            WorkspaceAction.UpdateField(
+                blockId = blockId,
+                key = key,
+                value = FieldValue.Bool(value),
+            ),
+        )
+    }
+
     private fun instantiate(definitionId: String): BlockId {
         val before = document.blocks.keys
         apply(WorkspaceAction.InstantiateBlock(definitionId = definitionId, x = 64f, y = 64f))
@@ -482,7 +560,62 @@ private class WorkspaceAssembler(workspaceId: String) {
         return created.firstOrNull() ?: error("Block $definitionId konnte nicht instanziert werden.")
     }
 
+    private fun BlockId.withElseIfBranches(elseIfCount: Int): BlockId {
+        val block = document.blocks[this] ?: return this
+        val count = elseIfCount.coerceIn(1, 6)
+        if (count <= 1) return this
+        val valueInputs = buildList {
+            addAll(block.valueInputs.filterNot { it.name.startsWith("ELIF_CONDITION_") })
+            for (number in 1 until count) {
+                add(
+                    ValueInput(
+                        name = "ELIF_CONDITION_$number",
+                        connection = Connection(
+                            id = ConnectionId("${block.id.value}:ELIF_CONDITION_$number"),
+                            owner = block.id,
+                            kind = ConnectionKind.ValueInput,
+                            accepts = setOf("Bool", "Boolean"),
+                            slotName = "ELIF_CONDITION_$number",
+                        ),
+                    ),
+                )
+            }
+        }
+        val statementInputs = buildList {
+            add(block.statementInput(BlockTypes.SLOT_THEN))
+            add(block.statementInput(BlockTypes.SLOT_ELIF))
+            for (number in 1 until count) {
+                add(block.statementInput("ELIF_$number"))
+            }
+            add(block.statementInput(BlockTypes.SLOT_ELSE))
+        }
+        document = document.copy(
+            blocks = document.blocks + (
+                this to block.copy(
+                    valueInputs = valueInputs,
+                    statementInputs = statementInputs,
+                    metadata = block.metadata + ("if.branchCount" to (count + 2).toString()),
+                )
+            ),
+        )
+        return this
+    }
+
+    private fun de.visualtasker.blockeditor.domain.BlockNode.statementInput(name: String): StatementInput =
+        statementInputs.find { it.name == name } ?: StatementInput(
+            name = name,
+            connection = Connection(
+                id = ConnectionId("${id.value}:$name:stmt"),
+                owner = id,
+                kind = ConnectionKind.StatementInput,
+                slotName = name,
+            ),
+        )
+
     private fun apply(action: WorkspaceAction) {
         document = WorkspaceReducer.reduce(document, action, registry.asFactory())
     }
 }
+
+private fun String.escapeEmscriptString(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"")

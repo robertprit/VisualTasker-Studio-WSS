@@ -179,8 +179,35 @@ private class Interpreter(
             is EmscriptIrExpression.NumberLiteral -> EmscriptValue.NumberValue(expression.value)
             is EmscriptIrExpression.StringLiteral -> EmscriptValue.StringValue(expression.value)
             is EmscriptIrExpression.BooleanLiteral -> EmscriptValue.BooleanValue(expression.value)
+            is EmscriptIrExpression.FunctionCall -> evaluateFunctionCall(expression)
             is EmscriptIrExpression.Binary -> evaluateBinary(expression)
         }
+
+    private fun evaluateFunctionCall(expression: EmscriptIrExpression.FunctionCall): EmscriptValue {
+        val arguments = expression.arguments.joinToString(",") { evaluate(it).render() }
+        val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
+            ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
+        val gate = entry?.runtime?.liveCapabilityGate
+        val message = when {
+            entry == null -> "Reporter ${expression.name}($arguments) ist nicht im Katalog."
+            gate.isRuntimeBlocked() -> "Reporter live blockiert: ${entry.canonicalName}($arguments) [${gate?.name ?: "UNKNOWN"}]"
+            else -> "würde Reporter ${entry.canonicalName}($arguments) auswerten"
+        }
+        events += EmscriptDryRunEvent(
+            index = events.size + 1,
+            kind = "reporter",
+            message = message,
+            severity = if (gate.isRuntimeBlocked()) EmscriptDryRunEventSeverity.WARNING else EmscriptDryRunEventSeverity.INFO,
+            command = entry?.canonicalName ?: expression.name,
+            capability = gate?.name,
+            pluginOwner = entry?.pluginOwner,
+        )
+        return when (entry?.returnType) {
+            "Number" -> EmscriptValue.NumberValue(0.0)
+            "Text" -> EmscriptValue.StringValue("")
+            else -> EmscriptValue.BooleanValue(false)
+        }
+    }
 
     private fun evaluateBinary(expression: EmscriptIrExpression.Binary): EmscriptValue {
         val left = evaluate(expression.left)

@@ -10,6 +10,7 @@ import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.ir.validateIntegrity
+import de.visualtasker.blockeditor.ir.validateSemantics
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CommandArgument
 import de.visualtasker.blockeditor.registry.CommandArgumentType
@@ -99,6 +100,28 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun parse_escapedStringLiterals_preservesRuntimeCharacters() {
+        val source = """
+            click("A\tB")
+            log("line 1\nline 2")
+            if (screenContains("He said \"OK\"")) {
+                log("quoted")
+            }
+        """.trimIndent()
+        val result = EmscriptParserSlice().parse(source)
+
+        assertTrue(result.issues.joinToString { it.message }, result.isSuccess)
+        val statements = result.ir!!.statements
+        assertEquals(EmscriptIrStatement.ClickText("A\tB"), statements[0])
+        assertEquals(EmscriptIrStatement.Output(EmscriptIrExpression.StringLiteral("line 1\nline 2")), statements[1])
+        val condition = (statements[2] as EmscriptIrStatement.If).condition
+        assertEquals(
+            EmscriptIrExpression.FunctionCall("screenContains", listOf(EmscriptIrExpression.StringLiteral("He said \"OK\""))),
+            condition,
+        )
+    }
+
+    @Test
     fun parse_remGroupMarkers_ignoresEditorFacetsAsComments() {
         val source = """
             REM @vt.group.start id="vars:init" label="Variablen initialisieren" kind="variable-bulk"
@@ -181,6 +204,50 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun parse_reporterFunctionExpressions_buildsExpressionCalls() {
+        val source = """
+            if (screenContains("Ready")) {
+                log("visible");
+            }
+            while (screenContains("Spinner")) {
+                wait(50);
+            }
+        """.trimIndent()
+        val result = EmscriptParserSlice().parse(source)
+
+        assertTrue(result.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, result.isSuccess)
+        val ifStatement = result.ir!!.statements[0] as EmscriptIrStatement.If
+        val whileStatement = result.ir.statements[1] as EmscriptIrStatement.While
+        assertEquals(
+            EmscriptIrExpression.FunctionCall("screenContains", listOf(EmscriptIrExpression.StringLiteral("Ready"))),
+            ifStatement.condition,
+        )
+        assertEquals(
+            EmscriptIrExpression.FunctionCall("screenContains", listOf(EmscriptIrExpression.StringLiteral("Spinner"))),
+            whileStatement.condition,
+        )
+    }
+
+    @Test
+    fun parse_expressionCatalogEntries_acceptTypedSamples() {
+        val entries = VisualTaskerCommandCatalog.allEntries()
+            .filter { it.kind == CommandCatalogKind.REPORTER || it.kind == CommandCatalogKind.OPERATOR }
+            .filter { it.block != null }
+            .sortedBy { it.id }
+        val source = entries.joinToString(separator = "\n") { entry ->
+            val variableName = "expr_${entry.id.replace(Regex("[^A-Za-z0-9_]"), "_")}"
+            val arguments = entry.arguments.joinToString(",") { it.sampleExpressionArgument() }
+            "let $variableName = ${entry.canonicalName}($arguments)"
+        }
+
+        val result = EmscriptParserSlice().parse(source)
+
+        assertTrue(result.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, result.isSuccess)
+        assertEquals(entries.size, result.ir!!.statements.size)
+        assertTrue(result.ir.statements.all { it is EmscriptIrStatement.Let })
+    }
+
+    @Test
     fun parse_invalidScript_reportsLineAndColumn() {
         val source = """
             LET value = 1
@@ -204,6 +271,28 @@ class EmscriptParserSliceTest {
             EmscriptIrStatement.CommandCall("findTemplate", "\"button.png\",0.8,1000"),
             result.ir!!.statements.single(),
         )
+    }
+
+    @Test
+    fun parse_cataloguedCommand_rejectsInvalidArgumentCountAndType() {
+        val missingRequired = EmscriptParserSlice().parse("clickPoint(12)")
+        val invalidType = EmscriptParserSlice().parse("clickPoint(\"x\", 20)")
+        val tooMany = EmscriptParserSlice().parse("screenshot(\"a.png\", \"extra\")")
+
+        assertFalse(missingRequired.isSuccess)
+        assertTrue(missingRequired.issues.single().message.contains("mindestens 2 Parameter"))
+        assertFalse(invalidType.isSuccess)
+        assertTrue(invalidType.issues.single().message.contains("NUMBER"))
+        assertFalse(tooMany.isSuccess)
+        assertTrue(tooMany.issues.single().message.contains("maximal 1 Parameter"))
+    }
+
+    @Test
+    fun parse_reporterFunction_rejectsInvalidArgumentShape() {
+        val result = EmscriptParserSlice().parse("if (screenContains(123)) { log(\"bad\"); }")
+
+        assertFalse(result.isSuccess)
+        assertTrue(result.issues.single().message.contains("TEXT"))
     }
 
     @Test
@@ -257,6 +346,55 @@ class EmscriptParserSliceTest {
         assertTrue(document.blocks.values.any { it.type == BlockTypes.LOGIC_OPERATE })
         assertTrue(document.blocks.values.any { it.type == BlockTypes.FEEDBACK_BEEP })
         assertTrue(document.blocks.values.any { it.type == BlockTypes.FEEDBACK_VIBRATE })
+    }
+
+    @Test
+    fun import_multipleElseIfBranches_preservesEveryBranchSlot() {
+        val source = """
+            if (false) {
+                log("then");
+            } else if (false) {
+                log("first");
+            } else if (true) {
+                log("second");
+            } else {
+                log("else");
+            }
+        """.trimIndent()
+        val result = EmscriptWorkspaceImporter().import(source)
+
+        assertTrue(result.issues.joinToString { it.message }, result.isSuccess)
+        val document = result.document!!
+        val ifBlock = document.blocks.values.single { it.type == BlockTypes.CONTROL_IF_ELSEIF_ELSE }
+        assertTrue(ifBlock.valueInputs.any { it.name == "ELIF_CONDITION" })
+        assertTrue(ifBlock.valueInputs.any { it.name == "ELIF_CONDITION_1" })
+        assertTrue(ifBlock.statementInputs.any { it.name == BlockTypes.SLOT_ELIF })
+        assertTrue(ifBlock.statementInputs.any { it.name == "ELIF_1" })
+
+        val regenerated = EmscriptGenerator(IrGenerator()).generate(document, scriptName = "multi-elseif")
+        val irGraph = IrGraphGenerator().generate(document)
+        assertTrue(regenerated.contains("} else if (false) {"))
+        assertTrue(regenerated.contains("} else if (true) {"))
+        assertTrue(regenerated.contains("log(\"second\");"))
+        assertTrue(irGraph.validateIntegrity().joinToString { it.message }, irGraph.validateIntegrity().isEmpty())
+        assertTrue(irGraph.validateSemantics().joinToString { it.message }, irGraph.validateSemantics().isEmpty())
+        assertTrue(irGraph.edges.any { it.kind.name == "CONDITION" && it.label == "ELIF_CONDITION_1" })
+        assertTrue(irGraph.branches.any { it.role.name == "ELSE_IF" && it.conditionNodeId?.value?.startsWith("block:") == true })
+    }
+
+    @Test
+    fun import_screenContainsCondition_buildsReporterBlockAndRunsDryRun() {
+        val source = """
+            if (screenContains("Ready")) {
+                log("visible");
+            }
+        """.trimIndent()
+        val result = EmscriptWorkspaceImporter().import(source)
+
+        assertTrue(result.issues.joinToString { it.message }, result.isSuccess)
+        val document = result.document!!
+        assertTrue(document.blocks.values.any { it.type == BlockTypes.LOGIC_SCREEN_CONTAINS })
+        assertTrue(WorkspaceDryRunRuntime().run(document) is EmscriptDryRunResult.Success)
     }
 
     @Test
@@ -481,6 +619,21 @@ class EmscriptParserSliceTest {
             CommandArgumentType.IMAGE_TEMPLATE,
             CommandArgumentType.REGION -> "\"${defaultValue ?: name}\""
             CommandArgumentType.ANY -> defaultValue?.takeIf { it.isNotBlank() } ?: "{}"
+            CommandArgumentType.STATEMENT_BODY -> "{}"
+        }
+
+    private fun CommandArgument.sampleExpressionArgument(): String =
+        when (type) {
+            CommandArgumentType.BOOLEAN -> defaultValue ?: "true"
+            CommandArgumentType.NUMBER,
+            CommandArgumentType.DURATION_MS,
+            CommandArgumentType.FREQUENCY_HZ,
+            CommandArgumentType.PERCENT -> defaultValue ?: "1"
+            CommandArgumentType.TEXT,
+            CommandArgumentType.VARIABLE_REF,
+            CommandArgumentType.IMAGE_TEMPLATE,
+            CommandArgumentType.REGION -> "\"${defaultValue ?: name}\""
+            CommandArgumentType.ANY -> defaultValue?.takeIf { it.isNotBlank() } ?: "1"
             CommandArgumentType.STATEMENT_BODY -> "{}"
         }
 }
