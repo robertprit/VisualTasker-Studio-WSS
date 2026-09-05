@@ -106,7 +106,10 @@ import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
+import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 
 @Composable
 fun FlowchartShellPanel(
@@ -1146,7 +1149,7 @@ private fun FlowchartNodeGlyph(
     }
 }
 
-private data class FlowchartNodePaletteEntry(
+internal data class FlowchartNodePaletteEntry(
     val shapeId: Int,
     val category: String,
     val label: String,
@@ -1154,24 +1157,52 @@ private data class FlowchartNodePaletteEntry(
     val fillColor: Color,
 )
 
-private fun flowchartNodePaletteEntries(): List<FlowchartNodePaletteEntry> = listOf(
-    FlowchartNodePaletteEntry(1, "Start / Ereignis", "Script Start", BlockTypes.EVENT_START, Color(0xFFFFB300)),
-    FlowchartNodePaletteEntry(2, "Aktionen", "Click Text", BlockTypes.ACTION_CLICK_TEXT, Color(0xFF5C638F)),
-    FlowchartNodePaletteEntry(2, "Aktionen", "Wait", BlockTypes.ACTION_WAIT, Color(0xFF5C638F)),
-    FlowchartNodePaletteEntry(8, "Feedback", "Beep", BlockTypes.FEEDBACK_BEEP, Color(0xFF8A5F76)),
-    FlowchartNodePaletteEntry(8, "Feedback", "Vibrate", BlockTypes.FEEDBACK_VIBRATE, Color(0xFF8A5F76)),
-    FlowchartNodePaletteEntry(4, "Kontrolle", "If", BlockTypes.CONTROL_IF, Color(0xFF7A5DB8)),
-    FlowchartNodePaletteEntry(4, "Kontrolle", "If / Else", BlockTypes.CONTROL_IF_ELSE, Color(0xFF7A5DB8)),
-    FlowchartNodePaletteEntry(4, "Kontrolle", "If / Else If / Else", BlockTypes.CONTROL_IF_ELSEIF_ELSE, Color(0xFF7A5DB8)),
-    FlowchartNodePaletteEntry(9, "Kontrolle", "Repeat", BlockTypes.CONTROL_REPEAT, Color(0xFF32856C)),
-    FlowchartNodePaletteEntry(9, "Kontrolle", "While", BlockTypes.CONTROL_WHILE, Color(0xFF32856C)),
-    FlowchartNodePaletteEntry(5, "Logik", "Compare", BlockTypes.LOGIC_COMPARE, Color(0xFF2B8CD6)),
-    FlowchartNodePaletteEntry(7, "Logik", "Operate", BlockTypes.LOGIC_OPERATE, Color(0xFF6A4B78)),
-    FlowchartNodePaletteEntry(7, "Logik", "Boolean", BlockTypes.LOGIC_BOOLEAN, Color(0xFF6A4B78)),
-    FlowchartNodePaletteEntry(6, "Variablen", "Get Variable", BlockTypes.VARIABLE_GET, Color(0xFF2A9D5E)),
-    FlowchartNodePaletteEntry(6, "Variablen", "Set Variable", BlockTypes.VARIABLE_SET, Color(0xFF2A9D5E)),
-    FlowchartNodePaletteEntry(14, "Diagnose", "Log", BlockTypes.DEBUG_LOG, Color(0xFFE0A43E)),
-)
+internal fun flowchartNodePaletteEntries(): List<FlowchartNodePaletteEntry> =
+    DefaultBlockRegistry.allDefinitions()
+        .filter { it.paletteVisible }
+        .filterNot { it.id == BlockTypes.VARIABLE_REPORTER }
+        .sortedWith(
+            compareBy(
+                { categoryOrder(it.category) },
+                { BlockCategories.metaFor(it.category).label },
+                { it.label },
+                { it.id },
+            )
+        )
+        .map { definition ->
+            val metadata = VisualTaskerCommandCatalog.metadataForBlockType(definition.id)
+            val displayLabel = metadata[VisualTaskerCommandCatalog.METADATA_SHORT_NAME]
+                ?: metadata[VisualTaskerCommandCatalog.METADATA_DISPLAY_NAME]
+                ?: definition.label
+            FlowchartNodePaletteEntry(
+                shapeId = flowchartPaletteShapeId(definition.id, definition.category),
+                category = BlockCategories.metaFor(definition.category).label,
+                label = displayLabel,
+                definitionId = definition.id,
+                fillColor = Color(BlockCategories.metaFor(definition.category).accentArgb),
+            )
+        }
+
+private fun categoryOrder(category: String): Int =
+    BlockCategories.all.indexOfFirst { it.id == category }.takeIf { it >= 0 } ?: Int.MAX_VALUE
+
+private fun flowchartPaletteShapeId(blockType: String, category: String): Int =
+    when {
+        blockType.startsWith("event.") -> 1
+        blockType.startsWith("control.if") -> 4
+        blockType == BlockTypes.CONTROL_REPEAT -> 9
+        blockType == BlockTypes.CONTROL_WHILE -> 9
+        blockType == BlockTypes.LOGIC_COMPARE -> 5
+        blockType == BlockTypes.VARIABLE_GET || blockType == BlockTypes.VARIABLE_SET -> 6
+        blockType == BlockTypes.LOGIC_OPERATE || blockType == BlockTypes.LOGIC_AND || blockType == BlockTypes.LOGIC_OR -> 7
+        blockType.startsWith("feedback.") -> 8
+        category == BlockCategories.DEBUG -> 14
+        category == BlockCategories.VISION || category == BlockCategories.PERCEPTION -> 13
+        category == BlockCategories.CHROME_TAB -> 12
+        category == BlockCategories.TASKER -> 11
+        category == BlockCategories.TERMUX || category == BlockCategories.SHIZUKU || category == BlockCategories.SCRCPY -> 10
+        else -> 2
+    }
 
 private fun flowchartMaterialNodePath(
     node: FlowGraphNode,
