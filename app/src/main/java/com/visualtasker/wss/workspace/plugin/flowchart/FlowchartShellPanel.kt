@@ -606,6 +606,7 @@ private enum class FlowchartArrangeMode(
                 componentSpacing = 128.0,
                 routingClearance = 28.0,
                 wrapAfterNodes = 11,
+                semanticWrapEnabled = true,
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Wide -> FlowLayoutConfig(
