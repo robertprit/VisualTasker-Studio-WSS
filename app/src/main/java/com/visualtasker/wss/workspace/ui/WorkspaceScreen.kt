@@ -1142,10 +1142,26 @@ fun WorkspaceScreen(
     }
 
     val addFlowchartNode: (String) -> Unit = { definitionId ->
+        val visibleInsertPosition = if (selectedFlowchartNodeForInsert == null) {
+            activeFlowchartSessionState.value
+                ?.controller
+                ?.snapshot()
+                ?.view
+                ?.viewport
+                ?.let { viewport ->
+                    FlowPoint(
+                        x = (184.0 - viewport.pan.x) / viewport.zoom,
+                        y = (164.0 - viewport.pan.y) / viewport.zoom,
+                    )
+                }
+        } else {
+            null
+        }
         applyFlowchartMutation(
             FlowchartWorkspaceMutation.AddNode(
                 definitionId = definitionId,
                 afterNodeId = selectedFlowchartNodeForInsert,
+                position = visibleInsertPosition,
             ),
             selectedFlowchartNodeForInsert?.let { "${it.value}:insert:$definitionId" } ?: definitionId,
         )
