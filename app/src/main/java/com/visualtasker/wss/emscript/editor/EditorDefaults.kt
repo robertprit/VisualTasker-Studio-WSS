@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 7
+    const val integrationTestScriptVersion: Int = 8
 
     val sampleScript: String = """
         LET v1 = 1
@@ -25,11 +25,20 @@ object EditorDefaults {
         log("integration-start")
         wait(100)
         click("Start")
+        screenshot("screenshots/integration-live.png")
+        datastorePut("integration.score", "0")
+        datastoreGet("integration.score")
+        markerSave("integrationRegion", region(10, 20, 240, 160), "region", 0.85)
+        markerLoad("integrationRegion")
+        templateDefine("integrationTemplate", region(10, 20, 240, 160), "grayscale")
+        templateCompare("integrationTemplate", region(10, 20, 240, 160), "grayscale")
+        findTemplate("integrationTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
 
         REM @vt.group.start id="flow:main-loop" label="Hauptschleife" kind="loop-region"
         LOOP 10
             SET loopIndex = loopIndex + 1
             SET score = score + loopIndex
+            datastorePut("integration.score", score)
             log("loop tick")
             wait(25)
 
@@ -67,6 +76,8 @@ object EditorDefaults {
             END IF
         END LOOP
         REM @vt.group.end id="flow:main-loop"
+
+        markerDelete("integrationRegion")
 
         WHILE loopIndex < 12
             SET loopIndex = loopIndex + 1
@@ -130,6 +141,13 @@ object EditorDefaults {
         clickPoint(120, 240, 1)
         swipe([120, 640, 120, 220], 1)
         screenshot("core-screen.png")
+        datastorePut("catalog.result", result)
+        datastoreGet("catalog.result")
+        markerSave("catalogRegion", region(10, 20, 240, 160), "region", 0.85)
+        markerLoad("catalogRegion")
+        templateDefine("catalogTemplate", region(10, 20, 240, 160), "grayscale")
+        templateCompare("catalogTemplate", region(10, 20, 240, 160), "grayscale")
+        findTemplate("catalogTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
         Clipboard.set("visualtasker")
         Clipboard.get()
         File.writeText("core-runtime.txt", "hello")
@@ -184,6 +202,8 @@ object EditorDefaults {
             log("core-while")
             wait(20)
         END WHILE
+
+        markerDelete("catalogRegion")
 
         log("core-runtime-end")
     """.trimIndent()

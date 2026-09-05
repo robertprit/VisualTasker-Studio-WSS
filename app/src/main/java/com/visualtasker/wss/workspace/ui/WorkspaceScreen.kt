@@ -199,6 +199,8 @@ import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
+import com.visualtasker.wss.emscript.runtime.RuntimeAutomationRegion
+import com.visualtasker.wss.emscript.runtime.RuntimeTemplateMatch
 import com.visualtasker.wss.emscript.runtime.traceSummary
 import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.data.PanelState as MainPanelState
@@ -694,6 +696,31 @@ fun WorkspaceScreen(
     var lastWorkspaceChangeSource by remember(uiPrefs) { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
+    val runtimeDatastore = remember(context) {
+        mutableStateMapOf<String, String>().apply {
+            putAll(loadRuntimeDatastore(context))
+        }
+    }
+    LaunchedEffect(runtimeDatastore) {
+        snapshotFlow { runtimeDatastore.toMap() }
+            .debounce(250)
+            .collect { values ->
+                persistRuntimeDatastore(context, values)
+            }
+    }
+    val workspaceCanvasState = remember(context) {
+        ScreenshotCanvasUiState().apply {
+            savedMarkers.addAll(loadScreenshotCanvasSavedMarkers(context))
+            selectedSavedMarkerId = savedMarkers.firstOrNull()?.id
+        }
+    }
+    LaunchedEffect(workspaceCanvasState) {
+        snapshotFlow { workspaceCanvasState.savedMarkers.toList() }
+            .debounce(250)
+            .collect { markers ->
+                persistScreenshotCanvasSavedMarkers(context, markers)
+            }
+    }
     val initialTextEditorDraft = remember(uiPrefs) {
         loadInitialTextEditorDraft(uiPrefs)
     }
@@ -792,6 +819,152 @@ fun WorkspaceScreen(
                     } else {
                         false
                     }
+                },
+                findTemplate = { name, threshold, _, searchRegion ->
+                    val marker = workspaceCanvasState.savedMarkers.firstOrNull {
+                        it.markerMode == ScreenshotCanvasMarkerMode.Template &&
+                            it.matchesRuntimeTemplateName(name)
+                    }
+                    if (marker == null) {
+                        null
+                    } else {
+                        val assets = loadScreenshotCanvasAssets(context)
+                        val liveAsset = assets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId } ?: assets.firstOrNull()
+                        val referenceAsset = assets.firstOrNull { it.id == marker.assetId } ?: liveAsset
+                        val liveBitmap = liveAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
+                        val referenceBitmap = referenceAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
+                        val liveRegion = searchRegion?.toScreenshotRegion() ?: marker.region
+                        val score = compareScreenshotRegions(
+                            liveBitmap = liveBitmap,
+                            liveRegion = liveRegion,
+                            liveMode = marker.processingMode,
+                            referenceBitmap = referenceBitmap,
+                            referenceRegion = marker.region,
+                            referenceMode = marker.processingMode,
+                        )
+                        workspaceCanvasState.referenceMarkerId = marker.id
+                        workspaceCanvasState.selectedSavedMarkerId = marker.id
+                        workspaceCanvasState.selectedRegion = liveRegion
+                        workspaceCanvasState.visualTestScore = score
+                        score
+                            ?.takeIf { it >= threshold }
+                            ?.let {
+                                RuntimeTemplateMatch(
+                                    name = marker.label,
+                                    region = liveRegion.toRuntimeRegion(),
+                                    score = it,
+                                )
+                            }
+                    }
+                },
+                markerSave = { name, region, mode, threshold ->
+                    val now = System.currentTimeMillis()
+                    val markerMode = markerModeFromRuntime(mode)
+                    val selectedAsset = loadScreenshotCanvasAssets(context)
+                        .firstOrNull { it.id == workspaceCanvasState.selectedAssetId }
+                    val id = "runtime-marker:${name.trim().lowercase(Locale.ROOT)}"
+                    val marker = ScreenshotCanvasSavedMarker(
+                        id = id,
+                        label = name.trim().ifBlank { "marker" },
+                        assetId = selectedAsset?.id,
+                        assetLabel = selectedAsset?.label,
+                        region = region.toScreenshotRegion(),
+                        markerMode = markerMode,
+                        matchKind = ScreenshotCanvasMatchKind.OCV,
+                        processingMode = workspaceCanvasState.processingMode,
+                        threshold = threshold,
+                        rotationDegrees = workspaceCanvasState.rotationDegrees,
+                        matchReadMe = "runtime",
+                        colourHex = workspaceCanvasState.colourHex,
+                        updatedAt = now,
+                    )
+                    val index = workspaceCanvasState.savedMarkers.indexOfFirst { it.id == id || it.label.equals(marker.label, ignoreCase = true) }
+                    if (index >= 0) {
+                        workspaceCanvasState.savedMarkers[index] = marker
+                    } else {
+                        workspaceCanvasState.savedMarkers.add(0, marker)
+                    }
+                    workspaceCanvasState.selectedSavedMarkerId = marker.id
+                    workspaceCanvasState.selectedRegion = marker.region
+                    true
+                },
+                markerLoad = { name ->
+                    val marker = workspaceCanvasState.savedMarkers.firstOrNull { it.label.equals(name, ignoreCase = true) || it.id == name }
+                    if (marker != null) {
+                        workspaceCanvasState.selectedSavedMarkerId = marker.id
+                        workspaceCanvasState.selectedAssetId = marker.assetId ?: workspaceCanvasState.selectedAssetId
+                        workspaceCanvasState.selectedRegion = marker.region
+                        workspaceCanvasState.markerMode = marker.markerMode
+                    }
+                    marker?.region?.toRuntimeRegion()
+                },
+                markerDelete = { name ->
+                    val before = workspaceCanvasState.savedMarkers.size
+                    workspaceCanvasState.savedMarkers.removeAll { it.label.equals(name, ignoreCase = true) || it.id == name }
+                    workspaceCanvasState.selectedSavedMarkerId = workspaceCanvasState.savedMarkers.firstOrNull()?.id
+                    before != workspaceCanvasState.savedMarkers.size
+                },
+                templateDefine = { name, region, processing ->
+                    val selectedAsset = loadScreenshotCanvasAssets(context)
+                        .firstOrNull { it.id == workspaceCanvasState.selectedAssetId }
+                    val marker = ScreenshotCanvasSavedMarker(
+                        id = "runtime-template:${name.trim().lowercase(Locale.ROOT)}",
+                        label = name.trim().ifBlank { "template" },
+                        assetId = selectedAsset?.id,
+                        assetLabel = selectedAsset?.label,
+                        region = region.toScreenshotRegion(),
+                        markerMode = ScreenshotCanvasMarkerMode.Template,
+                        matchKind = ScreenshotCanvasMatchKind.OCV,
+                        processingMode = processingModeFromRuntime(processing),
+                        threshold = workspaceCanvasState.threshold,
+                        rotationDegrees = workspaceCanvasState.rotationDegrees,
+                        matchReadMe = "runtime-template",
+                        colourHex = workspaceCanvasState.colourHex,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                    val index = workspaceCanvasState.savedMarkers.indexOfFirst { it.id == marker.id || it.label.equals(marker.label, ignoreCase = true) }
+                    if (index >= 0) {
+                        workspaceCanvasState.savedMarkers[index] = marker
+                    } else {
+                        workspaceCanvasState.savedMarkers.add(0, marker)
+                    }
+                    workspaceCanvasState.referenceMarkerId = marker.id
+                    workspaceCanvasState.selectedRegion = marker.region
+                    true
+                },
+                templateCompare = { name, region, processing ->
+                    val marker = workspaceCanvasState.savedMarkers.firstOrNull {
+                        it.markerMode == ScreenshotCanvasMarkerMode.Template &&
+                            (it.label.equals(name, ignoreCase = true) || it.id == name)
+                    }
+                    if (marker == null) {
+                        null
+                    } else {
+                        val assets = loadScreenshotCanvasAssets(context)
+                        val liveAsset = assets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId } ?: assets.firstOrNull()
+                        val referenceAsset = assets.firstOrNull { it.id == marker.assetId } ?: liveAsset
+                        val liveBitmap = liveAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
+                        val referenceBitmap = referenceAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
+                        val mode = processingModeFromRuntime(processing)
+                        val score = compareScreenshotRegions(
+                            liveBitmap = liveBitmap,
+                            liveRegion = region.toScreenshotRegion(),
+                            liveMode = mode,
+                            referenceBitmap = referenceBitmap,
+                            referenceRegion = marker.region,
+                            referenceMode = marker.processingMode,
+                        )
+                        workspaceCanvasState.referenceMarkerId = marker.id
+                        workspaceCanvasState.selectedRegion = region.toScreenshotRegion()
+                        workspaceCanvasState.visualTestScore = score
+                        score
+                    }
+                },
+                datastorePut = { key, value ->
+                    runtimeDatastore[key] = value
+                },
+                datastoreGet = { key ->
+                    runtimeDatastore[key]
                 },
             ),
         )
@@ -1212,19 +1385,6 @@ fun WorkspaceScreen(
     }
     // Workspace shell stays truth-neutral: external projection wins over demo data.
     val projectedSteps = recorderStepsProjection?.invoke() ?: demoRecorderSteps
-    val workspaceCanvasState = remember(context) {
-        ScreenshotCanvasUiState().apply {
-            savedMarkers.addAll(loadScreenshotCanvasSavedMarkers(context))
-            selectedSavedMarkerId = savedMarkers.firstOrNull()?.id
-        }
-    }
-    LaunchedEffect(workspaceCanvasState) {
-        snapshotFlow { workspaceCanvasState.savedMarkers.toList() }
-            .debounce(250)
-            .collect { markers ->
-                persistScreenshotCanvasSavedMarkers(context, markers)
-            }
-    }
     val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
         loadScreenshotCanvasAssets(context)
     }
@@ -1705,6 +1865,7 @@ fun WorkspaceScreen(
                         },
                         logStore = studioLogStore,
                         logConsoleState = logConsoleState,
+                        runtimeDatastore = runtimeDatastore,
                         onBlockEditorSessionReady = { session ->
                             blockEditorSessionState.value = session
                             if (session != null) {
@@ -2116,6 +2277,7 @@ private fun WorkspacePanelContent(
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
     screenshotCanvasState: ScreenshotCanvasUiState = remember { ScreenshotCanvasUiState() },
     screenshotAssets: List<ScreenshotCanvasAsset> = emptyList(),
+    runtimeDatastore: Map<String, String> = emptyMap(),
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     when (panel.type) {
@@ -2270,6 +2432,7 @@ private fun WorkspacePanelContent(
             assets = screenshotAssets,
             workflowState = workflowState,
             logStore = logStore,
+            datastore = runtimeDatastore,
         )
         PanelType.M3Director -> Unit
     }
@@ -2572,11 +2735,18 @@ private fun DatastorePanel(
     assets: List<ScreenshotCanvasAsset>,
     workflowState: WorkspaceWorkflowState,
     logStore: StudioLogStore,
+    datastore: Map<String, String>,
 ) {
     val logChangeToken = logStore.changeToken
     val logEntries = remember(logChangeToken) { logStore.allEntries() }
     val selectedMarker = remember(state.selectedSavedMarkerId, state.savedMarkers.toList()) {
         state.savedMarkers.firstOrNull { it.id == state.selectedSavedMarkerId }
+    }
+    val templateMarkers = remember(state.savedMarkers.toList()) {
+        state.savedMarkers.filter { it.markerMode == ScreenshotCanvasMarkerMode.Template }
+    }
+    val actionMarkers = remember(state.savedMarkers.toList()) {
+        state.savedMarkers.filter { it.markerMode != ScreenshotCanvasMarkerMode.Template }
     }
     Column(
         modifier = Modifier
@@ -2595,8 +2765,44 @@ private fun DatastorePanel(
                 DatastoreSection("Dataset") {
                     DatastoreMetric("Screenshots", assets.size.toString())
                     DatastoreMetric("Marker", state.savedMarkers.size.toString())
+                    DatastoreMetric("Templates", templateMarkers.size.toString())
+                    DatastoreMetric("Key/Value", datastore.size.toString())
                     DatastoreMetric("Auswahl", selectedMarker?.label ?: "-")
                     DatastoreMetric("Region", state.selectedRegion?.let { "${it.x},${it.y} ${it.width}x${it.height}" } ?: "-")
+                }
+            }
+            if (assets.isNotEmpty()) {
+                item {
+                    DatastoreSection("Screenshot Assets") {
+                        assets.take(6).forEach { asset ->
+                            DatastoreMetric(
+                                asset.label,
+                                "${asset.scene} | ${asset.dateLabel}",
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                DatastoreSection("Vision Quellen") {
+                    DatastoreMetric("Canvas", if (assets.isNotEmpty()) "bereit" else "leer")
+                    DatastoreMetric("Marker", if (state.savedMarkers.isNotEmpty()) "persistiert" else "leer")
+                    DatastoreMetric("Templates", if (templateMarkers.isNotEmpty()) "persistiert" else "leer")
+                    DatastoreMetric("A11Y", if (state.showAccessibilityNodes) "sichtbar" else "ausgeblendet")
+                    DatastoreMetric("OCR", if (state.showOcrNodes) "sichtbar" else "ausgeblendet")
+                    DatastoreMetric("OCV", if (state.showVisionTemplateNodes) "sichtbar" else "ausgeblendet")
+                    DatastoreMetric("YOLO", if (state.showYoloNodes) "sichtbar" else "ausgeblendet")
+                }
+            }
+            item {
+                DatastoreSection("Pipeline Status") {
+                    DatastoreMetric("Screenshot", "lokal")
+                    DatastoreMetric("Marker Save/Load", "lokal")
+                    DatastoreMetric("Template Compare", if (templateMarkers.isNotEmpty()) "lokal testbar" else "wartet auf Template")
+                    DatastoreMetric("OCR Adapter", "geplant")
+                    DatastoreMetric("OCV Adapter", "geplant")
+                    DatastoreMetric("YOLO Adapter", "geplant")
+                    DatastoreMetric("A11Y Scan", "geplant")
                 }
             }
             item {
@@ -2624,12 +2830,53 @@ private fun DatastorePanel(
             if (state.savedMarkers.isNotEmpty()) {
                 item {
                     DatastoreSection("Marker") {
-                        state.savedMarkers.take(8).forEach { marker ->
+                        actionMarkers.take(8).forEach { marker ->
                             DatastoreMetric(
                                 marker.label,
                                 "${marker.markerMode.name} ${marker.region.x},${marker.region.y} ${marker.region.width}x${marker.region.height}",
                             )
                         }
+                        if (actionMarkers.isEmpty()) {
+                            DatastoreMetric("Status", "Keine Aktionsmarker")
+                        }
+                    }
+                }
+                item {
+                    DatastoreSection("Templates") {
+                        templateMarkers.take(8).forEach { marker ->
+                            DatastoreMetric(
+                                marker.label,
+                                "${marker.processingMode.name} ${marker.region.width}x${marker.region.height} @ ${marker.threshold}",
+                            )
+                        }
+                        if (templateMarkers.isEmpty()) {
+                            DatastoreMetric("Status", "Keine Templates")
+                        }
+                    }
+                }
+            }
+            selectedMarker?.let { marker ->
+                item {
+                    DatastoreSection("Marker Detail") {
+                        DatastoreMetric("ID", marker.id)
+                        DatastoreMetric("Asset", marker.assetLabel ?: marker.assetId ?: "-")
+                        DatastoreMetric("Modus", marker.markerMode.name)
+                        DatastoreMetric("Match", marker.matchKind.name)
+                        DatastoreMetric("Processing", marker.processingMode.name)
+                        DatastoreMetric("Threshold", marker.threshold.toString())
+                        DatastoreMetric("Export", markerExportCode(marker))
+                    }
+                }
+            }
+            if (datastore.isNotEmpty()) {
+                item {
+                    DatastoreSection("Key/Value") {
+                        datastore.entries
+                            .sortedBy { it.key }
+                            .take(12)
+                            .forEach { (key, value) ->
+                                DatastoreMetric(key, value)
+                            }
                     }
                 }
             }
@@ -4212,6 +4459,38 @@ private fun loadScreenshotCanvasAssets(context: Context): List<ScreenshotCanvasA
 private fun screenshotCanvasMarkerStoreFile(context: Context): File =
     File(runtimeFilesRoot(context), "markers/saved-markers.json")
 
+private fun runtimeDatastoreFile(context: Context): File =
+    File(runtimeFilesRoot(context), "datastore/runtime-values.json")
+
+private fun loadRuntimeDatastore(context: Context): Map<String, String> {
+    val file = runtimeDatastoreFile(context)
+    if (!file.isFile) return emptyMap()
+    return runCatching {
+        val root = JSONObject(file.readText())
+        val values = root.optJSONObject("values") ?: JSONObject()
+        buildMap {
+            values.keys().forEach { key ->
+                put(key, values.optString(key, ""))
+            }
+        }
+    }.getOrDefault(emptyMap())
+}
+
+private fun persistRuntimeDatastore(
+    context: Context,
+    values: Map<String, String>,
+) {
+    runCatching {
+        val file = runtimeDatastoreFile(context)
+        file.parentFile?.mkdirs()
+        val root = JSONObject()
+        root.put("schemaVersion", 1)
+        root.put("updatedAt", System.currentTimeMillis())
+        root.put("values", JSONObject(values))
+        file.writeText(root.toString(2))
+    }
+}
+
 private fun loadScreenshotCanvasSavedMarkers(context: Context): List<ScreenshotCanvasSavedMarker> {
     val file = screenshotCanvasMarkerStoreFile(context)
     if (!file.isFile) return emptyList()
@@ -4291,6 +4570,54 @@ private inline fun <reified T : Enum<T>> enumValueOrDefault(raw: String?, fallba
     raw?.takeIf { it.isNotBlank() }
         ?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() }
         ?: fallback
+
+private fun RuntimeAutomationRegion.toScreenshotRegion(): ScreenshotCanvasRegion =
+    ScreenshotCanvasRegion(
+        x = x,
+        y = y,
+        width = width.coerceAtLeast(1),
+        height = height.coerceAtLeast(1),
+    )
+
+private fun ScreenshotCanvasRegion.toRuntimeRegion(): RuntimeAutomationRegion =
+    RuntimeAutomationRegion(
+        x = x,
+        y = y,
+        width = width.coerceAtLeast(1),
+        height = height.coerceAtLeast(1),
+    )
+
+private fun ScreenshotCanvasSavedMarker.matchesRuntimeTemplateName(raw: String): Boolean {
+    val requested = raw.substringAfterLast('/').substringBeforeLast('.').trim()
+    val candidates = listOf(
+        raw,
+        requested,
+        id,
+        label,
+        assetLabel.orEmpty(),
+        assetLabel.orEmpty().substringBeforeLast('.'),
+    ).map { it.trim() }
+    return candidates.any { it.isNotBlank() && it.equals(requested, ignoreCase = true) } ||
+        candidates.any { it.isNotBlank() && it.equals(raw.trim(), ignoreCase = true) }
+}
+
+private fun markerModeFromRuntime(raw: String): ScreenshotCanvasMarkerMode =
+    when (raw.trim().lowercase(Locale.ROOT)) {
+        "template", "tpl" -> ScreenshotCanvasMarkerMode.Template
+        "point", "tap" -> ScreenshotCanvasMarkerMode.Point
+        "swipe" -> ScreenshotCanvasMarkerMode.Swipe
+        "path" -> ScreenshotCanvasMarkerMode.Path
+        else -> ScreenshotCanvasMarkerMode.Region
+    }
+
+private fun processingModeFromRuntime(raw: String): ScreenshotCanvasProcessingMode =
+    when (raw.trim().lowercase(Locale.ROOT)) {
+        "gray", "grey", "grayscale", "grau", "graustufen" -> ScreenshotCanvasProcessingMode.Grayscale
+        "contrast", "highcontrast", "kontrast" -> ScreenshotCanvasProcessingMode.HighContrast
+        "edge", "edges", "kanten" -> ScreenshotCanvasProcessingMode.Edge
+        "inverse", "invert", "invers" -> ScreenshotCanvasProcessingMode.Inverse
+        else -> ScreenshotCanvasProcessingMode.Original
+    }
 
 @Composable
 private fun WorkspaceTopAppBar(

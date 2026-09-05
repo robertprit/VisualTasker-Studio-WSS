@@ -169,6 +169,7 @@ object BlockEditorFlowchartProjector {
         BlockTypes.EVENT_START -> FlowSemanticKind(FlowNodeKind.ENTRY)
         BlockTypes.ACTION_CLICK_TEXT,
         BlockTypes.ACTION_WAIT,
+        BlockTypes.ACTION_FIND_TEMPLATE,
         BlockTypes.DEBUG_LOG,
         BlockTypes.FEEDBACK_BEEP,
         BlockTypes.FEEDBACK_VIBRATE,
@@ -197,6 +198,8 @@ object BlockEditorFlowchartProjector {
         else -> {
             if (block.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX)) {
                 FlowSemanticKind(FlowNodeKind.PROPERTY_ACCESS)
+            } else if (block.type.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX)) {
+                FlowSemanticKind(FlowNodeKind.ACTION)
             } else {
                 diagnostics += unsupportedBlockDiagnostic(document, block)
                 FlowSemanticKind(FlowNodeKind.UNKNOWN_SOURCE)
@@ -218,6 +221,7 @@ object BlockEditorFlowchartProjector {
             val ms = numberField(block, "ms") ?: 0.0
             "WAIT ${ms.toLong()}ms"
         }
+        BlockTypes.ACTION_FIND_TEMPLATE -> genericCommandLabel(block, "findTemplate")
         BlockTypes.DEBUG_LOG -> {
             val message = textField(block, "message").orEmpty()
             "LOG \"$message\""
@@ -282,8 +286,23 @@ object BlockEditorFlowchartProjector {
         }
         else -> if (block.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX)) {
             variableLabel(block, document, diagnostics)
+        } else if (block.type.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX)) {
+            genericCommandLabel(block, block.type.removePrefix(BlockTypes.EMSCRIPT_COMMAND_PREFIX))
         } else {
             "UNSUPPORTED ${block.type}"
+        }
+    }
+
+    private fun genericCommandLabel(block: BlockNode, fallbackCommand: String): String {
+        val command = textField(block, "command")
+            ?.takeIf { it.isNotBlank() }
+            ?: fallbackCommand
+        val args = commandArgumentKeys(block)
+            .mapNotNull { key -> fieldAsDisplayText(block, key)?.let { key to it } }
+        return if (args.isEmpty()) {
+            command.uppercase()
+        } else {
+            "${command.uppercase()} ${args.joinToString(", ") { (_, value) -> value }}"
         }
     }
 
@@ -338,7 +357,23 @@ object BlockEditorFlowchartProjector {
         textField(block, "pattern")?.let { props["pattern"] = FlowSemanticValue.StringValue(it) }
         textField(block, "message")?.let { props["message"] = FlowSemanticValue.StringValue(it) }
         textField(block, "text")?.let { props["text"] = FlowSemanticValue.StringValue(it) }
+        textField(block, "command")?.let { props["command"] = FlowSemanticValue.StringValue(it) }
+        commandArgumentKeys(block).forEach { key ->
+            fieldAsDisplayText(block, key)?.let { props[key] = FlowSemanticValue.StringValue(it) }
+        }
         return props
+    }
+
+    private fun commandArgumentKeys(block: BlockNode): List<String> =
+        block.fields.keys
+            .filter { it.startsWith("arg") }
+            .sortedWith(compareBy({ it.removePrefix("arg").toIntOrNull() ?: Int.MAX_VALUE }, { it }))
+
+    private fun fieldAsDisplayText(block: BlockNode, key: String): String? = when (val value = block.fields[key]) {
+        is FieldValue.Text -> value.value.takeIf { it.isNotBlank() }
+        is FieldValue.Number -> value.value.toString()
+        is FieldValue.Bool -> value.value.toString()
+        null -> null
     }
 
     private fun inputPortValues(block: BlockNode): List<FlowSemanticValue> = buildList {

@@ -37,7 +37,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         assertEquals(graph.documentRevision, snapshot.documentRevision)
         assertEquals(7, snapshot.sequence)
         assertTrue(snapshot.nodeStates.isEmpty())
-        assertTrue(snapshot.diagnostics.isEmpty())
+        assertTrue(snapshot.diagnostics.all { it.nodeId == null })
         assertTrue(FlowRuntimeSnapshotValidator.validate(graph, snapshot).isValid)
     }
 

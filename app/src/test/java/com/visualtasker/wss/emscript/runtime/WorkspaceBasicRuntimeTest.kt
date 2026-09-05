@@ -3,6 +3,7 @@ package com.visualtasker.wss.emscript.runtime
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -256,5 +257,85 @@ class WorkspaceBasicRuntimeTest {
         assertTrue(calls.contains("log:Env.get(SDK_INT) -> env:SDK_INT"))
         assertTrue(calls.contains("fileWrite:state.txt:ok"))
         assertTrue(calls.contains("fileRead:state.txt:ok"))
+    }
+
+    @Test
+    fun basicRuntimeExecutesDatastoreMarkerAndTemplateCommands() = runBlocking {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            datastorePut("score", "42")
+            datastoreGet("score")
+            markerSave("button", region(10, 20, 30, 40), "region", 0.90)
+            markerLoad("button")
+            templateDefine("buttonTpl", region(10, 20, 30, 40), "grayscale")
+            templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
+            findTemplate("buttonTpl.png", 0.8, 1000, 1, region(10, 20, 30, 40))
+            markerDelete("button")
+            """.trimIndent(),
+            workspaceId = "workspace-basic-runtime-datastore-marker",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val calls = mutableListOf<String>()
+        val datastore = mutableMapOf<String, String>()
+        val markers = mutableMapOf<String, RuntimeAutomationRegion>()
+        val templates = mutableMapOf<String, RuntimeAutomationRegion>()
+        val runtime = WorkspaceBasicRuntime(
+            environment = WorkspaceBasicRuntimeEnvironment(
+                delayMs = {},
+                playBeep = { _, _, _ -> },
+                vibrate = {},
+                log = { calls += "log:$it" },
+                markerSave = { name, region, mode, threshold ->
+                    calls += "markerSave:$name:${region.width}x${region.height}:$mode:$threshold"
+                    markers[name] = region
+                    true
+                },
+                markerLoad = { name ->
+                    calls += "markerLoad:$name"
+                    markers[name]
+                },
+                markerDelete = { name ->
+                    calls += "markerDelete:$name"
+                    markers.remove(name) != null
+                },
+                templateDefine = { name, region, processing ->
+                    calls += "templateDefine:$name:${region.x},${region.y}:$processing"
+                    templates[name] = region
+                    true
+                },
+                templateCompare = { name, region, processing ->
+                    calls += "templateCompare:$name:${region.width}x${region.height}:$processing"
+                    if (templates[name] == region) 0.97f else null
+                },
+                findTemplate = { name, threshold, timeoutMs, region ->
+                    calls += "findTemplate:$name:$threshold:$timeoutMs:${region?.width}x${region?.height}"
+                    templates[name.substringBeforeLast('.')]
+                        ?.let { RuntimeTemplateMatch(name, it, 0.96f) }
+                },
+                datastorePut = { key, value ->
+                    calls += "datastorePut:$key:$value"
+                    datastore[key] = value
+                },
+                datastoreGet = { key ->
+                    calls += "datastoreGet:$key"
+                    datastore[key]
+                },
+            ),
+        )
+
+        val result = runtime.run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        assertEquals("42", datastore["score"])
+        assertFalse(markers.containsKey("button"))
+        assertEquals(RuntimeAutomationRegion(10, 20, 30, 40), templates["buttonTpl"])
+        assertTrue(calls.contains("datastorePut:score:42"))
+        assertTrue(calls.contains("datastoreGet:score"))
+        assertTrue(calls.any { it.startsWith("markerSave:button:30x40") })
+        assertTrue(calls.contains("markerLoad:button"))
+        assertTrue(calls.any { it.startsWith("templateDefine:buttonTpl:10,20") })
+        assertTrue(calls.any { it.startsWith("templateCompare:buttonTpl:30x40") })
+        assertTrue(calls.joinToString(), calls.any { it.startsWith("findTemplate:buttonTpl.png:0.8:1000:30x40") })
+        assertTrue(calls.contains("markerDelete:button"))
     }
 }

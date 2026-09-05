@@ -699,8 +699,8 @@ private class Parser(private val tokens: List<Token>) {
             -> trimmed.matches(numberArgumentRegex)
             CommandArgumentType.TEXT,
             CommandArgumentType.IMAGE_TEMPLATE,
-            CommandArgumentType.REGION,
             -> trimmed.isQuotedString()
+            CommandArgumentType.REGION -> trimmed.isQuotedString() || trimmed.isRegionFunctionArgument()
             CommandArgumentType.VARIABLE_REF -> trimmed.isIdentifierLike() || trimmed.isQuotedString()
             CommandArgumentType.STATEMENT_BODY -> true
         }
@@ -1023,6 +1023,9 @@ private fun String.isQuotedString(): Boolean =
 
 private fun String.isIdentifierLike(): Boolean =
     matches(Regex("[A-Za-z_%][A-Za-z0-9_.%]*"))
+
+private fun String.isRegionFunctionArgument(): Boolean =
+    matches(Regex("""(?i)(region|bbox)\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)"""))
 
 private fun EmscriptIrExpression.matchesArgumentType(type: CommandArgumentType): Boolean =
     when (type) {

@@ -73,6 +73,7 @@ class RuntimeCapabilityGate(
             CommandCapability.TIMING,
             CommandCapability.FEEDBACK,
             CommandCapability.DEBUG,
+            CommandCapability.VISION,
         )
 
         val BasicRealRunCommandNames: Set<String> = setOf(
@@ -101,6 +102,12 @@ class RuntimeCapabilityGate(
             "compare",
             "number",
             "string",
+            "findtemplate",
+            "markersave",
+            "markerload",
+            "markerdelete",
+            "templatedefine",
+            "templatecompare",
         )
 
         fun withAccessibilityAdapter(): RuntimeCapabilityGate =

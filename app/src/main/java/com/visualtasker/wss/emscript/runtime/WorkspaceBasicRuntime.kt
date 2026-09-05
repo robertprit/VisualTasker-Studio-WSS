@@ -217,6 +217,90 @@ class WorkspaceBasicRuntime(
                     LiveExecutionOutcome("screenshot($path) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
                 }
             }
+            "findtemplate" -> {
+                val name = block.stringArgument(fieldName = "imagePath").ifBlank { "template" }
+                val threshold = (
+                    block?.numberArgument(index = 1, fieldName = "threshold")
+                        ?: 0.82
+                    ).toFloat().coerceIn(0f, 1f)
+                val timeoutMs = (
+                    block?.numberArgument(index = 2, fieldName = "timeoutMs")
+                        ?: 3000.0
+                    ).toLong().coerceAtLeast(0L)
+                val region = block?.regionArgumentOrNull("searchRegion")
+                val match = environment.findTemplate(name, threshold, timeoutMs, region)
+                if (match != null && match.score >= threshold) {
+                    LiveExecutionOutcome("findTemplate($name) = ${"%.1f".format(match.score * 100f)}%")
+                } else {
+                    LiveExecutionOutcome("findTemplate($name) nicht gefunden", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
+            "markersave" -> {
+                val name = block.stringArgument(fieldName = "name").ifBlank { "marker" }
+                val region = block?.regionArgument(fieldName = "region") ?: RuntimeAutomationRegion(0, 0, 1, 1)
+                val mode = block.stringArgument(index = 2, fieldName = "mode").ifBlank { "region" }
+                val threshold = block?.numberArgument(index = 3, fieldName = "threshold")?.toFloat()
+                    ?: 0.85f
+                if (environment.markerSave(name, region, mode, threshold.coerceIn(0f, 1f))) {
+                    LiveExecutionOutcome("markerSave($name) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("markerSave($name) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
+            "markerload" -> {
+                val name = block.stringArgument(fieldName = "name").ifBlank { "marker" }
+                val loaded = environment.markerLoad(name)
+                if (loaded != null) {
+                    LiveExecutionOutcome("markerLoad($name) ausgeführt: ${loaded.width}x${loaded.height}")
+                } else {
+                    LiveExecutionOutcome("markerLoad($name) nicht gefunden", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
+            "markerdelete" -> {
+                val name = block.stringArgument(fieldName = "name").ifBlank { "marker" }
+                if (environment.markerDelete(name)) {
+                    LiveExecutionOutcome("markerDelete($name) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("markerDelete($name) nicht gefunden", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
+            "templatedefine" -> {
+                val name = block.stringArgument(fieldName = "name").ifBlank { "template" }
+                val region = block?.regionArgument(fieldName = "region") ?: RuntimeAutomationRegion(0, 0, 1, 1)
+                val processing = block.stringArgument(index = 2, fieldName = "processing").ifBlank { "grayscale" }
+                if (environment.templateDefine(name, region, processing)) {
+                    LiveExecutionOutcome("templateDefine($name) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("templateDefine($name) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
+            "templatecompare" -> {
+                val name = block.stringArgument(fieldName = "name").ifBlank { "template" }
+                val region = block?.regionArgument(fieldName = "region") ?: RuntimeAutomationRegion(0, 0, 1, 1)
+                val processing = block.stringArgument(index = 2, fieldName = "processing").ifBlank { "grayscale" }
+                val score = environment.templateCompare(name, region, processing)
+                if (score != null) {
+                    LiveExecutionOutcome("templateCompare($name) = ${"%.1f".format(score * 100f)}%")
+                } else {
+                    LiveExecutionOutcome("templateCompare($name) nicht möglich", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
+            "datastoreput" -> {
+                val key = block.stringArgument(fieldName = "key").ifBlank { "key" }
+                val value = block.stringArgument(index = 1, fieldName = "value").ifBlank { block?.fieldText("value").orEmpty() }
+                environment.datastorePut(key, value)
+                LiveExecutionOutcome("datastorePut($key) ausgeführt")
+            }
+            "datastoreget" -> {
+                val key = block.stringArgument(fieldName = "key").ifBlank { "key" }
+                val value = environment.datastoreGet(key)
+                environment.log("datastoreGet($key) -> ${value.orEmpty()}")
+                if (value != null) {
+                    LiveExecutionOutcome("datastoreGet($key) ausgeführt")
+                } else {
+                    LiveExecutionOutcome("datastoreGet($key) leer", EmscriptDryRunEventSeverity.WARNING)
+                }
+            }
             else -> null
         }
 
@@ -256,8 +340,89 @@ class WorkspaceBasicRuntime(
             .mapNotNull { it.value.toDoubleOrNull() }
             .toList()
 
+    private fun BlockNode.numberArgument(index: Int, fieldName: String): Double? =
+        rawArgument(index)
+            ?.toDoubleOrNull()
+            ?: fieldNumberOrNull(fieldName)
+
+    private fun BlockNode.regionArgument(fieldName: String): RuntimeAutomationRegion {
+        return regionArgumentOrNull(fieldName) ?: RuntimeAutomationRegion(0, 0, 1, 1)
+    }
+
+    private fun BlockNode.regionArgumentOrNull(fieldName: String): RuntimeAutomationRegion? {
+        val direct = fieldText(fieldName)
+        val argsRegion = Regex("""(?i)(region|bbox)\([^)]*\)""")
+            .findAll(fieldText("args"))
+            .lastOrNull()
+            ?.value
+        val source = argsRegion ?: direct
+        if (source.isBlank()) return null
+        val numbers = Regex("-?\\d+(?:\\.\\d+)?")
+            .findAll(source)
+            .mapNotNull { it.value.toDoubleOrNull()?.roundToInt() }
+            .toList()
+        if (numbers.size < 4) return null
+        return RuntimeAutomationRegion(
+            x = numbers.getOrNull(0) ?: 0,
+            y = numbers.getOrNull(1) ?: 0,
+            width = (numbers.getOrNull(2) ?: 1).coerceAtLeast(1),
+            height = (numbers.getOrNull(3) ?: 1).coerceAtLeast(1),
+        )
+    }
+
+    private fun BlockNode.rawArgument(index: Int): String? =
+        rawArguments().getOrNull(index)?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
+
+    private fun BlockNode.rawArguments(): List<String> {
+        val source = fieldText("args")
+        if (source.isBlank()) return emptyList()
+        val args = mutableListOf<String>()
+        val current = StringBuilder()
+        var parenDepth = 0
+        var bracketDepth = 0
+        var braceDepth = 0
+        var inString = false
+        var escaped = false
+        source.forEach { char ->
+            if (escaped) {
+                current.append(char)
+                escaped = false
+                return@forEach
+            }
+            if (char == '\\' && inString) {
+                current.append(char)
+                escaped = true
+                return@forEach
+            }
+            if (char == '"') {
+                inString = !inString
+                current.append(char)
+                return@forEach
+            }
+            if (!inString) {
+                when (char) {
+                    '(' -> parenDepth += 1
+                    ')' -> parenDepth -= 1
+                    '[' -> bracketDepth += 1
+                    ']' -> bracketDepth -= 1
+                    '{' -> braceDepth += 1
+                    '}' -> braceDepth -= 1
+                    ',' -> if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
+                        args += current.toString().trim()
+                        current.clear()
+                        return@forEach
+                    }
+                }
+            }
+            current.append(char)
+        }
+        args += current.toString().trim()
+        return args
+    }
+
     private fun BlockNode?.stringArgument(index: Int = 0, fieldName: String): String {
         if (this == null) return ""
+        rawArgument(index)?.let { return it }
         val direct = fieldText(fieldName)
         if (direct.isNotBlank()) return direct.trim('"')
         val args = fieldText("args")
@@ -303,9 +468,30 @@ data class WorkspaceBasicRuntimeEnvironment(
     val fileReadText: (String) -> String? = { null },
     val fileWriteText: (path: String, text: String) -> Boolean = { _, _ -> false },
     val screenshot: suspend (path: String) -> Boolean = { false },
+    val findTemplate: (name: String, threshold: Float, timeoutMs: Long, searchRegion: RuntimeAutomationRegion?) -> RuntimeTemplateMatch? = { _, _, _, _ -> null },
+    val markerSave: (name: String, region: RuntimeAutomationRegion, mode: String, threshold: Float) -> Boolean = { _, _, _, _ -> false },
+    val markerLoad: (name: String) -> RuntimeAutomationRegion? = { null },
+    val markerDelete: (name: String) -> Boolean = { false },
+    val templateDefine: (name: String, region: RuntimeAutomationRegion, processing: String) -> Boolean = { _, _, _ -> false },
+    val templateCompare: (name: String, region: RuntimeAutomationRegion, processing: String) -> Float? = { _, _, _ -> null },
+    val datastorePut: (key: String, value: String) -> Unit = { _, _ -> },
+    val datastoreGet: (key: String) -> String? = { null },
 )
 
 data class RuntimeAutomationPoint(
     val x: Int,
     val y: Int,
+)
+
+data class RuntimeAutomationRegion(
+    val x: Int,
+    val y: Int,
+    val width: Int,
+    val height: Int,
+)
+
+data class RuntimeTemplateMatch(
+    val name: String,
+    val region: RuntimeAutomationRegion,
+    val score: Float,
 )
