@@ -1,6 +1,7 @@
 package com.visualtasker.wss.emscript.runtime
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -59,22 +60,21 @@ class EmscriptDryRunRuntimeTest {
     }
 
     @Test
-    fun `dry run marks catalog adapter commands as capability warnings`() {
+    fun `dry run marks only missing catalog adapters as capability warnings`() {
         val result = EmscriptDryRunRuntime().run(
             """
                 findTemplate("button.png", 0.8, 1000)
+                markerSave("button", region(10, 20, 30, 40), "region", 0.90)
+                templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
                 Termux.shell("echo ok")
             """.trimIndent(),
         )
 
         assertTrue(result is EmscriptDryRunResult.Success)
         result as EmscriptDryRunResult.Success
-        assertTrue(result.events.any {
-            it.kind == "capability" &&
-                it.severity == EmscriptDryRunEventSeverity.WARNING &&
-                it.command == "findTemplate" &&
-                it.capability == "VISION"
-        })
+        assertFalse(result.events.any { it.kind == "capability" && it.command == "findTemplate" })
+        assertFalse(result.events.any { it.kind == "capability" && it.command == "markerSave" })
+        assertFalse(result.events.any { it.kind == "capability" && it.command == "templateCompare" })
         assertTrue(result.events.any {
             it.kind == "capability" &&
                 it.command == "Termux.shell" &&

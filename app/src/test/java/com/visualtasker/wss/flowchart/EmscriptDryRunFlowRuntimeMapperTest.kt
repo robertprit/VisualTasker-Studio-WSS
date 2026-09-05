@@ -12,6 +12,7 @@ import de.visualtasker.flowchart.domain.FlowRuntimeNodeState
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.validation.FlowRuntimeSnapshotValidator
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -195,11 +196,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             capturedAtEpochMs = 42,
         )
 
-        assertTrue(snapshot.diagnostics.any {
-            it.severity.name == "WARNING" &&
-                it.code == "CAPABILITY_VISION" &&
-                it.message.contains("findTemplate")
-        })
+        assertFalse(snapshot.diagnostics.any { it.message.contains("findTemplate") })
         assertTrue(snapshot.diagnostics.any {
             it.severity.name == "WARNING" &&
                 it.code == "CAPABILITY_TERMUX" &&
@@ -207,7 +204,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         })
         val runtimeEvents = snapshot.runtimeEvents()
         assertTrue(runtimeEvents.any {
-            it["severity"] == "WARNING" &&
+            it["severity"] == "INFO" &&
                 it["command"] == "findTemplate" &&
                 it["capability"] == "VISION" &&
                 it["pluginOwner"] == "visualtasker.core"

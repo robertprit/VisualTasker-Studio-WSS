@@ -96,10 +96,12 @@ class WorkspaceDryRunRuntimeTest {
     }
 
     @Test
-    fun dryRunMarksWorkspaceCatalogAdaptersAsCapabilityWarnings() {
+    fun dryRunMarksOnlyMissingWorkspaceCatalogAdaptersAsCapabilityWarnings() {
         val imported = EmscriptWorkspaceImporter().import(
             """
             findTemplate("button.png", 0.8, 1000)
+            markerSave("button", region(10, 20, 30, 40), "region", 0.90)
+            templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
             Termux.shell("echo ok")
             """.trimIndent(),
             workspaceId = "workspace-dry-run-capabilities",
@@ -110,13 +112,9 @@ class WorkspaceDryRunRuntimeTest {
 
         assertTrue(result is EmscriptDryRunResult.Success)
         val events = (result as EmscriptDryRunResult.Success).events
-        assertTrue(events.any {
-            it.blockId != null &&
-                it.kind == "capability" &&
-                it.severity == EmscriptDryRunEventSeverity.WARNING &&
-                it.command == "findTemplate" &&
-                it.capability == "VISION"
-        })
+        assertFalse(events.any { it.kind == "capability" && it.command == "findTemplate" })
+        assertFalse(events.any { it.kind == "capability" && it.command == "markerSave" })
+        assertFalse(events.any { it.kind == "capability" && it.command == "templateCompare" })
         assertTrue(events.any {
             it.blockId != null &&
                 it.kind == "capability" &&

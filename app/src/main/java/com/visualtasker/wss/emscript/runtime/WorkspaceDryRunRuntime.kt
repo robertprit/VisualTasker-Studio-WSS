@@ -360,8 +360,9 @@ private class WorkspaceInterpreter(
             ?: VisualTaskerCommandCatalog.findByCanonicalName(command)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
         val gate = entry?.runtime?.liveCapabilityGate
-        val adapterGated = entry?.runtime?.dryRunBehavior == "adapter-gated"
-        val severity = if (adapterGated || gate.isRuntimeBlocked()) {
+        val basicReady = entry?.isBasicRuntimeReady() == true
+        val adapterGated = !basicReady && entry?.runtime?.dryRunBehavior == "adapter-gated"
+        val severity = if (!basicReady && (adapterGated || gate.isRuntimeBlocked())) {
             EmscriptDryRunEventSeverity.WARNING
         } else {
             EmscriptDryRunEventSeverity.INFO

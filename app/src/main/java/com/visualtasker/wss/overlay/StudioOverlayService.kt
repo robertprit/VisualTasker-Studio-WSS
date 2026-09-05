@@ -15,6 +15,16 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -24,10 +34,13 @@ class StudioOverlayService : Service() {
         const val ACTION_SHOW_FLOATING_PANEL = "com.visualtasker.wss.overlay.SHOW_FLOATING_PANEL"
         const val ACTION_SHOW_FLOATING_TOOLBAR = "com.visualtasker.wss.overlay.SHOW_FLOATING_TOOLBAR"
         const val ACTION_SHOW_FLOATING_INSPECTOR = "com.visualtasker.wss.overlay.SHOW_FLOATING_INSPECTOR"
+        const val ACTION_CAPTURE_SCREENSHOT = "com.visualtasker.wss.overlay.CAPTURE_SCREENSHOT"
     }
 
     private lateinit var windowManager: WindowManager
     private val overlays = linkedMapOf<String, OverlayHandle>()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var statusView: TextView? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -41,6 +54,7 @@ class StudioOverlayService : Service() {
             ACTION_SHOW_FLOATING_PANEL -> showFloatingPanel()
             ACTION_SHOW_FLOATING_TOOLBAR -> showFloatingToolbar()
             ACTION_SHOW_FLOATING_INSPECTOR -> showFloatingInspector()
+            ACTION_CAPTURE_SCREENSHOT -> captureScreenshot()
         }
         return START_STICKY
     }
@@ -50,6 +64,7 @@ class StudioOverlayService : Service() {
             runCatching { windowManager.removeView(handle.root) }
         }
         overlays.clear()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -110,12 +125,19 @@ class StudioOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        controls.addView(toolButton("+"))
-        controls.addView(toolButton("-"))
-        controls.addView(toolButton("Undo"))
-        controls.addView(toolButton("Redo"))
-        controls.addView(toolButton("Grid"))
+        controls.addView(toolButton("Shot") { captureScreenshot() })
+        controls.addView(toolButton("Panel") { showFloatingPanel() })
+        controls.addView(toolButton("Info") { showFloatingInspector() })
+        controls.addView(toolButton("Hide") { removeOverlay("toolbar") })
+        val status = TextView(this).apply {
+            text = "Bereit fuer Screenshot"
+            setTextColor(Color.argb(230, 220, 225, 235))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(8), 0, 0)
+        }
+        statusView = status
         shell.content.addView(controls)
+        shell.content.addView(status)
         addOverlay(
             key = "toolbar",
             root = shell.root,
@@ -139,21 +161,19 @@ class StudioOverlayService : Service() {
             showResizeHandle = false,
         )
         val content = TextView(this).apply {
-            text = "Status: AKTIV"
+            text = overlayStatusText()
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, 0, 0, dp(8))
         }
-        val toggle = Button(this).apply {
-            text = "Toggle"
+        statusView = content
+        val capture = Button(this).apply {
+            text = "Screenshot"
             textSize = 11f
-            setOnClickListener {
-                enabled = !enabled
-                content.text = if (enabled) "Status: AKTIV" else "Status: PAUSIERT"
-            }
+            setOnClickListener { captureScreenshot() }
         }
         shell.content.addView(content)
-        shell.content.addView(toggle)
+        shell.content.addView(capture)
         addOverlay(
             key = "inspector",
             root = shell.root,
@@ -168,13 +188,50 @@ class StudioOverlayService : Service() {
         )
     }
 
-    private fun toolButton(label: String): Button =
+    private fun toolButton(label: String, onClick: (() -> Unit)? = null): Button =
         Button(this).apply {
             text = label
             textSize = 11f
             minWidth = 0
             minimumWidth = 0
+            onClick?.let { handler -> setOnClickListener { handler() } }
         }
+
+    private fun captureScreenshot() {
+        val service = VisualTaskerAccessibilityService.current()
+        if (service == null) {
+            setStatus("Accessibility nicht aktiv")
+            showFloatingInspector()
+            return
+        }
+        val target = File(filesDir, "emscript-runtime/screenshots/overlay-${timestamp()}.png")
+        target.parentFile?.mkdirs()
+        setStatus("Screenshot laeuft...")
+        serviceScope.launch {
+            val ok = service.takeScreenshotTo(target)
+            setStatus(
+                if (ok) {
+                    "Gespeichert: ${target.name}"
+                } else {
+                    "Screenshot fehlgeschlagen"
+                }
+            )
+        }
+    }
+
+    private fun setStatus(message: String) {
+        statusView?.text = message
+    }
+
+    private fun overlayStatusText(): String =
+        if (VisualTaskerAccessibilityService.current() == null) {
+            "Accessibility: nicht aktiv\nScreenshot: blockiert"
+        } else {
+            "Accessibility: aktiv\nScreenshot: bereit"
+        }
+
+    private fun timestamp(): String =
+        SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
 
     private fun createOverlayShell(
         key: String,

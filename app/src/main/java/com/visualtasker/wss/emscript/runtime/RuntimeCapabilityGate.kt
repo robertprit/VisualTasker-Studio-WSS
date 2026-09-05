@@ -21,7 +21,7 @@ class RuntimeCapabilityGate(
     private fun CommandCatalogEntry.runtimeCapability(): RuntimeCapability {
         val command = canonicalName
         val gate = runtime?.liveCapabilityGate
-        if (command.lowercase() in realRunCommandNames && gate in realRunCapabilities) {
+        if (isBasicRuntimeReady(realRunCommandNames, realRunCapabilities)) {
             return RuntimeCapability(
                 command = command,
                 status = RuntimeCapabilityStatus.REAL_RUN_READY,
@@ -122,6 +122,13 @@ class RuntimeCapabilityGate(
             )
     }
 }
+
+internal fun CommandCatalogEntry.isBasicRuntimeReady(
+    realRunCommandNames: Set<String> = RuntimeCapabilityGate.BasicRealRunCommandNames,
+    realRunCapabilities: Set<CommandCapability> = RuntimeCapabilityGate.BasicRealRunCapabilities,
+): Boolean =
+    canonicalName.lowercase() in realRunCommandNames &&
+        runtime?.liveCapabilityGate in realRunCapabilities
 
 data class RuntimeCapabilityReport(
     val capabilities: List<RuntimeCapability>,

@@ -166,6 +166,11 @@ fun FlowchartShellPanel(
         val bottom = panelSize.height - trashMarginPx
         return point.x in left..right && point.y in top..bottom
     }
+    fun centerViewport() {
+        val current = controller.snapshot().view ?: session.viewDocument ?: return
+        val viewport = fitFlowchartViewport(current, panelSize)
+        controller.replaceViewport(viewport)
+    }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
             session.onViewDocumentChanged(view)
@@ -319,7 +324,7 @@ fun FlowchartShellPanel(
         FlowchartFloatingViewportControls(
             onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
             onZoomOut = { controller.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0))) },
-            onCenter = { controller.attachGraph(controller.snapshot().graph ?: session.graphDocument, null) },
+            onCenter = ::centerViewport,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 32.dp, bottom = 124.dp),
@@ -350,14 +355,14 @@ fun FlowchartShellPanel(
             },
             onZoomOut = { controller.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0))) },
             onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
-            onCenter = { controller.attachGraph(controller.snapshot().graph ?: session.graphDocument, null) },
+            onCenter = ::centerViewport,
             onArrange = {
-                controller.replaceLayout(arrangeMode.layoutConfig())?.let(handleViewChanged)
+                controller.replaceLayout(arrangeMode.layoutConfig())
             },
             arrangeMode = arrangeMode,
             onArrangeModeSelected = { mode ->
                 arrangeMode = mode
-                controller.replaceLayout(mode.layoutConfig())?.let(handleViewChanged)
+                controller.replaceLayout(mode.layoutConfig())
             },
             onGridToggle = { gridVisible = !gridVisible },
             onSave = { onSave?.invoke() ?: session.requestSave() },
@@ -532,6 +537,30 @@ private data class PendingConnectionMenu(
     val options: List<FlowchartConnectionOption>,
 )
 
+private fun fitFlowchartViewport(
+    view: FlowViewDocument,
+    panelSize: IntSize,
+): de.visualtasker.flowchart.domain.FlowViewport {
+    if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
+    val minX = view.nodeViews.minOf { it.position.x }
+    val minY = view.nodeViews.minOf { it.position.y }
+    val maxX = view.nodeViews.maxOf { it.position.x + (it.size?.width ?: 160.0) }
+    val maxY = view.nodeViews.maxOf { it.position.y + (it.size?.height ?: 72.0) }
+    val contentWidth = (maxX - minX).coerceAtLeast(1.0)
+    val contentHeight = (maxY - minY).coerceAtLeast(1.0)
+    val horizontalPadding = 72.0
+    val topPadding = 72.0
+    val bottomPadding = 156.0
+    val availableWidth = (panelSize.width - horizontalPadding * 2.0).coerceAtLeast(120.0)
+    val availableHeight = (panelSize.height - topPadding - bottomPadding).coerceAtLeast(120.0)
+    val zoom = minOf(1.8, maxOf(0.18, minOf(availableWidth / contentWidth, availableHeight / contentHeight)))
+    val pan = FlowPoint(
+        x = horizontalPadding + (availableWidth - contentWidth * zoom) / 2.0 - minX * zoom,
+        y = topPadding + (availableHeight - contentHeight * zoom) / 2.0 - minY * zoom,
+    )
+    return de.visualtasker.flowchart.domain.FlowViewport(pan = pan, zoom = zoom)
+}
+
 private enum class FlowchartArrangeMode(
     val displayLabel: String,
     val description: String,
@@ -544,10 +573,10 @@ private enum class FlowchartArrangeMode(
     fun layoutConfig(): FlowLayoutConfig =
         when (this) {
             CodeFlow -> FlowLayoutConfig(
-                layerSpacing = 148.0,
-                nodeSpacing = 92.0,
-                componentSpacing = 168.0,
-                routingClearance = 36.0,
+                layerSpacing = 156.0,
+                nodeSpacing = 112.0,
+                componentSpacing = 192.0,
+                routingClearance = 40.0,
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Compact -> FlowLayoutConfig(
@@ -558,10 +587,10 @@ private enum class FlowchartArrangeMode(
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Wide -> FlowLayoutConfig(
-                layerSpacing = 156.0,
-                nodeSpacing = 108.0,
-                componentSpacing = 180.0,
-                routingClearance = 34.0,
+                layerSpacing = 176.0,
+                nodeSpacing = 136.0,
+                componentSpacing = 220.0,
+                routingClearance = 48.0,
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             PreserveManual -> FlowLayoutConfig(

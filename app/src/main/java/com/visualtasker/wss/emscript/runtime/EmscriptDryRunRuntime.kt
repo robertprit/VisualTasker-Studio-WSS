@@ -244,9 +244,10 @@ private class Interpreter(
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(command)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
         val gate = entry?.runtime?.liveCapabilityGate
-        val adapterGated = entry?.runtime?.dryRunBehavior == "adapter-gated"
+        val basicReady = entry?.isBasicRuntimeReady() == true
+        val adapterGated = !basicReady && entry?.runtime?.dryRunBehavior == "adapter-gated"
         val pluginOwner = entry?.pluginOwner
-        val severity = if (adapterGated || gate.isRuntimeBlocked()) {
+        val severity = if (!basicReady && (adapterGated || gate.isRuntimeBlocked())) {
             EmscriptDryRunEventSeverity.WARNING
         } else {
             EmscriptDryRunEventSeverity.INFO

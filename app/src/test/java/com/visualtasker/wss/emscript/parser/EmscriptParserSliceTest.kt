@@ -4,6 +4,7 @@ import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
+import com.visualtasker.wss.emscript.runtime.isBasicRuntimeReady
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
@@ -584,7 +585,11 @@ class EmscriptParserSliceTest {
         assertTrue(dryRun is EmscriptDryRunResult.Success)
         val events = (dryRun as EmscriptDryRunResult.Success).events
         val warnings = events.filter { it.severity.name == "WARNING" }
-        assertEquals(entries.map { it.canonicalName }.toSet(), warnings.mapNotNull { it.command }.toSet())
+        val expectedWarnings = entries
+            .filterNot { it.isBasicRuntimeReady() }
+            .map { it.canonicalName }
+            .toSet()
+        assertEquals(expectedWarnings, warnings.mapNotNull { it.command }.toSet())
         assertTrue(warnings.all { it.message.contains("Adapter noch nicht live") || it.message.contains("Live-Capability noch blockiert") })
     }
 

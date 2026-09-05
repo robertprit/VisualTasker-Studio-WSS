@@ -23,6 +23,7 @@ import android.provider.Settings
 import kotlin.math.PI
 import kotlin.math.sin
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -90,6 +91,10 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Visibility
@@ -138,6 +143,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -155,6 +161,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -188,6 +195,7 @@ import com.visualtasker.wss.components.IconMotionEngine
 import com.visualtasker.wss.components.DarkPanel
 import com.visualtasker.wss.components.FabAction
 import com.visualtasker.wss.components.M3EExpandableFAB
+import com.visualtasker.wss.overlay.StudioOverlayService
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
@@ -324,12 +332,22 @@ private data class ScreenshotCanvasRegion(
     val height: Int,
 )
 
+private data class ScreenshotCanvasBezier(
+    val startX: Int,
+    val startY: Int,
+    val controlX: Int,
+    val controlY: Int,
+    val endX: Int,
+    val endY: Int,
+)
+
 private data class ScreenshotCanvasSavedMarker(
     val id: String,
     val label: String,
     val assetId: String?,
     val assetLabel: String?,
     val region: ScreenshotCanvasRegion,
+    val path: ScreenshotCanvasBezier? = null,
     val markerMode: ScreenshotCanvasMarkerMode,
     val matchKind: ScreenshotCanvasMatchKind,
     val processingMode: ScreenshotCanvasProcessingMode,
@@ -340,20 +358,49 @@ private data class ScreenshotCanvasSavedMarker(
     val updatedAt: Long,
 )
 
-private enum class ScreenshotCanvasMarkerMode { Template, Region, Point, Swipe, Path }
+private enum class ScreenshotCanvasMarkerMode { Template, Region, Point, Swipe, Spline, Path }
+
+private enum class ScreenshotCanvasDrawTool { Line, Circle, Curve, Spline, Path, Polygon, Text, Image, Shape }
+
+private enum class FloatingOverlayTarget {
+    Panel,
+    Toolbar,
+    Inspector,
+}
 
 private enum class ScreenshotCanvasMatchKind { OCR, OCV }
 
 private enum class ScreenshotCanvasProcessingMode { Original, Grayscale, HighContrast, Edge, Inverse }
 
-private enum class ScreenshotCanvasOverlayHandle { ScanType, Close, ResizeBottomLeft, ResizeBottomRight, None }
+private enum class ScreenshotCanvasOverlayHandle {
+    ScanType,
+    Close,
+    ResizeBottomLeft,
+    ResizeBottomRight,
+    PathStart,
+    PathControl,
+    PathEnd,
+    None,
+}
 
-private enum class ScreenshotCanvasTouchMode { Create, Move, ResizeBottomLeft, ResizeBottomRight, TapHandle, PointTap }
+private enum class ScreenshotCanvasTouchMode {
+    Create,
+    Move,
+    MovePath,
+    MovePathStart,
+    MovePathControl,
+    MovePathEnd,
+    ResizeBottomLeft,
+    ResizeBottomRight,
+    TapHandle,
+    PointTap,
+}
 
 private data class ScreenshotCanvasGestureSetup(
     val mode: ScreenshotCanvasTouchMode,
     val createAnchorImage: Offset,
     val regionStart: ScreenshotCanvasRegion?,
+    val pathStart: ScreenshotCanvasBezier? = null,
     val handle: ScreenshotCanvasOverlayHandle,
 )
 
@@ -362,6 +409,7 @@ private class ScreenshotViewState {
     var assetRevision by mutableIntStateOf(0)
     var zoom by mutableFloatStateOf(1f)
     var selectedRegion by mutableStateOf<ScreenshotCanvasRegion?>(null)
+    var selectedPath by mutableStateOf<ScreenshotCanvasBezier?>(null)
     var showScreenshotBg by mutableStateOf(true)
     var filterHideClickable by mutableStateOf(false)
     var filterHideInvisible by mutableStateOf(false)
@@ -385,6 +433,8 @@ private class MarkerConsoleState {
     var matchReadMe by mutableStateOf("")
     var colourHex by mutableStateOf("#4FC3F7")
     var markerStatusMessage by mutableStateOf("")
+    var multiMarkerMode by mutableStateOf(false)
+    var drawTool by mutableStateOf(ScreenshotCanvasDrawTool.Line)
     val savedMarkers = mutableStateListOf<ScreenshotCanvasSavedMarker>()
     var selectedSavedMarkerId by mutableStateOf<String?>(null)
 }
@@ -420,6 +470,11 @@ private class ScreenshotCanvasUiState(
         get() = screenshot.selectedRegion
         set(value) {
             screenshot.selectedRegion = value
+        }
+    var selectedPath: ScreenshotCanvasBezier?
+        get() = screenshot.selectedPath
+        set(value) {
+            screenshot.selectedPath = value
         }
     var markerMode: ScreenshotCanvasMarkerMode
         get() = marker.markerMode
@@ -485,6 +540,16 @@ private class ScreenshotCanvasUiState(
         get() = marker.markerStatusMessage
         set(value) {
             marker.markerStatusMessage = value
+        }
+    var multiMarkerMode: Boolean
+        get() = marker.multiMarkerMode
+        set(value) {
+            marker.multiMarkerMode = value
+        }
+    var drawTool: ScreenshotCanvasDrawTool
+        get() = marker.drawTool
+        set(value) {
+            marker.drawTool = value
         }
     val savedMarkers get() = marker.savedMarkers
     var selectedSavedMarkerId: String?
@@ -869,6 +934,7 @@ fun WorkspaceScreen(
                         assetId = selectedAsset?.id,
                         assetLabel = selectedAsset?.label,
                         region = region.toScreenshotRegion(),
+                        path = null,
                         markerMode = markerMode,
                         matchKind = ScreenshotCanvasMatchKind.OCV,
                         processingMode = workspaceCanvasState.processingMode,
@@ -886,6 +952,7 @@ fun WorkspaceScreen(
                     }
                     workspaceCanvasState.selectedSavedMarkerId = marker.id
                     workspaceCanvasState.selectedRegion = marker.region
+                    workspaceCanvasState.selectedPath = marker.path
                     true
                 },
                 markerLoad = { name ->
@@ -894,6 +961,7 @@ fun WorkspaceScreen(
                         workspaceCanvasState.selectedSavedMarkerId = marker.id
                         workspaceCanvasState.selectedAssetId = marker.assetId ?: workspaceCanvasState.selectedAssetId
                         workspaceCanvasState.selectedRegion = marker.region
+                        workspaceCanvasState.selectedPath = marker.path
                         workspaceCanvasState.markerMode = marker.markerMode
                     }
                     marker?.region?.toRuntimeRegion()
@@ -913,6 +981,7 @@ fun WorkspaceScreen(
                         assetId = selectedAsset?.id,
                         assetLabel = selectedAsset?.label,
                         region = region.toScreenshotRegion(),
+                        path = null,
                         markerMode = ScreenshotCanvasMarkerMode.Template,
                         matchKind = ScreenshotCanvasMatchKind.OCV,
                         processingMode = processingModeFromRuntime(processing),
@@ -1377,16 +1446,27 @@ fun WorkspaceScreen(
 
     val demoRecorderSteps = remember {
         mutableStateListOf(
-            RecorderStepUi("step-1", "Start App", "launch", StepStatus.Recorded),
-            RecorderStepUi("step-2", "Tippe Login", "tap", StepStatus.Edited),
-            RecorderStepUi("step-3", "Warte auf Element", "wait", StepStatus.Invalid),
-            RecorderStepUi("step-4", "Bestaetigen", "tap", StepStatus.Executed)
+            RecorderStepUi("step-1", "Start App", "launch", StepStatus.Recorded, timestampMs = 0, durationMs = 900, activityName = "Launcher"),
+            RecorderStepUi("step-2", "Tippe Login", "tap", StepStatus.Edited, timestampMs = 1200, durationMs = 180, activityName = "LoginActivity"),
+            RecorderStepUi("step-3", "Warte auf Element", "wait", StepStatus.Invalid, timestampMs = 1900, durationMs = 1400, activityName = "LoginActivity"),
+            RecorderStepUi("step-4", "Bestaetigen", "tap", StepStatus.Executed, timestampMs = 3600, durationMs = 220, activityName = "DashboardActivity")
         )
     }
     // Workspace shell stays truth-neutral: external projection wins over demo data.
     val projectedSteps = recorderStepsProjection?.invoke() ?: demoRecorderSteps
     val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
         loadScreenshotCanvasAssets(context)
+    }
+    LaunchedEffect(context, workspaceCanvasState) {
+        var lastSignature = screenshotCanvasAssetSignature(context)
+        while (true) {
+            delay(1_000)
+            val currentSignature = screenshotCanvasAssetSignature(context)
+            if (currentSignature != lastSignature) {
+                lastSignature = currentSignature
+                workspaceCanvasState.refreshAssets()
+            }
+        }
     }
 
     val bridge = remember(actionSink, recorderStepsProjection, demoRecorderSteps) {
@@ -1442,6 +1522,41 @@ fun WorkspaceScreen(
             groupKey = "workspace:panel-opened:$type"
         )
         bridge.onPanelAction(PanelAction.OpenPanel(type))
+    }
+    val launchFloatingOverlay: (FloatingOverlayTarget) -> Unit = { target ->
+        if (!Settings.canDrawOverlays(context)) {
+            context.safeStartActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                )
+            )
+            studioLogStore.append(
+                level = StudioLogLevel.WARNING,
+                source = "WORKSPACE",
+                message = "Overlay-Berechtigung erforderlich",
+                details = "Bitte Berechtigung aktivieren und erneut auswaehlen.",
+                groupKey = "workspace:overlay-permission-required",
+            )
+        } else {
+            val action = when (target) {
+                FloatingOverlayTarget.Panel -> StudioOverlayService.ACTION_SHOW_FLOATING_PANEL
+                FloatingOverlayTarget.Toolbar -> StudioOverlayService.ACTION_SHOW_FLOATING_TOOLBAR
+                FloatingOverlayTarget.Inspector -> StudioOverlayService.ACTION_SHOW_FLOATING_INSPECTOR
+            }
+            context.startService(
+                Intent(context, StudioOverlayService::class.java).apply {
+                    this.action = action
+                }
+            )
+            studioLogStore.append(
+                level = StudioLogLevel.INFO,
+                source = "WORKSPACE",
+                message = "Floating Overlay gestartet",
+                details = target.name,
+                groupKey = "workspace:overlay-started:${target.name}",
+            )
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -1629,6 +1744,10 @@ fun WorkspaceScreen(
                             )
                             isFlowchartPanel -> FlowchartCompactActionRail(
                                 session = flowchartSessionState.value,
+                                panelSizePx = IntSize(
+                                    width = (panel.width * density).roundToInt().coerceAtLeast(1),
+                                    height = (panel.height * density).roundToInt().coerceAtLeast(1),
+                                ),
                                 selectedNodeId = selectedFlowchartNodeId,
                                 selectedEdgeId = selectedFlowchartEdgeId,
                                 onExpandRequested = onExpandRequested,
@@ -1984,6 +2103,13 @@ fun WorkspaceScreen(
                     openPanel(PanelType.Screenshot)
                 },
                 FabAction(
+                    icon = Icons.Default.Visibility,
+                    label = "Floating Shot",
+                    color = M3EColors.Amber
+                ) {
+                    launchFloatingOverlay(FloatingOverlayTarget.Toolbar)
+                },
+                FabAction(
                     icon = Icons.Default.CenterFocusStrong,
                     label = "Vision öffnen",
                     color = M3EColors.Oceanneon
@@ -2032,6 +2158,10 @@ fun WorkspaceScreen(
         AddPanelDialog(
             onSelect = { type ->
                 openPanel(type)
+                showAddPanelDialog = false
+            },
+            onLaunchFloatingOverlay = { target ->
+                launchFloatingOverlay(target)
                 showAddPanelDialog = false
             },
             onDismiss = { showAddPanelDialog = false }
@@ -2463,8 +2593,14 @@ private fun ColumnScope.ScreenshotCanvasCompactRail(
         ScreenshotMarkerModeRailButton("Swipe", Icons.Default.ArrowForward, state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
             state.markerMode = ScreenshotCanvasMarkerMode.Swipe
         }
+        ScreenshotMarkerModeRailButton("Spline", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Spline) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Spline
+        }
         ScreenshotMarkerModeRailButton("Path", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Path) {
             state.markerMode = ScreenshotCanvasMarkerMode.Path
+        }
+        ScreenshotMarkerModeRailButton("Multi", Icons.Default.AddCircle, state.multiMarkerMode) {
+            state.multiMarkerMode = !state.multiMarkerMode
         }
         Spacer(modifier = Modifier.weight(1f))
         TooltipIconButton(tooltip = "Screenshots und Marker", onClick = onExpandRequested, modifier = Modifier.size(34.dp)) {
@@ -2567,6 +2703,7 @@ private fun ColumnScope.ScreenshotCanvasRail(
                     state.selectedSavedMarkerId = marker.id
                     state.selectedAssetId = marker.assetId ?: state.selectedAssetId
                     state.selectedRegion = marker.region
+                    state.selectedPath = marker.path
                     state.markerMode = marker.markerMode
                     state.matchKind = marker.matchKind
                     state.processingMode = marker.processingMode
@@ -2710,6 +2847,7 @@ private fun iconForMarkerMode(mode: ScreenshotCanvasMarkerMode): androidx.compos
         ScreenshotCanvasMarkerMode.Region -> Icons.Default.GridView
         ScreenshotCanvasMarkerMode.Point -> Icons.Default.TouchApp
         ScreenshotCanvasMarkerMode.Swipe -> Icons.Default.ArrowForward
+        ScreenshotCanvasMarkerMode.Spline -> Icons.Default.Polyline
         ScreenshotCanvasMarkerMode.Path -> Icons.Default.Polyline
     }
 
@@ -2724,8 +2862,14 @@ private fun markerExportCode(marker: ScreenshotCanvasSavedMarker): String {
             "point(\"${marker.label}\", ${region.x + region.width / 2}, ${region.y + region.height / 2})"
         ScreenshotCanvasMarkerMode.Swipe ->
             "swipe(${region.x}, ${region.y}, ${region.x + region.width}, ${region.y + region.height})"
-        ScreenshotCanvasMarkerMode.Path ->
-            "path(${region.x}, ${region.y}, ${region.x + region.width}, ${region.y + region.height})"
+        ScreenshotCanvasMarkerMode.Spline -> {
+            val path = marker.path ?: defaultBezierForRegion(region, region.x + region.width + 1, region.y + region.height + 1)
+            "spline(${path.startX}, ${path.startY}, ${path.endX}, ${path.endY}, ${path.controlX}, ${path.controlY})"
+        }
+        ScreenshotCanvasMarkerMode.Path -> {
+            val path = marker.path ?: defaultBezierForRegion(region, region.x + region.width + 1, region.y + region.height + 1)
+            "path(${path.startX}, ${path.startY}, ${path.controlX}, ${path.controlY}, ${path.endX}, ${path.endY})"
+        }
     }
 }
 
@@ -2958,13 +3102,8 @@ private fun MarkerCanvasPanel(
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        ScreenshotCanvasInspector(
-            modifier = Modifier.fillMaxWidth(),
-            asset = selectedAsset,
-            imageSize = bitmap?.let { "${it.width} x ${it.height}px" } ?: "-",
-            state = state,
-            markerPanel = true,
-        )
+        MarkerModeToolbar(state = state)
+        DrawCommandToolbar(state = state)
         MarkerUnderScreenshotPanel(
             state = state,
             asset = selectedAsset,
@@ -2973,6 +3112,133 @@ private fun MarkerCanvasPanel(
                 .fillMaxWidth()
                 .weight(1f),
         )
+        ScreenshotCanvasInspector(
+            modifier = Modifier.fillMaxWidth(),
+            asset = selectedAsset,
+            imageSize = bitmap?.let { "${it.width} x ${it.height}px" } ?: "-",
+            state = state,
+            markerPanel = true,
+        )
+    }
+}
+
+@Composable
+private fun MarkerModeToolbar(
+    state: ScreenshotCanvasUiState,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MarkerModeButton("Template", state.markerMode == ScreenshotCanvasMarkerMode.Template) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Template
+        }
+        MarkerModeButton("Region", state.markerMode == ScreenshotCanvasMarkerMode.Region) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Region
+        }
+        MarkerModeButton("Point", state.markerMode == ScreenshotCanvasMarkerMode.Point) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Point
+        }
+        MarkerModeButton("Swipe", state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Swipe
+        }
+        MarkerModeButton("Spline", state.markerMode == ScreenshotCanvasMarkerMode.Spline) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Spline
+        }
+        MarkerModeButton("Path", state.markerMode == ScreenshotCanvasMarkerMode.Path) {
+            state.markerMode = ScreenshotCanvasMarkerMode.Path
+        }
+        MarkerModeButton("Multi", state.multiMarkerMode) {
+            state.multiMarkerMode = !state.multiMarkerMode
+        }
+    }
+}
+
+@Composable
+private fun DrawCommandToolbar(
+    state: ScreenshotCanvasUiState,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ScreenshotCanvasDrawTool.entries.forEach { tool ->
+            MarkerModeButton(
+                label = when (tool) {
+                    ScreenshotCanvasDrawTool.Line -> "Draw.line"
+                    ScreenshotCanvasDrawTool.Circle -> "Draw.circle"
+                    ScreenshotCanvasDrawTool.Curve -> "Draw.curve"
+                    ScreenshotCanvasDrawTool.Spline -> "Draw.spline"
+                    ScreenshotCanvasDrawTool.Path -> "Draw.path"
+                    ScreenshotCanvasDrawTool.Polygon -> "Draw.polygon"
+                    ScreenshotCanvasDrawTool.Text -> "Draw.text"
+                    ScreenshotCanvasDrawTool.Image -> "Draw.image"
+                    ScreenshotCanvasDrawTool.Shape -> "Draw.shape"
+                },
+                selected = state.drawTool == tool,
+                onClick = { state.drawTool = tool },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotAssetCarousel(
+    assets: List<ScreenshotCanvasAsset>,
+    selectedAssetId: String?,
+    onSelect: (ScreenshotCanvasAsset) -> Unit,
+) {
+    if (assets.isEmpty()) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Text(
+                text = "Keine gespeicherten Screenshots.",
+                modifier = Modifier.padding(10.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(assets, key = { it.id }) { asset ->
+            FilterChip(
+                selected = asset.id == selectedAssetId,
+                onClick = { onSelect(asset) },
+                label = {
+                    Column(modifier = Modifier.width(132.dp)) {
+                        Text(
+                            asset.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            asset.dateLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Photo, contentDescription = null, modifier = Modifier.size(16.dp))
+                },
+            )
+        }
     }
 }
 
@@ -3046,6 +3312,21 @@ private fun VisionCropCanvasPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            FilledTonalButton(
+                onClick = {
+                    state.visualTestScore = if (state.selectedRegion == null) null else 0.91f
+                    state.markerStatusMessage = if (state.selectedRegion == null) {
+                        "Keine Region markiert."
+                    } else {
+                        "Crop vorbereitet."
+                    }
+                },
+                enabled = state.selectedRegion != null,
+                modifier = Modifier.height(34.dp),
+            ) {
+                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, modifier = Modifier.size(14.dp))
+                Text("Crop", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 2.dp))
+            }
             VisionProcessingSelector(
                 label = "Live",
                 selected = state.liveProcessingMode,
@@ -3076,6 +3357,32 @@ private fun VisionCropCanvasPanel(
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
                 Text("Test", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Rotation ${state.rotationDegrees.toInt()}°", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = state.rotationDegrees,
+                    onValueChange = { state.rotationDegrees = it },
+                    valueRange = 0f..360f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Schwelle ${"%.0f".format(state.threshold * 100)}%", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = state.threshold,
+                    onValueChange = { state.threshold = it },
+                    valueRange = 0.5f..0.99f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
         if (compatibleMarkers.isNotEmpty()) {
@@ -3365,6 +3672,12 @@ private data class ScreenshotFittedImageLayout(
             right = offsetX + (region.x + region.width).toFloat() / imageWidth * drawnWidth,
             bottom = offsetY + (region.y + region.height).toFloat() / imageHeight * drawnHeight,
         )
+
+    fun imageToScreenPoint(x: Int, y: Int, imageWidth: Int, imageHeight: Int): Offset =
+        Offset(
+            x = offsetX + x.toFloat() / imageWidth * drawnWidth,
+            y = offsetY + y.toFloat() / imageHeight * drawnHeight,
+        )
 }
 
 @Composable
@@ -3403,30 +3716,45 @@ private fun ScreenshotRegionCanvas(
                     val handleRadiusPx = 26.dp.toPx()
                     val pointHitRadiusPx = 32.dp.toPx()
                     val pointMode = state.markerMode == ScreenshotCanvasMarkerMode.Point
+                    val pathMode = state.markerMode == ScreenshotCanvasMarkerMode.Spline || state.markerMode == ScreenshotCanvasMarkerMode.Path
+                    val pathAtStart = if (pathMode) {
+                        state.selectedPath ?: regionAtStart?.let { defaultBezierForRegion(it, imageWidth, imageHeight) }
+                    } else {
+                        null
+                    }
                     val setup = if (screenRect != null) {
                         val handle = if (pointMode) {
                             ScreenshotCanvasOverlayHandle.None
+                        } else if (pathMode && pathAtStart != null) {
+                            detectPathOverlayHandle(startScreen, pathAtStart, layout, imageWidth, imageHeight, handleRadiusPx)
+                                .takeUnless { it == ScreenshotCanvasOverlayHandle.None }
+                                ?: detectScreenshotOverlayHandle(startScreen, screenRect, handleRadiusPx)
                         } else {
                             detectScreenshotOverlayHandle(startScreen, screenRect, handleRadiusPx)
                         }
                         val mode = when (handle) {
                             ScreenshotCanvasOverlayHandle.ScanType,
                             ScreenshotCanvasOverlayHandle.Close -> ScreenshotCanvasTouchMode.TapHandle
+                            ScreenshotCanvasOverlayHandle.PathStart -> ScreenshotCanvasTouchMode.MovePathStart
+                            ScreenshotCanvasOverlayHandle.PathControl -> ScreenshotCanvasTouchMode.MovePathControl
+                            ScreenshotCanvasOverlayHandle.PathEnd -> ScreenshotCanvasTouchMode.MovePathEnd
                             ScreenshotCanvasOverlayHandle.ResizeBottomLeft -> ScreenshotCanvasTouchMode.ResizeBottomLeft
                             ScreenshotCanvasOverlayHandle.ResizeBottomRight -> ScreenshotCanvasTouchMode.ResizeBottomRight
                             ScreenshotCanvasOverlayHandle.None -> when {
                                 pointMode && (startScreen - screenRect.center).getDistance() <= pointHitRadiusPx -> ScreenshotCanvasTouchMode.Move
                                 pointMode -> ScreenshotCanvasTouchMode.PointTap
+                                pathMode && screenRect.contains(startScreen) -> ScreenshotCanvasTouchMode.MovePath
                                 screenRect.contains(startScreen) -> ScreenshotCanvasTouchMode.Move
                                 else -> ScreenshotCanvasTouchMode.Create
                             }
                         }
-                        ScreenshotCanvasGestureSetup(mode, startImage, regionAtStart, handle)
+                        ScreenshotCanvasGestureSetup(mode, startImage, regionAtStart, pathAtStart, handle)
                     } else {
                         ScreenshotCanvasGestureSetup(
                             mode = if (pointMode) ScreenshotCanvasTouchMode.PointTap else ScreenshotCanvasTouchMode.Create,
                             createAnchorImage = startImage,
                             regionStart = null,
+                            pathStart = null,
                             handle = ScreenshotCanvasOverlayHandle.None,
                         )
                     }
@@ -3460,7 +3788,15 @@ private fun ScreenshotRegionCanvas(
                         change.consume()
                         val currentImage = layout.screenToImageClamped(change.position, imageWidth, imageHeight)
                         val newRegion = when (setup.mode) {
-                            ScreenshotCanvasTouchMode.Create -> regionFromPoints(setup.createAnchorImage, currentImage, imageWidth, imageHeight)
+                            ScreenshotCanvasTouchMode.Create -> {
+                                if (pathMode) {
+                                    val bezier = bezierFromDrag(setup.createAnchorImage, currentImage, imageWidth, imageHeight)
+                                    state.selectedPath = bezier
+                                    bezier.bounds(imageWidth, imageHeight)
+                                } else {
+                                    regionFromPoints(setup.createAnchorImage, currentImage, imageWidth, imageHeight)
+                                }
+                            }
                             ScreenshotCanvasTouchMode.Move -> {
                                 if (state.markerMode == ScreenshotCanvasMarkerMode.Point) {
                                     pointRegion(currentImage, imageWidth, imageHeight)
@@ -3470,6 +3806,41 @@ private fun ScreenshotRegionCanvas(
                                     val dy = (currentImage.y - setup.createAnchorImage.y).roundToInt()
                                     moveScreenshotRegion(base, dx, dy, imageWidth, imageHeight)
                                 }
+                            }
+                            ScreenshotCanvasTouchMode.MovePath -> {
+                                val base = setup.pathStart ?: return@drag
+                                val dx = (currentImage.x - setup.createAnchorImage.x).roundToInt()
+                                val dy = (currentImage.y - setup.createAnchorImage.y).roundToInt()
+                                val bezier = moveBezier(base, dx, dy, imageWidth, imageHeight)
+                                state.selectedPath = bezier
+                                bezier.bounds(imageWidth, imageHeight)
+                            }
+                            ScreenshotCanvasTouchMode.MovePathStart -> {
+                                val base = setup.pathStart ?: return@drag
+                                val bezier = base.copy(
+                                    startX = currentImage.x.roundToInt().coerceIn(0, imageWidth),
+                                    startY = currentImage.y.roundToInt().coerceIn(0, imageHeight),
+                                )
+                                state.selectedPath = bezier
+                                bezier.bounds(imageWidth, imageHeight)
+                            }
+                            ScreenshotCanvasTouchMode.MovePathControl -> {
+                                val base = setup.pathStart ?: return@drag
+                                val bezier = base.copy(
+                                    controlX = currentImage.x.roundToInt().coerceIn(0, imageWidth),
+                                    controlY = currentImage.y.roundToInt().coerceIn(0, imageHeight),
+                                )
+                                state.selectedPath = bezier
+                                bezier.bounds(imageWidth, imageHeight)
+                            }
+                            ScreenshotCanvasTouchMode.MovePathEnd -> {
+                                val base = setup.pathStart ?: return@drag
+                                val bezier = base.copy(
+                                    endX = currentImage.x.roundToInt().coerceIn(0, imageWidth),
+                                    endY = currentImage.y.roundToInt().coerceIn(0, imageHeight),
+                                )
+                                state.selectedPath = bezier
+                                bezier.bounds(imageWidth, imageHeight)
                             }
                             ScreenshotCanvasTouchMode.ResizeBottomLeft -> resizeScreenshotRegionFromBottomLeft(
                                 setup.regionStart ?: return@drag,
@@ -3509,6 +3880,7 @@ private fun ScreenshotRegionCanvas(
             imageWidth = imageWidth,
             imageHeight = imageHeight,
             region = displayRegion,
+            path = state.selectedPath,
             markerMode = state.markerMode,
             matchKind = state.matchKind,
         )
@@ -3564,6 +3936,82 @@ private fun pointRegion(point: Offset, imageWidth: Int, imageHeight: Int): Scree
     val x = (point.x.roundToInt() - half).coerceIn(0, max(0, imageWidth - size))
     val y = (point.y.roundToInt() - half).coerceIn(0, max(0, imageHeight - size))
     return ScreenshotCanvasRegion(x, y, min(size, imageWidth - x), min(size, imageHeight - y))
+}
+
+private fun bezierFromDrag(
+    start: Offset,
+    end: Offset,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasBezier {
+    val startX = start.x.roundToInt().coerceIn(0, imageWidth)
+    val startY = start.y.roundToInt().coerceIn(0, imageHeight)
+    val endX = end.x.roundToInt().coerceIn(0, imageWidth)
+    val endY = end.y.roundToInt().coerceIn(0, imageHeight)
+    val curveLift = max(36, abs(endX - startX) / 3 + abs(endY - startY) / 6)
+    return ScreenshotCanvasBezier(
+        startX = startX,
+        startY = startY,
+        controlX = ((startX + endX) / 2).coerceIn(0, imageWidth),
+        controlY = (min(startY, endY) - curveLift).coerceIn(0, imageHeight),
+        endX = endX,
+        endY = endY,
+    )
+}
+
+private fun defaultBezierForRegion(
+    region: ScreenshotCanvasRegion,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasBezier =
+    bezierFromDrag(
+        start = Offset(region.x.toFloat(), region.y.toFloat()),
+        end = Offset((region.x + region.width).toFloat(), (region.y + region.height).toFloat()),
+        imageWidth = imageWidth,
+        imageHeight = imageHeight,
+    )
+
+private fun moveBezier(
+    base: ScreenshotCanvasBezier,
+    dx: Int,
+    dy: Int,
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasBezier =
+    ScreenshotCanvasBezier(
+        startX = (base.startX + dx).coerceIn(0, imageWidth),
+        startY = (base.startY + dy).coerceIn(0, imageHeight),
+        controlX = (base.controlX + dx).coerceIn(0, imageWidth),
+        controlY = (base.controlY + dy).coerceIn(0, imageHeight),
+        endX = (base.endX + dx).coerceIn(0, imageWidth),
+        endY = (base.endY + dy).coerceIn(0, imageHeight),
+    )
+
+private fun ScreenshotCanvasBezier.bounds(imageWidth: Int, imageHeight: Int): ScreenshotCanvasRegion {
+    val left = min(startX, min(controlX, endX)).coerceIn(0, imageWidth - 1)
+    val top = min(startY, min(controlY, endY)).coerceIn(0, imageHeight - 1)
+    val right = max(startX, max(controlX, endX)).coerceIn(left + 1, imageWidth)
+    val bottom = max(startY, max(controlY, endY)).coerceIn(top + 1, imageHeight)
+    return ScreenshotCanvasRegion(left, top, right - left, bottom - top)
+}
+
+private fun detectPathOverlayHandle(
+    point: Offset,
+    path: ScreenshotCanvasBezier,
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+    radius: Float,
+): ScreenshotCanvasOverlayHandle {
+    val start = layout.imageToScreenPoint(path.startX, path.startY, imageWidth, imageHeight)
+    val control = layout.imageToScreenPoint(path.controlX, path.controlY, imageWidth, imageHeight)
+    val end = layout.imageToScreenPoint(path.endX, path.endY, imageWidth, imageHeight)
+    return when {
+        (point - start).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.PathStart
+        (point - control).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.PathControl
+        (point - end).getDistance() <= radius -> ScreenshotCanvasOverlayHandle.PathEnd
+        else -> ScreenshotCanvasOverlayHandle.None
+    }
 }
 
 private fun detectScreenshotOverlayHandle(
@@ -3644,6 +4092,7 @@ private fun DrawScope.drawScreenshotRegionOverlay(
     imageWidth: Int,
     imageHeight: Int,
     region: ScreenshotCanvasRegion?,
+    path: ScreenshotCanvasBezier?,
     markerMode: ScreenshotCanvasMarkerMode,
     matchKind: ScreenshotCanvasMatchKind,
 ) {
@@ -3665,8 +4114,27 @@ private fun DrawScope.drawScreenshotRegionOverlay(
     drawRect(dim, topLeft = Offset(layout.imageBounds.left, rect.top), size = Size((rect.left - layout.imageBounds.left).coerceAtLeast(0f), rect.height))
     drawRect(dim, topLeft = Offset(rect.right, rect.top), size = Size((layout.imageBounds.right - rect.right).coerceAtLeast(0f), rect.height))
     drawRect(Color(0xFF4FC3F7), topLeft = Offset(rect.left, rect.top), size = Size(rect.width, rect.height), style = Stroke(2.5f))
-    if (markerMode == ScreenshotCanvasMarkerMode.Swipe || markerMode == ScreenshotCanvasMarkerMode.Path) {
-        val color = if (markerMode == ScreenshotCanvasMarkerMode.Swipe) Color(0xFFFFD54F) else Color(0xFF69F0AE)
+    if (markerMode == ScreenshotCanvasMarkerMode.Spline || markerMode == ScreenshotCanvasMarkerMode.Path) {
+        val bezier = path ?: defaultBezierForRegion(region, imageWidth, imageHeight)
+        val start = layout.imageToScreenPoint(bezier.startX, bezier.startY, imageWidth, imageHeight)
+        val control = layout.imageToScreenPoint(bezier.controlX, bezier.controlY, imageWidth, imageHeight)
+        val end = layout.imageToScreenPoint(bezier.endX, bezier.endY, imageWidth, imageHeight)
+        val color = Color(0xFF69F0AE)
+        drawLine(color.copy(alpha = 0.42f), start, control, 1.6f, cap = StrokeCap.Round)
+        drawLine(color.copy(alpha = 0.42f), control, end, 1.6f, cap = StrokeCap.Round)
+        drawPath(
+            path = Path().apply {
+                moveTo(start.x, start.y)
+                quadraticTo(control.x, control.y, end.x, end.y)
+            },
+            color = color,
+            style = Stroke(width = 4f, cap = StrokeCap.Round),
+        )
+        drawPathHandle(start, "S", color)
+        drawPathHandle(control, "B", Color(0xFFFFF176))
+        drawPathHandle(end, "E", color)
+    } else if (markerMode == ScreenshotCanvasMarkerMode.Swipe) {
+        val color = Color(0xFFFFD54F)
         drawLine(color, Offset(rect.left, rect.top), Offset(rect.right, rect.bottom), 3.5f, cap = StrokeCap.Round)
         drawCircle(color, radius = 6f, center = Offset(rect.left, rect.top))
         drawCircle(color, radius = 8f, center = Offset(rect.right, rect.bottom), style = Stroke(2.5f))
@@ -3675,6 +4143,20 @@ private fun DrawScope.drawScreenshotRegionOverlay(
     drawCanvasHandle(rect.right, rect.top, "X", Color(0xFFD32F2F))
     drawCanvasHandle(rect.left, rect.bottom, "R", Color(0xFF2E7D32))
     drawCanvasHandle(rect.right, rect.bottom, "R", Color(0xFF2E7D32))
+}
+
+private fun DrawScope.drawPathHandle(center: Offset, label: String, color: Color) {
+    drawCircle(Color.Black.copy(alpha = 0.56f), radius = 13f, center = center)
+    drawCircle(color, radius = 10f, center = center)
+    drawCircle(Color.White, radius = 10f, center = center, style = Stroke(1.4f))
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        this.color = android.graphics.Color.BLACK
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = 10.dp.toPx()
+        isFakeBoldText = true
+    }
+    drawContext.canvas.nativeCanvas.drawText(label, center.x, center.y - ((paint.descent() + paint.ascent()) / 2f), paint)
 }
 
 private fun DrawScope.drawCanvasHandle(cx: Float, cy: Float, label: String, color: Color) {
@@ -3950,7 +4432,9 @@ private fun ScreenshotCanvasActionBar(
                     ScreenshotLayerChip("REG", state.markerMode == ScreenshotCanvasMarkerMode.Region) { state.markerMode = ScreenshotCanvasMarkerMode.Region }
                     ScreenshotLayerChip("PT", state.markerMode == ScreenshotCanvasMarkerMode.Point) { state.markerMode = ScreenshotCanvasMarkerMode.Point }
                     ScreenshotLayerChip("SWP", state.markerMode == ScreenshotCanvasMarkerMode.Swipe) { state.markerMode = ScreenshotCanvasMarkerMode.Swipe }
+                    ScreenshotLayerChip("SPL", state.markerMode == ScreenshotCanvasMarkerMode.Spline) { state.markerMode = ScreenshotCanvasMarkerMode.Spline }
                     ScreenshotLayerChip("PATH", state.markerMode == ScreenshotCanvasMarkerMode.Path) { state.markerMode = ScreenshotCanvasMarkerMode.Path }
+                    ScreenshotLayerChip("MULTI", state.multiMarkerMode) { state.multiMarkerMode = !state.multiMarkerMode }
                 }
             }
             TooltipIconButton(tooltip = "Zoom -", onClick = { state.zoomOut() }, modifier = Modifier.size(34.dp)) {
@@ -4013,42 +4497,6 @@ private fun MarkerUnderScreenshotPanel(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilledTonalButton(
-                onClick = {
-                    state.visualTestScore = if (state.selectedRegion == null) null else 0.91f
-                    state.markerStatusMessage = if (state.selectedRegion == null) {
-                        "Keine Region markiert."
-                    } else {
-                        "Pipeline-Test vorbereitet."
-                    }
-                },
-                enabled = state.selectedRegion != null,
-                modifier = Modifier.height(34.dp),
-            ) {
-                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, modifier = Modifier.size(14.dp))
-                Text("Crop", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 2.dp))
-            }
-            MarkerModeButton("Template", state.markerMode == ScreenshotCanvasMarkerMode.Template) {
-                state.markerMode = ScreenshotCanvasMarkerMode.Template
-            }
-            MarkerModeButton("Region", state.markerMode == ScreenshotCanvasMarkerMode.Region) {
-                state.markerMode = ScreenshotCanvasMarkerMode.Region
-            }
-            MarkerModeButton("Point", state.markerMode == ScreenshotCanvasMarkerMode.Point) {
-                state.markerMode = ScreenshotCanvasMarkerMode.Point
-            }
-            MarkerModeButton("Swipe", state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
-                state.markerMode = ScreenshotCanvasMarkerMode.Swipe
-            }
-            MarkerModeButton("Path", state.markerMode == ScreenshotCanvasMarkerMode.Path) {
-                state.markerMode = ScreenshotCanvasMarkerMode.Path
-            }
-        }
         Text(
             text = markerMetricsTitle(state.selectedRegion, state.markerMode, imageSize),
             style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
@@ -4057,59 +4505,6 @@ private fun MarkerUnderScreenshotPanel(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (state.savedMarkers.isNotEmpty()) {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(state.savedMarkers, key = { it.id }) { marker ->
-                    MarkerSavedItemCard(
-                        marker = marker,
-                        selected = marker.id == state.selectedSavedMarkerId,
-                        onClick = {
-                            state.selectedSavedMarkerId = marker.id
-                            state.selectedAssetId = marker.assetId ?: state.selectedAssetId
-                            state.selectedRegion = marker.region
-                            state.markerMode = marker.markerMode
-                            state.matchKind = marker.matchKind
-                            state.processingMode = marker.processingMode
-                            state.threshold = marker.threshold
-                            state.rotationDegrees = marker.rotationDegrees
-                            state.matchReadMe = marker.matchReadMe
-                            state.colourHex = marker.colourHex
-                            state.templateName = marker.label
-                            state.markerStatusMessage = "Marker geladen."
-                        },
-                    )
-                }
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            ScreenshotCanvasProcessingMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = state.processingMode == mode,
-                    onClick = { state.processingMode = mode },
-                    label = {
-                        Text(
-                            text = when (mode) {
-                                ScreenshotCanvasProcessingMode.Original -> "Original"
-                                ScreenshotCanvasProcessingMode.Grayscale -> "Graustufen"
-                                ScreenshotCanvasProcessingMode.HighContrast -> "Kontrast"
-                                ScreenshotCanvasProcessingMode.Edge -> "Kanten"
-                                ScreenshotCanvasProcessingMode.Inverse -> "Invers"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    },
-                    modifier = Modifier.height(28.dp),
-                )
-            }
-        }
         OutlinedTextField(
             value = state.templateName,
             onValueChange = { state.templateName = it },
@@ -4120,62 +4515,16 @@ private fun MarkerUnderScreenshotPanel(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Rotation ${state.rotationDegrees.toInt()}°", style = MaterialTheme.typography.labelSmall)
-                Slider(
-                    value = state.rotationDegrees,
-                    onValueChange = { state.rotationDegrees = it },
-                    valueRange = 0f..360f,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Schwelle ${"%.0f".format(state.threshold * 100)}%", style = MaterialTheme.typography.labelSmall)
-                Slider(
-                    value = state.threshold,
-                    onValueChange = { state.threshold = it },
-                    valueRange = 0.5f..0.99f,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             OutlinedTextField(
-                value = state.matchReadMe,
-                onValueChange = { state.matchReadMe = it },
-                modifier = Modifier.weight(1f),
-                label = { Text("Match", style = MaterialTheme.typography.labelSmall) },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall,
-            )
-            OutlinedTextField(
                 value = state.colourHex,
                 onValueChange = { state.colourHex = it },
-                modifier = Modifier.width(108.dp),
+                modifier = Modifier.weight(1f),
                 label = { Text("Colour", style = MaterialTheme.typography.labelSmall) },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall,
             )
-        }
-        state.visualTestScore?.let { score ->
-            val passed = score >= state.threshold
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                color = if (passed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
-            ) {
-                Text(
-                    text = "Pipeline-Test: ${"%.1f".format(score * 100)}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(8.dp),
-                )
-            }
         }
         if (state.markerStatusMessage.isNotBlank()) {
             Text(
@@ -4188,19 +4537,6 @@ private fun MarkerUnderScreenshotPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            OutlinedButton(
-                onClick = {
-                    state.visualTestScore = if (state.selectedRegion == null) null else 0.91f
-                    state.markerStatusMessage = if (state.selectedRegion == null) "Keine Region markiert." else "Pipeline-Test OK."
-                },
-                enabled = state.selectedRegion != null,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(36.dp),
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text("PipelineTEST", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium)
-            }
             Button(
                 onClick = {
                     val region = state.selectedRegion
@@ -4208,13 +4544,21 @@ private fun MarkerUnderScreenshotPanel(
                         "Keine Region markiert."
                     } else {
                         val now = System.currentTimeMillis()
-                        val id = state.selectedSavedMarkerId ?: "marker:${now}"
+                        val id = if (state.multiMarkerMode) "marker:${now}" else state.selectedSavedMarkerId ?: "marker:${now}"
+                        val path = if (state.markerMode == ScreenshotCanvasMarkerMode.Spline || state.markerMode == ScreenshotCanvasMarkerMode.Path) {
+                            state.selectedPath ?: imageSize?.let { (imageWidth, imageHeight) ->
+                                defaultBezierForRegion(region, imageWidth, imageHeight)
+                            }
+                        } else {
+                            null
+                        }
                         val marker = ScreenshotCanvasSavedMarker(
                             id = id,
                             label = state.templateName.trim().ifBlank { "Marker" },
                             assetId = asset?.id,
                             assetLabel = asset?.label,
                             region = region,
+                            path = path,
                             markerMode = state.markerMode,
                             matchKind = state.matchKind,
                             processingMode = state.processingMode,
@@ -4236,7 +4580,7 @@ private fun MarkerUnderScreenshotPanel(
                 },
                 enabled = state.selectedRegion != null,
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
                     .height(36.dp),
             ) {
                 Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -4323,6 +4667,7 @@ private fun markerMetricsTitle(
         return when (markerMode) {
             ScreenshotCanvasMarkerMode.Point -> "Punkt: x=-  y=-$size"
             ScreenshotCanvasMarkerMode.Swipe -> "Swipe: start=-  end=-$size"
+            ScreenshotCanvasMarkerMode.Spline -> "Spline: punkte=-$size"
             ScreenshotCanvasMarkerMode.Path -> "Path: punkte=-$size"
             ScreenshotCanvasMarkerMode.Template -> "Template: bbox=-$size"
             ScreenshotCanvasMarkerMode.Region -> "Region: x=-  y=-  w=-  h=-$size"
@@ -4335,6 +4680,7 @@ private fun markerMetricsTitle(
             "Punkt: x=$cx  y=$cy"
         }
         ScreenshotCanvasMarkerMode.Swipe -> "Swipe: start=(${region.x},${region.y})  end=(${region.x + region.width},${region.y + region.height})"
+        ScreenshotCanvasMarkerMode.Spline -> "Spline: start=(${region.x},${region.y})  ende=(${region.x + region.width},${region.y + region.height})"
         ScreenshotCanvasMarkerMode.Path -> "Path: start=(${region.x},${region.y})  end=(${region.x + region.width},${region.y + region.height})"
         ScreenshotCanvasMarkerMode.Template -> "Template: bbox=${region.x},${region.y} ${region.width}x${region.height}"
         ScreenshotCanvasMarkerMode.Region -> "Region: x=${region.x}  y=${region.y}  w=${region.width}  h=${region.height}"
@@ -4436,12 +4782,7 @@ private fun ScreenshotOverlayGuide(
 }
 
 private fun loadScreenshotCanvasAssets(context: Context): List<ScreenshotCanvasAsset> {
-    val roots = listOfNotNull(
-        File(runtimeFilesRoot(context), "screenshots"),
-        context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-        File(context.filesDir, "screenshots"),
-    )
-    return roots
+    return screenshotCanvasAssetRoots(context)
         .flatMap { root -> root.listFiles().orEmpty().asIterable() }
         .filter { it.isFile && it.extension.lowercase(Locale.ROOT) in setOf("png", "jpg", "jpeg", "webp") }
         .distinctBy { it.absolutePath }
@@ -4455,6 +4796,21 @@ private fun loadScreenshotCanvasAssets(context: Context): List<ScreenshotCanvasA
             )
         }
 }
+
+private fun screenshotCanvasAssetSignature(context: Context): Long =
+    screenshotCanvasAssetRoots(context)
+        .flatMap { root -> root.listFiles().orEmpty().asIterable() }
+        .filter { it.isFile && it.extension.lowercase(Locale.ROOT) in setOf("png", "jpg", "jpeg", "webp") }
+        .fold(17L) { signature, file ->
+            31L * signature + file.absolutePath.hashCode() + file.lastModified() + file.length()
+        }
+
+private fun screenshotCanvasAssetRoots(context: Context): List<File> =
+    listOfNotNull(
+        File(runtimeFilesRoot(context), "screenshots"),
+        context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+        File(context.filesDir, "screenshots"),
+    )
 
 private fun screenshotCanvasMarkerStoreFile(context: Context): File =
     File(runtimeFilesRoot(context), "markers/saved-markers.json")
@@ -4501,6 +4857,16 @@ private fun loadScreenshotCanvasSavedMarkers(context: Context): List<ScreenshotC
             for (index in 0 until markers.length()) {
                 val item = markers.optJSONObject(index) ?: continue
                 val region = item.optJSONObject("region") ?: continue
+                val path = item.optJSONObject("path")?.let { path ->
+                    ScreenshotCanvasBezier(
+                        startX = path.optInt("startX", region.optInt("x", 0)),
+                        startY = path.optInt("startY", region.optInt("y", 0)),
+                        controlX = path.optInt("controlX", region.optInt("x", 0) + region.optInt("width", 1) / 2),
+                        controlY = path.optInt("controlY", region.optInt("y", 0)),
+                        endX = path.optInt("endX", region.optInt("x", 0) + region.optInt("width", 1)),
+                        endY = path.optInt("endY", region.optInt("y", 0) + region.optInt("height", 1)),
+                    )
+                }
                 val marker = ScreenshotCanvasSavedMarker(
                     id = item.optString("id").takeIf { it.isNotBlank() } ?: "marker:${index}:${System.currentTimeMillis()}",
                     label = item.optString("label", "Marker").ifBlank { "Marker" },
@@ -4512,7 +4878,8 @@ private fun loadScreenshotCanvasSavedMarkers(context: Context): List<ScreenshotC
                         width = region.optInt("width", 1).coerceAtLeast(1),
                         height = region.optInt("height", 1).coerceAtLeast(1),
                     ),
-                    markerMode = enumValueOrDefault(item.optString("markerMode"), ScreenshotCanvasMarkerMode.Region),
+                    path = path,
+                    markerMode = markerModeFromStorage(item.optString("markerMode"), path),
                     matchKind = enumValueOrDefault(item.optString("matchKind"), ScreenshotCanvasMatchKind.OCR),
                     processingMode = enumValueOrDefault(item.optString("processingMode"), ScreenshotCanvasProcessingMode.Original),
                     threshold = item.optDouble("threshold", 0.85).toFloat().coerceIn(0f, 1f),
@@ -4559,6 +4926,18 @@ private fun persistScreenshotCanvasSavedMarkers(
                     .put("width", marker.region.width)
                     .put("height", marker.region.height)
             )
+            marker.path?.let { path ->
+                item.put(
+                    "path",
+                    JSONObject()
+                        .put("startX", path.startX)
+                        .put("startY", path.startY)
+                        .put("controlX", path.controlX)
+                        .put("controlY", path.controlY)
+                        .put("endX", path.endX)
+                        .put("endY", path.endY)
+                )
+            }
             array.put(item)
         }
         root.put("markers", array)
@@ -4570,6 +4949,17 @@ private inline fun <reified T : Enum<T>> enumValueOrDefault(raw: String?, fallba
     raw?.takeIf { it.isNotBlank() }
         ?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() }
         ?: fallback
+
+private fun markerModeFromStorage(raw: String?, path: ScreenshotCanvasBezier?): ScreenshotCanvasMarkerMode {
+    val value = raw.orEmpty().trim()
+    return when {
+        value.equals("Path", ignoreCase = true) && path != null -> ScreenshotCanvasMarkerMode.Spline
+        value.equals("Spline", ignoreCase = true) -> ScreenshotCanvasMarkerMode.Spline
+        value.equals("Path", ignoreCase = true) -> ScreenshotCanvasMarkerMode.Path
+        else -> runCatching { enumValueOf<ScreenshotCanvasMarkerMode>(value) }.getOrNull()
+            ?: ScreenshotCanvasMarkerMode.Region
+    }
+}
 
 private fun RuntimeAutomationRegion.toScreenshotRegion(): ScreenshotCanvasRegion =
     ScreenshotCanvasRegion(
@@ -4606,6 +4996,7 @@ private fun markerModeFromRuntime(raw: String): ScreenshotCanvasMarkerMode =
         "template", "tpl" -> ScreenshotCanvasMarkerMode.Template
         "point", "tap" -> ScreenshotCanvasMarkerMode.Point
         "swipe" -> ScreenshotCanvasMarkerMode.Swipe
+        "spline", "curve", "bezier" -> ScreenshotCanvasMarkerMode.Spline
         "path" -> ScreenshotCanvasMarkerMode.Path
         else -> ScreenshotCanvasMarkerMode.Region
     }
@@ -4764,93 +5155,626 @@ private fun RecorderStepsPanel(
     actionSink: PanelActionSink
 ) {
     var selectedStepId by remember { mutableStateOf<String?>(null) }
+    var replayIndex by remember { mutableIntStateOf(0) }
+    var replayPositionMs by remember { mutableLongStateOf(0L) }
+    var playing by remember { mutableStateOf(false) }
+    val speedSteps = remember { listOf(0.2f, 0.5f, 1f, 2f, 4f) }
+    var speedStepIndex by remember { mutableIntStateOf(2) }
+    val speed = speedSteps[speedStepIndex]
     var dragAccumulator by remember { mutableFloatStateOf(0f) }
     val thresholdPx = 56f
+    val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
+    val activityStepGroups = remember(steps, timelinePoints) { buildRecorderActivityStepGroups(steps, timelinePoints) }
+    val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
+    val timelineEndMs = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStartMs + 1L) ?: 1L
+    val safeIndex = replayIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0))
+    val activeStep = steps.getOrNull(safeIndex)
+
+    LaunchedEffect(steps.size) {
+        if (replayIndex > steps.lastIndex) replayIndex = steps.lastIndex.coerceAtLeast(0)
+        replayPositionMs = replayPositionMs.coerceIn(timelineStartMs, timelineEndMs)
+        if (steps.isEmpty()) playing = false
+    }
+    LaunchedEffect(playing, speed, steps.size, timelineStartMs, timelineEndMs) {
+        if (!playing || steps.isEmpty()) return@LaunchedEffect
+        if (replayPositionMs >= timelineEndMs) replayPositionMs = timelineStartMs
+        while (playing && replayPositionMs < timelineEndMs) {
+            delay(50)
+            replayPositionMs = (replayPositionMs + (50f * speed.coerceIn(0.25f, 4f)).toLong())
+                .coerceAtMost(timelineEndMs)
+            val nextIndex = nearestTimelineIndex(timelinePoints, replayPositionMs)
+            if (nextIndex != replayIndex && nextIndex in steps.indices) {
+                replayIndex = nextIndex
+                selectedStepId = steps[nextIndex].id
+                actionSink.onPanelAction(PanelAction.SelectStep(steps[nextIndex].id))
+            }
+        }
+        if (replayPositionMs >= timelineEndMs) playing = false
+    }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("RecorderStepsPanel", style = MaterialTheme.typography.titleSmall)
-        Text("Tippen = Select, Drag Handle = Reorder, Swipe = Delete", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.86f),
+        ) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Step Sequencer", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Text(
+                        text = if (steps.isEmpty()) "0 / 0" else "${safeIndex + 1} / ${steps.size}",
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                RecorderTimeline(
+                    steps = steps,
+                    activeIndex = safeIndex,
+                    selectedStepId = selectedStepId,
+                    replayPositionMs = replayPositionMs,
+                    onSeek = { positionMs ->
+                        replayPositionMs = positionMs.coerceIn(timelineStartMs, timelineEndMs)
+                        val index = nearestTimelineIndex(timelinePoints, replayPositionMs)
+                        replayIndex = index
+                        steps.getOrNull(index)?.let {
+                            selectedStepId = it.id
+                            actionSink.onPanelAction(PanelAction.SelectStep(it.id))
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(98.dp),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TooltipIconButton(
+                        tooltip = "Zum Anfang",
+                        onClick = {
+                            replayIndex = 0
+                            replayPositionMs = timelineStartMs
+                            playing = false
+                            steps.firstOrNull()?.let {
+                                selectedStepId = it.id
+                                actionSink.onPanelAction(PanelAction.SelectStep(it.id))
+                            }
+                        },
+                        modifier = Modifier.size(34.dp),
+                        enabled = steps.isNotEmpty(),
+                    ) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = "Zum Anfang", modifier = Modifier.size(18.dp))
+                    }
+                    TooltipIconButton(
+                        tooltip = "Schritt zurueck",
+                        onClick = {
+                            replayIndex = (safeIndex - 1).coerceAtLeast(0)
+                            replayPositionMs = timelinePoints.getOrNull(replayIndex)?.startMs ?: timelineStartMs
+                            steps.getOrNull(replayIndex)?.let {
+                                selectedStepId = it.id
+                                actionSink.onPanelAction(PanelAction.SelectStep(it.id))
+                            }
+                        },
+                        modifier = Modifier.size(34.dp),
+                        enabled = steps.isNotEmpty() && safeIndex > 0,
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Schritt zurueck", modifier = Modifier.size(18.dp))
+                    }
+                    TooltipIconButton(
+                        tooltip = if (playing) "Pause" else "Replay",
+                        onClick = { playing = !playing },
+                        modifier = Modifier.size(38.dp),
+                        enabled = steps.isNotEmpty(),
+                    ) {
+                        Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
+                    TooltipIconButton(
+                        tooltip = "Schritt vor",
+                        onClick = {
+                            replayIndex = (safeIndex + 1).coerceAtMost(steps.lastIndex)
+                            replayPositionMs = timelinePoints.getOrNull(replayIndex)?.startMs ?: timelineEndMs
+                            steps.getOrNull(replayIndex)?.let {
+                                selectedStepId = it.id
+                                actionSink.onPanelAction(PanelAction.SelectStep(it.id))
+                            }
+                        },
+                        modifier = Modifier.size(34.dp),
+                        enabled = steps.isNotEmpty() && safeIndex < steps.lastIndex,
+                    ) {
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Schritt vor", modifier = Modifier.size(18.dp))
+                    }
+                    TooltipIconButton(
+                        tooltip = "Stop",
+                        onClick = {
+                            playing = false
+                            replayPositionMs = timelineStartMs
+                            replayIndex = 0
+                        },
+                        modifier = Modifier.size(34.dp),
+                        enabled = playing,
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = "Stop", modifier = Modifier.size(18.dp))
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Slider(
+                        value = speedStepIndex.toFloat(),
+                        onValueChange = { speedStepIndex = it.roundToInt().coerceIn(0, speedSteps.lastIndex) },
+                        valueRange = 0f..speedSteps.lastIndex.toFloat(),
+                        steps = speedSteps.size - 2,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${speed.formatSpeedStep()}x",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = activeStep?.let { "${it.label}  |  ${it.actionType}  |  ${it.status.name}" } ?: "Keine Recording-Session geladen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = activeStep?.status?.let { statusColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text("Tippen = Select, Long-Drag = Reorder, Swipe = Delete", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            itemsIndexed(steps, key = { _, item -> item.id }) { index, step ->
-                val dismissState = rememberSwipeToDismissBoxState(
-                    confirmValueChange = { value ->
-                        if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
-                            actionSink.onPanelAction(PanelAction.DeleteStep(step.id))
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                )
-                SwipeToDismissBox(
-                    state = dismissState,
-                    backgroundContent = {},
-                    content = {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedStepId = step.id
-                                    actionSink.onPanelAction(PanelAction.SelectStep(step.id))
-                                }
-                                .pointerInput(step.id) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragEnd = { dragAccumulator = 0f },
-                                        onDragCancel = { dragAccumulator = 0f },
-                                        onDrag = { change, drag ->
-                                            change.consume()
-                                            dragAccumulator += drag.y
-                                            if (dragAccumulator > thresholdPx && index < steps.lastIndex) {
-                                                actionSink.onPanelAction(PanelAction.ReorderStep(index, index + 1))
-                                                dragAccumulator = 0f
-                                            } else if (dragAccumulator < -thresholdPx && index > 0) {
-                                                actionSink.onPanelAction(PanelAction.ReorderStep(index, index - 1))
-                                                dragAccumulator = 0f
-                                            }
-                                        }
-                                    )
-                                },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (selectedStepId == step.id) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
-                            }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+            items(activityStepGroups, key = { it.key }) { group ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.74f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.DragHandle,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(step.label, fontWeight = FontWeight.Medium)
-                                    Text("${step.actionType} - ${step.status.name}", color = statusColor(step.status))
-                                }
-                                AssistChip(
-                                    onClick = {
-                                        selectedStepId = step.id
-                                        actionSink.onPanelAction(PanelAction.SelectStep(step.id))
-                                    },
-                                    label = { Text("Select") }
-                                )
-                            }
+                            Text(group.label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text(
+                                "${group.startMs.formatTimelineMillis()} - ${group.endMs.formatTimelineMillis()}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        group.steps.forEach { entry ->
+                            RecorderStepListRow(
+                                step = entry.step,
+                                index = entry.index,
+                                safeIndex = safeIndex,
+                                selectedStepId = selectedStepId,
+                                timelinePoints = timelinePoints,
+                                onSelect = { stepIndex, step ->
+                                    selectedStepId = step.id
+                                    replayIndex = stepIndex
+                                    replayPositionMs = timelinePoints.getOrNull(stepIndex)?.startMs ?: replayPositionMs
+                                    actionSink.onPanelAction(PanelAction.SelectStep(step.id))
+                                },
+                                onDelete = { actionSink.onPanelAction(PanelAction.DeleteStep(it.id)) },
+                                onReorder = { from, to -> actionSink.onPanelAction(PanelAction.ReorderStep(from, to)) },
+                                onDragDelta = { deltaY ->
+                                    dragAccumulator += deltaY
+                                    val index = entry.index
+                                    if (dragAccumulator > thresholdPx && index < steps.lastIndex) {
+                                        dragAccumulator = 0f
+                                        index to (index + 1)
+                                    } else if (dragAccumulator < -thresholdPx && index > 0) {
+                                        dragAccumulator = 0f
+                                        index to (index - 1)
+                                    } else {
+                                        null
+                                    }
+                                },
+                                onDragFinished = { dragAccumulator = 0f },
+                            )
                         }
                     }
-                )
+                }
             }
         }
     }
 }
+
+private data class RecorderTimelinePoint(
+    val step: RecorderStepUi,
+    val startMs: Long,
+    val endMs: Long,
+)
+
+private data class RecorderActivitySegment(
+    val label: String,
+    val startMs: Long,
+    val endMs: Long,
+)
+
+private data class RecorderStepListEntry(
+    val index: Int,
+    val step: RecorderStepUi,
+    val point: RecorderTimelinePoint,
+)
+
+private data class RecorderActivityStepGroup(
+    val key: String,
+    val label: String,
+    val startMs: Long,
+    val endMs: Long,
+    val steps: List<RecorderStepListEntry>,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecorderStepListRow(
+    step: RecorderStepUi,
+    index: Int,
+    safeIndex: Int,
+    selectedStepId: String?,
+    timelinePoints: List<RecorderTimelinePoint>,
+    onSelect: (Int, RecorderStepUi) -> Unit,
+    onDelete: (RecorderStepUi) -> Unit,
+    onReorder: (Int, Int) -> Unit,
+    onDragDelta: (Float) -> Pair<Int, Int>?,
+    onDragFinished: () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                onDelete(step)
+                true
+            } else {
+                false
+            }
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {},
+        content = {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(index, step) }
+                    .pointerInput(step.id, timelinePoints.size) {
+                        detectDragGesturesAfterLongPress(
+                            onDragEnd = onDragFinished,
+                            onDragCancel = onDragFinished,
+                            onDrag = { change, drag ->
+                                change.consume()
+                                onDragDelta(drag.y)?.let { (from, to) -> onReorder(from, to) }
+                            }
+                        )
+                    },
+                shape = RoundedCornerShape(9.dp),
+                color = if (selectedStepId == step.id) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else if (index == safeIndex) {
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.74f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+                }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(step.label, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "${step.actionType} - ${step.status.name}",
+                            color = statusColor(step.status),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    AssistChip(
+                        onClick = { onSelect(index, step) },
+                        label = { Text("Select") }
+                    )
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun RecorderTimeline(
+    steps: List<RecorderStepUi>,
+    activeIndex: Int,
+    selectedStepId: String?,
+    replayPositionMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val surface = MaterialTheme.colorScheme.surfaceContainerHighest
+    val outline = MaterialTheme.colorScheme.outlineVariant
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val passiveTrack = MaterialTheme.colorScheme.tertiaryContainer
+    val passiveTrackAlt = MaterialTheme.colorScheme.secondaryContainer
+    val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
+    val activitySegments = remember(timelinePoints) { buildRecorderActivitySegments(timelinePoints) }
+    Canvas(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(surface.copy(alpha = 0.48f))
+            .pointerInput(timelinePoints) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (steps.isNotEmpty()) {
+                        val timelineStart = timelinePoints.firstOrNull()?.startMs ?: 0L
+                        val timelineEnd = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStart + 1L) ?: 1L
+                        val fraction = (down.position.x / size.width).coerceIn(0f, 1f)
+                        val targetTime = timelineStart + ((timelineEnd - timelineStart) * fraction).toLong()
+                        onSeek(targetTime)
+                    }
+                    waitForUpOrCancellation()
+                }
+            }
+    ) {
+        val labelPaint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+            isAntiAlias = true
+            textSize = 10.dp.toPx()
+            color = onSurface.toArgb()
+        }
+        val smallLabelPaint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+            isAntiAlias = true
+            textSize = 9.dp.toPx()
+            color = onSurfaceVariant.toArgb()
+        }
+        val activeCenterY = size.height * 0.31f
+        val durationCenterY = size.height * 0.48f
+        val passiveTop = size.height * 0.58f
+        val passiveBottom = size.height - 14f
+        val passiveCenterY = (passiveTop + passiveBottom) * 0.5f
+        val left = 18f
+        val right = size.width - 18f
+        val timelineStart = timelinePoints.firstOrNull()?.startMs ?: 0L
+        val timelineEnd = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStart + 1L) ?: 1L
+        fun xForTime(timeMs: Long): Float {
+            val fraction = ((timeMs - timelineStart).toFloat() / (timelineEnd - timelineStart).toFloat()).coerceIn(0f, 1f)
+            return left + (right - left) * fraction
+        }
+
+        drawLine(
+            color = outline.copy(alpha = 0.70f),
+            start = Offset(left, activeCenterY),
+            end = Offset(right, activeCenterY),
+            strokeWidth = 3f,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = outline.copy(alpha = 0.64f),
+            start = Offset(left, durationCenterY),
+            end = Offset(right, durationCenterY),
+            strokeWidth = 3.5f,
+            cap = StrokeCap.Round,
+        )
+        drawContext.canvas.nativeCanvas.drawText("Actions", left, 13.dp.toPx(), smallLabelPaint)
+        drawContext.canvas.nativeCanvas.drawText("${(timelineStart / 1_000f).formatTimelineSeconds()}", left, durationCenterY - 7f, smallLabelPaint)
+        drawContext.canvas.nativeCanvas.drawText("Activity", left, passiveTop - 5f, smallLabelPaint)
+        if (steps.isEmpty()) return@Canvas
+        val playheadX = xForTime(replayPositionMs.coerceIn(timelineStart, timelineEnd))
+        drawLine(
+            color = primary.copy(alpha = 0.90f),
+            start = Offset(left, durationCenterY),
+            end = Offset(playheadX, durationCenterY),
+            strokeWidth = 4.5f,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(
+            color = primary,
+            radius = 5.2f,
+            center = Offset(playheadX, durationCenterY),
+        )
+
+        activitySegments.forEachIndexed { index, segment ->
+            val x1 = xForTime(segment.startMs).coerceIn(left, right)
+            val x2 = xForTime(segment.endMs).coerceIn(left, right).coerceAtLeast(x1 + 8f)
+            val color = if (index % 2 == 0) passiveTrack else passiveTrackAlt
+            drawRoundRect(
+                color = color.copy(alpha = 0.76f),
+                topLeft = Offset(x1, passiveTop),
+                size = androidx.compose.ui.geometry.Size((x2 - x1).coerceAtLeast(10f), passiveBottom - passiveTop),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f),
+            )
+            drawLine(
+                color = outline.copy(alpha = 0.75f),
+                start = Offset(x1, passiveTop - 4f),
+                end = Offset(x1, passiveBottom + 4f),
+                strokeWidth = 1.3f,
+            )
+            val available = (x2 - x1 - 8f).coerceAtLeast(0f)
+            if (available > 34f) {
+                val label = segment.label.take((available / 7f).toInt().coerceAtLeast(4))
+                drawContext.canvas.nativeCanvas.drawText(label, x1 + 5f, passiveCenterY + 3.5f, labelPaint)
+            }
+        }
+        val lastSegment = activitySegments.lastOrNull()
+        if (lastSegment != null) {
+            val x = xForTime(lastSegment.endMs)
+            drawLine(
+                color = outline.copy(alpha = 0.75f),
+                start = Offset(x, passiveTop - 4f),
+                end = Offset(x, passiveBottom + 4f),
+                strokeWidth = 1.3f,
+            )
+        }
+
+        timelinePoints.forEachIndexed { index, point ->
+            val step = point.step
+            val x = if (timelinePoints.size == 1) size.width * 0.5f else xForTime(point.startMs)
+            val selected = step.id == selectedStepId
+            val active = index == activeIndex
+            val radius = when {
+                selected -> 9f
+                active -> 8f
+                else -> 6f
+            }
+            drawCircle(
+                color = statusColor(step.status).copy(alpha = if (active || selected) 1f else 0.72f),
+                radius = radius,
+                center = Offset(x, activeCenterY),
+            )
+            if (active || selected) {
+                drawCircle(
+                    color = primary.copy(alpha = 0.72f),
+                    radius = radius + 5f,
+                    center = Offset(x, activeCenterY),
+                    style = Stroke(width = 2f),
+                )
+            }
+            drawLine(
+                color = statusColor(step.status).copy(alpha = 0.55f),
+                start = Offset(x, activeCenterY + radius + 5f),
+                end = Offset(x, passiveTop - 5f),
+                strokeWidth = 1.4f,
+            )
+        }
+        drawLine(
+            color = primary.copy(alpha = 0.82f),
+            start = Offset(playheadX, 8f),
+            end = Offset(playheadX, passiveBottom + 7f),
+            strokeWidth = 1.6f,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(
+            color = primary,
+            radius = 4f,
+            center = Offset(playheadX, 8f),
+        )
+    }
+}
+
+private fun buildRecorderTimelinePoints(steps: List<RecorderStepUi>): List<RecorderTimelinePoint> =
+    steps.mapIndexed { index, step ->
+        val fallbackStart = index * 1_000L
+        val start = step.timestampMs ?: fallbackStart
+        val fallbackEnd = steps.getOrNull(index + 1)?.timestampMs ?: (start + 700L)
+        val end = (step.durationMs?.let { start + it } ?: fallbackEnd).coerceAtLeast(start + 80L)
+        RecorderTimelinePoint(step, start, end)
+    }
+
+private fun buildRecorderActivitySegments(points: List<RecorderTimelinePoint>): List<RecorderActivitySegment> {
+    if (points.isEmpty()) return emptyList()
+    val segments = mutableListOf<RecorderActivitySegment>()
+    var label = points.first().step.activityName?.takeIf { it.isNotBlank() } ?: "Unknown Activity"
+    var start = points.first().startMs
+    var end = points.first().endMs
+    points.drop(1).forEach { point ->
+        val nextLabel = point.step.activityName?.takeIf { it.isNotBlank() } ?: label
+        if (nextLabel == label) {
+            end = maxOf(end, point.endMs)
+        } else {
+            segments += RecorderActivitySegment(label, start, maxOf(end, point.startMs))
+            label = nextLabel
+            start = point.startMs
+            end = point.endMs
+        }
+    }
+    segments += RecorderActivitySegment(label, start, end)
+    return segments
+}
+
+private fun buildRecorderActivityStepGroups(
+    steps: List<RecorderStepUi>,
+    points: List<RecorderTimelinePoint>,
+): List<RecorderActivityStepGroup> {
+    if (steps.isEmpty()) return emptyList()
+    val entries = steps.mapIndexed { index, step ->
+        RecorderStepListEntry(
+            index = index,
+            step = step,
+            point = points.getOrNull(index) ?: RecorderTimelinePoint(step, index * 1_000L, index * 1_000L + 700L),
+        )
+    }
+    val groups = mutableListOf<RecorderActivityStepGroup>()
+    var current = mutableListOf(entries.first())
+    var label = entries.first().step.activityName?.takeIf { it.isNotBlank() } ?: "Unknown Activity"
+    entries.drop(1).forEach { entry ->
+        val nextLabel = entry.step.activityName?.takeIf { it.isNotBlank() } ?: label
+        if (nextLabel == label) {
+            current += entry
+        } else {
+            groups += current.toActivityStepGroup(label)
+            label = nextLabel
+            current = mutableListOf(entry)
+        }
+    }
+    groups += current.toActivityStepGroup(label)
+    return groups
+}
+
+private fun List<RecorderStepListEntry>.toActivityStepGroup(label: String): RecorderActivityStepGroup {
+    val start = minOf { it.point.startMs }
+    val end = maxOf { it.point.endMs }
+    return RecorderActivityStepGroup(
+        key = "$label:$start:$end:${first().step.id}",
+        label = label,
+        startMs = start,
+        endMs = end,
+        steps = this,
+    )
+}
+
+private fun nearestTimelineIndex(points: List<RecorderTimelinePoint>, positionMs: Long): Int =
+    points
+        .mapIndexed { index, point ->
+            val diff = if (point.startMs >= positionMs) point.startMs - positionMs else positionMs - point.startMs
+            index to diff
+        }
+        .minByOrNull { it.second }
+        ?.first
+        ?: 0
+
+private fun Float.formatTimelineSeconds(): String =
+    if (this < 1f) {
+        "${(this * 1_000f).toInt()}ms"
+    } else {
+        "${"%.1f".format(this)}s"
+    }
+
+private fun Long.formatTimelineMillis(): String =
+    if (this < 1_000L) {
+        "${this}ms"
+    } else {
+        "${"%.1f".format(this / 1_000f)}s"
+    }
+
+private fun Float.formatSpeedStep(): String =
+    if (this == 1f || this == 2f || this == 4f) {
+        this.toInt().toString()
+    } else {
+        "%.1f".format(this)
+    }
 
 @Composable
 private fun BlockEditorPanel(
@@ -5285,6 +6209,7 @@ private fun BlockEditorRailBlockChip(
 @Composable
 private fun ColumnScope.FlowchartCompactActionRail(
     session: FlowchartShellEditorSession?,
+    panelSizePx: IntSize,
     selectedNodeId: FlowNodeId?,
     selectedEdgeId: FlowEdgeId?,
     onExpandRequested: () -> Unit,
@@ -5326,18 +6251,21 @@ private fun ColumnScope.FlowchartCompactActionRail(
                     controller?.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0)))
                 },
                 WorkspaceRailActionSpec("Zentrieren", Icons.Default.CenterFocusStrong, enabled = session != null) {
-                    controller?.attachGraph(controller.snapshot().graph ?: session.graphDocument, null)
+                    val view = controller?.snapshot()?.view ?: session?.viewDocument
+                    if (controller != null && view != null) {
+                        controller.replaceViewport(fitFlowchartViewport(view, panelSizePx))
+                    }
                 },
                 WorkspaceRailActionSpec("Auto anordnen", Icons.Default.AutoAwesomeMosaic, enabled = session != null) {
                     controller?.replaceLayout(
                         FlowLayoutConfig(
-                            layerSpacing = 148.0,
-                            nodeSpacing = 92.0,
-                            componentSpacing = 168.0,
-                            routingClearance = 36.0,
+                            layerSpacing = 156.0,
+                            nodeSpacing = 112.0,
+                            componentSpacing = 192.0,
+                            routingClearance = 40.0,
                             pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
                         )
-                    )?.let { view -> session.onViewDocumentChanged(view) }
+                    )
                 },
                 WorkspaceRailActionSpec("Dry Run", Icons.Default.PlayArrow, enabled = session != null, onClick = onRunDry),
                 WorkspaceRailActionSpec("Live Run", Icons.Default.PlayCircle, enabled = session != null, onClick = onRunLive),
@@ -5355,6 +6283,30 @@ private fun ColumnScope.FlowchartCompactActionRail(
         Spacer(modifier = Modifier.weight(1f))
         WorkspaceRailActionButton("Node-Palette", Icons.Default.AddCircle, enabled = session != null, onClick = onExpandRequested)
     }
+}
+
+private fun fitFlowchartViewport(
+    view: FlowViewDocument,
+    panelSize: IntSize,
+): de.visualtasker.flowchart.domain.FlowViewport {
+    if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
+    val minX = view.nodeViews.minOf { it.position.x }
+    val minY = view.nodeViews.minOf { it.position.y }
+    val maxX = view.nodeViews.maxOf { it.position.x + (it.size?.width ?: 160.0) }
+    val maxY = view.nodeViews.maxOf { it.position.y + (it.size?.height ?: 72.0) }
+    val contentWidth = (maxX - minX).coerceAtLeast(1.0)
+    val contentHeight = (maxY - minY).coerceAtLeast(1.0)
+    val horizontalPadding = 72.0
+    val topPadding = 72.0
+    val bottomPadding = 156.0
+    val availableWidth = (panelSize.width - horizontalPadding * 2.0).coerceAtLeast(120.0)
+    val availableHeight = (panelSize.height - topPadding - bottomPadding).coerceAtLeast(120.0)
+    val zoom = minOf(1.8, maxOf(0.18, minOf(availableWidth / contentWidth, availableHeight / contentHeight)))
+    val pan = FlowPoint(
+        x = horizontalPadding + (availableWidth - contentWidth * zoom) / 2.0 - minX * zoom,
+        y = topPadding + (availableHeight - contentHeight * zoom) / 2.0 - minY * zoom,
+    )
+    return de.visualtasker.flowchart.domain.FlowViewport(pan = pan, zoom = zoom)
 }
 
 @Composable
@@ -5599,6 +6551,7 @@ private fun iconForPanelType(type: PanelType) = when (type) {
 @Composable
 private fun AddPanelDialog(
     onSelect: (PanelType) -> Unit,
+    onLaunchFloatingOverlay: (FloatingOverlayTarget) -> Unit,
     onDismiss: () -> Unit
 ) {
     val panelTypes = listOf(
@@ -5630,6 +6583,23 @@ private fun AddPanelDialog(
                     leadingIcon = { Icon(iconForPanelType(type), contentDescription = null) }
                 )
             }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Text("Floating Overlays", style = MaterialTheme.typography.titleSmall)
+            AssistChip(
+                onClick = { onLaunchFloatingOverlay(FloatingOverlayTarget.Toolbar) },
+                label = { Text("Screenshot Toolbar") },
+                leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null) },
+            )
+            AssistChip(
+                onClick = { onLaunchFloatingOverlay(FloatingOverlayTarget.Inspector) },
+                label = { Text("Floating Inspector") },
+                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+            )
+            AssistChip(
+                onClick = { onLaunchFloatingOverlay(FloatingOverlayTarget.Panel) },
+                label = { Text("Floating Panel") },
+                leadingIcon = { Icon(Icons.Default.ViewKanban, contentDescription = null) },
+            )
         }
     }
 }
@@ -6509,7 +7479,6 @@ private fun SharedPreferences.Editor.putColor(key: String, color: Color): Shared
     putLong(key, color.value.toLong())
         .putInt("color.argb.${key.removePrefix("color.")}", color.toArgb())
 
-@Composable
 private fun statusColor(status: StepStatus): Color = when (status) {
     StepStatus.Recorded -> Color(0xFF6FCF97)
     StepStatus.Edited -> Color(0xFFF2C94C)
