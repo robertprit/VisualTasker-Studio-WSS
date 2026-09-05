@@ -100,6 +100,7 @@ import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowGraphEdge
 import de.visualtasker.flowchart.domain.FlowNodeId
+import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowSemanticValue
@@ -267,13 +268,25 @@ fun FlowchartShellPanel(
             hapticFeedbackEnabled = true,
             colorTokens = FlowchartColorTokens(
                 background = Color.Transparent,
-                nodeFill = Color(0xFF24212B),
+                nodeFill = Color(0xFF66707A),
                 eventNodeFill = Color(0xFFFFB300),
-                controlNodeFill = Color(0xFF8A5067),
-                logicNodeFill = Color(0xFF5E4569),
-                variableNodeFill = Color(0xFF165349),
-                feedbackNodeFill = Color(0xFF8A5F76),
-                nodeStroke = Color(0xFFC9C3D8),
+                actionNodeFill = Color(0xFFFF785F),
+                controlNodeFill = Color(0xFF69D17B),
+                logicNodeFill = Color(0xFF55D6D2),
+                variableNodeFill = Color(0xFF6FA8FF),
+                feedbackNodeFill = Color(0xFFFFD33F),
+                inputNodeFill = Color(0xFF7DA8FF),
+                perceptionNodeFill = Color(0xFF33C7A0),
+                textNodeFill = Color(0xFF8D79FF),
+                fileNodeFill = Color(0xFFFFB15C),
+                systemNodeFill = Color(0xFF8A93A3),
+                chromeTabNodeFill = Color(0xFFFF6268),
+                taskerNodeFill = Color(0xFFB07CFF),
+                shellNodeFill = Color(0xFF23B875),
+                chartNodeFill = Color(0xFFFFA336),
+                runtimeNodeFill = Color(0xFF9AA3B2),
+                debugNodeFill = Color(0xFFB783C8),
+                nodeStroke = Color(0xFFE7ECFF),
                 selectedStroke = Color(0xFF31C4FF),
                 succeededStroke = Color(0xFF68D391),
                 skippedStroke = Color(0xFF5E596A),
@@ -1378,18 +1391,37 @@ private fun flowchartMaterialNodePath(
     height: Float,
 ): Path {
     val blockType = (node.properties["blockType"] as? FlowSemanticValue.StringValue)?.value.orEmpty()
-    val shapeId = when {
+    val category = DefaultBlockRegistry.allDefinitions().firstOrNull { it.id == blockType }?.category
+    val shapeId = if (category != null) {
+        flowchartPaletteShapeId(blockType, category)
+    } else {
+        flowchartFallbackShapeId(blockType, node)
+    }
+    return flowchartLegendShapePath(shapeId, width, height)
+}
+
+private fun flowchartFallbackShapeId(blockType: String, node: FlowGraphNode): Int =
+    when {
         blockType.startsWith("event.") -> 1
+        blockType.startsWith("action.") || blockType.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX) -> 8
         blockType.startsWith("control.if") -> 4
         blockType.startsWith("logic.compare") -> 5
         blockType.startsWith("variable.") || blockType.startsWith("variables.") -> 6
         blockType.startsWith("logic.") -> 7
         blockType.startsWith("control.") -> 9
         blockType.startsWith("feedback.") -> 8
+        blockType.startsWith("vision.") || blockType.startsWith("perception.") -> 13
+        blockType.startsWith("chromeTab.") -> 12
+        blockType.startsWith("tasker.") -> 11
+        blockType.startsWith("termux.") || blockType.startsWith("shizuku.") || blockType.startsWith("scrcpy.") -> 10
+        node.kind.standard == FlowNodeKind.ENTRY || node.kind.standard == FlowNodeKind.EXIT -> 1
+        node.kind.standard == FlowNodeKind.DECISION -> 4
+        node.kind.standard == FlowNodeKind.LOOP_START || node.kind.standard == FlowNodeKind.LOOP_END -> 9
+        node.kind.standard == FlowNodeKind.ASSIGNMENT || node.kind.standard == FlowNodeKind.PROPERTY_ACCESS -> 6
+        node.kind.standard == FlowNodeKind.INPUT || node.kind.standard == FlowNodeKind.OUTPUT -> 5
+        node.kind.standard == FlowNodeKind.ACTION -> 8
         else -> 2
     }
-    return flowchartLegendShapePath(shapeId, width, height)
-}
 
 private fun flowchartLegendShapePath(
     shapeId: Int,
@@ -1445,6 +1477,25 @@ private fun flowchartLegendShapePath(
             path.lineTo(w, h / 2f)
             path.lineTo(w - 10f, h)
             path.lineTo(0f, h)
+            path.close()
+        }
+        11 -> {
+            path.moveTo(0f, h * 0.5f)
+            path.lineTo(w * 0.28f, 0f)
+            path.lineTo(w, 0f)
+            path.lineTo(w, h)
+            path.lineTo(w * 0.28f, h)
+            path.close()
+        }
+        12 -> {
+            path.moveTo(0f, h * 0.18f)
+            path.lineTo(w * 0.18f, 0f)
+            path.lineTo(w * 0.82f, 0f)
+            path.lineTo(w, h * 0.18f)
+            path.lineTo(w, h * 0.82f)
+            path.lineTo(w * 0.82f, h)
+            path.lineTo(w * 0.18f, h)
+            path.lineTo(0f, h * 0.82f)
             path.close()
         }
         13 -> {
