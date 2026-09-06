@@ -1058,6 +1058,7 @@ fun WorkspaceScreen(
     val workspaceSyncGuard = remember { WorkspaceSyncGuard() }
     var workspaceDryRunSequence by remember { mutableStateOf(0L) }
     var workspaceDryRunResult by remember { mutableStateOf<EmscriptDryRunResult?>(null) }
+    var workspaceDryRunRevision by remember { mutableStateOf<Long?>(null) }
     var workspaceDryRunStepIndex by remember { mutableIntStateOf(0) }
     val activeBlockEditorSessionState = remember { mutableStateOf<BlockEditorShellEditorSession?>(null) }
     val activeFlowchartSessionState = remember { mutableStateOf<FlowchartShellEditorSession?>(null) }
@@ -1076,6 +1077,7 @@ fun WorkspaceScreen(
         workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
         flowRuntimeSnapshot = null
         workspaceDryRunResult = null
+        workspaceDryRunRevision = null
         workspaceDryRunStepIndex = 0
         uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, workflowState.serializedJson).apply()
     }
@@ -1265,19 +1267,6 @@ fun WorkspaceScreen(
         is EmscriptDryRunResult.Failure -> result.events.size
         null -> 0
     }
-    fun renderWorkspaceDryRunStep(stepIndex: Int) {
-        val result = workspaceDryRunResult ?: return
-        val eventCount = dryRunEventCount(result)
-        workspaceDryRunStepIndex = stepIndex.coerceIn(0, eventCount)
-        workspaceDryRunSequence += 1
-        flowRuntimeSnapshot = EmscriptDryRunFlowRuntimeMapper.map(
-            irGraph = workflowState.irGraph,
-            graph = workflowState.flowchartProjection.graph,
-            result = result,
-            sequence = workspaceDryRunSequence,
-            maxEventIndex = workspaceDryRunStepIndex,
-        )
-    }
     fun focusBlockFromFlowNode(nodeId: FlowNodeId) {
         val blockId = nodeId.value.removePrefix("block:").takeIf { it != nodeId.value } ?: return
         val session = activeBlockEditorSessionState.value ?: return
@@ -1314,6 +1303,31 @@ fun WorkspaceScreen(
             groupKey = "blockeditor:flow-focus:${blockId.value}"
         )
     }
+    fun focusRuntimeSnapshotActiveNode(snapshot: FlowRuntimeSnapshot) {
+        val target = snapshot.activeNodeId ?: return
+        val session = activeFlowchartSessionState.value
+        if (session?.graphDocument?.nodes?.none { it.id == target } == true) return
+        selectedFlowchartNodeForInsert = target
+        selectedFlowchartNodeId = target
+        selectedFlowchartEdgeId = null
+        session?.controller?.dispatch(FlowInteractionAction.SelectNode(target))
+        focusBlockFromFlowNode(target)
+    }
+    fun renderWorkspaceDryRunStep(stepIndex: Int) {
+        val result = workspaceDryRunResult ?: return
+        val eventCount = dryRunEventCount(result)
+        workspaceDryRunStepIndex = stepIndex.coerceIn(0, eventCount)
+        workspaceDryRunSequence += 1
+        val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = workflowState.irGraph,
+            graph = workflowState.flowchartProjection.graph,
+            result = result,
+            sequence = workspaceDryRunSequence,
+            maxEventIndex = workspaceDryRunStepIndex,
+        )
+        flowRuntimeSnapshot = snapshot
+        focusRuntimeSnapshotActiveNode(snapshot)
+    }
     fun runCurrentWorkspaceDryRun(source: String) {
         if (workflowState.emscriptProjection.isFailure) {
             val message = workflowState.emscriptProjection.exceptionOrNull()?.message ?: "EMScript-Projektion nicht verfügbar."
@@ -1329,6 +1343,7 @@ fun WorkspaceScreen(
         }
         val result = workspaceDryRunRuntime.run(workflowState.document)
         workspaceDryRunResult = result
+        workspaceDryRunRevision = workflowState.revision.toLong()
         workspaceDryRunStepIndex = dryRunEventCount(result)
         workspaceDryRunSequence += 1
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
@@ -1338,6 +1353,7 @@ fun WorkspaceScreen(
             sequence = workspaceDryRunSequence,
         )
         flowRuntimeSnapshot = snapshot
+        focusRuntimeSnapshotActiveNode(snapshot)
         snapshot.diagnostics.forEach { diagnostic ->
             studioLogStore.append(
                 level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
@@ -1489,8 +1505,12 @@ fun WorkspaceScreen(
         )
     }
     // Workspace shell stays truth-neutral: runtime projection wins over external projection, then demo data.
-    val dryRunRecorderSteps = remember(workspaceDryRunResult) {
-        workspaceDryRunResult?.toRecorderSteps().orEmpty()
+    val dryRunRecorderSteps = remember(workspaceDryRunResult, workspaceDryRunRevision, workflowState.revision) {
+        if (workspaceDryRunRevision == workflowState.revision.toLong()) {
+            workspaceDryRunResult?.toRecorderSteps().orEmpty()
+        } else {
+            emptyList()
+        }
     }
     val projectedSteps = when {
         dryRunRecorderSteps.isNotEmpty() -> dryRunRecorderSteps
@@ -1512,9 +1532,14 @@ fun WorkspaceScreen(
         }
     }
 
-    val bridge = remember(actionSink, recorderStepsProjection, demoRecorderSteps) {
+    val bridge = remember(actionSink, recorderStepsProjection, demoRecorderSteps, dryRunRecorderSteps, workspaceDryRunResult, workflowState.revision) {
         object : PanelActionSink {
             override fun onPanelAction(action: PanelAction) {
+                if (action is PanelAction.SelectStep && workspaceDryRunResult != null) {
+                    action.stepId.dryRunEventIndexOrNull()?.let { eventIndex ->
+                        renderWorkspaceDryRunStep(eventIndex)
+                    }
+                }
                 // Demo mutations are active only when no external projection is attached.
                 if (recorderStepsProjection == null) {
                     when (action) {
@@ -5503,6 +5528,11 @@ private fun EmscriptDryRunResult.toRecorderSteps(): List<RecorderStepUi> {
         )
     }
 }
+
+private fun String.dryRunEventIndexOrNull(): Int? =
+    removePrefix("dry-run-")
+        .takeIf { it != this }
+        ?.toIntOrNull()
 
 private data class RecorderTimelinePoint(
     val step: RecorderStepUi,
