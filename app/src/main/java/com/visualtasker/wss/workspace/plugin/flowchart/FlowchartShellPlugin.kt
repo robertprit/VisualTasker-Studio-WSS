@@ -70,7 +70,7 @@ class FlowchartShellEditorSession(
 
     val controller: FlowchartController = FlowchartController(
         surfaceId = FlowSurfaceId(input.sessionId.value),
-        nodeMetrics = FlowNodeMetrics(emptyMap(), defaultSize = FlowSize(96.0, 44.0)),
+        nodeMetrics = FlowNodeMetrics(emptyMap(), defaultSize = NORMALIZED_NODE_SIZE),
     )
     private var graphDocumentState: FlowGraphDocument? by mutableStateOf(null)
     val graphDocument: FlowGraphDocument
@@ -112,12 +112,13 @@ class FlowchartShellEditorSession(
         dirtyState = ShellDirtyState.CLEAN
         hostServices.reportDirtyState(sessionId, dirtyState)
         reportValidation()
-        reportStatus(controller.attachGraph(graphDocument, viewDocument))
+        reportStatus(controller.attachGraph(graphDocument, viewDocument?.let(::normalizeNodeSizes)))
     }
 
     fun onViewDocumentChanged(view: FlowViewDocument) {
-        viewDocument = view
-        val nextDirty = if (persistedViewContent == encodeView(view)) {
+        val normalized = normalizeNodeSizes(view)
+        viewDocument = normalized
+        val nextDirty = if (persistedViewContent == encodeView(normalized)) {
             ShellDirtyState.CLEAN
         } else {
             ShellDirtyState.DIRTY
@@ -229,8 +230,11 @@ class FlowchartShellEditorSession(
 
     private fun currentViewContent(): String {
         val view = viewDocument ?: controller.snapshot().view
-        return view?.let(::encodeView).orEmpty()
+        return view?.let(::normalizeNodeSizes)?.let(::encodeView).orEmpty()
     }
+
+    private fun normalizeNodeSizes(view: FlowViewDocument): FlowViewDocument =
+        view.copy(nodeViews = view.nodeViews.map { it.copy(size = NORMALIZED_NODE_SIZE) })
 
     private fun encodeView(view: FlowViewDocument): String =
         FlowViewJsonCodec(graphDocument).encodeCanonical(view)
@@ -242,6 +246,8 @@ class FlowchartShellEditorSession(
             is FlowDecodeResult.UnsupportedSchema -> error("Unsupported flowchart graph schema: ${decoded.version}")
         }
 }
+
+private val NORMALIZED_NODE_SIZE = FlowSize(112.0, 48.0)
 
 private fun FlowchartStatusCode.toShellRuntimePhase(): ShellRuntimePhase =
     when (this) {

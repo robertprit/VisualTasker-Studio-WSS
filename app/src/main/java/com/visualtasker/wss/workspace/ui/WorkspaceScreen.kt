@@ -1301,6 +1301,9 @@ fun WorkspaceScreen(
         val target = blockId?.let { FlowNodeId("block:${it.value}") } ?: return
         val session = activeFlowchartSessionState.value ?: return
         if (session.graphDocument.nodes.none { it.id == target }) return
+        selectedFlowchartNodeForInsert = target
+        selectedFlowchartNodeId = target
+        selectedFlowchartEdgeId = null
         session.controller.dispatch(FlowInteractionAction.SelectNode(target))
         studioLogStore.append(
             level = StudioLogLevel.DEBUG,

@@ -357,9 +357,14 @@ fun FlowchartShellPanel(
                 panelSize = panelSize,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 62.dp, end = 14.dp),
+                    .padding(top = 14.dp, end = 14.dp),
             )
         }
+        FlowchartViewportScrollbars(
+            viewDocument = session.viewDocument ?: controller.snapshot().view,
+            panelSize = panelSize,
+            modifier = Modifier.matchParentSize(),
+        )
         if (showTopToolbar) {
         FlowchartShellToolbar(
             modifier = Modifier
@@ -538,6 +543,55 @@ private fun FlowchartMiniMap(
                 ),
                 style = Stroke(width = 1.4.dp.toPx()),
             )
+        }
+    }
+}
+
+@Composable
+private fun FlowchartViewportScrollbars(
+    viewDocument: FlowViewDocument?,
+    panelSize: IntSize,
+    modifier: Modifier = Modifier,
+) {
+    val view = viewDocument ?: return
+    val nodes = view.nodeViews
+    if (nodes.isEmpty() || panelSize.width <= 0 || panelSize.height <= 0 || view.viewport.zoom <= 0.0) return
+    val visibleLeft = (-view.viewport.pan.x / view.viewport.zoom).toFloat()
+    val visibleTop = (-view.viewport.pan.y / view.viewport.zoom).toFloat()
+    val visibleRight = ((panelSize.width - view.viewport.pan.x) / view.viewport.zoom).toFloat()
+    val visibleBottom = ((panelSize.height - view.viewport.pan.y) / view.viewport.zoom).toFloat()
+    val contentLeft = minOf(nodes.minOf { it.position.x }.toFloat(), visibleLeft)
+    val contentTop = minOf(nodes.minOf { it.position.y }.toFloat(), visibleTop)
+    val contentRight = maxOf(nodes.maxOf { it.position.x + (it.size?.width ?: 160.0) }.toFloat(), visibleRight)
+    val contentBottom = maxOf(nodes.maxOf { it.position.y + (it.size?.height ?: 72.0) }.toFloat(), visibleBottom)
+    val contentWidth = (contentRight - contentLeft).coerceAtLeast(1f)
+    val contentHeight = (contentBottom - contentTop).coerceAtLeast(1f)
+    val visibleWidth = (visibleRight - visibleLeft).coerceAtLeast(1f)
+    val visibleHeight = (visibleBottom - visibleTop).coerceAtLeast(1f)
+    if (contentWidth <= visibleWidth * 1.01f && contentHeight <= visibleHeight * 1.01f) return
+    Canvas(modifier) {
+        val inset = 8.dp.toPx()
+        val thickness = 3.dp.toPx()
+        val minThumb = 28.dp.toPx()
+        val trackColor = Color.White.copy(alpha = 0.08f)
+        val thumbColor = Color(0xFF63C7FF).copy(alpha = 0.64f)
+        if (contentHeight > visibleHeight * 1.01f) {
+            val trackTop = inset
+            val trackHeight = size.height - inset * 2f
+            val thumbHeight = (trackHeight * visibleHeight / contentHeight).coerceIn(minThumb, trackHeight)
+            val thumbTop = trackTop + ((visibleTop - contentTop) / contentHeight).coerceIn(0f, 1f) * (trackHeight - thumbHeight)
+            val x = size.width - inset - thickness
+            drawRoundRect(trackColor, Offset(x, trackTop), Size(thickness, trackHeight), CornerRadius(thickness, thickness))
+            drawRoundRect(thumbColor, Offset(x, thumbTop), Size(thickness, thumbHeight), CornerRadius(thickness, thickness))
+        }
+        if (contentWidth > visibleWidth * 1.01f) {
+            val trackLeft = inset
+            val trackWidth = size.width - inset * 2f
+            val thumbWidth = (trackWidth * visibleWidth / contentWidth).coerceIn(minThumb, trackWidth)
+            val thumbLeft = trackLeft + ((visibleLeft - contentLeft) / contentWidth).coerceIn(0f, 1f) * (trackWidth - thumbWidth)
+            val y = size.height - inset - thickness
+            drawRoundRect(trackColor, Offset(trackLeft, y), Size(trackWidth, thickness), CornerRadius(thickness, thickness))
+            drawRoundRect(thumbColor, Offset(thumbLeft, y), Size(thumbWidth, thickness), CornerRadius(thickness, thickness))
         }
     }
 }
