@@ -545,6 +545,36 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun nestedFlowStressScript_survivesParserWorkspaceIrFlowchartAndDryRun() {
+        val source = EditorDefaults.nestedFlowStressTestScript
+        val parsed = EmscriptParserSlice().parse(source)
+        assertTrue(parsed.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, parsed.isSuccess)
+
+        val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "nested-flow-stress")
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val document = imported.document!!
+        val serialized = WorkspaceSerializer.serialize(document)
+        val decoded = WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded
+        val irGraph = IrGraphGenerator().generate(decoded.document)
+        val flowchart = IrGraphFlowchartProjector.project(irGraph).graph
+        val regenerated = EmscriptGenerator(IrGenerator()).generate(decoded.document, scriptName = "nested-flow-stress")
+
+        assertTrue(irGraph.validateIntegrity().joinToString { it.message }, irGraph.validateIntegrity().isEmpty())
+        assertTrue(flowchart.diagnostics.joinToString { it.message }, flowchart.diagnostics.none { it.severity.name == "ERROR" })
+        assertTrue(document.blocks.values.count { it.type == BlockTypes.CONTROL_REPEAT } >= 4)
+        assertTrue(document.blocks.values.any { it.type == BlockTypes.CONTROL_WHILE })
+        assertTrue(regenerated.windowed("if (".length).count { it == "if (" } >= 4)
+        assertTrue(regenerated.contains("} else if ("))
+        assertTrue(irGraph.facets.any { it.properties["editorFacetKind"] == "variable-bulk" })
+        assertTrue(irGraph.facets.any { it.properties["editorFacetKind"] == "loop-region" })
+        assertTrue(regenerated.contains("repeat (5) {"))
+        assertTrue(regenerated.contains("while ("))
+        assertTrue(regenerated.contains("templateCompare("))
+        assertTrue(EmscriptDryRunRuntime().run(source) is EmscriptDryRunResult.Success)
+        assertTrue(WorkspaceDryRunRuntime().run(decoded.document) is EmscriptDryRunResult.Success)
+    }
+
+    @Test
     fun statementCommandCatalog_survivesParserWorkspaceAndDryRun() {
         val entries = VisualTaskerCommandCatalog.allEntries()
             .filter { it.kind == CommandCatalogKind.STATEMENT && it.block != null }

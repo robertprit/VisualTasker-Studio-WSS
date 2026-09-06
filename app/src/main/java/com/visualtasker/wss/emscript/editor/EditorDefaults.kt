@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 8
+    const val integrationTestScriptVersion: Int = 9
 
     val sampleScript: String = """
         LET v1 = 1
@@ -208,6 +208,151 @@ object EditorDefaults {
         log("core-runtime-end")
     """.trimIndent()
 
+    val nestedFlowStressTestScript: String = """
+        REM @vt.group.start id="vars:stress-globals" label="Stress Variablen" kind="variable-bulk"
+        LET outerIndex = 0
+        LET innerIndex = 0
+        LET retryIndex = 0
+        LET phase = 0
+        LET score = 0
+        LET branchScore = 0
+        LET thresholdLow = 4
+        LET thresholdMid = 11
+        LET thresholdHigh = 24
+        LET hitCount = 0
+        LET drift = 0
+        LET guard = 0
+        REM @vt.group.end id="vars:stress-globals"
+
+        log("nested-stress-start")
+        wait(40)
+        screenshot("stress-start.png")
+        datastorePut("stress.score", score)
+        datastorePut("stress.phase", phase)
+        markerSave("stressRegion", region(16, 24, 320, 180), "region", 0.82)
+        templateDefine("stressTemplate", region(16, 24, 320, 180), "grayscale")
+
+        REM @vt.group.start id="flow:outer-loop" label="Outer Loop" kind="loop-region"
+        LOOP 5
+            SET outerIndex = outerIndex + 1
+            SET phase = outerIndex
+            SET innerIndex = 0
+            SET retryIndex = 0
+            SET score = score + outerIndex
+            datastorePut("stress.outer", outerIndex)
+            log("outer tick")
+
+            IF score < thresholdLow
+                SET branchScore = score + 1
+                beep(660, 45, 45)
+                click("outer-low")
+
+                LOOP 2
+                    SET innerIndex = innerIndex + 1
+                    SET branchScore = branchScore + innerIndex
+                    log("low-inner")
+
+                    IF branchScore >= thresholdLow
+                        SET hitCount = hitCount + 1
+                        vibrate(25)
+                    ELSE
+                        SET drift = drift + 1
+                        wait(15)
+                    END IF
+                END LOOP
+            ELSEIF score < thresholdMid
+                SET branchScore = score + outerIndex
+                swipe([120, 720, 120, 260], 1)
+                log("outer-mid")
+
+                LOOP 3
+                    SET innerIndex = innerIndex + 1
+                    SET branchScore = branchScore + innerIndex
+
+                    IF (branchScore + drift) < thresholdMid
+                        SET drift = drift + innerIndex
+                        clickPoint(180, 320, 1)
+                    ELSEIF (branchScore + hitCount) >= thresholdHigh
+                        SET hitCount = hitCount + 2
+                        beep(880, 50, 55)
+                    ELSE
+                        SET score = score + 1
+                        vibrate(0, 20, 20, 20)
+                    END IF
+                END LOOP
+            ELSEIF score < thresholdHigh
+                SET branchScore = score * 2
+                templateCompare("stressTemplate", region(16, 24, 320, 180), "grayscale")
+                log("outer-high")
+
+                IF branchScore >= thresholdHigh
+                    SET hitCount = hitCount + 1
+                    datastorePut("stress.hit", hitCount)
+
+                    LOOP 2
+                        SET innerIndex = innerIndex + 1
+                        SET guard = guard + innerIndex
+
+                        IF guard < thresholdMid
+                            beep(440, 35, 35)
+                        ELSE
+                            vibrate(35)
+                        END IF
+                    END LOOP
+                ELSE
+                    SET drift = drift + 2
+                    wait(20)
+                END IF
+            ELSE
+                SET guard = 0
+                log("outer-overflow")
+
+                WHILE guard < 3
+                    SET guard = guard + 1
+                    SET retryIndex = retryIndex + 1
+
+                    IF retryIndex < 2
+                        click("retry-low")
+                    ELSEIF retryIndex < 4
+                        SET score = score - 1
+                        beep()
+                    ELSE
+                        SET drift = drift + retryIndex
+                        vibrate(40)
+                    END IF
+                END WHILE
+            END IF
+
+            IF (score + hitCount) >= thresholdHigh
+                SET score = score - drift
+                log("outer-normalize")
+            ELSE
+                SET score = score + 1
+                wait(10)
+            END IF
+        END LOOP
+        REM @vt.group.end id="flow:outer-loop"
+
+        WHILE outerIndex < 8
+            SET outerIndex = outerIndex + 1
+            SET score = score + outerIndex
+
+            IF score >= thresholdHigh
+                SET hitCount = hitCount + 1
+                log("tail-high")
+            ELSE
+                SET drift = drift + 1
+                log("tail-low")
+            END IF
+        END WHILE
+
+        datastorePut("stress.score", score)
+        markerLoad("stressRegion")
+        markerDelete("stressRegion")
+        screenshot("stress-end.png")
+        log("nested-stress-end")
+    """.trimIndent()
+
     val allSamples: Map<String, String> = mapOf(
         "Referenz" to sampleScript,
         "Loop" to """
@@ -219,6 +364,7 @@ object EditorDefaults {
         """.trimIndent(),
         "Integrationstest" to integrationTestScript,
         "Katalog: Breite" to commandCatalogBreadthTestScript,
+        "Stress: Verschachtelt" to nestedFlowStressTestScript,
         "Branch: ElseIf" to elseifBranchTestScript,
         "Branch: Fallback" to fallbackBranchTestScript,
     )
