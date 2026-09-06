@@ -1481,8 +1481,15 @@ fun WorkspaceScreen(
             RecorderStepUi("step-4", "Bestaetigen", "tap", StepStatus.Executed, timestampMs = 3600, durationMs = 220, activityName = "DashboardActivity")
         )
     }
-    // Workspace shell stays truth-neutral: external projection wins over demo data.
-    val projectedSteps = recorderStepsProjection?.invoke() ?: demoRecorderSteps
+    // Workspace shell stays truth-neutral: runtime projection wins over external projection, then demo data.
+    val dryRunRecorderSteps = remember(workspaceDryRunResult) {
+        workspaceDryRunResult?.toRecorderSteps().orEmpty()
+    }
+    val projectedSteps = when {
+        dryRunRecorderSteps.isNotEmpty() -> dryRunRecorderSteps
+        recorderStepsProjection != null -> recorderStepsProjection.invoke()
+        else -> demoRecorderSteps
+    }
     val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
         loadScreenshotCanvasAssets(context)
     }
@@ -5452,6 +5459,34 @@ private fun RecorderStepsPanel(
                 }
             }
         }
+    }
+}
+
+private fun EmscriptDryRunResult.toRecorderSteps(): List<RecorderStepUi> {
+    val sourceEvents = when (this) {
+        is EmscriptDryRunResult.Success -> events
+        is EmscriptDryRunResult.Failure -> events
+    }
+    return sourceEvents.map { event ->
+        val label = buildString {
+            append("#")
+            append(event.index)
+            append(" ")
+            append(event.command ?: event.kind)
+        }
+        RecorderStepUi(
+            id = "dry-run-${event.index}",
+            label = label,
+            actionType = event.kind,
+            status = when (event.severity.name) {
+                "ERROR" -> StepStatus.Invalid
+                "WARNING" -> StepStatus.Edited
+                else -> StepStatus.Executed
+            },
+            timestampMs = event.index * 180L,
+            durationMs = 140L,
+            activityName = event.message,
+        )
     }
 }
 
