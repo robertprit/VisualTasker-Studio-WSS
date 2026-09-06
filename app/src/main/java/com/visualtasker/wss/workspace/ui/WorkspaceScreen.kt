@@ -1769,9 +1769,9 @@ fun WorkspaceScreen(
                     },
                     showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
                     showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
-                    railExpandedWidth = when {
-                        isBlockEditorPanel -> 300.dp
-                        isFlowchartPanel -> 236.dp
+	                    railExpandedWidth = when {
+	                        isBlockEditorPanel -> 300.dp
+	                        isFlowchartPanel -> 300.dp
                         isLogConsolePanel -> 220.dp
                         isEmscriptPanel -> 240.dp
                         isScreenshotPanel -> 220.dp

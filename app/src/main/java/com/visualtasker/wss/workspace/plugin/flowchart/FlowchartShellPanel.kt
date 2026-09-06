@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -108,6 +110,7 @@ import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
+import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
@@ -863,7 +866,11 @@ private fun FlowchartNodeInspectorRows(
         visualState,
         VisualContext(projection = ProjectionKind.Flowchart),
     )
-    InspectorLine("Label", node.label)
+    FlowchartNodeInspectorHeader(
+        node = node,
+        blockType = blockType,
+        onReplaceNodeType = onReplaceNodeType,
+    )
     InspectorLine("Status", status)
     InspectorLine("VAL State", visualState.describeForInspector())
     InspectorLine("VAL Descriptor", visualDescriptor.describeForInspector())
@@ -872,12 +879,7 @@ private fun FlowchartNodeInspectorRows(
     commandKind?.let { InspectorLine("Command-Typ", it) }
     commandCapabilities?.let { InspectorLine("Capability", it) }
     commandPluginOwner?.let { InspectorLine("Plugin", it) }
-    InspectorLine("Block", "$blockType / $blockId")
-    FlowchartNodeTypeMenu(
-        node = node,
-        currentBlockType = blockType,
-        onReplaceNodeType = onReplaceNodeType,
-    )
+    InspectorLine("Block", blockId)
     sourceLine?.let { line ->
         InspectorLine("Quelle", "EMScript Zeile $line${sourceColumn?.let { ", Spalte $it" }.orEmpty()}")
     }
@@ -931,41 +933,74 @@ private fun FlowchartNodeInspectorRows(
 }
 
 @Composable
-private fun FlowchartNodeTypeMenu(
+private fun FlowchartNodeInspectorHeader(
     node: FlowGraphNode,
-    currentBlockType: String,
+    blockType: String,
     onReplaceNodeType: ((FlowNodeId, String) -> Unit)?,
 ) {
-    val currentSurface = currentBlockType.editorSurface()
-    val entries = remember(currentBlockType) {
+    val currentSurface = blockType.editorSurface()
+    val currentEntry = remember(blockType) { flowchartNodePaletteEntries().firstOrNull { it.definitionId == blockType } }
+    val entries = remember(blockType) {
         flowchartNodePaletteEntries()
-            .filter { it.definitionId != currentBlockType }
+            .filter { it.definitionId != blockType }
             .filter { it.definitionId.editorSurface() == currentSurface }
     }
-    if (entries.isEmpty()) return
     var expanded by remember(node.id) { mutableStateOf(false) }
-    Box {
-        TextButton(
-            onClick = { expanded = true },
-            enabled = onReplaceNodeType != null,
+    val accent = currentEntry?.fillColor ?: Color(0xFFBDA7FF)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Typ ändern")
+            OutlinedTextField(
+                value = node.label,
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                label = { Text("Anzeige-Label") },
+                modifier = Modifier.weight(1f),
+            )
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = accent.copy(alpha = 0.86f),
+                tonalElevation = 2.dp,
+            ) {}
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            entries.forEach { entry ->
-                DropdownMenuItem(
-                    text = { Text(entry.label) },
-                    leadingIcon = { FlowchartNodeGlyph(entry = entry, modifier = Modifier.size(22.dp)) },
-                    onClick = {
-                        expanded = false
-                        onReplaceNodeType?.invoke(node.id, entry.definitionId)
-                    },
-                )
+        Box {
+            TextButton(
+                onClick = { expanded = true },
+                enabled = onReplaceNodeType != null && entries.isNotEmpty(),
+            ) {
+                Text("Typ ändern: ${currentEntry?.label ?: blockType}")
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                entries
+                    .groupBy { it.categoryLabel }
+                    .forEach { (category, categoryEntries) ->
+                        DropdownMenuItem(
+                            text = { Text(category, color = MaterialTheme.colorScheme.primary) },
+                            enabled = false,
+                            onClick = {},
+                        )
+                        categoryEntries.forEach { entry ->
+                            DropdownMenuItem(
+                                text = { Text(entry.label) },
+                                leadingIcon = { FlowchartNodeGlyph(entry = entry, modifier = Modifier.size(22.dp)) },
+                                onClick = {
+                                    expanded = false
+                                    onReplaceNodeType?.invoke(node.id, entry.definitionId)
+                                },
+                            )
+                        }
+                    }
             }
         }
+        InspectorLine("Typ", blockType)
     }
 }
 
@@ -1170,48 +1205,111 @@ fun ColumnScope.FlowchartCompactNodeRail(
     }
 }
 
-@Composable
-fun ColumnScope.FlowchartNodeToolboxRail(
-    onAddNode: (String) -> Unit = {},
-) {
-    val groups = remember { flowchartNodePaletteEntries().groupBy { it.category } }
-    Column(
-        modifier = Modifier
-            .width(220.dp)
-            .weight(1f, fill = true)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        groups.forEach { (category, entries) ->
-            Text(
-                text = category,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            entries.forEach { entry ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp)
-                        .background(entry.fillColor.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
-                        .clickable { onAddNode(entry.definitionId) }
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FlowchartNodeGlyph(entry = entry, modifier = Modifier.size(24.dp))
-                    Text(
-                        text = entry.label,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
+	@OptIn(ExperimentalMaterial3Api::class)
+	@Composable
+	fun ColumnScope.FlowchartNodeToolboxRail(
+	    onAddNode: (String) -> Unit = {},
+	) {
+	    val entries = remember { flowchartNodePaletteEntries() }
+	    val categories = remember(entries) {
+	        entries
+	            .map { BlockCategories.metaFor(it.categoryId) }
+	            .distinctBy { it.id }
+	            .sortedBy { categoryOrder(it.id) }
+	    }
+	    var activeCategory by remember { mutableStateOf(categories.firstOrNull()?.id ?: BlockCategories.ACTION) }
+	    val activeMeta = BlockCategories.metaFor(activeCategory)
+	    val activeAccent = Color(activeMeta.accentArgb)
+	    val filteredEntries = remember(entries, activeCategory) {
+	        entries.filter { it.categoryId == activeCategory }
+	    }
+	    Row(
+	        modifier = Modifier
+	            .fillMaxWidth()
+	            .weight(1f, fill = true)
+	            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+	            .padding(6.dp),
+	        horizontalArrangement = Arrangement.spacedBy(8.dp),
+	    ) {
+	        Column(
+	            modifier = Modifier
+	                .width(42.dp)
+	                .fillMaxSize()
+	                .verticalScroll(rememberScrollState()),
+	            horizontalAlignment = Alignment.CenterHorizontally,
+	            verticalArrangement = Arrangement.spacedBy(7.dp),
+	        ) {
+	            categories.forEach { category ->
+	                val selected = activeCategory == category.id
+	                val accent = Color(category.accentArgb)
+	                TooltipBox(
+	                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+	                    tooltip = { PlainTooltip { Text(category.label) } },
+	                    state = rememberTooltipState(),
+	                ) {
+	                    IconButton(
+	                        onClick = { activeCategory = category.id },
+	                        modifier = Modifier.size(36.dp),
+	                    ) {
+	                        Box(
+	                            modifier = Modifier
+	                                .size(32.dp)
+	                                .background(if (selected) accent.copy(alpha = 0.72f) else accent.copy(alpha = 0.26f), CircleShape),
+	                            contentAlignment = Alignment.Center,
+	                        ) {
+	                            Icon(
+	                                imageVector = CategoryIcons.forCategory(category.id),
+	                                contentDescription = category.label,
+	                                tint = if (selected) Color.White else accent,
+	                                modifier = Modifier.size(19.dp),
+	                            )
+	                        }
+	                    }
+	                }
+	            }
+	        }
+	        Column(
+	            modifier = Modifier
+	                .weight(1f)
+	                .fillMaxSize(),
+	            verticalArrangement = Arrangement.spacedBy(8.dp),
+	        ) {
+	            Text(
+	                text = activeMeta.label,
+	                style = MaterialTheme.typography.titleSmall,
+	                color = activeAccent,
+	                maxLines = 1,
+	            )
+	            LazyColumn(
+	                modifier = Modifier
+	                    .fillMaxWidth()
+	                    .weight(1f),
+	                verticalArrangement = Arrangement.spacedBy(6.dp),
+	            ) {
+	                items(filteredEntries, key = { it.definitionId }) { entry ->
+	                    Row(
+	                        modifier = Modifier
+	                            .fillMaxWidth()
+	                            .height(38.dp)
+	                            .background(entry.fillColor.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
+	                            .clickable { onAddNode(entry.definitionId) }
+	                            .padding(horizontal = 8.dp),
+	                        verticalAlignment = Alignment.CenterVertically,
+	                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+	                    ) {
+	                        FlowchartNodeGlyph(entry = entry, modifier = Modifier.size(24.dp))
+	                        Text(
+	                            text = entry.label,
+	                            style = MaterialTheme.typography.bodySmall,
+	                            color = MaterialTheme.colorScheme.onSurface,
+	                            maxLines = 1,
+	                        )
+	                    }
+	                }
+	            }
+	    }
+	    }
+	}
 
 @Composable
 private fun FlowchartShellToolbar(
@@ -1438,7 +1536,8 @@ private fun FlowchartNodeGlyph(
 
 internal data class FlowchartNodePaletteEntry(
     val shapeId: Int,
-    val category: String,
+    val categoryId: String,
+    val categoryLabel: String,
     val label: String,
     val definitionId: String,
     val fillColor: Color,
@@ -1463,7 +1562,8 @@ internal fun flowchartNodePaletteEntries(): List<FlowchartNodePaletteEntry> =
                 ?: definition.label
             FlowchartNodePaletteEntry(
                 shapeId = flowchartPaletteShapeId(definition.id, definition.category),
-                category = BlockCategories.metaFor(definition.category).label,
+                categoryId = definition.category,
+                categoryLabel = BlockCategories.metaFor(definition.category).label,
                 label = displayLabel,
                 definitionId = definition.id,
                 fillColor = Color(BlockCategories.metaFor(definition.category).accentArgb),
