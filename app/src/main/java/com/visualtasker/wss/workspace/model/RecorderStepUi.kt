@@ -7,7 +7,8 @@ data class RecorderStepUi(
     val status: StepStatus,
     val timestampMs: Long? = null,
     val durationMs: Long? = null,
-    val activityName: String? = null
+    val activityName: String? = null,
+    val detail: String? = null,
 )
 
 enum class StepStatus {

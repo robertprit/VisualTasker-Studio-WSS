@@ -5390,7 +5390,9 @@ private fun RecorderStepsPanel(
                     )
                 }
                 Text(
-                    text = activeStep?.let { "${it.label}  |  ${it.actionType}  |  ${it.status.name}" } ?: "Keine Recording-Session geladen",
+                    text = activeStep?.let { step ->
+                        "${step.label}  |  ${step.actionType}  |  ${step.status.name}"
+                    } ?: "Keine Recording- oder Runtime-Session geladen",
                     style = MaterialTheme.typography.bodySmall,
                     color = activeStep?.status?.let { statusColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -5485,7 +5487,12 @@ private fun EmscriptDryRunResult.toRecorderSteps(): List<RecorderStepUi> {
             },
             timestampMs = event.index * 180L,
             durationMs = 140L,
-            activityName = event.message,
+            activityName = when (event.severity.name) {
+                "ERROR" -> "Runtime Fehler"
+                "WARNING" -> "Runtime Hinweise"
+                else -> "DryRun Runtime"
+            },
+            detail = event.message,
         )
     }
 }
@@ -5582,11 +5589,20 @@ private fun RecorderStepListRow(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(step.label, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            "${step.actionType} - ${step.status.name}",
+                            "Intent: ${step.actionType} - Result: ${step.status.name}",
                             color = statusColor(step.status),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        step.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+                            Text(
+                                "Observed: $detail",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     AssistChip(
                         onClick = { onSelect(index, step) },

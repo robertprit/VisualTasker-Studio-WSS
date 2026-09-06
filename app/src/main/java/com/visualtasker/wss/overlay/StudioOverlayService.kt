@@ -35,12 +35,20 @@ class StudioOverlayService : Service() {
         const val ACTION_SHOW_FLOATING_TOOLBAR = "com.visualtasker.wss.overlay.SHOW_FLOATING_TOOLBAR"
         const val ACTION_SHOW_FLOATING_INSPECTOR = "com.visualtasker.wss.overlay.SHOW_FLOATING_INSPECTOR"
         const val ACTION_CAPTURE_SCREENSHOT = "com.visualtasker.wss.overlay.CAPTURE_SCREENSHOT"
+        const val ACTION_TOGGLE_RECORDING = "com.visualtasker.wss.overlay.TOGGLE_RECORDING"
+
+        private const val RECORDS_DIR = "emscript-runtime/records"
     }
 
     private lateinit var windowManager: WindowManager
     private val overlays = linkedMapOf<String, OverlayHandle>()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var statusView: TextView? = null
+    private var recordingStatusView: TextView? = null
+    private var recordingButton: Button? = null
+    private var recordingSessionFile: File? = null
+    private var recordingStartedAtMs: Long = 0L
+    private var recordingEventIndex: Int = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -55,6 +63,7 @@ class StudioOverlayService : Service() {
             ACTION_SHOW_FLOATING_TOOLBAR -> showFloatingToolbar()
             ACTION_SHOW_FLOATING_INSPECTOR -> showFloatingInspector()
             ACTION_CAPTURE_SCREENSHOT -> captureScreenshot()
+            ACTION_TOGGLE_RECORDING -> toggleRecording()
         }
         return START_STICKY
     }
@@ -70,6 +79,7 @@ class StudioOverlayService : Service() {
 
     private fun showFloatingPanel() {
         if (overlays.containsKey("panel")) return
+        recordOverlayEvent("overlay.show", "panel")
         val modes = listOf("TextEditor", "BlockEditor", "Flowchart", "Debug")
         var modeIndex = 0
         val shell = createOverlayShell(
@@ -116,6 +126,7 @@ class StudioOverlayService : Service() {
 
     private fun showFloatingToolbar() {
         if (overlays.containsKey("toolbar")) return
+        recordOverlayEvent("overlay.show", "toolbar")
         val shell = createOverlayShell(
             key = "toolbar",
             title = "Floating Toolbar",
@@ -126,6 +137,7 @@ class StudioOverlayService : Service() {
             gravity = Gravity.CENTER_VERTICAL
         }
         controls.addView(toolButton("Shot") { captureScreenshot() })
+        controls.addView(toolButton("Rec") { toggleRecording() }.also { recordingButton = it })
         controls.addView(toolButton("Panel") { showFloatingPanel() })
         controls.addView(toolButton("Info") { showFloatingInspector() })
         controls.addView(toolButton("Hide") { removeOverlay("toolbar") })
@@ -136,8 +148,16 @@ class StudioOverlayService : Service() {
             setPadding(0, dp(8), 0, 0)
         }
         statusView = status
+        val recordingStatus = TextView(this).apply {
+            setTextColor(Color.argb(230, 220, 225, 235))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(2), 0, 0)
+        }
+        recordingStatusView = recordingStatus
         shell.content.addView(controls)
         shell.content.addView(status)
+        shell.content.addView(recordingStatus)
+        updateRecordingUi()
         addOverlay(
             key = "toolbar",
             root = shell.root,
@@ -154,6 +174,7 @@ class StudioOverlayService : Service() {
 
     private fun showFloatingInspector() {
         if (overlays.containsKey("inspector")) return
+        recordOverlayEvent("overlay.show", "inspector")
         var enabled = true
         val shell = createOverlayShell(
             key = "inspector",
@@ -172,8 +193,14 @@ class StudioOverlayService : Service() {
             textSize = 11f
             setOnClickListener { captureScreenshot() }
         }
+        val record = Button(this).apply {
+            text = if (recordingSessionFile == null) "Aufnahme starten" else "Aufnahme stoppen"
+            textSize = 11f
+            setOnClickListener { toggleRecording() }
+        }
         shell.content.addView(content)
         shell.content.addView(capture)
+        shell.content.addView(record)
         addOverlay(
             key = "inspector",
             root = shell.root,
@@ -201,12 +228,14 @@ class StudioOverlayService : Service() {
         val service = VisualTaskerAccessibilityService.current()
         if (service == null) {
             setStatus("Accessibility nicht aktiv")
+            recordOverlayEvent("screenshot.blocked", "accessibility inactive")
             showFloatingInspector()
             return
         }
         val target = File(filesDir, "emscript-runtime/screenshots/overlay-${timestamp()}.png")
         target.parentFile?.mkdirs()
         setStatus("Screenshot laeuft...")
+        recordOverlayEvent("screenshot.requested", "target=${target.name}")
         serviceScope.launch {
             val ok = service.takeScreenshotTo(target)
             setStatus(
@@ -216,11 +245,73 @@ class StudioOverlayService : Service() {
                     "Screenshot fehlgeschlagen"
                 }
             )
+            recordOverlayEvent(
+                kind = if (ok) "screenshot.saved" else "screenshot.failed",
+                message = "target=${target.name}",
+            )
         }
     }
 
     private fun setStatus(message: String) {
         statusView?.text = message
+    }
+
+    private fun toggleRecording() {
+        if (recordingSessionFile == null) {
+            startOverlayRecording()
+        } else {
+            stopOverlayRecording()
+        }
+    }
+
+    private fun startOverlayRecording() {
+        val target = File(filesDir, "$RECORDS_DIR/overlay-${timestamp()}.jsonl")
+        target.parentFile?.mkdirs()
+        recordingSessionFile = target
+        recordingStartedAtMs = System.currentTimeMillis()
+        recordingEventIndex = 0
+        recordOverlayEvent("recording.started", "file=${target.name}")
+        setStatus("Aufnahme laeuft: ${target.name}")
+        updateRecordingUi()
+    }
+
+    private fun stopOverlayRecording() {
+        val target = recordingSessionFile ?: return
+        recordOverlayEvent("recording.stopped", "durationMs=${System.currentTimeMillis() - recordingStartedAtMs}")
+        recordingSessionFile = null
+        setStatus("Aufnahme gespeichert: ${target.name}")
+        updateRecordingUi()
+    }
+
+    private fun recordOverlayEvent(kind: String, message: String) {
+        val target = recordingSessionFile ?: return
+        val now = System.currentTimeMillis()
+        val line = buildString {
+            append("{\"index\":")
+            append(recordingEventIndex++)
+            append(",\"timestampMs\":")
+            append(now)
+            append(",\"elapsedMs\":")
+            append(now - recordingStartedAtMs)
+            append(",\"source\":\"floatingOverlay\"")
+            append(",\"kind\":\"")
+            append(kind.jsonEscape())
+            append("\"")
+            append(",\"message\":\"")
+            append(message.jsonEscape())
+            append("\"}")
+        }
+        runCatching { target.appendText(line + "\n") }
+    }
+
+    private fun updateRecordingUi() {
+        val running = recordingSessionFile != null
+        recordingButton?.text = if (running) "Stop" else "Rec"
+        recordingStatusView?.text = if (running) {
+            "Aufnahme: ${recordingSessionFile?.name.orEmpty()}"
+        } else {
+            "Aufnahme: aus"
+        }
     }
 
     private fun overlayStatusText(): String =
@@ -232,6 +323,20 @@ class StudioOverlayService : Service() {
 
     private fun timestamp(): String =
         SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
+
+    private fun String.jsonEscape(): String =
+        buildString(length) {
+            this@jsonEscape.forEach { char ->
+                when (char) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> append(char)
+                }
+            }
+        }
 
     private fun createOverlayShell(
         key: String,
