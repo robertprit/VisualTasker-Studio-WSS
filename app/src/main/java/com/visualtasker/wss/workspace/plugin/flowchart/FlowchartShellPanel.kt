@@ -64,6 +64,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -106,6 +107,8 @@ import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowSemanticValue
+import de.visualtasker.flowchart.domain.FlowSize
+import de.visualtasker.flowchart.domain.FlowViewport
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
@@ -121,6 +124,8 @@ fun FlowchartShellPanel(
     session: FlowchartShellEditorSession,
     modifier: Modifier = Modifier,
     runtimeSnapshot: FlowRuntimeSnapshot? = null,
+    focusedNodeId: FlowNodeId? = null,
+    focusedEdgeId: FlowEdgeId? = null,
     onSave: (() -> Unit)? = null,
     onRunDry: (() -> Unit)? = null,
     onRunLive: (() -> Unit)? = null,
@@ -176,10 +181,38 @@ fun FlowchartShellPanel(
         val bottom = panelSize.height - trashMarginPx
         return point.x in left..right && point.y in top..bottom
     }
+    fun applyViewport(viewport: FlowViewport) {
+        controller.replaceViewport(viewport)?.let { view ->
+            session.onViewDocumentChanged(view)
+            onViewChanged?.invoke(view)
+        }
+    }
     fun centerViewport() {
         val current = controller.snapshot().view ?: session.viewDocument ?: return
         val viewport = fitFlowchartViewport(current, panelSize)
-        controller.replaceViewport(viewport)
+        applyViewport(viewport)
+    }
+    fun centerFocusedElement(zoomOverride: Double? = null) {
+        val current = controller.snapshot().view ?: session.viewDocument ?: return
+        val focus = selectedNodeId?.let { nodeId ->
+            current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+        } ?: selectedEdgeId?.let { edgeId ->
+            session.graphDocument.edges.firstOrNull { it.id == edgeId }?.let { edge ->
+                current.edgeCenter(edge.sourceNodeId, edge.targetNodeId)
+            }
+        } ?: runtimeSnapshot?.activeNodeId?.let { nodeId ->
+            current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+        } ?: return
+        applyViewport(current.centeredOn(focus, panelSize, zoomOverride ?: current.viewport.zoom))
+    }
+    fun zoomFocused(factor: Double) {
+        val current = controller.snapshot().view ?: session.viewDocument ?: return
+        val nextZoom = (current.viewport.zoom * factor).coerceIn(0.1, 8.0)
+        if (selectedNodeId != null || selectedEdgeId != null || runtimeSnapshot?.activeNodeId != null) {
+            centerFocusedElement(zoomOverride = nextZoom)
+        } else {
+            controller.dispatch(FlowInteractionAction.ZoomViewport(factor, FlowPoint(panelSize.width / 2.0, panelSize.height / 2.0)))
+        }
     }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
@@ -199,6 +232,9 @@ fun FlowchartShellPanel(
         panelSize,
         handleViewChanged,
         onSelectionChanged,
+        selectedNodeId,
+        selectedEdgeId,
+        runtimeSnapshot?.activeNodeId,
     ) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
@@ -211,6 +247,7 @@ fun FlowchartShellPanel(
                     selectedNodeId = it
                     selectedEdgeId = null
                     onSelectionChanged?.invoke(it, null)
+                    centerFocusedElement()
                     when (options.size) {
                         0 -> Unit
                         1 -> options.single().let { option ->
@@ -223,6 +260,7 @@ fun FlowchartShellPanel(
                     selectedNodeId = it
                     if (it != null) selectedEdgeId = null
                     onSelectionChanged?.invoke(it, null)
+                    if (it != null) centerFocusedElement()
                     if (it != null) onNodeSelected?.invoke(it)
                 }
             },
@@ -232,6 +270,7 @@ fun FlowchartShellPanel(
                 if (it != null) pendingConnectionStart = null
                 if (it != null) connectionMenu = null
                 onSelectionChanged?.invoke(null, it)
+                if (it != null) centerFocusedElement()
             },
             onPortConnectionRequested = { source, target ->
                 selectedNodeId = target.nodeId
@@ -321,6 +360,17 @@ fun FlowchartShellPanel(
     DisposableEffect(controller) {
         onDispose { controller.close() }
     }
+    LaunchedEffect(runtimeSnapshot?.activeNodeId, panelSize) {
+        val activeNodeId = runtimeSnapshot?.activeNodeId ?: return@LaunchedEffect
+        selectedNodeId = activeNodeId
+        selectedEdgeId = null
+        centerFocusedElement()
+    }
+    LaunchedEffect(focusedNodeId, focusedEdgeId, panelSize) {
+        selectedNodeId = focusedNodeId
+        selectedEdgeId = focusedEdgeId
+        if (focusedNodeId != null || focusedEdgeId != null) centerFocusedElement()
+    }
 
     Box(
         modifier = modifier
@@ -347,8 +397,8 @@ fun FlowchartShellPanel(
                 .padding(18.dp),
         )
         FlowchartFloatingViewportControls(
-            onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
-            onZoomOut = { controller.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0))) },
+            onZoomIn = { zoomFocused(1.2) },
+            onZoomOut = { zoomFocused(1 / 1.2) },
             onCenter = ::centerViewport,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -383,8 +433,8 @@ fun FlowchartShellPanel(
                     controller.dispatch(FlowInteractionAction.RedoViewChange)
                 }
             },
-            onZoomOut = { controller.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0))) },
-            onZoomIn = { controller.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0))) },
+            onZoomOut = { zoomFocused(1 / 1.2) },
+            onZoomIn = { zoomFocused(1.2) },
             onCenter = ::centerViewport,
             onArrange = {
                 controller.replaceLayout(arrangeMode.layoutConfig())
@@ -625,7 +675,7 @@ private data class PendingConnectionMenu(
 private fun fitFlowchartViewport(
     view: FlowViewDocument,
     panelSize: IntSize,
-): de.visualtasker.flowchart.domain.FlowViewport {
+): FlowViewport {
     if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
     val minX = view.nodeViews.minOf { it.position.x }
     val minY = view.nodeViews.minOf { it.position.y }
@@ -643,7 +693,33 @@ private fun fitFlowchartViewport(
         x = horizontalPadding + (availableWidth - contentWidth * zoom) / 2.0 - minX * zoom,
         y = topPadding + (availableHeight - contentHeight * zoom) / 2.0 - minY * zoom,
     )
-    return de.visualtasker.flowchart.domain.FlowViewport(pan = pan, zoom = zoom)
+    return FlowViewport(pan = pan, zoom = zoom)
+}
+
+private fun FlowViewDocument.centeredOn(
+    graphPoint: FlowPoint,
+    panelSize: IntSize,
+    zoom: Double = viewport.zoom,
+): FlowViewport {
+    if (panelSize.width <= 0 || panelSize.height <= 0 || zoom <= 0.0 || !zoom.isFinite()) return viewport
+    return FlowViewport(
+        pan = FlowPoint(
+            x = panelSize.width / 2.0 - graphPoint.x * zoom,
+            y = panelSize.height / 2.0 - graphPoint.y * zoom,
+        ),
+        zoom = zoom,
+    )
+}
+
+private fun de.visualtasker.flowchart.domain.FlowNodeView.centerPoint(): FlowPoint {
+    val size = size ?: FlowSize(128.0, 56.0)
+    return FlowPoint(position.x + size.width / 2.0, position.y + size.height / 2.0)
+}
+
+private fun FlowViewDocument.edgeCenter(sourceNodeId: FlowNodeId, targetNodeId: FlowNodeId): FlowPoint? {
+    val source = nodeViews.firstOrNull { it.nodeId == sourceNodeId }?.centerPoint() ?: return null
+    val target = nodeViews.firstOrNull { it.nodeId == targetNodeId }?.centerPoint() ?: return null
+    return FlowPoint((source.x + target.x) / 2.0, (source.y + target.y) / 2.0)
 }
 
 private enum class FlowchartArrangeMode(
@@ -851,8 +927,8 @@ private fun FlowchartNodeInspectorRows(
     val commandKind = node.properties.stringValue("commandKind")
     val commandCapabilities = node.properties.stringValue("commandCapabilities") ?: lastEvent?.capability
     val commandPluginOwner = node.properties.stringValue("commandPluginOwner") ?: lastEvent?.pluginOwner
-    val sourceLine = node.properties.stringValue("sourceLine")
-    val sourceColumn = node.properties.stringValue("sourceColumn")
+    val sourceLine = node.properties.textFor("sourceLine")
+    val sourceColumn = node.properties.textFor("sourceColumn")
     val visualState = FlowchartNodeVisualAdapter.map(
         FlowchartNodeVisualSubject(
             node = node,

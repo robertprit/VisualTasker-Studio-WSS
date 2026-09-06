@@ -65,6 +65,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -113,6 +115,7 @@ fun EmScriptEditorScreen(
     onConfirmApply: () -> Unit,
     diagnostics: List<String>,
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
+    activeSourceLine: Int? = null,
     modifier: Modifier = Modifier,
 ) {
     val activeTab = session.activeTab
@@ -166,6 +169,16 @@ fun EmScriptEditorScreen(
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val gutterTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val cursorOriginalLine = remember(editorValue.text, editorValue.selection.start) {
+        editorValue.text
+            .take(editorValue.selection.start.coerceIn(0, editorValue.text.length))
+            .count { it == '\n' } + 1
+    }
+    val activeOriginalLine = activeSourceLine?.coerceAtLeast(1) ?: cursorOriginalLine
+    val activeDisplayIndex = remember(activeOriginalLine, lineMapping) {
+        lineMapping.indexOfFirst { it.originalLine == activeOriginalLine }
+    }
+    val activeLineHighlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
 
     LaunchedEffect(fontSizeSp) {
         uiState.fontSizeSp = fontSizeSp
@@ -340,6 +353,13 @@ fun EmScriptEditorScreen(
                                 if (displayIdx >= layout.lineCount) return@forEachIndexed
                                 val lineTop = layout.getLineTop(displayIdx)
                                 val lineBottom = layout.getLineBottom(displayIdx)
+                                if (displayIdx == activeDisplayIndex) {
+                                    drawRect(
+                                        color = activeLineHighlightColor,
+                                        topLeft = Offset(0f, lineTop),
+                                        size = Size(size.width, lineBottom - lineTop),
+                                    )
+                                }
                                 val lineNo = textMeasurer.measure(
                                     text = info.originalLine.toString(),
                                     style = TextStyle(
@@ -426,6 +446,18 @@ fun EmScriptEditorScreen(
                     modifier = Modifier
                         .weight(1f)
                         .horizontalScroll(editorHorizontalScrollState)
+                        .drawBehind {
+                            val layout = textLayoutResult ?: return@drawBehind
+                            if (activeDisplayIndex in 0 until layout.lineCount) {
+                                val lineTop = layout.getLineTop(activeDisplayIndex)
+                                val lineBottom = layout.getLineBottom(activeDisplayIndex)
+                                drawRect(
+                                    color = activeLineHighlightColor,
+                                    topLeft = Offset(0f, lineTop),
+                                    size = Size(size.width, lineBottom - lineTop),
+                                )
+                            }
+                        }
                         .padding(horizontal = 6.dp),
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,

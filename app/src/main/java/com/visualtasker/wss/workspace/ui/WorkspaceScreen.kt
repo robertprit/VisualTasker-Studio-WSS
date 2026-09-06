@@ -279,6 +279,7 @@ import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowPoint
+import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
@@ -2053,6 +2054,8 @@ fun WorkspaceScreen(
                         latestEmscriptProjected = latestEmscriptProjected,
                         latestEmscriptGenerationFailure = latestEmscriptGenerationFailure,
                         flowRuntimeSnapshot = flowRuntimeSnapshot,
+                        focusedFlowchartNodeId = selectedFlowchartNodeId,
+                        focusedFlowchartEdgeId = selectedFlowchartEdgeId,
                         blockEditorMiniMapVisible = blockEditorMiniMapVisible,
                         flowchartMiniMapVisible = flowchartMiniMapVisible,
                         flowchartDataFlowVisible = flowchartDataFlowVisible,
@@ -2096,6 +2099,9 @@ fun WorkspaceScreen(
                             } else {
                                 renderWorkspaceDryRunStep(workspaceDryRunStepIndex + 1)
                             }
+                        },
+                        activeRuntimeStepIndex = workspaceDryRunResult?.let {
+                            (workspaceDryRunStepIndex - 1).coerceIn(0, (dryRunEventCount(it) - 1).coerceAtLeast(0))
                         },
                         canDryRunStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
                         canDryRunStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
@@ -2460,6 +2466,8 @@ private fun WorkspacePanelContent(
     latestEmscriptProjected: String,
     latestEmscriptGenerationFailure: String?,
     flowRuntimeSnapshot: FlowRuntimeSnapshot?,
+    focusedFlowchartNodeId: FlowNodeId? = null,
+    focusedFlowchartEdgeId: FlowEdgeId? = null,
     blockEditorMiniMapVisible: Boolean,
     flowchartMiniMapVisible: Boolean,
     flowchartDataFlowVisible: Boolean,
@@ -2480,6 +2488,7 @@ private fun WorkspacePanelContent(
     canDryRunStepBack: Boolean = false,
     canDryRunStepForward: Boolean = false,
     dryRunStepLabel: String? = null,
+    activeRuntimeStepIndex: Int? = null,
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
     onFlowchartSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit = { _, _ -> },
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
@@ -2503,7 +2512,11 @@ private fun WorkspacePanelContent(
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     when (panel.type) {
-        PanelType.RecorderSteps -> RecorderStepsPanel(steps = steps, actionSink = actionSink)
+        PanelType.RecorderSteps -> RecorderStepsPanel(
+            steps = steps,
+            actionSink = actionSink,
+            activeRuntimeStepIndex = activeRuntimeStepIndex,
+        )
         PanelType.BlockEditor -> BlockEditorPanel(
             panelId = panel.id,
             uiPrefs = uiPrefs,
@@ -2519,6 +2532,8 @@ private fun WorkspacePanelContent(
             uiPrefs = uiPrefs,
             graphContent = FlowGraphJsonCodec().encodeCanonical(workflowState.flowchartProjection.graph),
             runtimeSnapshot = flowRuntimeSnapshot,
+            focusedNodeId = focusedFlowchartNodeId,
+            focusedEdgeId = focusedFlowchartEdgeId,
             onRunDry = onRunWorkspaceDry,
             onRunLive = onRunWorkspaceLive,
             onStepBack = onDryRunStepBack,
@@ -2567,6 +2582,7 @@ private fun WorkspacePanelContent(
                 onLiveRun = { onRunWorkspaceLive() },
                 canLiveRun = capabilityReport.realRunAllowed,
                 liveRunStatus = capabilityReport.summary,
+                activeSourceLine = activeRuntimeSourceLine(workflowState, flowRuntimeSnapshot),
                 syntaxPaletteOverride = SyntaxHighlighter.Palette(
                     keyword = appearance.syntaxKeyword,
                     control = appearance.syntaxControl,
@@ -5251,7 +5267,8 @@ internal fun TooltipIconButton(
 @Composable
 private fun RecorderStepsPanel(
     steps: List<RecorderStepUi>,
-    actionSink: PanelActionSink
+    actionSink: PanelActionSink,
+    activeRuntimeStepIndex: Int? = null,
 ) {
     var selectedStepId by remember { mutableStateOf<String?>(null) }
     var replayIndex by remember { mutableIntStateOf(0) }
@@ -5264,6 +5281,7 @@ private fun RecorderStepsPanel(
     val thresholdPx = 56f
     val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
     val activityStepGroups = remember(steps, timelinePoints) { buildRecorderActivityStepGroups(steps, timelinePoints) }
+    val stepListState = rememberLazyListState()
     val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
     val timelineEndMs = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStartMs + 1L) ?: 1L
     val safeIndex = replayIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0))
@@ -5273,6 +5291,20 @@ private fun RecorderStepsPanel(
         if (replayIndex > steps.lastIndex) replayIndex = steps.lastIndex.coerceAtLeast(0)
         replayPositionMs = replayPositionMs.coerceIn(timelineStartMs, timelineEndMs)
         if (steps.isEmpty()) playing = false
+    }
+    LaunchedEffect(activeRuntimeStepIndex, steps.size) {
+        val index = activeRuntimeStepIndex ?: return@LaunchedEffect
+        if (index !in steps.indices) return@LaunchedEffect
+        replayIndex = index
+        selectedStepId = steps[index].id
+        replayPositionMs = timelinePoints.getOrNull(index)?.startMs ?: replayPositionMs
+    }
+    LaunchedEffect(safeIndex, activityStepGroups) {
+        if (steps.isEmpty()) return@LaunchedEffect
+        val groupIndex = activityStepGroups.indexOfFirst { group ->
+            group.steps.any { it.index == safeIndex }
+        }
+        if (groupIndex >= 0) stepListState.animateScrollToItem(groupIndex)
     }
     LaunchedEffect(playing, speed, steps.size, timelineStartMs, timelineEndMs) {
         if (!playing || steps.isEmpty()) return@LaunchedEffect
@@ -5435,7 +5467,11 @@ private fun RecorderStepsPanel(
         }
         Text("Tippen = Select, Long-Drag = Reorder, Swipe = Delete", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+        LazyColumn(
+            state = stepListState,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f),
+        ) {
             items(activityStepGroups, key = { it.key }) { group ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -5534,6 +5570,23 @@ private fun String.dryRunEventIndexOrNull(): Int? =
     removePrefix("dry-run-")
         .takeIf { it != this }
         ?.toIntOrNull()
+
+private fun activeRuntimeSourceLine(
+    workflowState: WorkspaceWorkflowState,
+    runtimeSnapshot: FlowRuntimeSnapshot?,
+): Int? {
+    val activeNodeId = runtimeSnapshot?.activeNodeId ?: return null
+    val node = workflowState.flowchartProjection.graph.nodes.firstOrNull { it.id == activeNodeId } ?: return null
+    return node.properties.textValue("sourceLine")?.toDoubleOrNull()?.toInt()
+}
+
+private fun Map<String, FlowSemanticValue>.textValue(key: String): String? =
+    when (val value = this[key]) {
+        is FlowSemanticValue.StringValue -> value.value
+        is FlowSemanticValue.NumberValue -> value.canonicalValue
+        is FlowSemanticValue.BooleanValue -> value.value.toString()
+        else -> null
+    }
 
 private data class RecorderTimelinePoint(
     val step: RecorderStepUi,
@@ -6585,6 +6638,8 @@ private fun FlowchartPanel(
     uiPrefs: android.content.SharedPreferences,
     graphContent: String,
     runtimeSnapshot: FlowRuntimeSnapshot?,
+    focusedNodeId: FlowNodeId?,
+    focusedEdgeId: FlowEdgeId?,
     onRunDry: () -> Unit,
     onRunLive: () -> Unit,
     onStepBack: () -> Unit,
@@ -6655,6 +6710,8 @@ private fun FlowchartPanel(
     FlowchartShellPanel(
         session = session,
         runtimeSnapshot = runtimeSnapshot,
+        focusedNodeId = focusedNodeId,
+        focusedEdgeId = focusedEdgeId,
         onRunDry = onRunDry,
         onRunLive = onRunLive,
         onStepBack = onStepBack,

@@ -80,6 +80,7 @@ internal fun EmscriptTextEditorPanel(
     canLiveRun: Boolean = false,
     liveRunStatus: String = "",
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
+    activeSourceLine: Int? = null,
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
     val parser = remember { EmscriptParserSlice() }
@@ -270,6 +271,7 @@ internal fun EmscriptTextEditorPanel(
             operator = Color(0xFFFF8A65),
             plain = MaterialTheme.colorScheme.onSurface
         ),
+        activeSourceLine = activeSourceLine,
         modifier = Modifier.fillMaxSize()
     )
 }
