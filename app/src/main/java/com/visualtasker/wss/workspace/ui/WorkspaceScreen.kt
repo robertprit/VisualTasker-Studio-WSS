@@ -257,6 +257,10 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.ui.theme.M3EColors
 import com.visualtasker.wss.visual.debug.VisualSemanticsReporter
+import com.visualtasker.wss.visual.interaction.DefaultEditorInteractionPolicy
+import com.visualtasker.wss.visual.interaction.EditorActionDescriptor
+import com.visualtasker.wss.visual.interaction.EditorActionId
+import com.visualtasker.wss.visual.interaction.EditorProjection
 import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
@@ -5985,6 +5989,9 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
 ) {
+    val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.BlockEditor).mapNotNull { descriptor ->
+        descriptor.toBlockEditorRailAction(session, onExpandRequested, onSave)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -5994,49 +6001,8 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        WorkspaceRailActionList(
-            listOf(
-                WorkspaceRailActionSpec("Speichern", Icons.Default.Save, enabled = session != null, onClick = onSave),
-                WorkspaceRailActionSpec("Undo", Icons.AutoMirrored.Filled.Undo, enabled = session != null) { session?.controller?.undo() },
-                WorkspaceRailActionSpec("Redo", Icons.AutoMirrored.Filled.Redo, enabled = session != null) { session?.controller?.redo() },
-                WorkspaceRailActionSpec("Zoom +", Icons.Default.ZoomIn, enabled = session != null) { session?.controller?.zoomIn() },
-                WorkspaceRailActionSpec("Zoom -", Icons.Default.ZoomOut, enabled = session != null) { session?.controller?.zoomOut() },
-                WorkspaceRailActionSpec("Einpassen", Icons.Default.CenterFocusStrong, enabled = session != null) {
-                    session?.controller?.fitWorkspaceToCanvas(force = true)
-                },
-                WorkspaceRailActionSpec("Auto anordnen", Icons.Default.AutoAwesomeMosaic, enabled = session != null) {
-                    session?.controller?.autoArrangeWorkspace()
-                },
-                WorkspaceRailActionSpec(
-                    label = if (session?.controller?.selectedBlockCollapsed == true) "Ausklappen" else "Einklappen",
-                    icon = if (session?.controller?.selectedBlockCollapsed == true) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    enabled = session?.controller?.canToggleSelectedBlockCollapse == true,
-                    selected = session?.controller?.selectedBlockCollapsed == true,
-                ) {
-                    session?.controller?.toggleSelectedBlockCollapse()
-                },
-                WorkspaceRailActionSpec(
-                    label = "Block löschen",
-                    icon = Icons.Default.DeleteSweep,
-                    enabled = session?.controller?.selectedBlockIds?.isNotEmpty() == true,
-                ) {
-                    session?.controller?.deleteSelectedBlock()
-                },
-                WorkspaceRailActionSpec("Blockdesigner", Icons.Default.GridView, enabled = session != null) {
-                    session?.controller?.openBlockFactory()
-                },
-                WorkspaceRailActionSpec("Workspace leeren", Icons.Default.DeleteSweep, enabled = session != null) {
-                    session?.controller?.clearWorkspace()
-                },
-            )
-        )
+        WorkspaceRailActionList(actions)
         Spacer(modifier = Modifier.weight(1f))
-        WorkspaceRailActionButton("Blockpalette", Icons.Default.AddCircle, enabled = session != null) {
-            if (session?.controller?.expandedCategory == null) {
-                session?.controller?.onCategoryClick(BlockCategories.ACTION)
-            }
-            onExpandRequested()
-        }
     }
 }
 
@@ -6054,6 +6020,180 @@ private fun ColumnScope.WorkspaceRailActionList(
         )
     }
 }
+
+private fun EditorActionDescriptor.toBlockEditorRailAction(
+    session: BlockEditorShellEditorSession?,
+    onExpandRequested: () -> Unit,
+    onSave: () -> Unit,
+): WorkspaceRailActionSpec? {
+    val controller = session?.controller
+    val hasSession = session != null
+    return when (id) {
+        EditorActionId.Save -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onSave)
+        EditorActionId.Undo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.undo() }
+        EditorActionId.Redo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.redo() }
+        EditorActionId.ZoomIn -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.zoomIn() }
+        EditorActionId.ZoomOut -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.zoomOut() }
+        EditorActionId.FitViewport -> WorkspaceRailActionSpec("Einpassen", editorActionIcon(id), enabled = hasSession) {
+            controller?.fitWorkspaceToCanvas(force = true)
+        }
+        EditorActionId.AutoArrange -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            controller?.autoArrangeWorkspace()
+        }
+        EditorActionId.ToggleCollapse -> WorkspaceRailActionSpec(
+            label = if (controller?.selectedBlockCollapsed == true) "Ausklappen" else "Einklappen",
+            icon = if (controller?.selectedBlockCollapsed == true) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+            enabled = controller?.canToggleSelectedBlockCollapse == true,
+            selected = controller?.selectedBlockCollapsed == true,
+        ) {
+            controller?.toggleSelectedBlockCollapse()
+        }
+        EditorActionId.DeleteSelection -> WorkspaceRailActionSpec(
+            label = "Block löschen",
+            icon = editorActionIcon(id),
+            enabled = controller?.selectedBlockIds?.isNotEmpty() == true,
+        ) {
+            controller?.deleteSelectedBlock()
+        }
+        EditorActionId.OpenBlockDesigner -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            controller?.openBlockFactory()
+        }
+        EditorActionId.ClearWorkspace -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            controller?.clearWorkspace()
+        }
+        EditorActionId.OpenPalette -> WorkspaceRailActionSpec("Blockpalette", editorActionIcon(id), enabled = hasSession) {
+            if (controller?.expandedCategory == null) {
+                controller?.onCategoryClick(BlockCategories.ACTION)
+            }
+            onExpandRequested()
+        }
+        EditorActionId.ToggleDataFlow,
+        EditorActionId.ToggleRuntime,
+        EditorActionId.ToggleDiagnostics,
+        EditorActionId.RunDry,
+        EditorActionId.RunLive,
+        EditorActionId.StepBack,
+        EditorActionId.StepForward -> null
+    }
+}
+
+private fun EditorActionDescriptor.toFlowchartRailAction(
+    session: FlowchartShellEditorSession?,
+    panelSizePx: IntSize,
+    selectedNodeId: FlowNodeId?,
+    selectedEdgeId: FlowEdgeId?,
+    onExpandRequested: () -> Unit,
+    onSave: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    onStepBack: () -> Unit,
+    onStepForward: () -> Unit,
+    canStepBack: Boolean,
+    canStepForward: Boolean,
+    dataFlowVisible: Boolean,
+    runtimeVisible: Boolean,
+    diagnosticsVisible: Boolean,
+    onDataFlowToggle: () -> Unit,
+    onRuntimeToggle: () -> Unit,
+    onDiagnosticsToggle: () -> Unit,
+    onDeleteNode: (FlowNodeId) -> Unit,
+    onDisconnectEdge: (FlowEdgeId) -> Unit,
+    onUndoWorkspace: () -> Boolean,
+    onRedoWorkspace: () -> Boolean,
+): WorkspaceRailActionSpec? {
+    val controller = session?.controller
+    val hasSession = session != null
+    return when (id) {
+        EditorActionId.Save -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onSave)
+        EditorActionId.Undo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            if (!onUndoWorkspace()) controller?.dispatch(FlowInteractionAction.UndoViewChange)
+        }
+        EditorActionId.Redo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            if (!onRedoWorkspace()) controller?.dispatch(FlowInteractionAction.RedoViewChange)
+        }
+        EditorActionId.ZoomIn -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            controller?.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0)))
+        }
+        EditorActionId.ZoomOut -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            controller?.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0)))
+        }
+        EditorActionId.FitViewport -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            val view = controller?.snapshot()?.view ?: session?.viewDocument
+            if (controller != null && view != null) {
+                controller.replaceViewport(fitFlowchartViewport(view, panelSizePx))
+            }
+        }
+        EditorActionId.AutoArrange -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            controller?.replaceLayout(
+                FlowLayoutConfig(
+                    layerSpacing = 104.0,
+                    nodeSpacing = 64.0,
+                    componentSpacing = 128.0,
+                    routingClearance = 28.0,
+                    wrapAfterNodes = 11,
+                    semanticWrapEnabled = true,
+                    pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+                )
+            )
+        }
+        EditorActionId.ToggleDataFlow -> WorkspaceRailActionSpec(
+            if (dataFlowVisible) "Dataflow aus" else "Dataflow an",
+            if (dataFlowVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+            enabled = hasSession,
+            onClick = onDataFlowToggle,
+        )
+        EditorActionId.ToggleRuntime -> WorkspaceRailActionSpec(
+            if (runtimeVisible) "Runtime aus" else "Runtime an",
+            if (runtimeVisible) Icons.Default.PlayCircle else Icons.Default.PlayArrow,
+            enabled = hasSession,
+            onClick = onRuntimeToggle,
+        )
+        EditorActionId.ToggleDiagnostics -> WorkspaceRailActionSpec(
+            if (diagnosticsVisible) "Diagnose aus" else "Diagnose an",
+            if (diagnosticsVisible) Icons.Default.Warning else Icons.Default.Info,
+            enabled = hasSession,
+            onClick = onDiagnosticsToggle,
+        )
+        EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onRunDry)
+        EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onRunLive)
+        EditorActionId.StepBack -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canStepBack, onClick = onStepBack)
+        EditorActionId.StepForward -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canStepForward, onClick = onStepForward)
+        EditorActionId.DeleteSelection -> WorkspaceRailActionSpec(
+            label = if (selectedEdgeId != null) "Kante löschen" else "Node löschen",
+            icon = editorActionIcon(id),
+            enabled = hasSession && (selectedNodeId != null || selectedEdgeId != null),
+        ) {
+            selectedNodeId?.let(onDeleteNode) ?: selectedEdgeId?.let(onDisconnectEdge)
+        }
+        EditorActionId.OpenPalette -> WorkspaceRailActionSpec("Node-Palette", editorActionIcon(id), enabled = hasSession, onClick = onExpandRequested)
+        EditorActionId.ToggleCollapse,
+        EditorActionId.OpenBlockDesigner,
+        EditorActionId.ClearWorkspace -> null
+    }
+}
+
+private fun editorActionIcon(id: EditorActionId): androidx.compose.ui.graphics.vector.ImageVector =
+    when (id) {
+        EditorActionId.Save -> Icons.Default.Save
+        EditorActionId.Undo -> Icons.AutoMirrored.Filled.Undo
+        EditorActionId.Redo -> Icons.AutoMirrored.Filled.Redo
+        EditorActionId.ZoomIn -> Icons.Default.ZoomIn
+        EditorActionId.ZoomOut -> Icons.Default.ZoomOut
+        EditorActionId.FitViewport -> Icons.Default.CenterFocusStrong
+        EditorActionId.AutoArrange -> Icons.Default.AutoAwesomeMosaic
+        EditorActionId.ToggleCollapse -> Icons.Default.VisibilityOff
+        EditorActionId.ToggleDataFlow -> Icons.Default.Visibility
+        EditorActionId.ToggleRuntime,
+        EditorActionId.RunLive -> Icons.Default.PlayCircle
+        EditorActionId.ToggleDiagnostics -> Icons.Default.Info
+        EditorActionId.RunDry -> Icons.Default.PlayArrow
+        EditorActionId.StepBack -> Icons.Default.ArrowBack
+        EditorActionId.StepForward -> Icons.Default.ArrowForward
+        EditorActionId.DeleteSelection,
+        EditorActionId.ClearWorkspace -> Icons.Default.DeleteSweep
+        EditorActionId.OpenBlockDesigner -> Icons.Default.GridView
+        EditorActionId.OpenPalette -> Icons.Default.AddCircle
+    }
 
 private data class WorkspaceRailActionSpec(
     val label: String,
@@ -6341,7 +6481,32 @@ private fun ColumnScope.FlowchartCompactActionRail(
     onUndoWorkspace: () -> Boolean,
     onRedoWorkspace: () -> Boolean,
 ) {
-    val controller = session?.controller
+    val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.Flowchart).mapNotNull { descriptor ->
+        descriptor.toFlowchartRailAction(
+            session = session,
+            panelSizePx = panelSizePx,
+            selectedNodeId = selectedNodeId,
+            selectedEdgeId = selectedEdgeId,
+            onExpandRequested = onExpandRequested,
+            onSave = onSave,
+            onRunDry = onRunDry,
+            onRunLive = onRunLive,
+            onStepBack = onStepBack,
+            onStepForward = onStepForward,
+            canStepBack = canStepBack,
+            canStepForward = canStepForward,
+            dataFlowVisible = dataFlowVisible,
+            runtimeVisible = runtimeVisible,
+            diagnosticsVisible = diagnosticsVisible,
+            onDataFlowToggle = onDataFlowToggle,
+            onRuntimeToggle = onRuntimeToggle,
+            onDiagnosticsToggle = onDiagnosticsToggle,
+            onDeleteNode = onDeleteNode,
+            onDisconnectEdge = onDisconnectEdge,
+            onUndoWorkspace = onUndoWorkspace,
+            onRedoWorkspace = onRedoWorkspace,
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -6351,73 +6516,8 @@ private fun ColumnScope.FlowchartCompactActionRail(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        WorkspaceRailActionList(
-            listOf(
-                WorkspaceRailActionSpec("Speichern", Icons.Default.Save, enabled = session != null, onClick = onSave),
-                WorkspaceRailActionSpec("Undo", Icons.AutoMirrored.Filled.Undo, enabled = session != null) {
-                    if (!onUndoWorkspace()) controller?.dispatch(FlowInteractionAction.UndoViewChange)
-                },
-                WorkspaceRailActionSpec("Redo", Icons.AutoMirrored.Filled.Redo, enabled = session != null) {
-                    if (!onRedoWorkspace()) controller?.dispatch(FlowInteractionAction.RedoViewChange)
-                },
-                WorkspaceRailActionSpec("Zoom +", Icons.Default.ZoomIn, enabled = session != null) {
-                    controller?.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0)))
-                },
-                WorkspaceRailActionSpec("Zoom -", Icons.Default.ZoomOut, enabled = session != null) {
-                    controller?.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0)))
-                },
-                WorkspaceRailActionSpec("Zentrieren", Icons.Default.CenterFocusStrong, enabled = session != null) {
-                    val view = controller?.snapshot()?.view ?: session?.viewDocument
-                    if (controller != null && view != null) {
-                        controller.replaceViewport(fitFlowchartViewport(view, panelSizePx))
-                    }
-                },
-                WorkspaceRailActionSpec("Auto anordnen", Icons.Default.AutoAwesomeMosaic, enabled = session != null) {
-                    controller?.replaceLayout(
-                        FlowLayoutConfig(
-                            layerSpacing = 104.0,
-                            nodeSpacing = 64.0,
-                            componentSpacing = 128.0,
-                            routingClearance = 28.0,
-                            wrapAfterNodes = 11,
-                            semanticWrapEnabled = true,
-                            pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
-                        )
-                    )
-                },
-                WorkspaceRailActionSpec(
-                    if (dataFlowVisible) "Dataflow aus" else "Dataflow an",
-                    if (dataFlowVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    enabled = session != null,
-                    onClick = onDataFlowToggle,
-                ),
-                WorkspaceRailActionSpec(
-                    if (runtimeVisible) "Runtime aus" else "Runtime an",
-                    if (runtimeVisible) Icons.Default.PlayCircle else Icons.Default.PlayArrow,
-                    enabled = session != null,
-                    onClick = onRuntimeToggle,
-                ),
-                WorkspaceRailActionSpec(
-                    if (diagnosticsVisible) "Diagnose aus" else "Diagnose an",
-                    if (diagnosticsVisible) Icons.Default.Warning else Icons.Default.Info,
-                    enabled = session != null,
-                    onClick = onDiagnosticsToggle,
-                ),
-                WorkspaceRailActionSpec("Dry Run", Icons.Default.PlayArrow, enabled = session != null, onClick = onRunDry),
-                WorkspaceRailActionSpec("Live Run", Icons.Default.PlayCircle, enabled = session != null, onClick = onRunLive),
-                WorkspaceRailActionSpec("Step zurück", Icons.Default.ArrowBack, enabled = session != null && canStepBack, onClick = onStepBack),
-                WorkspaceRailActionSpec("Step vor", Icons.Default.ArrowForward, enabled = session != null && canStepForward, onClick = onStepForward),
-                WorkspaceRailActionSpec(
-                    label = if (selectedEdgeId != null) "Kante löschen" else "Node löschen",
-                    icon = Icons.Default.DeleteSweep,
-                    enabled = session != null && (selectedNodeId != null || selectedEdgeId != null),
-                ) {
-                    selectedNodeId?.let(onDeleteNode) ?: selectedEdgeId?.let(onDisconnectEdge)
-                },
-            )
-        )
+        WorkspaceRailActionList(actions)
         Spacer(modifier = Modifier.weight(1f))
-        WorkspaceRailActionButton("Node-Palette", Icons.Default.AddCircle, enabled = session != null, onClick = onExpandRequested)
     }
 }
 

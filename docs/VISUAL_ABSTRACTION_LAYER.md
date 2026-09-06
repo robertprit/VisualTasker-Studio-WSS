@@ -22,6 +22,8 @@ Der erste Slice besteht aus:
 - Projektionsadapter fuer Flowchart, Blockeditor und Worldview.
 - `VisualSemanticsReporter`: kompakte Developer-Zusammenfassung fuer Debug-Panels.
 - `MaterialVisualResolver`: erste M3-nahe Aufloesung von Descriptoren.
+- `DefaultEditorInteractionPolicy`: gemeinsame Action- und Feedback-Sprache fuer
+  BlockEditor und Flowchart.
 
 Noch nicht enthalten:
 
@@ -63,6 +65,9 @@ Wichtige Signale haben Prioritaet:
 3. Inspector/Debug: `VisualSemanticState` und `VisualDescriptor` im Developer-Modus anzeigen.
 4. Material-Resolver: renderer-neutrale Rollen in M3-Expressive-Tokens uebersetzen.
 5. Runtime: Dry-Run/Live-Run Status ueber VAL vereinheitlichen.
+6. Editor-Interaktion: gemeinsame Rail-/Toolbar-Aktionen, Feedback-Events und
+   Selection-Sprache fuer BlockEditor und Flowchart aus `DefaultEditorInteractionPolicy`
+   ableiten.
 
 ## Implementierter Einstiegspunkt
 
@@ -70,6 +75,8 @@ Wichtige Signale haben Prioritaet:
   `VAL Descriptor`.
 - DebugInfo zeigt eine `VAL Flowchart`-Zusammenfassung fuer Node-Rollen,
   Runtime-Aktivitaet und Outlines.
+- BlockEditor- und Flowchart-Siderails beziehen ihre gemeinsame Action-Reihenfolge
+  ueber `DefaultEditorInteractionPolicy`.
 - Tests sichern Policy, Material-Resolver und Projektionen ab.
 
 ## Rueckkehr zum Hauptarbeitsstamm
