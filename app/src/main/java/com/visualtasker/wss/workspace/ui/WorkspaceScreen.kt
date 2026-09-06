@@ -2563,6 +2563,7 @@ private fun WorkspacePanelContent(
                 currentFlowGraph = workflowState.flowchartProjection.graph,
                 onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_APPLY) },
                 onDryRunRuntimeSnapshot = onFlowRuntimeSnapshotChange,
+                onWorkspaceDryRun = { onRunWorkspaceDry() },
                 onLiveRun = { onRunWorkspaceLive() },
                 canLiveRun = capabilityReport.realRunAllowed,
                 liveRunStatus = capabilityReport.summary,

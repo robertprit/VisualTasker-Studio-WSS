@@ -75,6 +75,7 @@ internal fun EmscriptTextEditorPanel(
     currentFlowGraph: FlowGraphDocument,
     onWorkspaceJsonChange: (String) -> Unit,
     onDryRunRuntimeSnapshot: (FlowRuntimeSnapshot) -> Unit = {},
+    onWorkspaceDryRun: (() -> Unit)? = null,
     onLiveRun: () -> Unit = {},
     canLiveRun: Boolean = false,
     liveRunStatus: String = "",
@@ -140,6 +141,14 @@ internal fun EmscriptTextEditorPanel(
     }
 
     fun dryRun() {
+        onWorkspaceDryRun?.let { runWorkspaceDry ->
+            runWorkspaceDry()
+            dryRunDiagnostics = listOf(
+                "Dry-Run nutzt das gemeinsame WorkspaceDocument.",
+                "Stepper, Flowchart und BlockEditor werden ueber denselben Runtime-Trace synchronisiert."
+            )
+            return
+        }
         val workspaceDocument = runCatching { WorkspaceSerializer.deserialize(workspaceJson) }.getOrNull()
         val irGraph = workspaceDocument?.let { IrGraphGenerator().generate(it) }
         val result = workspaceDocument
