@@ -477,9 +477,9 @@ fun FlowchartShellPanel(
         )
         FlowchartRuntimeInspectorBottomSheet(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(0.72f)
-                .padding(start = 8.dp, end = 116.dp, bottom = 4.dp),
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(start = 2.dp, end = 88.dp, bottom = 2.dp),
             session = session,
             selectedNodeId = selectedNodeId,
             selectedEdgeId = selectedEdgeId,

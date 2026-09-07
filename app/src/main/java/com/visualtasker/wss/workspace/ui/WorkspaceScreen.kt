@@ -326,6 +326,34 @@ private const val FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY = "flowchart_diagnostic
 private const val PANEL_RAIL_EXPANDED_PREF_PREFIX = "workspace_panel_rail_expanded:"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
+private const val STEPPER_STATE_PREF_KEY = "workspace_stepper_state"
+
+private data class StepperPanelState(
+    val selectedStepId: String? = null,
+    val replayIndex: Int = 0,
+    val replayPositionMs: Long = 0L,
+    val speed: Float = 1f,
+) {
+    fun encode(): String = JSONObject()
+        .put("selectedStepId", selectedStepId)
+        .put("replayIndex", replayIndex)
+        .put("replayPositionMs", replayPositionMs)
+        .put("speed", speed.toDouble())
+        .toString()
+
+    companion object {
+        fun decode(raw: String?): StepperPanelState = runCatching {
+            if (raw.isNullOrBlank()) return@runCatching StepperPanelState()
+            val root = JSONObject(raw)
+            StepperPanelState(
+                selectedStepId = root.optString("selectedStepId").takeIf { it.isNotBlank() },
+                replayIndex = root.optInt("replayIndex", 0).coerceAtLeast(0),
+                replayPositionMs = root.optLong("replayPositionMs", 0L).coerceAtLeast(0L),
+                speed = root.optDouble("speed", 1.0).toFloat().coerceIn(0.2f, 4f),
+            )
+        }.getOrDefault(StepperPanelState())
+    }
+}
 
 private data class ScreenshotCanvasAsset(
     val file: File,
@@ -770,6 +798,9 @@ fun WorkspaceScreen(
     }
     var flowchartDiagnosticsVisible by remember {
         mutableStateOf(uiPrefs.getBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, true))
+    }
+    var stepperPanelState by remember(uiPrefs) {
+        mutableStateOf(StepperPanelState.decode(uiPrefs.getString(STEPPER_STATE_PREF_KEY, null)))
     }
     var showAddPanelDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -2080,9 +2111,22 @@ fun WorkspaceScreen(
                         flowchartDataFlowVisible = flowchartDataFlowVisible,
                         flowchartRuntimeVisible = flowchartRuntimeVisible,
                         flowchartDiagnosticsVisible = flowchartDiagnosticsVisible,
+                        stepperPanelState = stepperPanelState,
                         onFlowchartDataFlowVisibleChange = { flowchartDataFlowVisible = it },
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
+                        onStepperStateSave = { state ->
+                            stepperPanelState = state
+                            uiPrefs.edit().putString(STEPPER_STATE_PREF_KEY, state.encode()).apply()
+                            studioLogStore.append(
+                                level = StudioLogLevel.INFO,
+                                source = "STEPPER",
+                                message = "Stepper-Stand gespeichert",
+                                details = "Index ${state.replayIndex}, Position ${state.replayPositionMs} ms, Speed ${state.speed.formatSpeedStep()}x",
+                                documentRevision = workflowState.revision.toLong(),
+                                groupKey = "stepper:state-saved"
+                            )
+                        },
                         onEmscriptSessionChange = { updated ->
                             emscriptSession = updated
                             val manual = updated.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -2458,9 +2502,11 @@ private fun WorkspacePanelContent(
     flowchartDataFlowVisible: Boolean,
     flowchartRuntimeVisible: Boolean,
     flowchartDiagnosticsVisible: Boolean,
+    stepperPanelState: StepperPanelState = StepperPanelState(),
     onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
     onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
     onFlowchartDiagnosticsVisibleChange: (Boolean) -> Unit = {},
+    onStepperStateSave: (StepperPanelState) -> Unit = {},
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     logConsoleState: LogConsoleUiState,
@@ -2501,6 +2547,8 @@ private fun WorkspacePanelContent(
             steps = steps,
             actionSink = actionSink,
             activeRuntimeStepIndex = activeRuntimeStepIndex,
+            initialState = stepperPanelState,
+            onSaveState = onStepperStateSave,
         )
         PanelType.BlockEditor -> BlockEditorPanel(
             panelId = panel.id,
@@ -5259,13 +5307,17 @@ private fun RecorderStepsPanel(
     steps: List<RecorderStepUi>,
     actionSink: PanelActionSink,
     activeRuntimeStepIndex: Int? = null,
+    initialState: StepperPanelState = StepperPanelState(),
+    onSaveState: (StepperPanelState) -> Unit = {},
 ) {
-    var selectedStepId by remember { mutableStateOf<String?>(null) }
-    var replayIndex by remember { mutableIntStateOf(0) }
-    var replayPositionMs by remember { mutableLongStateOf(0L) }
+    var selectedStepId by remember { mutableStateOf(initialState.selectedStepId) }
+    var replayIndex by remember { mutableIntStateOf(initialState.replayIndex) }
+    var replayPositionMs by remember { mutableLongStateOf(initialState.replayPositionMs) }
     var playing by remember { mutableStateOf(false) }
     val speedSteps = remember { listOf(0.2f, 0.5f, 1f, 2f, 4f) }
-    var speedStepIndex by remember { mutableIntStateOf(2) }
+    var speedStepIndex by remember {
+        mutableIntStateOf(speedSteps.indexOfClosest(initialState.speed).coerceAtLeast(0))
+    }
     val speed = speedSteps[speedStepIndex]
     var dragAccumulator by remember { mutableFloatStateOf(0f) }
     val thresholdPx = 56f
@@ -5334,6 +5386,22 @@ private fun RecorderStepsPanel(
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    TooltipIconButton(
+                        tooltip = "Stepper-Stand speichern",
+                        onClick = {
+                            onSaveState(
+                                StepperPanelState(
+                                    selectedStepId = selectedStepId,
+                                    replayIndex = safeIndex,
+                                    replayPositionMs = replayPositionMs,
+                                    speed = speed,
+                                )
+                            )
+                        },
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = "Stepper-Stand speichern", modifier = Modifier.size(18.dp))
+                    }
                 }
                 RecorderTimeline(
                     steps = steps,
@@ -5967,6 +6035,12 @@ private fun nearestTimelineIndex(points: List<RecorderTimelinePoint>, positionMs
             val diff = if (point.startMs >= positionMs) point.startMs - positionMs else positionMs - point.startMs
             index to diff
         }
+        .minByOrNull { it.second }
+        ?.first
+        ?: 0
+
+private fun List<Float>.indexOfClosest(value: Float): Int =
+    mapIndexed { index, candidate -> index to abs(candidate - value) }
         .minByOrNull { it.second }
         ?.first
         ?: 0
