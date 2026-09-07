@@ -1159,8 +1159,8 @@ fun WorkspaceScreen(
                 ?.viewport
                 ?.let { viewport ->
                     FlowPoint(
-                        x = (184.0 - viewport.pan.x) / viewport.zoom,
-                        y = (164.0 - viewport.pan.y) / viewport.zoom,
+                        x = (320.0 - viewport.pan.x) / viewport.zoom,
+                        y = (260.0 - viewport.pan.y) / viewport.zoom,
                     )
                 }
         } else {
