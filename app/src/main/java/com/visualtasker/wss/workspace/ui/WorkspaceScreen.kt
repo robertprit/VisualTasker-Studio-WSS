@@ -1758,9 +1758,9 @@ fun WorkspaceScreen(
         panels.sortedBy { it.zIndex }.forEach { panel ->
             if (panel.minimized) return@forEach
             key(panel.id) {
-                val maxWidthDp = ((surfaceSize.width - panel.x - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
+                val maxWidthDp = ((surfaceSize.width - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
                 val panelTopPx = max(panel.y, workspaceTopGuardPx)
-                val maxHeightDp = ((surfaceSize.height - panelTopPx - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
+                val maxHeightDp = ((surfaceSize.height - workspaceTopGuardPx - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
                 val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore
@@ -6119,11 +6119,6 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
         EditorActionId.Save -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onSave)
         EditorActionId.Undo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.undo() }
         EditorActionId.Redo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.redo() }
-        EditorActionId.ZoomIn -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.zoomIn() }
-        EditorActionId.ZoomOut -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.zoomOut() }
-        EditorActionId.FitViewport -> WorkspaceRailActionSpec("Einpassen", editorActionIcon(id), enabled = hasSession) {
-            controller?.fitWorkspaceToCanvas(force = true)
-        }
         EditorActionId.AutoArrange -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
             controller?.autoArrangeWorkspace()
         }
@@ -6154,6 +6149,9 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
             }
             onExpandRequested()
         }
+        EditorActionId.ZoomIn,
+        EditorActionId.ZoomOut,
+        EditorActionId.FitViewport,
         EditorActionId.ToggleDataFlow,
         EditorActionId.ToggleRuntime,
         EditorActionId.ToggleDiagnostics,
@@ -6198,18 +6196,6 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
         EditorActionId.Redo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
             if (!onRedoWorkspace()) controller?.dispatch(FlowInteractionAction.RedoViewChange)
         }
-        EditorActionId.ZoomIn -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
-            controller?.dispatch(FlowInteractionAction.ZoomViewport(1.2, FlowPoint(0.0, 0.0)))
-        }
-        EditorActionId.ZoomOut -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
-            controller?.dispatch(FlowInteractionAction.ZoomViewport(1 / 1.2, FlowPoint(0.0, 0.0)))
-        }
-        EditorActionId.FitViewport -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
-            val view = controller?.snapshot()?.view ?: session?.viewDocument
-            if (controller != null && view != null) {
-                controller.replaceViewport(fitFlowchartViewport(view, panelSizePx))
-            }
-        }
         EditorActionId.AutoArrange -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
             controller?.replaceLayout(
                 FlowLayoutConfig(
@@ -6243,8 +6229,6 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
         )
         EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onRunDry)
         EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onRunLive)
-        EditorActionId.StepBack -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canStepBack, onClick = onStepBack)
-        EditorActionId.StepForward -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canStepForward, onClick = onStepForward)
         EditorActionId.DeleteSelection -> WorkspaceRailActionSpec(
             label = if (selectedEdgeId != null) "Kante löschen" else "Node löschen",
             icon = editorActionIcon(id),
@@ -6253,6 +6237,11 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
             selectedNodeId?.let(onDeleteNode) ?: selectedEdgeId?.let(onDisconnectEdge)
         }
         EditorActionId.OpenPalette -> WorkspaceRailActionSpec("Node-Palette", editorActionIcon(id), enabled = hasSession, onClick = onExpandRequested)
+        EditorActionId.ZoomIn,
+        EditorActionId.ZoomOut,
+        EditorActionId.FitViewport,
+        EditorActionId.StepBack,
+        EditorActionId.StepForward,
         EditorActionId.ToggleCollapse,
         EditorActionId.OpenBlockDesigner,
         EditorActionId.ClearWorkspace -> null

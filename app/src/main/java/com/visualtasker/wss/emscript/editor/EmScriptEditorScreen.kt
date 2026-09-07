@@ -183,6 +183,12 @@ fun EmScriptEditorScreen(
     LaunchedEffect(fontSizeSp) {
         uiState.fontSizeSp = fontSizeSp
     }
+    LaunchedEffect(activeDisplayIndex, fontSizeSp, lineMapping.size) {
+        if (activeDisplayIndex < 0) return@LaunchedEffect
+        val lineHeightPx = with(density) { (fontSizeSp * 1.7f).dp.toPx().toInt().coerceAtLeast(1) }
+        val targetTop = (activeDisplayIndex * lineHeightPx - lineHeightPx * 4).coerceAtLeast(0)
+        editorScrollState.animateScrollTo(targetTop)
+    }
     LaunchedEffect(activeTab.id, editorValue.selection.start, editorValue.selection.end) {
         uiState.selectionStarts[activeTab.id] = editorValue.selection.start
         uiState.selectionEnds[activeTab.id] = editorValue.selection.end

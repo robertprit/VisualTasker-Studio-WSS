@@ -4,13 +4,6 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.view.HapticFeedbackConstants
 import android.view.SoundEffectConstants
-import com.visualtasker.wss.visual.descriptor.VisualDescriptor
-import com.visualtasker.wss.visual.policy.DefaultVisualPolicyResolver
-import com.visualtasker.wss.visual.projections.FlowchartNodeVisualAdapter
-import com.visualtasker.wss.visual.projections.FlowchartNodeVisualSubject
-import com.visualtasker.wss.visual.semantics.ProjectionKind
-import com.visualtasker.wss.visual.semantics.VisualContext
-import com.visualtasker.wss.visual.semantics.VisualSemanticState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -485,7 +478,8 @@ fun FlowchartShellPanel(
         FlowchartRuntimeInspectorBottomSheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .fillMaxWidth(0.72f)
+                .padding(start = 8.dp, end = 116.dp, bottom = 4.dp),
             session = session,
             selectedNodeId = selectedNodeId,
             selectedEdgeId = selectedEdgeId,
@@ -828,12 +822,10 @@ private fun FlowchartRuntimeInspectorBottomSheet(
 ) {
     val node = selectedNodeId?.let { id -> session.graphDocument.nodes.firstOrNull { it.id == id } }
     val edge = selectedEdgeId?.let { id -> session.graphDocument.edges.firstOrNull { it.id == id } }
-    if (node == null && edge == null) return
     val density = LocalDensity.current
-    var sheetHeightDp by remember { mutableFloatStateOf(196f) }
+    var sheetHeightDp by remember { mutableFloatStateOf(128f) }
     Surface(
         modifier = modifier
-            .fillMaxWidth()
             .height(sheetHeightDp.dp),
         shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 14.dp, bottomEnd = 14.dp),
         color = Color(0xFF171121).copy(alpha = 0.96f),
@@ -854,12 +846,16 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                     .pointerInput(Unit) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
-                            sheetHeightDp = (sheetHeightDp - dragAmount.y / density.density).coerceIn(112f, 340f)
+                            sheetHeightDp = (sheetHeightDp - dragAmount.y / density.density).coerceIn(42f, 300f)
                         }
                     }
             )
             Text(
-                text = if (node != null) "Runtime Inspector" else "Edge Inspector",
+                text = when {
+                    node != null -> "Runtime Inspector"
+                    edge != null -> "Edge Inspector"
+                    else -> "Inspector"
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = Color(0xFFE9DFF5),
             )
@@ -888,6 +884,12 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                         runtimeSnapshot = runtimeSnapshot,
                         onDisconnectEdge = onDisconnectEdge,
                     )
+                } else {
+                    Text(
+                        text = "Keine Auswahl.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFE9DFF5).copy(alpha = 0.72f),
+                    )
                 }
             }
         }
@@ -908,77 +910,19 @@ private fun FlowchartNodeInspectorRows(
 ) {
     val status = runtimeSnapshot?.nodeStates?.get(node.id)?.name ?: "NO TRACE"
     val blockType = node.properties.stringValue("blockType") ?: "?"
-    val blockId = node.properties.stringValue("blockId") ?: node.id.value.removePrefix("block:")
-    val incoming = edges.count { it.targetNodeId == node.id }
-    val outgoing = edges.count { it.sourceNodeId == node.id }
-    val traversedIncoming = runtimeSnapshot?.traversedEdgeIds.orEmpty().count { edgeId ->
-        edges.any { it.id == edgeId && it.targetNodeId == node.id }
-    }
-    val traversedOutgoing = runtimeSnapshot?.traversedEdgeIds.orEmpty().count { edgeId ->
-        edges.any { it.id == edgeId && it.sourceNodeId == node.id }
-    }
     val nodeEvents = runtimeSnapshot?.runtimeEventsFor(node.id).orEmpty()
-    val lastEvent = nodeEvents.lastOrNull()
     val lastNotice = nodeEvents.lastOrNull { it.severity != "INFO" }
     val branchEvent = nodeEvents.lastOrNull { it.kind in setOf("if", "elseif", "else", "while", "loop") }
-    val variables = runtimeSnapshot?.runtimeVariables().orEmpty()
-    val commandId = node.properties.stringValue("commandId")
-    val commandName = node.properties.stringValue("commandName") ?: lastEvent?.command
-    val commandKind = node.properties.stringValue("commandKind")
-    val commandCapabilities = node.properties.stringValue("commandCapabilities") ?: lastEvent?.capability
-    val commandPluginOwner = node.properties.stringValue("commandPluginOwner") ?: lastEvent?.pluginOwner
-    val sourceLine = node.properties.textFor("sourceLine")
-    val sourceColumn = node.properties.textFor("sourceColumn")
-    val visualState = FlowchartNodeVisualAdapter.map(
-        FlowchartNodeVisualSubject(
-            node = node,
-            graph = graphDocument,
-            runtimeSnapshot = runtimeSnapshot,
-            selectedNodeId = selectedNodeId,
-        ),
-        VisualContext(projection = ProjectionKind.Flowchart),
-    )
-    val visualDescriptor = DefaultVisualPolicyResolver.resolve(
-        visualState,
-        VisualContext(projection = ProjectionKind.Flowchart),
-    )
+    val commandName = node.properties.stringValue("commandName") ?: nodeEvents.lastOrNull()?.command
     FlowchartNodeInspectorHeader(
         node = node,
         blockType = blockType,
         onReplaceNodeType = onReplaceNodeType,
     )
     InspectorLine("Status", status)
-    InspectorLine("VAL State", visualState.describeForInspector())
-    InspectorLine("VAL Descriptor", visualDescriptor.describeForInspector())
-    commandId?.let { InspectorLine("Command-ID", it) }
     commandName?.let { InspectorLine("Command", it) }
-    commandKind?.let { InspectorLine("Command-Typ", it) }
-    commandCapabilities?.let { InspectorLine("Capability", it) }
-    commandPluginOwner?.let { InspectorLine("Plugin", it) }
-    InspectorLine("Block", blockId)
-    sourceLine?.let { line ->
-        InspectorLine("Quelle", "EMScript Zeile $line${sourceColumn?.let { ", Spalte $it" }.orEmpty()}")
-    }
-    InspectorLine("Kanten", "in $traversedIncoming/$incoming, out $traversedOutgoing/$outgoing")
     lastNotice?.let { InspectorLine("Runtime", "${it.severity}: ${it.message}") }
     branchEvent?.let { InspectorLine("Entscheidung", "#${it.index} ${it.kind}: ${it.message}") }
-    InspectorLine("Event", lastEvent?.let { "#${it.index} ${it.kind}: ${it.message}" } ?: "-")
-    if (nodeEvents.size > 1) {
-        InspectorLine(
-            "Events",
-            nodeEvents.takeLast(3).joinToString(separator = " | ") { "#${it.index} ${it.kind}" },
-        )
-    }
-    if (variables.isNotEmpty()) {
-        InspectorLine(
-            "Variablen",
-            variables.entries.take(4).joinToString { "${it.key}=${it.value}" },
-        )
-    }
-    val diagnostics = runtimeSnapshot?.diagnostics.orEmpty().filter { it.nodeId == node.id }
-    if (diagnostics.isNotEmpty()) {
-        InspectorLine("Diagnose", diagnostics.joinToString { "${it.severity.name} ${it.code}: ${it.message}" })
-    }
     editableNodeFields(node).forEach { field ->
         OutlinedTextField(
             value = field.value,
@@ -1076,7 +1020,6 @@ private fun FlowchartNodeInspectorHeader(
                     }
             }
         }
-        InspectorLine("Typ", blockType)
     }
 }
 
@@ -1141,25 +1084,6 @@ private fun editableCommandArgumentFields(node: FlowGraphNode): List<EditableFlo
         }
 }
 
-private fun VisualSemanticState.describeForInspector(): String =
-    listOf(
-        "role=${role.name}",
-        "activity=${activity.name}",
-        "validation=${validation.name}",
-        "focus=${focus.name}",
-        "authority=${authority.name}",
-        "certainty=${certainty.name}",
-    ).joinToString(" | ")
-
-private fun VisualDescriptor.describeForInspector(): String =
-    listOf(
-        "shape=${shapeRole.name}",
-        "surface=${surfaceRole.name}",
-        "outline=${outlineRole.name}",
-        "motion=${motionRole.name}",
-        "badges=${badges.joinToString { it.role.name }.ifBlank { "-" }}",
-    ).joinToString(" | ")
-
 @Composable
 private fun FlowchartEdgeInspectorRows(
     edge: FlowGraphEdge,
@@ -1169,8 +1093,6 @@ private fun FlowchartEdgeInspectorRows(
     val status = if (edge.id in runtimeSnapshot?.traversedEdgeIds.orEmpty()) "TRAVERSED" else "NOT TRAVERSED"
     InspectorLine("Status", status)
     InspectorLine("Typ", edge.kind.name)
-    InspectorLine("Von", edge.sourceNodeId.value)
-    InspectorLine("Nach", edge.targetNodeId.value)
     edge.label?.let { InspectorLine("Label", it) }
     val diagnostics = runtimeSnapshot?.diagnostics.orEmpty().filter { it.edgeId == edge.id }
     if (diagnostics.isNotEmpty()) {
