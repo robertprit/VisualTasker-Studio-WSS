@@ -178,6 +178,7 @@ fun EmScriptEditorScreen(
     val activeDisplayIndex = remember(activeOriginalLine, lineMapping) {
         lineMapping.indexOfFirst { it.originalLine == activeOriginalLine }
     }
+    val activeLineHeightPx = with(density) { (fontSizeSp * 1.7f).dp.toPx().coerceAtLeast(1f) }
     val activeLineHighlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     val activeLineDotColor = if (activeSourceLine != null) {
         MaterialTheme.colorScheme.tertiary
@@ -190,7 +191,7 @@ fun EmScriptEditorScreen(
     }
     LaunchedEffect(activeDisplayIndex, fontSizeSp, lineMapping.size) {
         if (activeDisplayIndex < 0) return@LaunchedEffect
-        val lineHeightPx = with(density) { (fontSizeSp * 1.7f).dp.toPx().toInt().coerceAtLeast(1) }
+        val lineHeightPx = activeLineHeightPx.toInt().coerceAtLeast(1)
         val targetTop = (activeDisplayIndex * lineHeightPx - lineHeightPx * 4).coerceAtLeast(0)
         editorScrollState.animateScrollTo(targetTop)
     }
@@ -359,6 +360,22 @@ fun EmScriptEditorScreen(
                         .defaultMinSize(minWidth = 64.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
                         .drawBehind {
+                            if (activeDisplayIndex >= 0) {
+                                val lineTop = activeDisplayIndex * activeLineHeightPx
+                                drawRect(
+                                    color = activeLineHighlightColor.copy(alpha = 0.72f),
+                                    topLeft = Offset(0f, lineTop),
+                                    size = Size(size.width, activeLineHeightPx),
+                                )
+                                drawCircle(
+                                    color = activeLineDotColor,
+                                    radius = 7f * density.density,
+                                    center = Offset(
+                                        8f * density.density,
+                                        lineTop + activeLineHeightPx / 2f,
+                                    ),
+                                )
+                            }
                             val layout = textLayoutResult ?: return@drawBehind
                             lineMapping.forEachIndexed { displayIdx, info ->
                                 if (displayIdx >= layout.lineCount) return@forEachIndexed
@@ -466,6 +483,14 @@ fun EmScriptEditorScreen(
                         .weight(1f)
                         .horizontalScroll(editorHorizontalScrollState)
                         .drawBehind {
+                            if (activeDisplayIndex >= 0) {
+                                val lineTop = activeDisplayIndex * activeLineHeightPx
+                                drawRect(
+                                    color = activeLineHighlightColor,
+                                    topLeft = Offset(0f, lineTop),
+                                    size = Size(size.width, activeLineHeightPx),
+                                )
+                            }
                             val layout = textLayoutResult ?: return@drawBehind
                             if (activeDisplayIndex in 0 until layout.lineCount) {
                                 val lineTop = layout.getLineTop(activeDisplayIndex)

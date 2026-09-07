@@ -247,7 +247,7 @@ class FlowchartShellEditorSession(
         }
 }
 
-private val NORMALIZED_NODE_SIZE = FlowSize(144.0, 64.0)
+private val NORMALIZED_NODE_SIZE = FlowSize(164.0, 72.0)
 
 private fun FlowchartStatusCode.toShellRuntimePhase(): ShellRuntimePhase =
     when (this) {

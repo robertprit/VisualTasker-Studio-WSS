@@ -271,6 +271,7 @@ import de.visualtasker.blockeditor.domain.BlockId
 import de.visualtasker.blockeditor.registry.BlockDefinition
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
@@ -2566,7 +2567,12 @@ private fun WorkspacePanelContent(
                 onLiveRun = { onRunWorkspaceLive() },
                 canLiveRun = capabilityReport.realRunAllowed,
                 liveRunStatus = capabilityReport.summary,
-                activeSourceLine = activeRuntimeSourceLine(workflowState, flowRuntimeSnapshot),
+                activeSourceLine = activeRuntimeSourceLine(
+                    workflowState = workflowState,
+                    runtimeSnapshot = flowRuntimeSnapshot,
+                    visibleScriptText = emscriptSession.activeTab.content,
+                    projectedScriptText = latestEmscriptProjected,
+                ),
                 syntaxPaletteOverride = SyntaxHighlighter.Palette(
                     keyword = appearance.syntaxKeyword,
                     control = appearance.syntaxControl,
@@ -5558,10 +5564,19 @@ private fun String.dryRunEventIndexOrNull(): Int? =
 private fun activeRuntimeSourceLine(
     workflowState: WorkspaceWorkflowState,
     runtimeSnapshot: FlowRuntimeSnapshot?,
+    visibleScriptText: String,
+    projectedScriptText: String,
 ): Int? {
     val activeNodeId = runtimeSnapshot?.activeNodeId ?: return null
     val node = workflowState.flowchartProjection.graph.nodes.firstOrNull { it.id == activeNodeId } ?: return null
-    return node.properties.textValue("sourceLine")?.toDoubleOrNull()?.toInt()
+    node.properties.textValue("sourceLine")?.toDoubleOrNull()?.toInt()?.let { return it }
+    val commandName = node.properties.textValue("commandName")
+        ?: node.properties.textValue("command")
+        ?: node.properties.textValue("blockType")
+            ?.let { blockType -> VisualTaskerCommandCatalog.findByBlockType(blockType)?.canonicalName }
+        ?: return null
+    return findCommandLine(visibleScriptText, commandName)
+        ?: findCommandLine(projectedScriptText, commandName)
 }
 
 private fun Map<String, FlowSemanticValue>.textValue(key: String): String? =
@@ -5571,6 +5586,22 @@ private fun Map<String, FlowSemanticValue>.textValue(key: String): String? =
         is FlowSemanticValue.BooleanValue -> value.value.toString()
         else -> null
     }
+
+private fun findCommandLine(script: String, commandName: String): Int? {
+    if (script.isBlank() || commandName.isBlank()) return null
+    val escaped = Regex.escape(commandName)
+    val functionCall = Regex("""(^|\s)$escaped\s*\(""", RegexOption.IGNORE_CASE)
+    return script
+        .lineSequence()
+        .withIndex()
+        .firstOrNull { (_, line) ->
+            val trimmed = line.trim()
+            trimmed.isNotEmpty() &&
+                !trimmed.startsWith("//") &&
+                (functionCall.containsMatchIn(trimmed) || trimmed.equals(commandName, ignoreCase = true))
+        }
+        ?.let { it.index + 1 }
+}
 
 private data class RecorderTimelinePoint(
     val step: RecorderStepUi,
