@@ -486,39 +486,6 @@ fun EmScriptEditorScreen(
             }
         }
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = 1.dp,
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = "Proj: $projectionStatus | Status: $overallStatus | Rev: $revision",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = if (activeTab.readOnly) {
-                        "GENERATED PROJECTION (READ-ONLY) | Runtime: DRY_RUN_ONLY"
-                    } else {
-                        "LOCAL DRAFT - NOT APPLIED TO WORKSPACE | Runtime: DRY_RUN_ONLY"
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                diagnostics.take(3).forEach { message ->
-                    Text(
-                        text = "Diag: $message",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        }
     }
 
     if (showApplyPreview) {
