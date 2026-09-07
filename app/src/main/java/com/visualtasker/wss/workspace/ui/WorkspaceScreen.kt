@@ -204,6 +204,7 @@ import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
 import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
+import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
@@ -1925,6 +1926,37 @@ fun WorkspaceScreen(
                             )
                             isEmscriptPanel -> EmscriptCompactRail(
                                 onExpandRequested = onExpandRequested,
+                                onCompileCheck = {
+                                    val manual = emscriptSession.tabs
+                                        .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                                        ?.content
+                                        .orEmpty()
+                                    val result = EmscriptParserSlice().parse(manual)
+                                    if (result.isSuccess) {
+                                        studioLogStore.append(
+                                            level = StudioLogLevel.INFO,
+                                            source = "EMSCRIPT",
+                                            message = "Compile Check erfolgreich",
+                                            details = "Top-Level-Statements=${result.ir?.statements?.size ?: 0}",
+                                            documentRevision = workflowState.revision.toLong(),
+                                            groupKey = "emscript:compile-check:success"
+                                        )
+                                    } else {
+                                        val details = result.issues.joinToString(separator = "\n") { issue ->
+                                            "${issue.line}:${issue.column} ${issue.message}"
+                                        }
+                                        studioLogStore.append(
+                                            level = StudioLogLevel.ERROR,
+                                            source = "EMSCRIPT",
+                                            message = "Compile Check fehlgeschlagen",
+                                            details = details,
+                                            documentRevision = workflowState.revision.toLong(),
+                                            groupKey = "emscript:compile-check:failure"
+                                        )
+                                    }
+                                },
+                                onDryRun = { runCurrentWorkspaceDryRun("EMSCRIPT") },
+                                onLiveRun = { runCurrentWorkspaceLive("EMSCRIPT") },
                                 onSave = {
                                     val manual = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
                                     if (manual != null) {
@@ -1958,6 +1990,12 @@ fun WorkspaceScreen(
                                         groupKey = "emscript:file-loaded:$key"
                                     )
                                 },
+                                canCompile = emscriptSession.tabs
+                                    .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                                    ?.content
+                                    ?.isNotBlank() == true,
+                                canDryRun = workflowState.emscriptProjection.isSuccess,
+                                canLiveRun = workspaceRuntimeCapabilityGate().inspect(workflowState.document).realRunAllowed,
                                 canLoad = emscriptFileManager.scripts.containsKey(emscriptFileManager.currentName.trim())
                             )
                         }

@@ -14,8 +14,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AssistChip
@@ -282,11 +285,38 @@ internal fun EmscriptTextEditorPanel(
 @Composable
 internal fun ColumnScope.EmscriptCompactRail(
     onExpandRequested: () -> Unit,
+    onCompileCheck: () -> Unit,
+    onDryRun: () -> Unit,
+    onLiveRun: () -> Unit,
     onSave: () -> Unit,
     onLoad: () -> Unit,
+    canCompile: Boolean,
+    canDryRun: Boolean,
+    canLiveRun: Boolean,
     canLoad: Boolean
 ) {
     val compactIconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
+    TooltipIconButton(
+        tooltip = "Compile Check",
+        onClick = onCompileCheck,
+        enabled = canCompile
+    ) {
+        Icon(Icons.Default.Build, contentDescription = "Compile Check", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Dry-Run",
+        onClick = onDryRun,
+        enabled = canDryRun
+    ) {
+        Icon(Icons.Default.PlayArrow, contentDescription = "Dry-Run", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Live-Run",
+        onClick = onLiveRun,
+        enabled = canLiveRun
+    ) {
+        Icon(Icons.Default.PlayCircle, contentDescription = "Live-Run", tint = compactIconTint)
+    }
     TooltipIconButton(
         tooltip = "Dateimanager öffnen",
         onClick = onExpandRequested

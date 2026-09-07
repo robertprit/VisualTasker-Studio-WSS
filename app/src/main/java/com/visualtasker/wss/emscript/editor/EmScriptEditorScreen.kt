@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,21 +21,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.TextDecrease
-import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -212,99 +206,6 @@ fun EmScriptEditorScreen(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Surface(
-            tonalElevation = 2.dp,
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    EditorToolbarIconButton(Icons.AutoMirrored.Filled.NoteAdd, "Neu", {
-                        if (!activeTab.readOnly) {
-                            undoStack.add(activeTab.content)
-                            onSessionChange(session.updateManualContent(""))
-                        }
-                    }, enabled = !activeTab.readOnly)
-                    EditorToolbarIconButton(Icons.Default.Upload, "Projektion übernehmen", onUseProjection)
-                    EditorToolbarDivider()
-                    EditorToolbarIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", {
-                        if (undoStack.isNotEmpty() && !activeTab.readOnly) {
-                            val prev = undoStack.removeLast()
-                            redoStack.add(activeTab.content)
-                            onSessionChange(session.updateManualContent(prev))
-                        }
-                    }, enabled = !activeTab.readOnly && undoStack.isNotEmpty())
-                    EditorToolbarIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", {
-                        if (redoStack.isNotEmpty() && !activeTab.readOnly) {
-                            val next = redoStack.removeLast()
-                            undoStack.add(activeTab.content)
-                            onSessionChange(session.updateManualContent(next))
-                        }
-                    }, enabled = !activeTab.readOnly && redoStack.isNotEmpty())
-                    EditorToolbarDivider()
-                    EditorToolbarIconButton(Icons.Default.ContentCut, "Ausschneiden", {
-                        if (activeTab.readOnly) return@EditorToolbarIconButton
-                        val sel = editorValue.selection
-                        if (sel.length > 0) {
-                            clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
-                            val newText = editorValue.text.removeRange(sel.min, sel.max)
-                            onSessionChange(session.updateManualContent(newText))
-                        }
-                    }, enabled = !activeTab.readOnly)
-                    EditorToolbarIconButton(Icons.Default.ContentCopy, "Kopieren", {
-                        val sel = editorValue.selection
-                        if (sel.length > 0) {
-                            clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
-                        }
-                    })
-                    EditorToolbarIconButton(Icons.Default.ContentPaste, "Einfügen", {
-                        if (activeTab.readOnly) return@EditorToolbarIconButton
-                        val clip = clipboardManager.getText()?.text ?: return@EditorToolbarIconButton
-                        val sel = editorValue.selection
-                        val newText = editorValue.text.replaceRange(sel.min, sel.max, clip)
-                        onSessionChange(session.updateManualContent(newText))
-                    }, enabled = !activeTab.readOnly)
-                }
-                Spacer(Modifier.weight(1f))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    EditorToolbarIconButton(Icons.Default.Build, "Compile Check", onCompileCheck, enabled = activeTab.content.isNotBlank())
-                    EditorToolbarIconButton(Icons.Default.PlayArrow, "Run Dry", onDryRun, enabled = canDryRun)
-                    EditorToolbarIconButton(Icons.Default.PlayCircle, "Run Live", onLiveRun, enabled = canLiveRun)
-                    EditorToolbarIconButton(Icons.Default.Pause, "Pause (NOT_IMPLEMENTED)", {}, enabled = false)
-                    EditorToolbarIconButton(Icons.Default.Stop, "Stop (NOT_IMPLEMENTED)", {}, enabled = false)
-                    EditorToolbarIconButton(Icons.Default.Done, "Apply", {
-                        val preview = onRequestApplyPreview()
-                        if (preview != null) {
-                            applyPreviewText = preview
-                            showApplyPreview = true
-                        }
-                    }, enabled = canApplyDraft)
-                    EditorToolbarIconButton(Icons.Default.TextDecrease, "Text kleiner", {
-                        fontSizeSp = (fontSizeSp - 1f).coerceAtLeast(9f)
-                    })
-                    EditorToolbarIconButton(Icons.Default.TextIncrease, "Text größer", {
-                        fontSizeSp = (fontSizeSp + 1f).coerceAtMost(24f)
-                    })
-                    EditorToolbarIconButton(
-                        Icons.Default.Search,
-                        "Suchen/Ersetzen",
-                        { showFindReplace = true },
-                    )
-                }
-            }
-        }
-
         if (visibleTabs.size > 1) {
             TabRow(selectedTabIndex = visibleTabs.indexOfFirst { it.id == activeTab.id }.coerceAtLeast(0)) {
                 visibleTabs.forEach { tab ->
@@ -527,6 +428,78 @@ fun EmScriptEditorScreen(
                         )
                     ),
                     onTextLayout = { result -> textLayoutResult = result },
+                )
+            }
+        }
+
+        Surface(
+            tonalElevation = 2.dp,
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EditorToolbarIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", {
+                    if (undoStack.isNotEmpty() && !activeTab.readOnly) {
+                        val prev = undoStack.removeLast()
+                        redoStack.add(activeTab.content)
+                        onSessionChange(session.updateManualContent(prev))
+                    }
+                }, enabled = !activeTab.readOnly && undoStack.isNotEmpty())
+                EditorToolbarIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", {
+                    if (redoStack.isNotEmpty() && !activeTab.readOnly) {
+                        val next = redoStack.removeLast()
+                        undoStack.add(activeTab.content)
+                        onSessionChange(session.updateManualContent(next))
+                    }
+                }, enabled = !activeTab.readOnly && redoStack.isNotEmpty())
+                EditorToolbarDivider()
+                EditorToolbarIconButton(Icons.Default.ContentCut, "Ausschneiden", {
+                    if (activeTab.readOnly) return@EditorToolbarIconButton
+                    val sel = editorValue.selection
+                    if (sel.length > 0) {
+                        clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
+                        val newText = editorValue.text.removeRange(sel.min, sel.max)
+                        onSessionChange(session.updateManualContent(newText))
+                    }
+                }, enabled = !activeTab.readOnly)
+                EditorToolbarIconButton(Icons.Default.ContentCopy, "Kopieren", {
+                    val sel = editorValue.selection
+                    if (sel.length > 0) {
+                        clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
+                    }
+                })
+                EditorToolbarIconButton(Icons.Default.ContentPaste, "Einfügen", {
+                    if (activeTab.readOnly) return@EditorToolbarIconButton
+                    val clip = clipboardManager.getText()?.text ?: return@EditorToolbarIconButton
+                    val sel = editorValue.selection
+                    val newText = editorValue.text.replaceRange(sel.min, sel.max, clip)
+                    onSessionChange(session.updateManualContent(newText))
+                }, enabled = !activeTab.readOnly)
+                EditorToolbarDivider()
+                EditorToolbarIconButton(Icons.Default.Done, "Draft anwenden", {
+                    val preview = onRequestApplyPreview()
+                    if (preview != null) {
+                        applyPreviewText = preview
+                        showApplyPreview = true
+                    }
+                }, enabled = canApplyDraft)
+                EditorToolbarDivider()
+                EditorToolbarIconButton(Icons.Default.TextDecrease, "Text kleiner", {
+                    fontSizeSp = (fontSizeSp - 1f).coerceAtLeast(9f)
+                })
+                EditorToolbarIconButton(Icons.Default.TextIncrease, "Text größer", {
+                    fontSizeSp = (fontSizeSp + 1f).coerceAtMost(24f)
+                })
+                EditorToolbarIconButton(
+                    Icons.Default.Search,
+                    "Suchen/Ersetzen",
+                    { showFindReplace = true },
                 )
             }
         }
