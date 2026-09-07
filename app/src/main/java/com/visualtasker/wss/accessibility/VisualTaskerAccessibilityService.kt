@@ -9,6 +9,7 @@ import android.os.Build
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.visualtasker.wss.workspace.model.RecordingEventStore
 import java.io.File
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -23,7 +24,9 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        event?.let(RecordingEventStore::recordAccessibilityEvent)
+    }
 
     override fun onInterrupt() = Unit
 

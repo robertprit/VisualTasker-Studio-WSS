@@ -239,6 +239,7 @@ import com.visualtasker.wss.workspace.model.PanelAction
 import com.visualtasker.wss.workspace.model.PanelActionSink
 import com.visualtasker.wss.workspace.model.PanelState
 import com.visualtasker.wss.workspace.model.PanelType
+import com.visualtasker.wss.workspace.model.RecordingEventStore
 import com.visualtasker.wss.workspace.model.RecorderStepUi
 import com.visualtasker.wss.workspace.model.StepStatus
 import com.visualtasker.wss.workspace.plugin.ShellDocumentId
@@ -1574,6 +1575,19 @@ fun WorkspaceScreen(
             RecorderStepUi("step-4", "Bestaetigen", "tap", StepStatus.Executed, timestampMs = 3600, durationMs = 220, activityName = "DashboardActivity")
         )
     }
+    var recordingSteps by remember(context) { mutableStateOf(RecordingEventStore.latestRecordingSteps(context)) }
+    LaunchedEffect(context) {
+        var lastRecordingSignature = RecordingEventStore.latestRecordingFile(context)?.recordingSignature().orEmpty()
+        while (true) {
+            delay(1_000)
+            val latestFile = RecordingEventStore.latestRecordingFile(context)
+            val currentSignature = latestFile?.recordingSignature().orEmpty()
+            if (currentSignature != lastRecordingSignature) {
+                lastRecordingSignature = currentSignature
+                recordingSteps = latestFile?.let { RecordingEventStore.run { it.toRecorderSteps() } }.orEmpty()
+            }
+        }
+    }
     // Workspace shell stays truth-neutral: runtime projection wins over external projection, then demo data.
     val dryRunRecorderSteps = remember(workspaceDryRunResult, workspaceDryRunRevision, workflowState.revision) {
         if (workspaceDryRunRevision == workflowState.revision.toLong()) {
@@ -1585,6 +1599,7 @@ fun WorkspaceScreen(
     val projectedSteps = when {
         dryRunRecorderSteps.isNotEmpty() -> dryRunRecorderSteps
         recorderStepsProjection != null -> recorderStepsProjection.invoke()
+        recordingSteps.isNotEmpty() -> recordingSteps
         else -> demoRecorderSteps
     }
     val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
@@ -5032,6 +5047,9 @@ private fun screenshotCanvasAssetSignature(context: Context): Long =
         .fold(17L) { signature, file ->
             31L * signature + file.absolutePath.hashCode() + file.lastModified() + file.length()
         }
+
+private fun File.recordingSignature(): String =
+    "$absolutePath:${lastModified()}:${length()}"
 
 private fun screenshotCanvasAssetRoots(context: Context): List<File> =
     listOfNotNull(

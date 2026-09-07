@@ -16,6 +16,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
+import com.visualtasker.wss.workspace.model.RecordingEventStore
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -37,7 +38,6 @@ class StudioOverlayService : Service() {
         const val ACTION_CAPTURE_SCREENSHOT = "com.visualtasker.wss.overlay.CAPTURE_SCREENSHOT"
         const val ACTION_TOGGLE_RECORDING = "com.visualtasker.wss.overlay.TOGGLE_RECORDING"
 
-        private const val RECORDS_DIR = "emscript-runtime/records"
     }
 
     private lateinit var windowManager: WindowManager
@@ -46,9 +46,6 @@ class StudioOverlayService : Service() {
     private var statusView: TextView? = null
     private var recordingStatusView: TextView? = null
     private var recordingButton: Button? = null
-    private var recordingSessionFile: File? = null
-    private var recordingStartedAtMs: Long = 0L
-    private var recordingEventIndex: Int = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -194,7 +191,7 @@ class StudioOverlayService : Service() {
             setOnClickListener { captureScreenshot() }
         }
         val record = Button(this).apply {
-            text = if (recordingSessionFile == null) "Aufnahme starten" else "Aufnahme stoppen"
+            text = if (RecordingEventStore.isRecording()) "Aufnahme stoppen" else "Aufnahme starten"
             textSize = 11f
             setOnClickListener { toggleRecording() }
         }
@@ -257,7 +254,7 @@ class StudioOverlayService : Service() {
     }
 
     private fun toggleRecording() {
-        if (recordingSessionFile == null) {
+        if (!RecordingEventStore.isRecording()) {
             startOverlayRecording()
         } else {
             stopOverlayRecording()
@@ -265,50 +262,26 @@ class StudioOverlayService : Service() {
     }
 
     private fun startOverlayRecording() {
-        val target = File(filesDir, "$RECORDS_DIR/overlay-${timestamp()}.jsonl")
-        target.parentFile?.mkdirs()
-        recordingSessionFile = target
-        recordingStartedAtMs = System.currentTimeMillis()
-        recordingEventIndex = 0
-        recordOverlayEvent("recording.started", "file=${target.name}")
+        val target = RecordingEventStore.start(this)
         setStatus("Aufnahme laeuft: ${target.name}")
         updateRecordingUi()
     }
 
     private fun stopOverlayRecording() {
-        val target = recordingSessionFile ?: return
-        recordOverlayEvent("recording.stopped", "durationMs=${System.currentTimeMillis() - recordingStartedAtMs}")
-        recordingSessionFile = null
+        val target = RecordingEventStore.stop() ?: return
         setStatus("Aufnahme gespeichert: ${target.name}")
         updateRecordingUi()
     }
 
     private fun recordOverlayEvent(kind: String, message: String) {
-        val target = recordingSessionFile ?: return
-        val now = System.currentTimeMillis()
-        val line = buildString {
-            append("{\"index\":")
-            append(recordingEventIndex++)
-            append(",\"timestampMs\":")
-            append(now)
-            append(",\"elapsedMs\":")
-            append(now - recordingStartedAtMs)
-            append(",\"source\":\"floatingOverlay\"")
-            append(",\"kind\":\"")
-            append(kind.jsonEscape())
-            append("\"")
-            append(",\"message\":\"")
-            append(message.jsonEscape())
-            append("\"}")
-        }
-        runCatching { target.appendText(line + "\n") }
+        RecordingEventStore.recordOverlayEvent(kind, message, mapOf("message" to message))
     }
 
     private fun updateRecordingUi() {
-        val running = recordingSessionFile != null
+        val running = RecordingEventStore.isRecording()
         recordingButton?.text = if (running) "Stop" else "Rec"
         recordingStatusView?.text = if (running) {
-            "Aufnahme: ${recordingSessionFile?.name.orEmpty()}"
+            "Aufnahme: ${RecordingEventStore.activeFileName().orEmpty()}"
         } else {
             "Aufnahme: aus"
         }
@@ -323,20 +296,6 @@ class StudioOverlayService : Service() {
 
     private fun timestamp(): String =
         SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
-
-    private fun String.jsonEscape(): String =
-        buildString(length) {
-            this@jsonEscape.forEach { char ->
-                when (char) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    else -> append(char)
-                }
-            }
-        }
 
     private fun createOverlayShell(
         key: String,

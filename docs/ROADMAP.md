@@ -76,7 +76,7 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Floating Toolbar fuer Aufnahme, Screenshot, Marker und Runtime-Aktionen fertigstellen.
 - [ ] Floating Inspector fuer LiveMarker und ausgewählte UI-Elemente anbinden.
 - [ ] LiveMarker Overlay fuer Region, Point, Swipe, Spline, Path und Multi-Modus umsetzen.
-- [ ] Recording Start/Stop aus Overlay erreichbar machen.
+- [x] Recording Start/Stop aus Overlay erreichbar machen.
 - [ ] Overlay-Zustaende speichern und wiederherstellen.
 
 ### M5: Marker, Canvas Und Vision
@@ -167,3 +167,4 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [x] Harte Workspace-Grenzen rechts und unten mit Dock-Reserve umgesetzt.
 - [x] Magnetisches Andocken an Workspace- und Nachbarpanel-Kanten vorbereitet.
 - [x] FlowEditor Auto-Pan beim Node-/Facet-Drag am Viewportrand korrigiert und per Regressionstest abgesichert.
+- [x] Einfache Recording-JSONL-Pipeline fuer Overlay und Accessibility-Events angelegt und Stepper-Projektion angebunden.
