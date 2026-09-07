@@ -1183,6 +1183,34 @@ fun WorkspaceScreen(
             }
         }
     }
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            emscriptSession.tabs
+                .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                ?.content
+                .orEmpty()
+        }
+            .debounce(650)
+            .collect { content ->
+                if (content.isBlank()) return@collect
+                when (val preview = emscriptApplyGuard.preview(content, workspaceId = "workflow-main")) {
+                    is EmscriptApplyGuardResult.Success -> {
+                        if (preview.serializedWorkspaceJson != workflowState.serializedJson) {
+                            applyWorkspaceJsonChange(preview.serializedWorkspaceJson, WORKFLOW_SOURCE_EMSCRIPT_APPLY)
+                            studioLogStore.append(
+                                level = StudioLogLevel.DEBUG,
+                                source = "EMSCRIPT",
+                                message = "Texteditor automatisch synchronisiert",
+                                details = "Blöcke=${preview.blockCount}, Roots=${preview.rootCount}",
+                                documentRevision = workflowState.revision.toLong(),
+                                groupKey = "emscript:auto-apply:${preview.serializedWorkspaceJson.hashCode()}"
+                            )
+                        }
+                    }
+                    is EmscriptApplyGuardResult.Failure -> Unit
+                }
+            }
+    }
     val undoWorkspaceChange: () -> Boolean = {
         val previous = workspaceUndoStack.removeLastOrNull()
         if (previous == null) {

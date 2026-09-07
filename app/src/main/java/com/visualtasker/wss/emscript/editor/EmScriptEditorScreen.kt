@@ -483,11 +483,7 @@ fun EmScriptEditorScreen(
                 }, enabled = !activeTab.readOnly)
                 EditorToolbarDivider()
                 EditorToolbarIconButton(Icons.Default.Done, "Draft anwenden", {
-                    val preview = onRequestApplyPreview()
-                    if (preview != null) {
-                        applyPreviewText = preview
-                        showApplyPreview = true
-                    }
+                    onConfirmApply()
                 }, enabled = canApplyDraft)
                 EditorToolbarDivider()
                 EditorToolbarIconButton(Icons.Default.TextDecrease, "Text kleiner", {
