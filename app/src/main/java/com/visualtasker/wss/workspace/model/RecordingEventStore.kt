@@ -99,10 +99,17 @@ object RecordingEventStore {
 
     fun File.toRecorderSteps(): List<RecorderStepUi> {
         if (!isFile) return emptyList()
+        var currentActivity: String? = null
         return readLines()
             .mapNotNull(::parseRecordingEventLine)
             .filterNot { it.kind == "recording.started" || it.kind == "recording.stopped" }
             .map { event ->
+                val eventActivity = event.attributes["activity"]
+                    ?: event.attributes["package"]
+                    ?: event.source
+                if (event.kind == "activity.change") {
+                    currentActivity = eventActivity
+                }
                 RecorderStepUi(
                     id = "record-${nameWithoutExtension}-${event.index}",
                     label = event.label,
@@ -110,7 +117,7 @@ object RecordingEventStore {
                     status = StepStatus.Recorded,
                     timestampMs = event.elapsedMs,
                     durationMs = event.durationMs(),
-                    activityName = event.attributes["activity"] ?: event.attributes["package"] ?: event.source,
+                    activityName = if (event.kind == "activity.change") eventActivity else currentActivity ?: eventActivity,
                     detail = event.detail(),
                 )
             }

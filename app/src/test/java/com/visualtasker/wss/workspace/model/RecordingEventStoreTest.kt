@@ -23,6 +23,7 @@ class RecordingEventStoreTest {
         assertEquals("LoginActivity", steps[0].activityName)
         assertEquals("Click Login", steps[1].label)
         assertEquals("click", steps[1].actionType)
+        assertEquals("LoginActivity", steps[1].activityName)
         assertEquals(StepStatus.Recorded, steps[1].status)
     }
 
