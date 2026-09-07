@@ -179,6 +179,11 @@ fun EmScriptEditorScreen(
         lineMapping.indexOfFirst { it.originalLine == activeOriginalLine }
     }
     val activeLineHighlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    val activeLineDotColor = if (activeSourceLine != null) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.outline
+    }
 
     LaunchedEffect(fontSizeSp) {
         uiState.fontSizeSp = fontSizeSp
@@ -364,6 +369,14 @@ fun EmScriptEditorScreen(
                                         color = activeLineHighlightColor,
                                         topLeft = Offset(0f, lineTop),
                                         size = Size(size.width, lineBottom - lineTop),
+                                    )
+                                    drawCircle(
+                                        color = activeLineDotColor,
+                                        radius = 4.5f * density.density,
+                                        center = Offset(
+                                            6f * density.density,
+                                            lineTop + (lineBottom - lineTop) / 2f,
+                                        ),
                                     )
                                 }
                                 val lineNo = textMeasurer.measure(
