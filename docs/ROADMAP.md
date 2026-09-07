@@ -56,7 +56,7 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Ports fuer oben/unten Sequence und seitliche Branch/Dataflow-Verbindungen festlegen.
 - [ ] Dock, Undock, Detach und magnetische Ports verlaesslich machen.
 - [ ] Auto-Arrange mit kurzem Routing, wenig Kreuzungen und stabilem Hauptstamm haerten.
-- [ ] Auto-Pan beim Draggen am Viewportrand wie im BlockEditor einbauen.
+- [x] Auto-Pan beim Draggen am Viewportrand wie im BlockEditor einbauen.
 - [ ] Kanten-Hervorhebung fuer selektierte Nodes und einzeln selektierte Edges finalisieren.
 - [ ] Facet-Handles weiter polieren, Collapse-Verhalten releasefest machen.
 
@@ -166,3 +166,4 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [x] Panel-Resize-Griff vergroessert und sichtbarer gemacht.
 - [x] Harte Workspace-Grenzen rechts und unten mit Dock-Reserve umgesetzt.
 - [x] Magnetisches Andocken an Workspace- und Nachbarpanel-Kanten vorbereitet.
+- [x] FlowEditor Auto-Pan beim Node-/Facet-Drag am Viewportrand korrigiert und per Regressionstest abgesichert.
