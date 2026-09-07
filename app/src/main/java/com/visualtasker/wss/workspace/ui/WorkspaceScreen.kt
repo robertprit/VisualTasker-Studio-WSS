@@ -2638,7 +2638,10 @@ private fun WorkspacePanelContent(
                 activeSourceLine = activeRuntimeSourceLine(
                     workflowState = workflowState,
                     runtimeSnapshot = flowRuntimeSnapshot,
-                    visibleScriptText = emscriptSession.activeTab.content,
+                    visibleScriptText = emscriptSession.tabs
+                        .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                        ?.content
+                        .orEmpty(),
                     projectedScriptText = latestEmscriptProjected,
                 ),
                 syntaxPaletteOverride = SyntaxHighlighter.Palette(

@@ -91,6 +91,9 @@ internal fun EmscriptTextEditorPanel(
     var dryRunDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var dryRunSequence by remember { mutableStateOf(0L) }
 
+    fun manualScript(): String =
+        session.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }?.content.orEmpty()
+
     fun buildApplyPreview(): String? {
         val manual = session.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
             ?: return null
@@ -116,14 +119,14 @@ internal fun EmscriptTextEditorPanel(
     }
 
     fun compileCheck() {
-        val result = parser.parse(session.activeTab.content)
+        val result = parser.parse(manualScript())
         if (result.isSuccess) {
             dryRunDiagnostics = listOf("Compile Check OK: ${result.ir?.statements?.size ?: 0} Top-Level-Statements.")
             logStore.append(
                 level = StudioLogLevel.INFO,
                 source = "EMSCRIPT",
                 message = "Compile Check erfolgreich",
-                details = "Tab=${session.activeTab.title}",
+                details = "Tab=Manuell",
                 documentRevision = workspaceJson.hashCode().toLong(),
                 groupKey = "emscript:compile-check:success"
             )
@@ -154,7 +157,7 @@ internal fun EmscriptTextEditorPanel(
         val irGraph = workspaceDocument?.let { IrGraphGenerator().generate(it) }
         val result = workspaceDocument
             ?.let(workspaceDryRunRuntime::run)
-            ?: dryRunRuntime.run(session.activeTab.content)
+            ?: dryRunRuntime.run(manualScript())
         dryRunSequence += 1
         if (irGraph != null) {
             onDryRunRuntimeSnapshot(
@@ -199,7 +202,7 @@ internal fun EmscriptTextEditorPanel(
     }
 
     EmScriptEditorScreen(
-        session = session,
+        session = session.selectTab(EmscriptEditorSession.MANUAL_TAB_ID),
         projectionStatus = EMSCRIPT_PROJECTION_STATUS_RUNNING,
         overallStatus = EMSCRIPT_STATUS_READ_ONLY_PROJECTION,
         revision = workspaceJson.hashCode(),
@@ -229,7 +232,7 @@ internal fun EmscriptTextEditorPanel(
         },
         onCompileCheck = ::compileCheck,
         onDryRun = ::dryRun,
-        canDryRun = session.activeTab.content.isNotBlank(),
+        canDryRun = manualScript().isNotBlank(),
         onLiveRun = {
             dryRunDiagnostics = listOf(
                 "Live-Run nutzt das gemeinsame WorkspaceDocument.",
@@ -238,7 +241,7 @@ internal fun EmscriptTextEditorPanel(
             onLiveRun()
         },
         canLiveRun = canLiveRun,
-        canApplyDraft = session.activeTab.id == EmscriptEditorSession.MANUAL_TAB_ID,
+        canApplyDraft = true,
         onRequestApplyPreview = ::buildApplyPreview,
         onConfirmApply = {
             val nextJson = pendingApplyJson ?: buildApplyPreview()?.let { pendingApplyJson }

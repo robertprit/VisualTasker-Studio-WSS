@@ -118,7 +118,12 @@ fun EmScriptEditorScreen(
     activeSourceLine: Int? = null,
     modifier: Modifier = Modifier,
 ) {
-    val activeTab = session.activeTab
+    val visibleTabs = session.tabs.filter { tab ->
+        tab.id == EmscriptEditorSession.MANUAL_TAB_ID || !tab.executionLocked
+    }
+    val activeTab = visibleTabs.firstOrNull { it.id == session.activeTabId }
+        ?: visibleTabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+        ?: session.activeTab
     var fontSizeSp by remember(uiState.fontSizeSp) { mutableStateOf(uiState.fontSizeSp.coerceIn(9f, 24f)) }
     var showFindReplace by remember { mutableStateOf(false) }
     var showApplyPreview by remember { mutableStateOf(false) }
@@ -300,46 +305,48 @@ fun EmScriptEditorScreen(
             }
         }
 
-        TabRow(selectedTabIndex = session.tabs.indexOfFirst { it.id == session.activeTabId }.coerceAtLeast(0)) {
-            session.tabs.forEach { tab ->
-                Tab(
-                    selected = tab.id == session.activeTabId,
-                    onClick = { onSessionChange(session.selectTab(tab.id)) },
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text(
-                                text = buildString {
-                                    append(tab.title)
-                                    if (tab.dirty) append(" *")
-                                },
-                            )
-                            if (tab.id != EmscriptEditorSession.MANUAL_TAB_ID) {
-                                TooltipBox(
-                                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                                    tooltip = { PlainTooltip { Text("Tab schließen") } },
-                                    state = rememberTooltipState(),
-                                ) {
-                                    IconButton(
-                                        onClick = { onSessionChange(session.closeTab(tab.id)) },
-                                        modifier = Modifier.width(20.dp).height(20.dp),
+        if (visibleTabs.size > 1) {
+            TabRow(selectedTabIndex = visibleTabs.indexOfFirst { it.id == activeTab.id }.coerceAtLeast(0)) {
+                visibleTabs.forEach { tab ->
+                    Tab(
+                        selected = tab.id == activeTab.id,
+                        onClick = { onSessionChange(session.selectTab(tab.id)) },
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = buildString {
+                                        append(tab.title)
+                                        if (tab.dirty) append(" *")
+                                    },
+                                )
+                                if (tab.id != EmscriptEditorSession.MANUAL_TAB_ID) {
+                                    TooltipBox(
+                                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                        tooltip = { PlainTooltip { Text("Tab schließen") } },
+                                        state = rememberTooltipState(),
                                     ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Tab schließen")
+                                        IconButton(
+                                            onClick = { onSessionChange(session.closeTab(tab.id)) },
+                                            modifier = Modifier.width(20.dp).height(20.dp),
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Tab schließen")
+                                        }
                                     }
                                 }
                             }
-                        }
-                    },
-                    icon = {
-                        if (tab.executionLocked) {
-                            Icon(Icons.Default.Stop, contentDescription = "Read-Only")
-                        } else {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Ausführbar")
-                        }
-                    },
-                )
+                        },
+                        icon = {
+                            if (tab.executionLocked) {
+                                Icon(Icons.Default.Stop, contentDescription = "Read-Only")
+                            } else {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Ausführbar")
+                            }
+                        },
+                    )
+                }
             }
         }
 
