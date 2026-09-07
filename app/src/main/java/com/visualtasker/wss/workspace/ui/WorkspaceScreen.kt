@@ -240,6 +240,7 @@ import com.visualtasker.wss.workspace.model.PanelActionSink
 import com.visualtasker.wss.workspace.model.PanelState
 import com.visualtasker.wss.workspace.model.PanelType
 import com.visualtasker.wss.workspace.model.RecordingEventStore
+import com.visualtasker.wss.workspace.model.RecordingSessionUi
 import com.visualtasker.wss.workspace.model.RecorderStepUi
 import com.visualtasker.wss.workspace.model.StepStatus
 import com.visualtasker.wss.workspace.plugin.ShellDocumentId
@@ -1575,7 +1576,11 @@ fun WorkspaceScreen(
             RecorderStepUi("step-4", "Bestaetigen", "tap", StepStatus.Executed, timestampMs = 3600, durationMs = 220, activityName = "DashboardActivity")
         )
     }
-    var recordingSteps by remember(context) { mutableStateOf(RecordingEventStore.latestRecordingSteps(context)) }
+    var recordingSessions by remember(context) { mutableStateOf(RecordingEventStore.recordingSessions(context)) }
+    var selectedRecordingSessionPath by remember(context) { mutableStateOf(recordingSessions.firstOrNull()?.path) }
+    var recordingSteps by remember(context) {
+        mutableStateOf(RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath))
+    }
     LaunchedEffect(context) {
         var lastRecordingSignature = RecordingEventStore.latestRecordingFile(context)?.recordingSignature().orEmpty()
         while (true) {
@@ -1584,9 +1589,16 @@ fun WorkspaceScreen(
             val currentSignature = latestFile?.recordingSignature().orEmpty()
             if (currentSignature != lastRecordingSignature) {
                 lastRecordingSignature = currentSignature
-                recordingSteps = latestFile?.let { RecordingEventStore.run { it.toRecorderSteps() } }.orEmpty()
+                recordingSessions = RecordingEventStore.recordingSessions(context)
+                if (selectedRecordingSessionPath == null || recordingSessions.none { it.path == selectedRecordingSessionPath }) {
+                    selectedRecordingSessionPath = recordingSessions.firstOrNull()?.path
+                }
+                recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
             }
         }
+    }
+    LaunchedEffect(selectedRecordingSessionPath) {
+        recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
     }
     // Workspace shell stays truth-neutral: runtime projection wins over external projection, then demo data.
     val dryRunRecorderSteps = remember(workspaceDryRunResult, workspaceDryRunRevision, workflowState.revision) {
@@ -2196,9 +2208,12 @@ fun WorkspaceScreen(
                         flowchartRuntimeVisible = flowchartRuntimeVisible,
                         flowchartDiagnosticsVisible = flowchartDiagnosticsVisible,
                         stepperPanelState = stepperPanelState,
+                        recordingSessions = recordingSessions,
+                        selectedRecordingSessionPath = selectedRecordingSessionPath,
                         onFlowchartDataFlowVisibleChange = { flowchartDataFlowVisible = it },
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
+                        onRecordingSessionSelected = { path -> selectedRecordingSessionPath = path },
                         onStepperStateSave = { state ->
                             stepperPanelState = state
                             uiPrefs.edit().putString(STEPPER_STATE_PREF_KEY, state.encode()).apply()
@@ -2590,10 +2605,13 @@ private fun WorkspacePanelContent(
     flowchartRuntimeVisible: Boolean,
     flowchartDiagnosticsVisible: Boolean,
     stepperPanelState: StepperPanelState = StepperPanelState(),
+    recordingSessions: List<RecordingSessionUi> = emptyList(),
+    selectedRecordingSessionPath: String? = null,
     onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
     onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
     onFlowchartDiagnosticsVisibleChange: (Boolean) -> Unit = {},
     onStepperStateSave: (StepperPanelState) -> Unit = {},
+    onRecordingSessionSelected: (String) -> Unit = {},
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     logConsoleState: LogConsoleUiState,
@@ -2636,6 +2654,9 @@ private fun WorkspacePanelContent(
             activeRuntimeStepIndex = activeRuntimeStepIndex,
             initialState = stepperPanelState,
             onSaveState = onStepperStateSave,
+            recordingSessions = recordingSessions,
+            selectedRecordingSessionPath = selectedRecordingSessionPath,
+            onRecordingSessionSelected = onRecordingSessionSelected,
         )
         PanelType.BlockEditor -> BlockEditorPanel(
             panelId = panel.id,
@@ -5402,6 +5423,9 @@ private fun RecorderStepsPanel(
     activeRuntimeStepIndex: Int? = null,
     initialState: StepperPanelState = StepperPanelState(),
     onSaveState: (StepperPanelState) -> Unit = {},
+    recordingSessions: List<RecordingSessionUi> = emptyList(),
+    selectedRecordingSessionPath: String? = null,
+    onRecordingSessionSelected: (String) -> Unit = {},
 ) {
     var selectedStepId by remember { mutableStateOf(initialState.selectedStepId) }
     var replayIndex by remember { mutableIntStateOf(initialState.replayIndex) }
@@ -5421,6 +5445,8 @@ private fun RecorderStepsPanel(
     val timelineEndMs = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStartMs + 1L) ?: 1L
     val safeIndex = replayIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0))
     val activeStep = steps.getOrNull(safeIndex)
+    var sessionMenuExpanded by remember { mutableStateOf(false) }
+    val selectedSession = recordingSessions.firstOrNull { it.path == selectedRecordingSessionPath }
 
     LaunchedEffect(steps.size) {
         if (replayIndex > steps.lastIndex) replayIndex = steps.lastIndex.coerceAtLeast(0)
@@ -5494,6 +5520,44 @@ private fun RecorderStepsPanel(
                         modifier = Modifier.size(34.dp),
                     ) {
                         Icon(Icons.Default.Save, contentDescription = "Stepper-Stand speichern", modifier = Modifier.size(18.dp))
+                    }
+                }
+                if (recordingSessions.isNotEmpty()) {
+                    Box {
+                        AssistChip(
+                            onClick = { sessionMenuExpanded = true },
+                            leadingIcon = {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            label = {
+                                Text(
+                                    selectedSession?.let { "${it.label} | ${it.stepCount} Steps" }
+                                        ?: "Recording Session waehlen",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
+                        DropdownMenu(
+                            expanded = sessionMenuExpanded,
+                            onDismissRequest = { sessionMenuExpanded = false },
+                        ) {
+                            recordingSessions.forEach { session ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "${session.label} | ${session.stepCount} Steps | ${session.durationMs.formatTimelineMillis()}",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    },
+                                    onClick = {
+                                        sessionMenuExpanded = false
+                                        onRecordingSessionSelected(session.path)
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
                 RecorderTimeline(

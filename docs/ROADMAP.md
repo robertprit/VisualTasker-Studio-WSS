@@ -99,8 +99,8 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 
 ### M7: Recording Und Stepper
 
-- [ ] Recording Sessions speichern und laden.
-- [ ] Stepper Session-Liste und aktive Session-Auswahl einfuehren.
+- [x] Recording Sessions speichern und laden.
+- [x] Stepper Session-Liste und aktive Session-Auswahl einfuehren.
 - [ ] Timeline fuer passive Activity-/Scene-Dauer und aktive Events weiter haerten.
 - [ ] Replay Schritt vor/zurueck und Speed-Control mit echten Recording-Daten testen.
 - [ ] Stepper-Fokus mit TextEditor, BlockEditor und FlowEditor dauerhaft synchron halten.
@@ -168,3 +168,4 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [x] Magnetisches Andocken an Workspace- und Nachbarpanel-Kanten vorbereitet.
 - [x] FlowEditor Auto-Pan beim Node-/Facet-Drag am Viewportrand korrigiert und per Regressionstest abgesichert.
 - [x] Einfache Recording-JSONL-Pipeline fuer Overlay und Accessibility-Events angelegt und Stepper-Projektion angebunden.
+- [x] Stepper kann gespeicherte Recording-Sessions auflisten und eine aktive Session als Step-Projektion anzeigen.

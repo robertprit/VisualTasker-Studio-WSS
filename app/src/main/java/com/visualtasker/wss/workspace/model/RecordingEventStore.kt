@@ -73,6 +73,30 @@ object RecordingEventStore {
     fun latestRecordingSteps(context: Context): List<RecorderStepUi> =
         latestRecordingFile(context)?.toRecorderSteps().orEmpty()
 
+    fun recordingSessions(context: Context): List<RecordingSessionUi> =
+        File(context.filesDir, RECORDS_DIR)
+            .listFiles { file -> file.isFile && file.extension == "jsonl" }
+            .orEmpty()
+            .sortedByDescending { it.lastModified() }
+            .map { file ->
+                val steps = file.toRecorderSteps()
+                RecordingSessionUi(
+                    path = file.absolutePath,
+                    fileName = file.name,
+                    label = file.nameWithoutExtension.removePrefix("overlay-").ifBlank { file.nameWithoutExtension },
+                    lastModifiedMs = file.lastModified(),
+                    stepCount = steps.size,
+                    durationMs = steps.maxOfOrNull { (it.timestampMs ?: 0L) + (it.durationMs ?: 0L) } ?: 0L,
+                )
+            }
+
+    fun recordingStepsFor(path: String?): List<RecorderStepUi> =
+        path
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::File)
+            ?.toRecorderSteps()
+            .orEmpty()
+
     fun File.toRecorderSteps(): List<RecorderStepUi> {
         if (!isFile) return emptyList()
         return readLines()
@@ -271,3 +295,12 @@ private fun String.jsonEscape(): String =
             }
         }
     }
+
+data class RecordingSessionUi(
+    val path: String,
+    val fileName: String,
+    val label: String,
+    val lastModifiedMs: Long,
+    val stepCount: Int,
+    val durationMs: Long,
+)
