@@ -80,6 +80,7 @@ fun DarkPanel(
     railExpandedFillHeight: Boolean = false,
     compactRailContent: @Composable ColumnScope.(onExpandRequested: () -> Unit) -> Unit = {},
     railContent: @Composable ColumnScope.() -> Unit = {},
+    headerLeadingContent: @Composable () -> Unit = {},
     isActiveTarget: Boolean,
     snapEnabled: Boolean,
     gridSizeDp: Int,
@@ -246,6 +247,7 @@ fun DarkPanel(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            headerLeadingContent()
                             Icon(
                                 imageVector = Icons.Default.ChevronRight,
                                 contentDescription = null,

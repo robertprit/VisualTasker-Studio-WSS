@@ -110,6 +110,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -1804,6 +1806,22 @@ fun WorkspaceScreen(
                         else -> 186.dp
                     },
                     railExpandedFillHeight = isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
+                    headerLeadingContent = {
+                        PanelTypeSwitchButton(
+                            currentType = panel.type,
+                            onSelect = { type ->
+                                updatePanel(panels, panel.id) {
+                                    it.copy(
+                                        type = type,
+                                        title = displayNameForPanelType(type),
+                                        accentColor = defaultAccentForPanelType(type),
+                                    )
+                                }
+                                focusedPanelId = panel.id
+                                bridge.onPanelAction(PanelAction.OpenPanel(type))
+                            },
+                        )
+                    },
                     compactRailContent = { onExpandRequested ->
                         when {
                             isScreenshotPanel -> ScreenshotCanvasCompactRail(
@@ -2151,18 +2169,19 @@ fun WorkspaceScreen(
         }
 
         MinimizedDock(
-            panels = panels.filter { it.minimized },
-            onRestore = { id ->
+            panels = panels,
+            focusedPanelId = focusedPanelId,
+            onSelect = { id ->
                 updatePanel(panels, id) { it.copy(minimized = false, zIndex = nextZ++) }
                 focusedPanelId = id
             },
             modifier = Modifier
-                .align(if (dockAtTop) Alignment.TopEnd else Alignment.BottomEnd)
+                .align(if (dockAtTop) Alignment.TopEnd else Alignment.BottomStart)
                 .padding(
-                    start = 12.dp,
-                    end = 84.dp,
+                    start = 0.dp,
+                    end = if (dockAtTop) 12.dp else 84.dp,
                     top = if (dockAtTop) (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP).dp else 0.dp,
-                    bottom = if (dockAtTop) 0.dp else 12.dp
+                    bottom = 0.dp
                 )
         )
 
@@ -2174,46 +2193,11 @@ fun WorkspaceScreen(
                     color = MaterialTheme.colorScheme.primary
                 ) { showAddPanelDialog = true },
                 FabAction(
-                    icon = Icons.Default.ViewKanban,
-                    label = "BlockEditor öffnen",
-                    color = M3EColors.Limepop
-                ) {
-                    openPanel(PanelType.BlockEditor)
-                },
-                FabAction(
-                    icon = Icons.Default.Polyline,
-                    label = "Flowchart öffnen",
-                    color = M3EColors.Oceanneon
-                ) {
-                    openPanel(PanelType.Flowchart)
-                },
-                FabAction(
-                    icon = Icons.Default.Photo,
-                    label = "Canvas öffnen",
-                    color = M3EColors.Mint
-                ) {
-                    openPanel(PanelType.Screenshot)
-                },
-                FabAction(
                     icon = Icons.Default.Visibility,
                     label = "Floating Shot",
                     color = M3EColors.Amber
                 ) {
                     launchFloatingOverlay(FloatingOverlayTarget.Toolbar)
-                },
-                FabAction(
-                    icon = Icons.Default.CenterFocusStrong,
-                    label = "Vision öffnen",
-                    color = M3EColors.Oceanneon
-                ) {
-                    openPanel(PanelType.Vision)
-                },
-                FabAction(
-                    icon = Icons.Default.FolderOpen,
-                    label = "Datastore öffnen",
-                    color = M3EColors.Violet
-                ) {
-                    openPanel(PanelType.Datastore)
                 },
                 FabAction(
                     icon = Icons.Default.AutoAwesomeMosaic,
@@ -5978,6 +5962,46 @@ private fun Float.formatSpeedStep(): String =
     }
 
 @Composable
+private fun PanelTypeSwitchButton(
+    currentType: PanelType,
+    onSelect: (PanelType) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TooltipIconButton(
+            tooltip = "Panelinhalt wechseln",
+            onClick = { expanded = true },
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                imageVector = iconForPanelType(currentType),
+                contentDescription = "Panelinhalt wechseln",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            supportedWorkspacePanelTypes
+                .sortedBy { displayNameForPanelType(it) }
+                .forEach { type ->
+                    DropdownMenuItem(
+                        text = { Text(displayNameForPanelType(type)) },
+                        leadingIcon = { Icon(iconForPanelType(type), contentDescription = null) },
+                        enabled = type != currentType,
+                        onClick = {
+                            expanded = false
+                            onSelect(type)
+                        },
+                    )
+                }
+        }
+    }
+}
+
+@Composable
 private fun BlockEditorPanel(
     panelId: String,
     uiPrefs: android.content.SharedPreferences,
@@ -6739,13 +6763,14 @@ private fun FlowchartPanel(
 @Composable
 private fun MinimizedDock(
     panels: List<PanelState>,
-    onRestore: (String) -> Unit,
+    focusedPanelId: String,
+    onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (panels.isEmpty()) return
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(topEnd = 12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
     ) {
         LazyRow(
@@ -6753,7 +6778,29 @@ private fun MinimizedDock(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             itemsIndexed(panels, key = { _, panel -> panel.id }) { _, panel ->
-                AssistChip(onClick = { onRestore(panel.id) }, label = { Text(displayTitleForPanel(panel)) })
+                val alpha = when {
+                    panel.minimized -> 1f
+                    panel.id == focusedPanelId -> 0.76f
+                    else -> 0.48f
+                }
+                AssistChip(
+                    onClick = { onSelect(panel.id) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = iconForPanelType(panel.type),
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    label = { Text(displayTitleForPanel(panel)) },
+                    modifier = Modifier.background(Color.Transparent).clip(RoundedCornerShape(10.dp)),
+                    colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
+                        containerColor = panel.accentColor.copy(alpha = alpha * 0.22f),
+                        labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                        leadingIconContentColor = panel.accentColor.copy(alpha = alpha),
+                    ),
+                    border = BorderStroke(1.dp, panel.accentColor.copy(alpha = alpha * 0.58f)),
+                )
             }
         }
     }
