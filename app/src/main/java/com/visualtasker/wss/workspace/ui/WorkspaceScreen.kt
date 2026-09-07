@@ -198,6 +198,8 @@ import com.visualtasker.wss.components.IconMotionEngine
 import com.visualtasker.wss.components.DarkPanel
 import com.visualtasker.wss.components.FabAction
 import com.visualtasker.wss.components.M3EExpandableFAB
+import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
+import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import com.visualtasker.wss.overlay.StudioOverlayService
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
@@ -1110,6 +1112,7 @@ fun WorkspaceScreen(
         }
     }
     val logConsoleState = remember { LogConsoleUiState() }
+    val emscriptApplyGuard = remember { EmscriptApplyGuard() }
     fun replaceWorkflowStateFromJson(updated: String, source: String) {
         workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
         flowRuntimeSnapshot = null
@@ -1147,6 +1150,35 @@ fun WorkspaceScreen(
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:workflow-updated:$source"
             )
+        }
+    }
+    fun applyLoadedEmscriptScript(name: String, content: String) {
+        emscriptSession = emscriptSession
+            .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
+            .updateManualContent(content)
+        uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+        when (val preview = emscriptApplyGuard.preview(content, workspaceId = "workflow-main")) {
+            is EmscriptApplyGuardResult.Success -> {
+                applyWorkspaceJsonChange(preview.serializedWorkspaceJson, WORKFLOW_SOURCE_EMSCRIPT_APPLY)
+                studioLogStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "EMSCRIPT",
+                    message = "Script geladen und angewendet",
+                    details = "Name=$name, Blöcke=${preview.blockCount}, Roots=${preview.rootCount}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "emscript:file-loaded-applied:$name"
+                )
+            }
+            is EmscriptApplyGuardResult.Failure -> {
+                studioLogStore.append(
+                    level = StudioLogLevel.ERROR,
+                    source = "EMSCRIPT",
+                    message = "Script geladen, Apply fehlgeschlagen",
+                    details = "Name=$name\n${preview.message}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "emscript:file-loaded-apply-failed:$name"
+                )
+            }
         }
     }
     val undoWorkspaceChange: () -> Boolean = {
@@ -1883,7 +1915,11 @@ fun WorkspaceScreen(
                                 onExpandRequested = onExpandRequested,
                                 onSave = {
                                     blockEditorSessionState.value?.let { persistBlockEditorSession(uiPrefs, it) }
-                                }
+                                },
+                                onRunDry = { runCurrentWorkspaceDryRun("BLOCKEDITOR") },
+                                onRunLive = { runCurrentWorkspaceLive("BLOCKEDITOR") },
+                                canDryRun = workflowState.emscriptProjection.isSuccess,
+                                canLiveRun = workspaceRuntimeCapabilityGate().inspect(workflowState.document).realRunAllowed,
                             )
                             isFlowchartPanel -> FlowchartCompactActionRail(
                                 session = flowchartSessionState.value,
@@ -1977,18 +2013,7 @@ fun WorkspaceScreen(
                                 onLoad = {
                                     val key = emscriptFileManager.currentName.trim().ifBlank { return@EmscriptCompactRail }
                                     val content = emscriptFileManager.scripts[key] ?: return@EmscriptCompactRail
-                                    emscriptSession = emscriptSession
-                                        .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
-                                        .updateManualContent(content)
-                                    uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
-                                    studioLogStore.append(
-                                        level = StudioLogLevel.INFO,
-                                        source = "EMSCRIPT",
-                                        message = "Script geladen",
-                                        details = "Name=$key",
-                                        documentRevision = workflowState.revision.toLong(),
-                                        groupKey = "emscript:file-loaded:$key"
-                                    )
+                                    applyLoadedEmscriptScript(key, content)
                                 },
                                 canCompile = emscriptSession.tabs
                                     .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -2055,18 +2080,7 @@ fun WorkspaceScreen(
                                 onLoad = { name ->
                                     val content = emscriptFileManager.scripts[name] ?: return@EmscriptExpandedRail
                                     emscriptFileManager.currentName = name
-                                    emscriptSession = emscriptSession
-                                        .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
-                                        .updateManualContent(content)
-                                    uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
-                                    studioLogStore.append(
-                                        level = StudioLogLevel.INFO,
-                                        source = "EMSCRIPT",
-                                        message = "Script geladen",
-                                        details = "Name=$name",
-                                        documentRevision = workflowState.revision.toLong(),
-                                        groupKey = "emscript:file-loaded:$name"
-                                    )
+                                    applyLoadedEmscriptScript(name, content)
                                 },
                                 onDelete = { name ->
                                     if (name == "draft") return@EmscriptExpandedRail
@@ -6265,9 +6279,21 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    canDryRun: Boolean,
+    canLiveRun: Boolean,
 ) {
     val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.BlockEditor).mapNotNull { descriptor ->
-        descriptor.toBlockEditorRailAction(session, onExpandRequested, onSave)
+        descriptor.toBlockEditorRailAction(
+            session = session,
+            onExpandRequested = onExpandRequested,
+            onSave = onSave,
+            onRunDry = onRunDry,
+            onRunLive = onRunLive,
+            canDryRun = canDryRun,
+            canLiveRun = canLiveRun,
+        )
     }
     Column(
         modifier = Modifier
@@ -6302,6 +6328,10 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    canDryRun: Boolean,
+    canLiveRun: Boolean,
 ): WorkspaceRailActionSpec? {
     val controller = session?.controller
     val hasSession = session != null
@@ -6339,14 +6369,14 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
             }
             onExpandRequested()
         }
+        EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canDryRun, onClick = onRunDry)
+        EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canLiveRun, onClick = onRunLive)
         EditorActionId.ZoomIn,
         EditorActionId.ZoomOut,
         EditorActionId.FitViewport,
         EditorActionId.ToggleDataFlow,
         EditorActionId.ToggleRuntime,
         EditorActionId.ToggleDiagnostics,
-        EditorActionId.RunDry,
-        EditorActionId.RunLive,
         EditorActionId.StepBack,
         EditorActionId.StepForward -> null
     }
