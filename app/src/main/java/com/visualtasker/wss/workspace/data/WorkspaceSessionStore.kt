@@ -58,9 +58,7 @@ class WorkspaceSessionStore(context: Context) {
                             zIndex = p.optInt("zIndex", index + 1),
                             minimized = p.optBoolean("minimized", false),
                             locked = p.optBoolean("locked", false),
-                            accentColor = androidx.compose.ui.graphics.Color(
-                                p.optLong("accent", defaultAccentForPanelType(type).value.toLong())
-                            ),
+                            accentColor = restorePanelAccent(type, p.optLong("accent", defaultAccentForPanelType(type).value.toLong())),
                             isMaximized = p.optBoolean("maximized", false)
                         )
                     )
@@ -98,10 +96,21 @@ internal fun defaultAccentForPanelType(type: PanelType): androidx.compose.ui.gra
     PanelType.TextEditor -> androidx.compose.ui.graphics.Color(0xFF8EC5FC)
     PanelType.LogConsole -> androidx.compose.ui.graphics.Color(0xFFFFC857)
     PanelType.DebugInfo -> androidx.compose.ui.graphics.Color(0xFFB39DDB)
-    PanelType.Screenshot,
-    PanelType.Marker,
-    PanelType.Vision,
-    PanelType.Datastore,
-    PanelType.Emscript,
+    PanelType.Screenshot -> androidx.compose.ui.graphics.Color(0xFF7C4DFF)
+    PanelType.Marker -> androidx.compose.ui.graphics.Color(0xFFFF5DA2)
+    PanelType.Vision -> androidx.compose.ui.graphics.Color(0xFF21E6C1)
+    PanelType.Datastore -> androidx.compose.ui.graphics.Color(0xFF8BC34A)
+    PanelType.Emscript -> androidx.compose.ui.graphics.Color(0xFFFFB74D)
     PanelType.M3Director -> androidx.compose.ui.graphics.Color(0xFF6C5CE7)
 }
+
+private fun restorePanelAccent(type: PanelType, raw: Long): androidx.compose.ui.graphics.Color {
+    val default = defaultAccentForPanelType(type)
+    if (raw == LEGACY_GENERIC_PANEL_ACCENT && default.value.toLong() != LEGACY_GENERIC_PANEL_ACCENT) {
+        return default
+    }
+    val color = androidx.compose.ui.graphics.Color(raw)
+    return if (color.alpha < 0.35f) default else color
+}
+
+private const val LEGACY_GENERIC_PANEL_ACCENT = 0xFF6C5CE7L

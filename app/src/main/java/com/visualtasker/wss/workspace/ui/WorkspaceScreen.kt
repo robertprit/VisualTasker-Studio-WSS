@@ -315,6 +315,7 @@ private const val GRID_STEP_SMALL = 24f
 private const val GRID_STEP_LARGE = 48f
 private const val WORKSPACE_TOP_BAR_HEIGHT_DP = 64f
 private const val WORKSPACE_PANEL_MARGIN_DP = 12f
+private const val WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP = 44f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
@@ -1530,6 +1531,7 @@ fun WorkspaceScreen(
     val density = scaledDensity.density
     val gridSizeDp = if (useLargeGrid) GridSystem.GRID_SIZE_DP_LARGE else GridSystem.GRID_SIZE_DP_SMALL
     val workspaceTopGuardPx = (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP) * density
+    val workspaceBottomGuardPx = if (dockAtTop) 0f else WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP * density
 
     val demoRecorderSteps = remember {
         mutableStateListOf(
@@ -1607,7 +1609,7 @@ fun WorkspaceScreen(
                     PANEL_DEFAULT_W
                 },
                 height = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) {
-                    ((surfaceSize.height / density) - (workspaceTopGuardPx / density) - 48f).coerceAtLeast(PANEL_DEFAULT_H)
+                    ((surfaceSize.height - workspaceTopGuardPx - workspaceBottomGuardPx) / density).coerceAtLeast(PANEL_DEFAULT_H)
                 } else {
                     PANEL_DEFAULT_H
                 },
@@ -1778,7 +1780,8 @@ fun WorkspaceScreen(
                         panels = panels,
                         surfaceSize = surfaceSize,
                         focusedPanelId = focusedPanelId,
-                        topInsetPx = workspaceTopGuardPx
+                        topInsetPx = workspaceTopGuardPx,
+                        bottomInsetPx = workspaceBottomGuardPx,
                     )
                 },
                 onOpenPanel = openPanel,
@@ -1792,9 +1795,21 @@ fun WorkspaceScreen(
         panels.sortedBy { it.zIndex }.forEach { panel ->
             if (panel.minimized) return@forEach
             key(panel.id) {
-                val maxWidthDp = ((surfaceSize.width - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
                 val panelTopPx = max(panel.y, workspaceTopGuardPx)
-                val maxHeightDp = ((surfaceSize.height - workspaceTopGuardPx - 16f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
+                val maxWidthDp = ((surfaceSize.width - panel.x).coerceAtLeast(0f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
+                val maxHeightDp = ((surfaceSize.height - panelTopPx - workspaceBottomGuardPx).coerceAtLeast(0f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
+                val panelWidthPx = panel.width * density
+                val panelHeightPx = panel.height * density
+                val panelMaxXPx = max(0f, surfaceSize.width - panelWidthPx)
+                val panelMaxYPx = max(workspaceTopGuardPx, surfaceSize.height - workspaceBottomGuardPx - panelHeightPx)
+                val snapTargets = panelSnapTargets(
+                    panels = panels,
+                    activePanel = panel,
+                    density = density,
+                    surfaceSize = surfaceSize,
+                    topGuardPx = workspaceTopGuardPx,
+                    bottomGuardPx = workspaceBottomGuardPx,
+                )
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
                 val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore
@@ -1819,8 +1834,10 @@ fun WorkspaceScreen(
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
                     minPositionYPx = workspaceTopGuardPx,
-                    maxPositionXPx = max(0f, surfaceSize.width - panel.width * density - 16f),
-                    maxPositionYPx = max(workspaceTopGuardPx, surfaceSize.height - panel.height * density - 16f),
+                    maxPositionXPx = panelMaxXPx,
+                    maxPositionYPx = panelMaxYPx,
+                    snapTargetXPx = snapTargets.x,
+                    snapTargetYPx = snapTargets.y,
                     showRail = true,
                     railExpandedOverride = railExpanded,
                     onRailExpandedChange = { expanded ->
@@ -2049,9 +2066,9 @@ fun WorkspaceScreen(
                         updatePanel(panels, panel.id) {
                             val panelWidthPx = it.width * density
                             val panelHeightPx = it.height * density
-                            val maxPanelY = max(workspaceTopGuardPx, surfaceSize.height - panelHeightPx - 16f)
+                            val maxPanelY = max(workspaceTopGuardPx, surfaceSize.height - workspaceBottomGuardPx - panelHeightPx)
                             it.copy(
-                                x = newPos.x.coerceIn(0f, max(0f, surfaceSize.width - panelWidthPx - 16f)),
+                                x = newPos.x.coerceIn(0f, max(0f, surfaceSize.width - panelWidthPx)),
                                 y = newPos.y.coerceIn(workspaceTopGuardPx, maxPanelY)
                             )
                         }
@@ -2252,7 +2269,9 @@ fun WorkspaceScreen(
                     autoArrangePanels(
                         panels = panels,
                         surfaceSize = surfaceSize,
-                        focusedPanelId = focusedPanelId
+                        focusedPanelId = focusedPanelId,
+                        topInsetPx = workspaceTopGuardPx,
+                        bottomInsetPx = workspaceBottomGuardPx,
                     )
                 },
                 FabAction(
@@ -2325,7 +2344,8 @@ fun WorkspaceScreen(
                     panels = panels,
                     surfaceSize = surfaceSize,
                     focusedPanelId = focusedPanelId,
-                    topInsetPx = workspaceTopGuardPx
+                    topInsetPx = workspaceTopGuardPx,
+                    bottomInsetPx = workspaceBottomGuardPx,
                 )
             },
             onColorPick = { color ->
@@ -6963,7 +6983,8 @@ private fun autoArrangePanels(
     panels: MutableList<PanelState>,
     surfaceSize: IntSize,
     focusedPanelId: String,
-    topInsetPx: Float = WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP
+    topInsetPx: Float = WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP,
+    bottomInsetPx: Float = WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP,
 ) {
     val visible = panels.filter { !it.minimized }.sortedBy { it.zIndex }
     if (visible.isEmpty() || surfaceSize.width <= 0 || surfaceSize.height <= 0) return
@@ -6971,7 +6992,7 @@ private fun autoArrangePanels(
     val columns = max(1, ceil(sqrt(visible.size.toFloat())).toInt())
     val gap = 14f
     val availableWidth = surfaceSize.width - 64f
-    val availableHeight = surfaceSize.height - topInsetPx - 32f
+    val availableHeight = surfaceSize.height - topInsetPx - bottomInsetPx
     val cellW = ((availableWidth - ((columns - 1) * gap)) / columns).coerceAtLeast(PANEL_MIN_W)
     val rows = ceil(visible.size / columns.toFloat()).toInt()
     val cellH = ((availableHeight - ((rows - 1) * gap)) / rows).coerceAtLeast(PANEL_MIN_H)
@@ -6984,16 +7005,61 @@ private fun autoArrangePanels(
         val targetH = if (isFocused) (cellH * 1.08f).coerceAtMost(availableHeight) else cellH
         val nx = 52f + col * (cellW + gap)
         val ny = topInsetPx + row * (cellH + gap)
+        val maxY = max(topInsetPx, surfaceSize.height - bottomInsetPx - targetH)
         val idx = panels.indexOfFirst { it.id == panel.id }
         if (idx >= 0) {
             panels[idx] = panels[idx].copy(
                 x = nx,
-                y = ny,
+                y = ny.coerceIn(topInsetPx, maxY),
                 width = targetW,
                 height = targetH
             )
         }
     }
+}
+
+private data class PanelSnapTargets(
+    val x: List<Float>,
+    val y: List<Float>,
+)
+
+private fun panelSnapTargets(
+    panels: List<PanelState>,
+    activePanel: PanelState,
+    density: Float,
+    surfaceSize: IntSize,
+    topGuardPx: Float,
+    bottomGuardPx: Float,
+): PanelSnapTargets {
+    if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return PanelSnapTargets(emptyList(), emptyList())
+    val activeWidthPx = activePanel.width * density
+    val activeHeightPx = activePanel.height * density
+    val maxX = max(0f, surfaceSize.width - activeWidthPx)
+    val maxY = max(topGuardPx, surfaceSize.height - bottomGuardPx - activeHeightPx)
+    val xTargets = mutableListOf(0f, maxX)
+    val yTargets = mutableListOf(topGuardPx, maxY)
+
+    panels.asSequence()
+        .filter { it.id != activePanel.id && !it.minimized }
+        .forEach { panel ->
+            val left = panel.x
+            val top = max(panel.y, topGuardPx)
+            val right = panel.x + panel.width * density
+            val bottom = top + panel.height * density
+            xTargets += left
+            xTargets += right
+            xTargets += left - activeWidthPx
+            xTargets += right - activeWidthPx
+            yTargets += top
+            yTargets += bottom
+            yTargets += top - activeHeightPx
+            yTargets += bottom - activeHeightPx
+        }
+
+    return PanelSnapTargets(
+        x = xTargets.map { it.coerceIn(0f, maxX) }.distinct(),
+        y = yTargets.map { it.coerceIn(topGuardPx, maxY) }.distinct(),
+    )
 }
 
 private fun updatePanel(

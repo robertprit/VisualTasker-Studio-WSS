@@ -90,6 +90,8 @@ fun DarkPanel(
     minPositionYPx: Float = 0f,
     maxPositionXPx: Float = Float.POSITIVE_INFINITY,
     maxPositionYPx: Float = Float.POSITIVE_INFINITY,
+    snapTargetXPx: List<Float> = emptyList(),
+    snapTargetYPx: List<Float> = emptyList(),
     railExpandedOverride: Boolean? = null,
     onRailExpandedChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -116,6 +118,11 @@ fun DarkPanel(
         Log.d(DARK_PANEL_LOG_TAG, "focus panel=${panel.id} title=${panel.title} z=${panel.zIndex}")
         onFocusRequest()
         onZIndexChange()
+    }
+    fun snappedPosition(candidate: Offset): Offset {
+        if (!snapEnabled || panel.isMaximized) return clampedPosition(candidate)
+        val gridSnapped = GridSystem.snapPosition(candidate, gridSizeDp)
+        return clampedPosition(snapToPanelEdges(gridSnapped, snapTargetXPx, snapTargetYPx))
     }
 
     LaunchedEffect(panel.position) {
@@ -172,11 +179,20 @@ fun DarkPanel(
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .border(
-                width = if (isActiveTarget) 2.dp else 1.dp,
-                color = if (isActiveTarget) panel.accentColor else MaterialTheme.colorScheme.outlineVariant,
+                width = if (isActiveTarget) 2.5.dp else 1.5.dp,
+                color = panel.accentColor.copy(alpha = if (isActiveTarget) 0.98f else 0.58f),
                 shape = RoundedCornerShape(20.dp)
             )
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(
+                    width = 1.dp,
+                    color = panel.accentColor.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(20.dp)
+                )
+        )
         Row(modifier = Modifier.fillMaxSize()) {
             if (!panel.isMinimized && showRail) {
                 CollapsibleIconRail(
@@ -209,7 +225,10 @@ fun DarkPanel(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color.Transparent)
+                            .background(
+                                color = panel.accentColor.copy(alpha = if (isActiveTarget) 0.10f else 0.06f),
+                                shape = RoundedCornerShape(10.dp),
+                            )
                             .clickable {
                                 Log.d(DARK_PANEL_LOG_TAG, "header click panel=${panel.id} active=$isActiveTarget")
                                 focusPanel()
@@ -224,10 +243,8 @@ fun DarkPanel(
                                     onDragEnd = {
                                         Log.d(DARK_PANEL_LOG_TAG, "header dragEnd panel=${panel.id}")
                                         isDragging = false
-                                        if (snapEnabled && !panel.isMaximized) {
-                                            position = GridSystem.snapPosition(position, gridSizeDp)
-                                            onPositionChange(position)
-                                        }
+                                        position = snappedPosition(position)
+                                        onPositionChange(position)
                                     },
                                     onDragCancel = {
                                         Log.d(DARK_PANEL_LOG_TAG, "header dragCancel panel=${panel.id}")
@@ -235,7 +252,11 @@ fun DarkPanel(
                                     },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
-                                        position = clampedPosition(position + dragAmount)
+                                        position = snapToPanelEdges(
+                                            candidate = clampedPosition(position + dragAmount),
+                                            targetsX = snapTargetXPx,
+                                            targetsY = snapTargetYPx,
+                                        )
                                         onPositionChange(position)
                                     }
                                 )
@@ -387,6 +408,7 @@ fun DarkPanel(
 
 private const val DARK_PANEL_LOG_TAG = "VTWSS/DarkPanel"
 private const val PANEL_MIN_SIZE_DP = 144
+private const val PANEL_EDGE_SNAP_THRESHOLD_PX = 18f
 
 private enum class ResizeAnchor { Right, Bottom, BottomEnd }
 
@@ -423,6 +445,21 @@ private fun resizePanel(
     if (nextWidth != liveWidth || nextHeight != liveHeight) onSizeChange(nextWidth, nextHeight)
 }
 
+private fun snapToPanelEdges(
+    candidate: Offset,
+    targetsX: List<Float>,
+    targetsY: List<Float>,
+): Offset =
+    Offset(
+        x = nearestSnapTarget(candidate.x, targetsX),
+        y = nearestSnapTarget(candidate.y, targetsY),
+    )
+
+private fun nearestSnapTarget(value: Float, targets: List<Float>): Float {
+    val target = targets.minByOrNull { kotlin.math.abs(it - value) } ?: return value
+    return if (kotlin.math.abs(target - value) <= PANEL_EDGE_SNAP_THRESHOLD_PX) target else value
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PanelIconButtonWithTooltip(
@@ -453,12 +490,12 @@ private fun ResizeHandle(
 ) {
     val handleModifier = when (kind) {
         ResizeHandleKind.EdgeRight -> Modifier
-            .width(14.dp)
+            .width(24.dp)
             .fillMaxSize()
         ResizeHandleKind.EdgeBottom -> Modifier
-            .height(14.dp)
+            .height(24.dp)
             .fillMaxSize()
-        else -> Modifier.size(28.dp)
+        else -> Modifier.size(42.dp)
     }
     Box(
         modifier = modifier
@@ -484,11 +521,19 @@ private fun ResizeHandle(
             )
             return@Box
         }
-        Icon(
-            imageVector = Icons.Default.DragHandle,
-            contentDescription = "Resize",
-            tint = accentColor.copy(alpha = 0.6f),
-            modifier = Modifier.size(14.dp)
-        )
+        Surface(
+            shape = RoundedCornerShape(topStart = 16.dp),
+            color = accentColor.copy(alpha = 0.20f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(alpha = 0.82f)),
+        ) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "Resize",
+                tint = accentColor.copy(alpha = 0.96f),
+                modifier = Modifier
+                    .padding(7.dp)
+                    .size(22.dp)
+            )
+        }
     }
 }
