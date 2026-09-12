@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 9
+    const val integrationTestScriptVersion: Int = 13
 
     val sampleScript: String = """
         LET v1 = 1
@@ -137,10 +137,7 @@ object EditorDefaults {
 
         log("core-runtime-start")
         wait(50)
-        click("Start")
-        clickPoint(120, 240, 1)
-        swipe([120, 640, 120, 220], 1)
-        screenshot("core-screen.png")
+        log("interactive-input-actions-skipped")
         datastorePut("catalog.result", result)
         datastoreGet("catalog.result")
         markerSave("catalogRegion", region(10, 20, 240, 160), "region", 0.85)
@@ -155,6 +152,14 @@ object EditorDefaults {
         Cache.clear()
         Sys.info()
         Env.get("ANDROID_VERSION")
+        Shizuku.isInstalled()
+        Shizuku.permissionState()
+        Shizuku.isAvailable()
+        Shizuku.getUid()
+        Shizuku.systemService("package")
+        Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
+        Shizuku.shell("id")
+        Shizuku.exec("cmd package list packages com.visualtasker.wss")
 
         LOOP 3
             SET catalogIndex = catalogIndex + 1
@@ -166,7 +171,6 @@ object EditorDefaults {
             IF (result + catalogIndex) < thresholdLow
                 SET result = result + 1
                 log("low branch")
-                click("low branch")
             ELSEIF (result + catalogIndex) >= thresholdHigh
                 SET result = result * 2
                 vibrate(40)
@@ -175,7 +179,6 @@ object EditorDefaults {
                 IF result >= 8
                     SET result = result + catalogIndex
                     beep(660, 60, 45)
-                    clickPoint(160, 260, 1)
                 ELSE
                     SET result = result - 1
                     wait(30)
@@ -191,7 +194,6 @@ object EditorDefaults {
                 ELSE
                     SET result = result + 1
                     beep(440, 60, 35)
-                    click("fallback")
                 END IF
             END IF
         END LOOP

@@ -63,6 +63,20 @@ object WorkspaceShellPluginCatalog {
             studioPanelTypeName = "RECORDING_STEPS",
             shellPanelTypeNames = setOf("LIST_TEST", "RecorderSteps"),
             viewSurface = WorkflowViewSurface.STEP_EDITOR
+        ),
+        WorkspaceShellPanelBinding(
+            pluginId = ShellPluginId("m3-shapemaker"),
+            panelId = ShellPanelId("visual-assets-panel"),
+            studioPanelTypeName = "VISUAL_ASSETS",
+            shellPanelTypeNames = setOf("M3Director", "VisualAssets", "ShapeMaker"),
+            viewSurface = WorkflowViewSurface.STEP_EDITOR
+        ),
+        WorkspaceShellPanelBinding(
+            pluginId = ShellPluginId("vt2vt"),
+            panelId = ShellPanelId("vt2vt-panel"),
+            studioPanelTypeName = "VT2VT",
+            shellPanelTypeNames = setOf("Vt2Vt", "VT2VT", "RemoteWorkspace"),
+            viewSurface = WorkflowViewSurface.REMOTE_SYNC
         )
     )
 

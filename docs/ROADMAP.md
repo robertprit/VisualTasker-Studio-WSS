@@ -1,20 +1,20 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-09-07
+Stand: 2026-09-10
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
 ## Zielbild
 
-VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace Shell App in einem modularen Projekt zusammen. BlockEditor, FlowEditor und TextEditor sind unterschiedliche Projektionen desselben Workflow-Modells. Weitere Funktionen werden als WSS-native Panels oder Plugins umgesetzt, nicht durch Rueckfall in die alte monolithische MainScreen-Architektur.
+VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace Shell App in einem modularen Projekt zusammen. BlockEditor, FlowEditor, TextEditor und RailTrace sind unterschiedliche Projektionen desselben Workflow-Modells. Weitere Funktionen werden als WSS-native Panels oder Plugins umgesetzt, nicht durch Rueckfall in die alte monolithische MainScreen-Architektur.
 
 ## Leitregeln
 
 - Workspace Shell ist der primaere Anzeigemodus.
 - Workflow-Daten liegen in einem gemeinsamen Dokumentmodell mit stabiler IR-Zwischenschicht.
-- BlockView, FlowView und TextView speichern eigene Layout-/Draft-Zustaende, aber nicht konkurrierende Workflow-Wahrheiten.
+- BlockView, FlowView, TextView und RailView speichern eigene Layout-/Draft-/Runtime-Zustaende, aber nicht konkurrierende Workflow-Wahrheiten.
 - Alte Studio-Funktionen werden modular uebernommen: Panel, Plugin, Contract oder Shared Service.
-- Nach Codeaenderungen: Build, Tests, Install, Start, Smoke-Test, Commit und Push.
+- Nach Codeaenderungen: Build, Tests, Install, Start und Smoke-Test. Commit/Push nur auf ausdruecklichen Auftrag.
 - RAG kommt erst nach stabiler Release-Basis.
 
 ## Aktueller Status
@@ -25,9 +25,11 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - BlockEditor als WSS-Plugin mit Siderail, Toolbox, Inspector, Minimap, Drag/Drop, Docking, Undo/Redo-Grundlage und Runtime-Fokus.
 - FlowEditor als WSS-Plugin mit IR-Projektion, Runtime-Layer, Step-Fokus, Facets, Minimap, Trash, Siderail und View-Persistenz.
 - TextEditor mit EMScript-Draft, Apply-Pfad, Runtime-Zeilenmarkierung und ohne Debug-Footer.
-- Stepper Panel mit Timeline, Replay, Speed-Control, Step-Fokus und gespeicherter letzter Position.
+- RailTrace Panel mit Timeline, Replay, Speed-Control, Step-Fokus, Modus-/Scale-Vertrag und gespeicherter letzter Position.
 - LogConsole und DebugInfo als Shell-Panels.
 - Canvas, Marker, Vision und Datastore als vorbereitete Panels.
+- VisualAssets Panel als ShapeMaker-/Asset-Manager-Hub vorbereitet.
+- VT2VT Panel als Remote-Sync-/Observer-Hub mit Loopback-Contract vorbereitet.
 - Grundlegender EMScript Runtime-/DryRun-Pfad fuer vorhandene Grundbefehle.
 
 ### Noch Nicht Final
@@ -93,17 +95,31 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 
 - [ ] Datastore Panel als zentrale Datenansicht fuer Ressourcen ausbauen.
 - [ ] Screenshots, Marker, Templates, Runtime-Daten und Sessions gemeinsam anzeigen.
+- [x] Visual UI Memory Projektion fuer Worldview, Provider, Facetten und Suggestions anlegen.
+- [x] Canvas-/Marker-Ressourcen im Datastore als Worldview-Slice projizieren.
+- [ ] VisualAsset Manager fuer ShapeMaker-Assets, Block-Shapes, Node-Shapes, Port-Shapes, Icons und Compose-Overlays ausbauen.
+- [ ] `.ema` / `application/vnd.emscript.motion+json` als Austauschformat fuer Visual Assets anbinden.
+- [ ] Toolbox-Sets fuer Standard, Custom, Mixed, JavaScript und Plugin-Familien speichern und im Workspace auswahlen.
 - [ ] Import-Mapping aus altem Studio fuer Marker/Templates/Screenshots erweitern.
 - [ ] Worldview Contracts fuer UI-Elemente, Ressourcen, Overlays und Vision-Ergebnisse haerten.
 - [ ] Export/Import und Migrationen fuer Workspace-Ressourcen einbauen.
 
-### M7: Recording Und Stepper
+### M7: Recording Und RailTrace
 
 - [x] Recording Sessions speichern und laden.
-- [x] Stepper Session-Liste und aktive Session-Auswahl einfuehren.
+- [x] RailTrace Session-Liste und aktive Session-Auswahl einfuehren.
 - [x] Timeline fuer passive Activity-/Scene-Dauer und aktive Events weiter haerten.
+- [x] RailTrace-Modi `Program`, `Step`, `Live`, `Replay` und `Curate` als Vertrag modellieren.
+- [x] RailTrace Surface-Modi `Records`, `Run` und `WatchDog` ueber die internen Detailmodi legen.
+- [x] Gesamtzeit-Progressbar fuer RailTrace als Timespan-Indikator einbauen.
+- [x] RailTrace-Step-Auswahl mit Marker Panel synchronisieren.
+- [x] DryRun-/BasicRun-Schritte synchronisieren RailTrace-Auswahl, Position und Index.
+- [x] DryRun/LiveRun/Step-Steuerung als globale Runtime-Bedienung in RailTrace konzentrieren.
 - [ ] Replay Schritt vor/zurueck und Speed-Control mit echten Recording-Daten testen.
-- [ ] Stepper-Fokus mit TextEditor, BlockEditor und FlowEditor dauerhaft synchron halten.
+- [ ] RailTrace-Fokus mit TextEditor, BlockEditor und FlowEditor dauerhaft synchron halten.
+- [ ] Canvas Panel als fokussierten Scene-Inspector fuer Record-Steps, Screenshots, Activities, Klicks, Gesten und erkannte Entities ausbauen.
+- [ ] Marker Panel als jederzeit editierbare Anpassungszentrale fuer RailTrace/Canvas/Datastore etablieren.
+- [ ] Junktionator vorbereiten: Record/Scan/Trace/User Intent/Datastore zu pruefbaren Block-, Flow- und EMScript-Vorschlaegen konkretisieren.
 
 ### M8: Alte Studio-Funktionen Modular Uebernehmen
 
@@ -120,6 +136,10 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Plugin-Vertrag fuer Session, Save, Dirty, Validation, Toolbar und Runtime finalisieren.
 - [ ] Adapter-Gates fuer A11Y, Vision, OCR, OCV, YOLO, Tasker, Termux, scrcpy/Shizuku definieren.
 - [ ] CustomChromeTab, Tasker, Charts, Shizuku, Termux und scrcpy als Plugin-Kandidaten vorbereiten.
+- [x] VT2VT Remote-Sync-Contract, Rollenmodell und Loopback-Panel vorbereiten.
+- [x] VT2VT LAN-TCP Transport mit Pairing-Haken und Read-only Observer-Grundlage implementieren.
+- [ ] VT2VT WebSocket/Discovery-Schicht fuer komfortables Pairing zwischen zwei Geraeten ergaenzen.
+- [ ] VT2VT RuntimeTrace/Log/RailTrace Live-Mirror zwischen zwei Geraeten testen.
 - [ ] Vision-Scan-Pipeline fuer OCR, OCV, YOLO und A11Y entwerfen.
 - [ ] YOLO/Wisely Cloud-Training nur vorbereiten, nicht vor Stable-V1 erzwingen.
 
@@ -137,6 +157,10 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 
 - [ ] Namen finalisieren: WorkspaceDocument, BlockViewDocument, FlowViewDocument, FlowchartProjection, IRGraph.
 - [ ] Soll FlowEditor Nodes mit Slots fuer Reporter/Operatoren bekommen oder nur spezielle kompakte Dataflow-Darstellung?
+- [ ] Welche VisualAsset-Typen sind fuer Block, Node, Port, Icon, Overlay und Component verbindlich?
+- [ ] Wie werden Compose-Overlays an selektierte Canvas-Elemente fixiert, ohne eine zweite Dokumentwahrheit zu erzeugen?
+- [ ] Welche Toolbox-Sets gehoeren in Stable V1 und welche bleiben projekt-/plugin-spezifisch?
+- [ ] Wird VT2VT zuerst nur LAN/WebSocket oder zusaetzlich USB/ADB-Bridge fuer scrcpy-nahe Szenarien?
 - [ ] Welche EMScript-Kommandos gehoeren vor Stable V1 zwingend in den Runtime-Pfad?
 - [ ] Welche alten Studio-Funktionen werden Panels, welche Plugins, welche Shared Services?
 - [ ] Wie wird RAG spaeter an Datastore/Worldview angebunden?
@@ -148,18 +172,18 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 3. FlowEditor Auto-Pan am Viewportrand einbauen.
 4. FlowEditor Auto-Arrange/Autorouting weiter stabilisieren.
 5. Inspector-Inhalte in BlockEditor und FlowEditor entschlacken.
-6. Stepper Recording Sessions speichern/laden.
+6. RailTrace Recording Sessions speichern/laden.
 7. Floating Overlay Toolbar fuer Aufnahme und Screenshot anbinden.
 8. LiveMarker Overlay Grundfunktionen integrieren.
 9. Marker-Persistenz mit Datastore verbinden.
-10. EMScript Roundtrip-Tests fuer aktuelle Grundbefehle erweitern.
+10. VisualAssets/ShapeMaker-Hub oeffnen, `.ema`-Descriptor pruefen und Toolbox-Set-Konzept im Workspace verankern.
 
 ## Abnahmeprotokoll
 
 ### 2026-09-07
 
-- [x] Stepper Save Button eingebaut.
-- [x] Letzter Stepper-Stand wird gespeichert und wiederhergestellt.
+- [x] RailTrace Save Button eingebaut.
+- [x] Letzter RailTrace-Stand wird gespeichert und wiederhergestellt.
 - [x] BlockEditor- und FlowEditor-Inspector breiter und naeher am linken Rand dargestellt.
 - [x] Build, Unit-Tests, Install und Launch waren erfolgreich.
 - [x] Panel-Akzentfarben typisiert und Legacy-Defaults beim Laden normalisiert.
@@ -167,6 +191,6 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [x] Harte Workspace-Grenzen rechts und unten mit Dock-Reserve umgesetzt.
 - [x] Magnetisches Andocken an Workspace- und Nachbarpanel-Kanten vorbereitet.
 - [x] FlowEditor Auto-Pan beim Node-/Facet-Drag am Viewportrand korrigiert und per Regressionstest abgesichert.
-- [x] Einfache Recording-JSONL-Pipeline fuer Overlay und Accessibility-Events angelegt und Stepper-Projektion angebunden.
-- [x] Stepper kann gespeicherte Recording-Sessions auflisten und eine aktive Session als Step-Projektion anzeigen.
-- [x] Recording-Events werden im Stepper der letzten Activity zugeordnet, damit passive Activity-Segmente und aktive Aktionen zusammenhaengen.
+- [x] Einfache Recording-JSONL-Pipeline fuer Overlay und Accessibility-Events angelegt und RailTrace-Projektion angebunden.
+- [x] RailTrace kann gespeicherte Recording-Sessions auflisten und eine aktive Session als Step-Projektion anzeigen.
+- [x] Recording-Events werden in RailTrace der letzten Activity zugeordnet, damit passive Activity-Segmente und aktive Aktionen zusammenhaengen.

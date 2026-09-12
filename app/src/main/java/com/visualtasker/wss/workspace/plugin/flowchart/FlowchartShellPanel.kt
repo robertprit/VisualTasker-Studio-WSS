@@ -1,7 +1,7 @@
 package com.visualtasker.wss.workspace.plugin.flowchart
 
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.content.Context
+import android.media.MediaPlayer
 import android.view.HapticFeedbackConstants
 import android.view.SoundEffectConstants
 import androidx.compose.foundation.Canvas
@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,13 +76,16 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import com.visualtasker.wss.R
 import com.visualtasker.wss.workspace.model.FlowchartConnectionOption
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
 import de.visualtasker.flowchart.compose.FlowchartHost
@@ -104,6 +108,7 @@ import de.visualtasker.flowchart.domain.FlowSize
 import de.visualtasker.flowchart.domain.FlowViewport
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
+import de.visualtasker.flowchart.interaction.FlowViewportTransform
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
@@ -111,6 +116,7 @@ import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import kotlin.math.roundToInt
 
 @Composable
 fun FlowchartShellPanel(
@@ -120,12 +126,6 @@ fun FlowchartShellPanel(
     focusedNodeId: FlowNodeId? = null,
     focusedEdgeId: FlowEdgeId? = null,
     onSave: (() -> Unit)? = null,
-    onRunDry: (() -> Unit)? = null,
-    onRunLive: (() -> Unit)? = null,
-    onStepBack: (() -> Unit)? = null,
-    onStepForward: (() -> Unit)? = null,
-    canStepBack: Boolean = false,
-    canStepForward: Boolean = false,
     stepLabel: String? = null,
     onNodeSelected: ((FlowNodeId) -> Unit)? = null,
     onDeleteNode: ((FlowNodeId) -> Unit)? = null,
@@ -161,10 +161,15 @@ fun FlowchartShellPanel(
     var panelSize by remember(session.sessionId) { mutableStateOf(IntSize.Zero) }
     var draggedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
+    var miniMapOffset by remember(session.sessionId) { mutableStateOf(Offset.Zero) }
+    var renderViewDocument by remember(session.sessionId) {
+        mutableStateOf(session.viewDocument ?: controller.snapshot().view)
+    }
+    val context = LocalContext.current
     val density = LocalDensity.current
     val platformView = LocalView.current
     val hapticFeedback = LocalHapticFeedback.current
-    val trashSizePx = with(density) { 96.dp.toPx() }
+    val trashSizePx = with(density) { 72.dp.toPx() }
     val trashMarginPx = with(density) { 16.dp.toPx() }
     fun isOverTrash(point: FlowPoint): Boolean {
         if (panelSize == IntSize.Zero) return false
@@ -176,17 +181,18 @@ fun FlowchartShellPanel(
     }
     fun applyViewport(viewport: FlowViewport) {
         controller.replaceViewport(viewport)?.let { view ->
+            renderViewDocument = view
             session.onViewDocumentChanged(view)
             onViewChanged?.invoke(view)
         }
     }
     fun centerViewport() {
-        val current = controller.snapshot().view ?: session.viewDocument ?: return
+        val current = renderViewDocument ?: controller.snapshot().view ?: session.viewDocument ?: return
         val viewport = fitFlowchartViewport(current, panelSize)
         applyViewport(viewport)
     }
     fun centerFocusedElement(zoomOverride: Double? = null) {
-        val current = controller.snapshot().view ?: session.viewDocument ?: return
+        val current = renderViewDocument ?: controller.snapshot().view ?: session.viewDocument ?: return
         val focus = selectedNodeId?.let { nodeId ->
             current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
         } ?: selectedEdgeId?.let { edgeId ->
@@ -199,16 +205,27 @@ fun FlowchartShellPanel(
         applyViewport(current.centeredOn(focus, panelSize, zoomOverride ?: current.viewport.zoom))
     }
     fun zoomFocused(factor: Double) {
-        val current = controller.snapshot().view ?: session.viewDocument ?: return
+        val current = renderViewDocument ?: controller.snapshot().view ?: session.viewDocument ?: return
         val nextZoom = (current.viewport.zoom * factor).coerceIn(0.1, 8.0)
         if (selectedNodeId != null || selectedEdgeId != null || runtimeSnapshot?.activeNodeId != null) {
             centerFocusedElement(zoomOverride = nextZoom)
         } else {
-            controller.dispatch(FlowInteractionAction.ZoomViewport(factor, FlowPoint(panelSize.width / 2.0, panelSize.height / 2.0)))
+            val anchor = FlowPoint(panelSize.width / 2.0, panelSize.height / 2.0)
+            val graphAnchor = FlowViewportTransform.screenToGraph(anchor, current.viewport)
+            applyViewport(
+                FlowViewport(
+                    pan = FlowPoint(
+                        x = anchor.x - graphAnchor.x * nextZoom,
+                        y = anchor.y - graphAnchor.y * nextZoom,
+                    ),
+                    zoom = nextZoom,
+                ),
+            )
         }
     }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
+            renderViewDocument = view
             session.onViewDocumentChanged(view)
             onViewChanged?.invoke(view)
         }
@@ -271,6 +288,7 @@ fun FlowchartShellPanel(
                 pendingConnectionStart = null
                 connectionMenu = null
                 onSelectionChanged?.invoke(target.nodeId, null)
+                playFlowchartRawSound(context, R.raw.flow_snap)
                 onConnectPorts?.invoke(source.nodeId, source.portName, target.nodeId, target.portName, source.kind)
             },
             onNodeDragChanged = { nodeId, point ->
@@ -279,7 +297,7 @@ fun FlowchartShellPanel(
             },
             onNodeDragFinished = { nodeId, nodeIds, point ->
                 if (isOverTrash(point) && (onDeleteNodes != null || onDeleteNode != null)) {
-                    playFlowchartDeleteFeedback(platformView, hapticFeedback)
+                    playFlowchartDeleteFeedback(context, platformView, hapticFeedback)
                     selectedNodeId = null
                     selectedEdgeId = null
                     pendingConnectionStart = null
@@ -308,7 +326,7 @@ fun FlowchartShellPanel(
             runtimeOverlayEnabled = runtimeLayerVisible,
             diagnosticMarkersEnabled = diagnosticsVisible,
             dataFlowEdgesEnabled = dataFlowVisible,
-            soundEffectsEnabled = true,
+            soundEffectsEnabled = false,
             hapticFeedbackEnabled = true,
             colorTokens = FlowchartColorTokens(
                 background = Color.Transparent,
@@ -353,6 +371,9 @@ fun FlowchartShellPanel(
     DisposableEffect(controller) {
         onDispose { controller.close() }
     }
+    LaunchedEffect(session.viewDocument, session.graphDocument.documentRevision) {
+        renderViewDocument = session.viewDocument ?: controller.snapshot().view
+    }
     LaunchedEffect(runtimeSnapshot?.activeNodeId, panelSize) {
         val activeNodeId = runtimeSnapshot?.activeNodeId ?: return@LaunchedEffect
         selectedNodeId = activeNodeId
@@ -376,7 +397,7 @@ fun FlowchartShellPanel(
         }
         FlowchartHost(
             graphDocument = session.graphDocument,
-            viewDocument = session.viewDocument,
+            viewDocument = renderViewDocument,
             runtimeSnapshot = runtimeSnapshot,
             controller = controller,
             uiConfig = uiConfig,
@@ -394,20 +415,37 @@ fun FlowchartShellPanel(
             onZoomOut = { zoomFocused(1 / 1.2) },
             onCenter = ::centerViewport,
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 32.dp, bottom = 124.dp),
+                .align(Alignment.CenterEnd)
+                .padding(end = 8.dp),
         )
         if (showMiniMap) {
+            val maxMiniMapX = with(density) { (panelSize.width.toFloat() - 118.dp.toPx() - 28.dp.toPx()).coerceAtLeast(0f) }
+            val maxMiniMapY = with(density) { (panelSize.height.toFloat() - 82.dp.toPx() - 28.dp.toPx()).coerceAtLeast(0f) }
             FlowchartMiniMap(
-                viewDocument = session.viewDocument ?: controller.snapshot().view,
+                viewDocument = renderViewDocument ?: controller.snapshot().view,
                 panelSize = panelSize,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 14.dp, end = 14.dp),
+                    .padding(top = 14.dp, end = 14.dp)
+                    .offset {
+                        IntOffset(
+                            x = miniMapOffset.x.roundToInt(),
+                            y = miniMapOffset.y.roundToInt(),
+                        )
+                    }
+                    .pointerInput(panelSize) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            miniMapOffset = Offset(
+                                x = (miniMapOffset.x + dragAmount.x).coerceIn(-maxMiniMapX, 0f),
+                                y = (miniMapOffset.y + dragAmount.y).coerceIn(0f, maxMiniMapY),
+                            )
+                        }
+                    },
             )
         }
         FlowchartViewportScrollbars(
-            viewDocument = session.viewDocument ?: controller.snapshot().view,
+            viewDocument = renderViewDocument ?: controller.snapshot().view,
             panelSize = panelSize,
             modifier = Modifier.matchParentSize(),
         )
@@ -454,12 +492,6 @@ fun FlowchartShellPanel(
             } ?: selectedEdgeId?.let { edgeId ->
                 onDisconnectEdge?.let { disconnectEdge -> { disconnectEdge(edgeId) } }
             },
-            onRunDry = onRunDry,
-            onRunLive = onRunLive,
-            onStepBack = onStepBack,
-            onStepForward = onStepForward,
-            canStepBack = canStepBack,
-            canStepForward = canStepForward,
             stepLabel = stepLabel,
             gridVisible = gridVisible,
             dataFlowVisible = dataFlowVisible,
@@ -479,7 +511,7 @@ fun FlowchartShellPanel(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(start = 2.dp, end = 88.dp, bottom = 2.dp),
+                .padding(start = 0.dp, end = 84.dp, bottom = 0.dp),
             session = session,
             selectedNodeId = selectedNodeId,
             selectedEdgeId = selectedEdgeId,
@@ -644,6 +676,7 @@ private fun FlowchartViewportScrollbars(
 }
 
 private fun playFlowchartDeleteFeedback(
+    context: Context,
     platformView: android.view.View,
     haptic: HapticFeedback,
 ) {
@@ -653,10 +686,23 @@ private fun playFlowchartDeleteFeedback(
         HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING,
     )
     platformView.playSoundEffect(SoundEffectConstants.CLICK)
+    playFlowchartRawSound(context, R.raw.flow_trashbin)
+}
+
+private fun playFlowchartRawSound(
+    context: Context,
+    rawResId: Int,
+) {
     runCatching {
-        val generator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 32)
-        generator.startTone(ToneGenerator.TONE_PROP_NACK, 54)
-        platformView.postDelayed({ generator.release() }, 94L)
+        MediaPlayer.create(context.applicationContext, rawResId)?.apply {
+            setVolume(1f, 1f)
+            setOnCompletionListener { player -> player.release() }
+            setOnErrorListener { player, _, _ ->
+                player.release()
+                true
+            }
+            start()
+        }
     }
 }
 
@@ -790,7 +836,7 @@ private fun FlowchartTrashDropTarget(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.size(96.dp),
+        modifier = modifier.size(72.dp),
         shape = CircleShape,
         color = if (active) Color(0xFFB3261E).copy(alpha = 0.86f) else Color(0xFF3C3746).copy(alpha = 0.82f),
         contentColor = if (active) Color.White else Color(0xFFECE6F3),
@@ -801,7 +847,7 @@ private fun FlowchartTrashDropTarget(
             Icon(
                 imageVector = Icons.Default.Delete,
                 contentDescription = null,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(28.dp),
             )
         }
     }
@@ -827,7 +873,7 @@ private fun FlowchartRuntimeInspectorBottomSheet(
     Surface(
         modifier = modifier
             .height(sheetHeightDp.dp),
-        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 14.dp, bottomEnd = 14.dp),
+        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
         color = Color(0xFF171121).copy(alpha = 0.96f),
         contentColor = Color(0xFFE9DFF5),
         tonalElevation = 5.dp,
@@ -1327,12 +1373,6 @@ private fun FlowchartShellToolbar(
     onSave: () -> Unit,
     onBeginConnect: (() -> Unit)?,
     onDeleteSelected: (() -> Unit)?,
-    onRunDry: (() -> Unit)?,
-    onRunLive: (() -> Unit)?,
-    onStepBack: (() -> Unit)?,
-    onStepForward: (() -> Unit)?,
-    canStepBack: Boolean,
-    canStepForward: Boolean,
     stepLabel: String?,
     gridVisible: Boolean,
     dataFlowVisible: Boolean,
@@ -1438,18 +1478,6 @@ private fun FlowchartShellToolbar(
             }
             FlowchartToolbarButton("Node löschen", onDeleteSelected ?: {}, enabled = onDeleteSelected != null) {
                 Icon(Icons.Default.Delete, contentDescription = null)
-            }
-            FlowchartToolbarButton("Run Dry", onRunDry ?: {}, enabled = onRunDry != null) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-            }
-            FlowchartToolbarButton("Run Live", onRunLive ?: {}, enabled = onRunLive != null) {
-                Icon(Icons.Default.PlayCircle, contentDescription = null)
-            }
-            FlowchartToolbarButton("Step zurück", onStepBack ?: {}, enabled = onStepBack != null && canStepBack) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = null)
-            }
-            FlowchartToolbarButton("Step vor", onStepForward ?: {}, enabled = onStepForward != null && canStepForward) {
-                Icon(Icons.Default.SkipNext, contentDescription = null)
             }
             stepLabel?.let {
                 Text(

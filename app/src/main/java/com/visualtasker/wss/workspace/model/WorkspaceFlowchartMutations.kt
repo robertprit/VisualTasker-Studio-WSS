@@ -44,6 +44,7 @@ sealed interface FlowchartWorkspaceMutation {
         val definitionId: String,
         val afterNodeId: FlowNodeId? = null,
         val position: FlowPoint? = null,
+        val initialFields: Map<String, String> = emptyMap(),
     ) : FlowchartWorkspaceMutation
     data class DeleteNode(val nodeId: FlowNodeId) : FlowchartWorkspaceMutation
     data class DeleteNodes(val nodeIds: Set<FlowNodeId>) : FlowchartWorkspaceMutation
@@ -99,6 +100,7 @@ fun applyFlowchartWorkspaceMutation(
             mutation.definitionId,
             mutation.afterNodeId,
             mutation.position,
+            mutation.initialFields,
         )
         is FlowchartWorkspaceMutation.DeleteNode -> deleteFlowchartNodeFromWorkspace(document, mutation.nodeId)
         is FlowchartWorkspaceMutation.DeleteNodes -> deleteFlowchartNodesFromWorkspace(document, mutation.nodeIds)
@@ -145,14 +147,18 @@ fun addFlowchartNodeToWorkspace(
     definitionId: String,
     afterNodeId: FlowNodeId? = null,
     position: FlowPoint? = null,
+    initialFields: Map<String, String> = emptyMap(),
 ): WorkspaceDocument {
     val afterBlockId = afterNodeId?.toWorkspaceBlockId()
     val afterBlock = afterBlockId?.let { document.blocks[it] }
     val anchor = afterBlockId?.let { document.rootOffset(it) }
     val x = position?.x?.toFloat() ?: anchor?.x ?: 96f
     val y = position?.y?.toFloat() ?: anchor?.y?.plus(96f) ?: (120f + document.rootBlocks.size * 32f)
-    val (withNode, insertedId) = instantiateFlowchartBlock(document, definitionId, x, y)
+    val (withNodeRaw, insertedId) = instantiateFlowchartBlock(document, definitionId, x, y)
         ?: return document
+    val withNode = initialFields.entries.fold(withNodeRaw) { current, (fieldKey, rawValue) ->
+        updateFlowchartNodeFieldInWorkspace(current, FlowNodeId("$FLOW_BLOCK_NODE_PREFIX${insertedId.value}"), fieldKey, rawValue)
+    }
     if (afterBlock == null || afterBlock.next == null) return withNode
     val inserted = withNode.blocks[insertedId] ?: return withNode
     val source = withNode.blocks[afterBlockId]?.next?.id ?: return withNode

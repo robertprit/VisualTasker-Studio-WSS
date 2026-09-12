@@ -15,7 +15,8 @@ enum class WorkflowViewSurface {
     EMSCRIPT,
     BLOCK_EDITOR,
     FLOWCHART,
-    STEP_EDITOR
+    STEP_EDITOR,
+    REMOTE_SYNC
 }
 
 enum class ShellDirtyState {

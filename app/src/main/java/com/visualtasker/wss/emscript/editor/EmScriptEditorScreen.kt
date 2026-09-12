@@ -100,10 +100,6 @@ fun EmScriptEditorScreen(
     onSaveDraft: () -> Unit,
     onUseProjection: () -> Unit,
     onCompileCheck: () -> Unit = {},
-    onDryRun: () -> Unit = {},
-    canDryRun: Boolean = session.activeTab.content.isNotBlank(),
-    onLiveRun: () -> Unit = {},
-    canLiveRun: Boolean = false,
     canApplyDraft: Boolean,
     onRequestApplyPreview: () -> String?,
     onConfirmApply: () -> Unit,
@@ -188,10 +184,12 @@ fun EmScriptEditorScreen(
     LaunchedEffect(fontSizeSp) {
         uiState.fontSizeSp = fontSizeSp
     }
-    LaunchedEffect(activeDisplayIndex, fontSizeSp, lineMapping.size) {
+    LaunchedEffect(activeDisplayIndex, fontSizeSp, lineMapping.size, editorScrollState.viewportSize, editorScrollState.maxValue) {
         if (activeDisplayIndex < 0) return@LaunchedEffect
         val lineHeightPx = activeLineHeightPx.toInt().coerceAtLeast(1)
-        val targetTop = (activeDisplayIndex * lineHeightPx - lineHeightPx * 4).coerceAtLeast(0)
+        val viewportCenter = (editorScrollState.viewportSize / 2).coerceAtLeast(lineHeightPx * 2)
+        val targetTop = (activeDisplayIndex * lineHeightPx - viewportCenter + lineHeightPx / 2)
+            .coerceIn(0, editorScrollState.maxValue)
         editorScrollState.animateScrollTo(targetTop)
     }
     LaunchedEffect(activeTab.id, editorValue.selection.start, editorValue.selection.end) {

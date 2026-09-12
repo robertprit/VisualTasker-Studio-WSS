@@ -495,7 +495,7 @@ private fun ResizeHandle(
         ResizeHandleKind.EdgeBottom -> Modifier
             .height(24.dp)
             .fillMaxSize()
-        else -> Modifier.size(42.dp)
+        else -> Modifier.size(54.dp)
     }
     Box(
         modifier = modifier
@@ -531,8 +531,8 @@ private fun ResizeHandle(
                 contentDescription = "Resize",
                 tint = accentColor.copy(alpha = 0.96f),
                 modifier = Modifier
-                    .padding(7.dp)
-                    .size(22.dp)
+                    .padding(9.dp)
+                    .size(26.dp)
             )
         }
     }

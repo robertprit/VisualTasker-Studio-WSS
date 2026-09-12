@@ -30,7 +30,8 @@ enum class PanelType {
     TextEditor,
     LogConsole,
     DebugInfo,
-    M3Director
+    M3Director,
+    Vt2Vt
 }
 
 interface PanelActionSink {

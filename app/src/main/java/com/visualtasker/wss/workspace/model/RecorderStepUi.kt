@@ -9,6 +9,9 @@ data class RecorderStepUi(
     val durationMs: Long? = null,
     val activityName: String? = null,
     val detail: String? = null,
+    val bounds: WorldviewRect? = null,
+    val point: WorldviewPoint? = null,
+    val properties: Map<String, String> = emptyMap(),
 )
 
 enum class StepStatus {

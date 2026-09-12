@@ -3,6 +3,7 @@ package com.visualtasker.wss.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -52,7 +53,7 @@ import androidx.compose.ui.unit.dp
 
 private const val ROW_HEIGHT_DP = 72
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ListTestPanel(modifier: Modifier = Modifier) {
     val items = remember { mutableStateListOf(*List(20) { "Dummy-Eintrag ${it + 1}" }.toTypedArray()) }
@@ -117,6 +118,7 @@ fun ListTestPanel(modifier: Modifier = Modifier) {
 
                 SwipeToDismissBox(
                     state = dismissState,
+                    modifier = Modifier.animateItem(),
                     backgroundContent = {
                         Row(
                             modifier = Modifier
@@ -252,4 +254,3 @@ private fun ReorderableCard(
         }
     }
 }
-

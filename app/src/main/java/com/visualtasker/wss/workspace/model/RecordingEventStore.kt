@@ -14,6 +14,7 @@ object RecordingEventStore {
     const val RECORDS_DIR = "emscript-runtime/records"
 
     private val activeSession = AtomicReference<RecordingSessionWriter?>(null)
+    private val activeStatus = AtomicReference(RecordingStatusSnapshot())
 
     fun start(context: Context, source: String = "floatingOverlay"): File {
         val target = File(context.filesDir, "$RECORDS_DIR/overlay-${timestamp()}.jsonl")
@@ -24,6 +25,7 @@ object RecordingEventStore {
             startedAtMs = System.currentTimeMillis(),
         )
         activeSession.set(writer)
+        activeStatus.set(RecordingStatusSnapshot(fileName = target.name))
         writer.record("recording.started", "Aufnahme gestartet", mapOf("file" to target.name))
         return target
     }
@@ -35,6 +37,7 @@ object RecordingEventStore {
             label = "Aufnahme gestoppt",
             attributes = mapOf("durationMs" to (System.currentTimeMillis() - writer.startedAtMs).toString()),
         )
+        activeStatus.set(activeStatus.get().copy(running = false))
         return writer.file
     }
 
@@ -42,8 +45,42 @@ object RecordingEventStore {
 
     fun activeFileName(): String? = activeSession.get()?.file?.name
 
+    fun activeStatus(): RecordingStatusSnapshot =
+        activeSession.get()?.let { writer ->
+            activeStatus.get().copy(
+                running = true,
+                fileName = writer.file.name,
+                elapsedMs = System.currentTimeMillis() - writer.startedAtMs,
+            )
+        } ?: activeStatus.get().copy(running = false)
+
     fun recordOverlayEvent(kind: String, label: String, attributes: Map<String, String> = emptyMap()) {
         activeSession.get()?.record(kind, label, attributes)
+    }
+
+    fun recordExternalEvent(
+        context: Context,
+        source: String,
+        kind: String,
+        label: String,
+        attributes: Map<String, String> = emptyMap(),
+    ): File {
+        val writer = activeSession.get()
+        if (writer != null) {
+            writer.record(kind, label, attributes)
+            return writer.file
+        }
+        val target = File(context.filesDir, "$RECORDS_DIR/external-tasker-feedback.jsonl")
+        target.parentFile?.mkdirs()
+        val startedAtMs = target.takeIf { it.exists() }?.lastModified()?.takeIf { it > 0L } ?: System.currentTimeMillis()
+        val currentIndex = target.takeIf { it.exists() }?.readLines()?.size ?: 0
+        RecordingSessionWriter(
+            file = target,
+            source = source,
+            startedAtMs = startedAtMs,
+            index = currentIndex,
+        ).record(kind, label, attributes)
+        return target
     }
 
     fun recordAccessibilityEvent(event: AccessibilityEvent) {
@@ -119,6 +156,9 @@ object RecordingEventStore {
                     durationMs = event.durationMs(),
                     activityName = if (event.kind == "activity.change") eventActivity else currentActivity ?: eventActivity,
                     detail = event.detail(),
+                    bounds = event.boundsOrNull(),
+                    point = event.pointOrNull(),
+                    properties = event.attributes,
                 )
             }
     }
@@ -252,6 +292,36 @@ object RecordingEventStore {
     private fun RecordingEventLine.detail(): String =
         attributes.entries.joinToString(separator = " | ") { (key, value) -> "$key=$value" }
 
+    private fun RecordingEventLine.boundsOrNull(): WorldviewRect? {
+        val parts = attributes["bounds"]
+            ?.split(',')
+            ?.mapNotNull { it.trim().toFloatOrNull() }
+            ?: return null
+        if (parts.size != 4) return null
+        return runCatching {
+            WorldviewRect(
+                left = parts[0],
+                top = parts[1],
+                right = parts[2],
+                bottom = parts[3],
+                coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+            )
+        }.getOrNull()
+    }
+
+    private fun RecordingEventLine.pointOrNull(): WorldviewPoint? {
+        val x = attributes["x"]?.toFloatOrNull()
+        val y = attributes["y"]?.toFloatOrNull()
+        if (x == null || y == null) return null
+        return runCatching {
+            WorldviewPoint(
+                x = x,
+                y = y,
+                coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+            )
+        }.getOrNull()
+    }
+
     private fun timestamp(): String =
         SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())
 
@@ -263,8 +333,9 @@ object RecordingEventStore {
     ) {
         fun record(kind: String, label: String, attributes: Map<String, String>) {
             val now = System.currentTimeMillis()
+            val currentIndex = index++
             val values = linkedMapOf(
-                "index" to index++.toString(),
+                "index" to currentIndex.toString(),
                 "timestampMs" to now.toString(),
                 "elapsedMs" to (now - startedAtMs).toString(),
                 "source" to source,
@@ -276,6 +347,16 @@ object RecordingEventStore {
                 "\"${key.jsonEscape()}\":\"${value.jsonEscape()}\""
             }
             runCatching { file.appendText(line + "\n") }
+            activeStatus.set(
+                RecordingStatusSnapshot(
+                    running = true,
+                    fileName = file.name,
+                    eventCount = currentIndex + 1,
+                    lastKind = kind,
+                    lastLabel = label,
+                    elapsedMs = now - startedAtMs,
+                )
+            )
         }
     }
 
@@ -288,6 +369,15 @@ object RecordingEventStore {
         val attributes: Map<String, String>,
     )
 }
+
+data class RecordingStatusSnapshot(
+    val running: Boolean = false,
+    val fileName: String? = null,
+    val eventCount: Int = 0,
+    val lastKind: String? = null,
+    val lastLabel: String? = null,
+    val elapsedMs: Long = 0L,
+)
 
 private fun String.jsonEscape(): String =
     buildString(length) {

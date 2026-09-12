@@ -338,4 +338,90 @@ class WorkspaceBasicRuntimeTest {
         assertTrue(calls.joinToString(), calls.any { it.startsWith("findTemplate:buttonTpl.png:0.8:1000:30x40") })
         assertTrue(calls.contains("markerDelete:button"))
     }
+
+    @Test
+    fun basicRuntimeDispatchesShizukuAndScrcpyCommandsToAdapters() = runBlocking {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            ChromeTab.isSupported()
+            ChromeTab.open("https://example.com")
+            Shizuku.isAvailable()
+            Shizuku.systemService("package")
+            Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
+            Shizuku.shell("cmd package list packages")
+            Termux.canRunCommands()
+            Termux.shell("echo ok")
+            Termux.run("/data/data/com.termux/files/usr/bin/ls", "-la")
+            Termux.api("battery-status")
+            Tasker.isInstalled()
+            Tasker.runTask("VT_TEST", ["alpha", "beta"])
+            Scrcpy.hostAvailable()
+            Scrcpy.connect("")
+            Scrcpy.touch("", "tap", point(10, 20))
+            """.trimIndent(),
+            workspaceId = "workspace-basic-runtime-device-adapters",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val calls = mutableListOf<String>()
+        val runtime = WorkspaceBasicRuntime(
+            capabilityGate = {
+                RuntimeCapabilityGate.withDeviceAdapters(
+                    accessibilityAvailable = false,
+                    customChromeTabAvailable = true,
+                    shizukuAvailable = true,
+                    termuxAvailable = true,
+                    taskerAvailable = true,
+                    usbAdbBridgeAvailable = true,
+                )
+            },
+            environment = WorkspaceBasicRuntimeEnvironment(
+                delayMs = {},
+                playBeep = { _, _, _ -> },
+                vibrate = {},
+                log = {},
+                chromeTabCommand = { command, args ->
+                    calls += "chrometab:$command:${args.joinToString("|")}"
+                    RuntimeAdapterResult(true, "$command ok", warning = false)
+                },
+                taskerCommand = { command, args ->
+                    calls += "tasker:$command:${args.joinToString("|")}"
+                    RuntimeAdapterResult(true, "$command ok", warning = false)
+                },
+                shizukuCommand = { command, args ->
+                    calls += "shizuku:$command:${args.joinToString("|")}"
+                    RuntimeAdapterResult(true, "$command ok", warning = false)
+                },
+                termuxCommand = { command, args ->
+                    calls += "termux:$command:${args.joinToString("|")}"
+                    RuntimeAdapterResult(true, "$command ok", warning = false)
+                },
+                scrcpyCommand = { command, args ->
+                    calls += "scrcpy:$command:${args.joinToString("|")}"
+                    RuntimeAdapterResult(true, "$command ok", warning = false)
+                },
+            ),
+        )
+
+        val result = runtime.run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        assertTrue(calls.any { it.startsWith("chrometab:chrometab.issupported") })
+        assertTrue(calls.any { it.startsWith("chrometab:chrometab.open") })
+        assertTrue(calls.any { it.startsWith("shizuku:shizuku.isavailable") })
+        assertTrue(calls.any { it.startsWith("shizuku:shizuku.systemservice") })
+        assertTrue(calls.any { it.startsWith("shizuku:shizuku.call") })
+        assertTrue(calls.any { it.startsWith("shizuku:shizuku.shell") })
+        assertTrue(calls.any { it.startsWith("termux:termux.canruncommands") })
+        assertTrue(calls.any { it.startsWith("termux:termux.shell") })
+        assertTrue(calls.any { it.startsWith("termux:termux.run") })
+        assertTrue(calls.any { it.startsWith("termux:termux.api") })
+        assertTrue(calls.any { it.startsWith("tasker:tasker.isinstalled") })
+        assertTrue(
+            calls.joinToString(),
+            calls.any { it.startsWith("tasker:tasker.runtask") && it.contains("VT_TEST") && it.contains("alpha") },
+        )
+        assertTrue(calls.any { it.startsWith("scrcpy:scrcpy.hostavailable") })
+        assertTrue(calls.any { it.startsWith("scrcpy:scrcpy.connect") })
+        assertTrue(calls.any { it.startsWith("scrcpy:scrcpy.touch") })
+    }
 }

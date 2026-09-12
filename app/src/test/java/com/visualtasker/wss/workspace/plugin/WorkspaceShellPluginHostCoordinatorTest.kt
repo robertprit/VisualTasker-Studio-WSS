@@ -36,6 +36,29 @@ class WorkspaceShellPluginHostCoordinatorTest {
     }
 
     @Test
+    fun visualAssetsMapToM3ShapeMakerPluginSurface() {
+        val binding = WorkspaceShellPluginCatalog.bindingForWorkspacePanelType(
+            com.visualtasker.wss.workspace.model.PanelType.M3Director
+        )
+
+        assertNotNull(binding)
+        assertEquals(ShellPluginId("m3-shapemaker"), binding?.pluginId)
+        assertEquals("VISUAL_ASSETS", binding?.studioPanelTypeName)
+    }
+
+    @Test
+    fun vt2vtMapsToRemoteSyncPluginSurface() {
+        val binding = WorkspaceShellPluginCatalog.bindingForWorkspacePanelType(
+            com.visualtasker.wss.workspace.model.PanelType.Vt2Vt
+        )
+
+        assertNotNull(binding)
+        assertEquals(ShellPluginId("vt2vt"), binding?.pluginId)
+        assertEquals("VT2VT", binding?.studioPanelTypeName)
+        assertEquals(WorkflowViewSurface.REMOTE_SYNC, binding?.viewSurface)
+    }
+
+    @Test
     fun opensRegisteredPluginThroughShellCoordinator() {
         val plugin = FakeShellEditorPlugin(ShellPluginId("blockeditor"))
         val host = RecordingShellPluginHostAdapter()

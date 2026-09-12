@@ -36,6 +36,10 @@ class WorkspaceSessionStore(context: Context) {
         prefs.edit().putString("session_json", root.toString()).apply()
     }
 
+    fun clear() {
+        prefs.edit().remove("session_json").apply()
+    }
+
     fun load(): WorkspaceSessionSnapshot? {
         val raw = prefs.getString("session_json", null) ?: return null
         return runCatching {
@@ -82,6 +86,8 @@ internal val supportedWorkspacePanelTypes: Set<PanelType> = setOf(
     PanelType.Marker,
     PanelType.Vision,
     PanelType.Datastore,
+    PanelType.M3Director,
+    PanelType.Vt2Vt,
     PanelType.RuntimeLog,
     PanelType.TextEditor,
     PanelType.LogConsole,
@@ -102,6 +108,7 @@ internal fun defaultAccentForPanelType(type: PanelType): androidx.compose.ui.gra
     PanelType.Datastore -> androidx.compose.ui.graphics.Color(0xFF8BC34A)
     PanelType.Emscript -> androidx.compose.ui.graphics.Color(0xFFFFB74D)
     PanelType.M3Director -> androidx.compose.ui.graphics.Color(0xFF6C5CE7)
+    PanelType.Vt2Vt -> androidx.compose.ui.graphics.Color(0xFF00BCD4)
 }
 
 private fun restorePanelAccent(type: PanelType, raw: Long): androidx.compose.ui.graphics.Color {

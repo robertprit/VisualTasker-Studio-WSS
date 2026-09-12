@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TaskerData sr="" dvi="1" tv="6.0.2-beta">
+	<Task sr="task26091101">
+		<cdate>1789084800000</cdate>
+		<edate>1789084800000</edate>
+		<id>26091101</id>
+		<nme>VT WSS Demo Echo</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>559</code>
+			<Str sr="arg0" ve="3">WSS Tasker Echo: %par1 %par2</Str>
+			<Int sr="arg1" val="1"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="1"/>
+			<Int sr="arg7" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>123</code>
+			<Str sr="arg0" ve="3">am broadcast -a com.visualtasker.wss.action.TASKER_TEST_FEEDBACK -p com.visualtasker.wss --es task_name "VT WSS Demo Echo" --es message "par1=%par1 par2=%par2" --es par1 "%par1" --es par2 "%par2" --es vt_source "%vt_source" --es vt_case "%vt_case"</Str>
+			<Int sr="arg1" val="0"/>
+			<Int sr="arg2" val="10"/>
+			<Str sr="arg3" ve="3"></Str>
+			<Str sr="arg4" ve="3"></Str>
+			<Str sr="arg5" ve="3"></Str>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>559</code>
+			<Str sr="arg0" ve="3">WSS Feedback gesendet</Str>
+			<Int sr="arg1" val="1"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="1"/>
+			<Int sr="arg7" val="0"/>
+		</Action>
+	</Task>
+</TaskerData>

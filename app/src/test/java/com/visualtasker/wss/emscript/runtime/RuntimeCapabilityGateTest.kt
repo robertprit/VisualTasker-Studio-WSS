@@ -90,4 +90,56 @@ class RuntimeCapabilityGateTest {
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["screenshot"])
         assertEquals(RuntimeCapabilityStatus.BLOCKED, states["touch"])
     }
+
+    @Test
+    fun deviceAdaptersEnableShizukuAndScrcpyCommandsWhenAvailable() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            ChromeTab.isSupported()
+            ChromeTab.open("https://example.com")
+            Shizuku.isAvailable()
+            Shizuku.systemService("package")
+            Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
+            Shizuku.shell("cmd package list packages")
+            Termux.canRunCommands()
+            Termux.shell("echo ok")
+            Tasker.isInstalled()
+            Tasker.runTask("VT_TEST", ["alpha", "beta"])
+            Tasker.lastResult("run-1")
+            Tasker.error("run-1")
+            Tasker.getVariable("%vt")
+            Scrcpy.hostAvailable()
+            Scrcpy.connect("")
+            Scrcpy.touch("", "tap", point(10, 20))
+            """.trimIndent(),
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val report = RuntimeCapabilityGate.withDeviceAdapters(
+            accessibilityAvailable = false,
+            customChromeTabAvailable = true,
+            shizukuAvailable = true,
+            termuxAvailable = true,
+            taskerAvailable = true,
+            usbAdbBridgeAvailable = true,
+        ).inspect(imported.document!!)
+        val states = report.capabilities.associate { it.command to it.status }
+
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["ChromeTab.isSupported"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["ChromeTab.open"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.isAvailable"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.systemService"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.call"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.shell"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Termux.canRunCommands"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Termux.shell"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.isInstalled"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.runTask"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.lastResult"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.error"])
+        assertEquals(RuntimeCapabilityStatus.BLOCKED, states["Tasker.getVariable"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Scrcpy.hostAvailable"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Scrcpy.connect"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Scrcpy.touch"])
+    }
 }

@@ -1,0 +1,1 @@
+Tasker.runTask("VT WSS Demo Echo", ["hello", "from-wss"]);

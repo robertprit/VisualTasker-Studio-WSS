@@ -38,6 +38,7 @@ android {
         jvmTarget = "17"
     }
     buildFeatures {
+        aidl = true
         compose = true
     }
     packaging {
@@ -59,6 +60,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-text-google-fonts")
     implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.browser:browser:1.8.0")
+    implementation("dev.rikka.shizuku:aidl:13.1.5")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("de.visualtasker.blockeditor:blockeditor-compose:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-domain:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-registry:0.1.0-SNAPSHOT")

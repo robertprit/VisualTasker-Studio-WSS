@@ -710,6 +710,26 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
+    fun `add node can initialize generated command fields`() {
+        val result = applyFlowchartWorkspaceMutation(
+            WorkspaceDocument(id = "flowchart-scene-save-test"),
+            FlowchartWorkspaceMutation.AddNode(
+                definitionId = "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}scene.save",
+                initialFields = mapOf(
+                    "command" to "sceneSave",
+                    "args" to "\"Login\", \"region\", region(10,20,30,40), \"screen\"",
+                ),
+            ),
+        )
+
+        val block = result.document.blocks.values.single()
+        assertTrue(result.applied)
+        assertEquals("${BlockTypes.EMSCRIPT_COMMAND_PREFIX}scene.save", block.type)
+        assertEquals(FieldValue.Text("sceneSave"), block.fields["command"])
+        assertEquals(FieldValue.Text("\"Login\", \"region\", region(10,20,30,40), \"screen\""), block.fields["args"])
+    }
+
+    @Test
     fun `flowchart workspace mutation dispatcher reports unapplied invalid commands`() {
         val document = WorkspaceDocument(id = "flowchart-dispatcher-invalid-test")
 

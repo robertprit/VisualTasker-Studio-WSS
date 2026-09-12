@@ -301,7 +301,24 @@ class WorkspaceBasicRuntime(
                     LiveExecutionOutcome("datastoreGet($key) leer", EmscriptDryRunEventSeverity.WARNING)
                 }
             }
-            else -> null
+            else -> when {
+                command.startsWith("chrometab.") -> environment
+                    .chromeTabCommand(command, block?.rawArguments().orEmpty())
+                    .toLiveOutcome(command)
+                command.startsWith("tasker.") -> environment
+                    .taskerCommand(command, block?.rawArguments().orEmpty())
+                    .toLiveOutcome(command)
+                command.startsWith("shizuku.") -> environment
+                    .shizukuCommand(command, block?.rawArguments().orEmpty())
+                    .toLiveOutcome(command)
+                command.startsWith("termux.") -> environment
+                    .termuxCommand(command, block?.rawArguments().orEmpty())
+                    .toLiveOutcome(command)
+                command.startsWith("scrcpy.") -> environment
+                    .scrcpyCommand(command, block?.rawArguments().orEmpty())
+                    .toLiveOutcome(command)
+                else -> null
+            }
         }
 
     private fun BlockNode.fieldNumber(key: String): Double =
@@ -476,7 +493,34 @@ data class WorkspaceBasicRuntimeEnvironment(
     val templateCompare: (name: String, region: RuntimeAutomationRegion, processing: String) -> Float? = { _, _, _ -> null },
     val datastorePut: (key: String, value: String) -> Unit = { _, _ -> },
     val datastoreGet: (key: String) -> String? = { null },
+    val chromeTabCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
+        RuntimeAdapterResult(false, "$command benötigt den CustomChromeTab-Adapter.")
+    },
+    val taskerCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
+        RuntimeAdapterResult(false, "$command benötigt den Tasker-Adapter.")
+    },
+    val shizukuCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
+        RuntimeAdapterResult(false, "$command benötigt den Shizuku-Adapter.")
+    },
+    val termuxCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
+        RuntimeAdapterResult(false, "$command benötigt den Termux-Adapter.")
+    },
+    val scrcpyCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
+        RuntimeAdapterResult(false, "$command benötigt den scrcpy/ADB-Adapter.")
+    },
 )
+
+data class RuntimeAdapterResult(
+    val success: Boolean,
+    val message: String,
+    val warning: Boolean = !success,
+)
+
+private fun RuntimeAdapterResult.toLiveOutcome(command: String): LiveExecutionOutcome =
+    LiveExecutionOutcome(
+        message = message.ifBlank { "$command ausgeführt" },
+        severity = if (warning) EmscriptDryRunEventSeverity.WARNING else EmscriptDryRunEventSeverity.INFO,
+    )
 
 data class RuntimeAutomationPoint(
     val x: Int,

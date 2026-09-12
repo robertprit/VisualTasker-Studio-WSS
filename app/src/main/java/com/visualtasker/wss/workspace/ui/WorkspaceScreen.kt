@@ -24,6 +24,7 @@ import kotlin.math.PI
 import kotlin.math.sin
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -90,11 +91,11 @@ import androidx.compose.material.icons.filled.Polyline
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Visibility
@@ -119,6 +120,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -126,6 +129,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwipeToDismissBox
@@ -159,12 +166,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -209,7 +218,10 @@ import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.RuntimeAdapterResult
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
+import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityReport
+import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityStatus
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
@@ -239,10 +251,52 @@ import com.visualtasker.wss.workspace.model.PanelAction
 import com.visualtasker.wss.workspace.model.PanelActionSink
 import com.visualtasker.wss.workspace.model.PanelState
 import com.visualtasker.wss.workspace.model.PanelType
+import com.visualtasker.wss.workspace.model.JunctionatorSeed
+import com.visualtasker.wss.workspace.model.RailMode
+import com.visualtasker.wss.workspace.model.RailProjection
+import com.visualtasker.wss.workspace.model.RailScaleMode
+import com.visualtasker.wss.workspace.model.RailSurfaceMode
+import com.visualtasker.wss.workspace.model.RailTimelineMarker
+import com.visualtasker.wss.workspace.model.RailTrackKind
+import com.visualtasker.wss.workspace.model.RailTrack
 import com.visualtasker.wss.workspace.model.RecordingEventStore
 import com.visualtasker.wss.workspace.model.RecordingSessionUi
 import com.visualtasker.wss.workspace.model.RecorderStepUi
 import com.visualtasker.wss.workspace.model.StepStatus
+import com.visualtasker.wss.workspace.model.CanvasObservationFilters
+import com.visualtasker.wss.workspace.model.CanvasObservationFamily
+import com.visualtasker.wss.workspace.model.CanvasObservationItem
+import com.visualtasker.wss.workspace.model.CanvasObservationLineStyle
+import com.visualtasker.wss.workspace.model.CanvasObservationProjection
+import com.visualtasker.wss.workspace.model.CanvasObservationProjector
+import com.visualtasker.wss.workspace.model.CanvasVisionObservationFactory
+import com.visualtasker.wss.workspace.model.VisualUiMemoryProjector
+import com.visualtasker.wss.workspace.model.VisualUiMemoryProjection
+import com.visualtasker.wss.workspace.model.VisualUiMemorySuggestion
+import com.visualtasker.wss.workspace.model.CoordinateSpaceKind
+import com.visualtasker.wss.workspace.model.WorldObservation
+import com.visualtasker.wss.workspace.model.WorldviewDataProjector
+import com.visualtasker.wss.workspace.model.WorldviewDocument
+import com.visualtasker.wss.workspace.model.WorldviewRect
+import com.visualtasker.wss.workspace.model.WorldviewInspectorProjector
+import com.visualtasker.wss.workspace.model.WorldviewInspectorSubject
+import com.visualtasker.wss.workspace.model.WorldviewInspectorSubjectKind
+import com.visualtasker.wss.workspace.model.WorkspaceMarkerMode
+import com.visualtasker.wss.workspace.model.WorkspacePointBounds
+import com.visualtasker.wss.workspace.model.WorkspaceRegionBounds
+import com.visualtasker.wss.workspace.model.WorkspaceResource
+import com.visualtasker.wss.workspace.model.WorkspaceResourceBundle
+import com.visualtasker.wss.workspace.model.WorkspaceResourceKind
+import com.visualtasker.wss.workspace.model.WssDragTreeItem
+import com.visualtasker.wss.workspace.model.WssDropEffectResolver
+import com.visualtasker.wss.workspace.model.WssDropResult
+import com.visualtasker.wss.workspace.model.WssDragRules
+import com.visualtasker.wss.workspace.model.WssPanelDragProjection
+import com.visualtasker.wss.workspace.model.WssPanelDragProjector
+import com.visualtasker.wss.workspace.model.defaultRailMode
+import com.visualtasker.wss.workspace.model.toRecorderWorldObservations
+import com.visualtasker.wss.workspace.model.toRailProjection
+import com.visualtasker.wss.workspace.model.toSurfaceMode
 import com.visualtasker.wss.workspace.plugin.ShellDocumentId
 import com.visualtasker.wss.workspace.plugin.ShellEditorInput
 import com.visualtasker.wss.workspace.plugin.ShellEditorOutput
@@ -262,6 +316,33 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartCompactNodeRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartNodeToolboxRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
+import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabSettings
+import com.visualtasker.wss.workspace.plugin.runtime.ShizukuRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginContract
+import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginSettings
+import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginSessionStore
+import com.visualtasker.wss.workspace.plugin.runtime.TaskerRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.TermuxRegistration
+import com.visualtasker.wss.workspace.vt2vt.VT2VT_MESSAGE_FORMAT
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionState
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtLanEndpoint
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtLanTransport
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtMessage
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtMessageCodec
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtMessageType
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtPeer
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtRole
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtTransport
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtUsbAdbBridge
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtUsbBridgeConfig
+import com.visualtasker.wss.workspace.vt2vt.defaultVt2VtSession
+import com.visualtasker.wss.workspace.vt2vt.detectVt2VtLanAddresses
+import com.visualtasker.wss.workspace.vt2vt.logPayload
+import com.visualtasker.wss.workspace.vt2vt.runtimePayload
+import com.visualtasker.wss.workspace.vt2vt.selectionPayload
+import com.visualtasker.wss.workspace.vt2vt.withLoopbackHello
+import com.visualtasker.wss.workspace.vt2vt.workspacePayload
 import com.visualtasker.wss.ui.theme.M3EColors
 import com.visualtasker.wss.visual.debug.VisualSemanticsReporter
 import com.visualtasker.wss.visual.interaction.DefaultEditorInteractionPolicy
@@ -294,8 +375,10 @@ import de.visualtasker.flowchart.layout.FlowLayoutConfig
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -329,22 +412,36 @@ private const val FLOWCHART_MINIMAP_VISIBLE_PREF_KEY = "flowchart_minimap_visibl
 private const val FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY = "flowchart_dataflow_visible"
 private const val FLOWCHART_RUNTIME_VISIBLE_PREF_KEY = "flowchart_runtime_visible"
 private const val FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY = "flowchart_diagnostics_visible"
+private const val CHROME_TAB_SHOW_TITLE_PREF_KEY = "chrometab_show_title"
+private const val CHROME_TAB_SHARE_ENABLED_PREF_KEY = "chrometab_share_enabled"
+private const val CHROME_TAB_DOWNLOAD_MENU_PREF_KEY = "chrometab_download_menu"
+private const val CHROME_TAB_FAVORITE_MENU_PREF_KEY = "chrometab_favorite_menu"
+private const val CHROME_TAB_BOTTOM_BAR_PREF_KEY = "chrometab_bottom_bar"
+private const val CHROME_TAB_ACTION_ICON_PREF_KEY = "chrometab_action_icon"
+private const val CHROME_TAB_CLOSE_ICON_PREF_KEY = "chrometab_close_icon"
 private const val PANEL_RAIL_EXPANDED_PREF_PREFIX = "workspace_panel_rail_expanded:"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
 private const val STEPPER_STATE_PREF_KEY = "workspace_stepper_state"
+private const val M3_SHAPEMAKER_PACKAGE = "com.m3shapes.editor"
 
 private data class StepperPanelState(
     val selectedStepId: String? = null,
     val replayIndex: Int = 0,
     val replayPositionMs: Long = 0L,
     val speed: Float = 1f,
+    val railMode: RailMode = RailMode.Step,
+    val scaleMode: RailScaleMode = RailScaleMode.Temporal,
+    val timelineZoom: Float = 1f,
 ) {
     fun encode(): String = JSONObject()
         .put("selectedStepId", selectedStepId)
         .put("replayIndex", replayIndex)
         .put("replayPositionMs", replayPositionMs)
         .put("speed", speed.toDouble())
+        .put("railMode", railMode.name)
+        .put("scaleMode", scaleMode.name)
+        .put("timelineZoom", timelineZoom.toDouble())
         .toString()
 
     companion object {
@@ -356,6 +453,15 @@ private data class StepperPanelState(
                 replayIndex = root.optInt("replayIndex", 0).coerceAtLeast(0),
                 replayPositionMs = root.optLong("replayPositionMs", 0L).coerceAtLeast(0L),
                 speed = root.optDouble("speed", 1.0).toFloat().coerceIn(0.2f, 4f),
+                railMode = root.optString("railMode")
+                    .takeIf { it.isNotBlank() }
+                    ?.let { raw -> runCatching { RailMode.valueOf(raw) }.getOrNull() }
+                    ?: RailMode.Step,
+                scaleMode = root.optString("scaleMode")
+                    .takeIf { it.isNotBlank() }
+                    ?.let { raw -> runCatching { RailScaleMode.valueOf(raw) }.getOrNull() }
+                    ?: RailScaleMode.Temporal,
+                timelineZoom = root.optDouble("timelineZoom", 1.0).toFloat().coerceIn(0.5f, 4f),
             )
         }.getOrDefault(StepperPanelState())
     }
@@ -467,6 +573,7 @@ private class ScreenshotViewState {
     var showYoloNodes by mutableStateOf(true)
     var showMarkers by mutableStateOf(true)
     var inspectorVisible by mutableStateOf(true)
+    var selectedCanvasSourceId by mutableStateOf<String?>(null)
 }
 
 private class MarkerConsoleState {
@@ -490,6 +597,7 @@ private class VisionCropState {
     var referenceMarkerId by mutableStateOf<String?>(null)
     var liveProcessingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
     var referenceProcessingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
+    val observations = mutableStateListOf<WorldObservation>()
 }
 
 private class ScreenshotCanvasUiState(
@@ -658,6 +766,11 @@ private class ScreenshotCanvasUiState(
         set(value) {
             screenshot.inspectorVisible = value
         }
+    var selectedCanvasSourceId: String?
+        get() = screenshot.selectedCanvasSourceId
+        set(value) {
+            screenshot.selectedCanvasSourceId = value
+        }
 
     fun zoomIn() {
         zoom = (zoom * 1.2f).coerceIn(1f, 5f)
@@ -747,6 +860,7 @@ fun WorkspaceScreen(
     var dockAtTop by remember { mutableStateOf(uiPrefs.getBoolean("dock_top", false)) }
     var useLargeGrid by remember { mutableStateOf(uiPrefs.getBoolean("grid_large", false)) }
     var uiScale by remember { mutableStateOf(uiPrefs.getFloat("ui_scale", 1f).coerceIn(0.7f, 1.5f)) }
+    var fontScale by remember { mutableStateOf(uiPrefs.getFloat("font_scale", 1f).coerceIn(0.75f, 1.6f)) }
     var snapEnabled by remember { mutableStateOf(uiPrefs.getBoolean("snap_enabled", true)) }
     var appearance by remember(uiPrefs) {
         mutableStateOf(
@@ -805,6 +919,19 @@ fun WorkspaceScreen(
     var flowchartDiagnosticsVisible by remember {
         mutableStateOf(uiPrefs.getBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, true))
     }
+    var chromeTabSettings by remember {
+        mutableStateOf(
+            CustomChromeTabSettings(
+                showTitle = uiPrefs.getBoolean(CHROME_TAB_SHOW_TITLE_PREF_KEY, true),
+                shareEnabled = uiPrefs.getBoolean(CHROME_TAB_SHARE_ENABLED_PREF_KEY, false),
+                downloadMenuEnabled = uiPrefs.getBoolean(CHROME_TAB_DOWNLOAD_MENU_PREF_KEY, true),
+                favoriteMenuEnabled = uiPrefs.getBoolean(CHROME_TAB_FAVORITE_MENU_PREF_KEY, true),
+                bottomBarEnabled = uiPrefs.getBoolean(CHROME_TAB_BOTTOM_BAR_PREF_KEY, true),
+                actionButtonIcon = uiPrefs.getString(CHROME_TAB_ACTION_ICON_PREF_KEY, "open") ?: "open",
+                closeButtonIcon = uiPrefs.getString(CHROME_TAB_CLOSE_ICON_PREF_KEY, "close") ?: "close",
+            )
+        )
+    }
     var stepperPanelState by remember(uiPrefs) {
         mutableStateOf(StepperPanelState.decode(uiPrefs.getString(STEPPER_STATE_PREF_KEY, null)))
     }
@@ -857,10 +984,11 @@ fun WorkspaceScreen(
     }
     val emscriptEditorUiState = remember { EmscriptEditorUiState() }
     val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
-    val workspaceBasicRuntime = remember(context, toneGenerator, vibrator) {
+    val workspaceBasicRuntime = remember(context, toneGenerator, vibrator, chromeTabSettings) {
         WorkspaceBasicRuntime(
-            capabilityGate = { workspaceRuntimeCapabilityGate() },
+            capabilityGate = { workspaceRuntimeCapabilityGate(context) },
             environment = WorkspaceBasicRuntimeEnvironment(
                 delayMs = { ms -> delay(ms.coerceAtLeast(0L)) },
                 playBeep = { frequencyHz, durationMs, volumePercent ->
@@ -1093,6 +1221,249 @@ fun WorkspaceScreen(
                 datastoreGet = { key ->
                     runtimeDatastore[key]
                 },
+                chromeTabCommand = { command, args ->
+                    val status = CustomChromeTabRegistration.inspect(context)
+                    when (command) {
+                        "chrometab.issupported" -> RuntimeAdapterResult(
+                            success = status.supported,
+                            message = "ChromeTab.isSupported = ${status.supported}; ${status.summary}",
+                            warning = !status.supported,
+                        )
+                        "chrometab.open",
+                        "chrometab.create",
+                        -> {
+                            val url = args.firstOrNull().orEmpty().ifBlank { "https://example.com" }
+                            val result = CustomChromeTabRegistration.open(context, url, chromeTabSettings)
+                            RuntimeAdapterResult(result.success, result.message, result.warning)
+                        }
+                        "chrometab.bind",
+                        "chrometab.maylaunchurl",
+                        -> RuntimeAdapterResult(
+                            success = status.supported,
+                            message = "$command vorbereitet: ${status.summary}",
+                            warning = !status.supported,
+                        )
+                        "chrometab.close",
+                        "chrometab.requestpostmessagechannel",
+                        "chrometab.postmessage",
+                        "chrometab.validaterelationship",
+                        -> RuntimeAdapterResult(
+                            success = false,
+                            message = "$command benötigt den nächsten CustomTabs Session-/Relationship-Slice.",
+                        )
+                        else -> RuntimeAdapterResult(false, "$command ist im CustomChromeTab-Adapter unbekannt.")
+                    }
+                },
+                taskerCommand = { command, args ->
+                    val status = TaskerRegistration.inspect(context)
+                    when (command) {
+                        "tasker.isinstalled" -> RuntimeAdapterResult(true, "Tasker.isInstalled = ${status.installed}", warning = false)
+                        "tasker.isenabled" -> RuntimeAdapterResult(status.available, "Tasker.isEnabled = ${status.available}; ${status.summary}", warning = !status.available)
+                        "tasker.lastresult" -> {
+                            val runId = args.firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
+                            val result = TaskerPluginSessionStore.lastResult(context, runId)
+                            RuntimeAdapterResult(
+                                success = result != null,
+                                message = result?.let {
+                                    "Tasker.lastResult${runId?.let { id -> "($id)" }.orEmpty()} = ${it.status}; runId=${it.runId}; slot=${it.eventSlot}; event=${it.eventName}; message=${it.message}; ordinal=${it.ordinal}"
+                                } ?: "Tasker.lastResult${runId?.let { id -> "($id)" }.orEmpty()} = leer",
+                                warning = result == null,
+                            )
+                        }
+                        "tasker.error" -> {
+                            val runId = args.firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
+                            val error = TaskerPluginSessionStore.lastError(context, runId)
+                            RuntimeAdapterResult(
+                                success = true,
+                                message = error?.let {
+                                    "Tasker.error${runId?.let { id -> "($id)" }.orEmpty()} = ${it.message}; runId=${it.runId}; slot=${it.eventSlot}; event=${it.eventName}; ordinal=${it.ordinal}"
+                                } ?: "Tasker.error${runId?.let { id -> "($id)" }.orEmpty()} = kein Fehler",
+                                warning = error != null,
+                            )
+                        }
+                        "tasker.action",
+                        "tasker.runtask",
+                        -> {
+                            val request = parseTaskerRunRequest(args)
+                            val result = TaskerRegistration.runTask(
+                                context = context,
+                                taskName = request.taskName,
+                                parameters = request.parameters,
+                                variables = request.variables,
+                            )
+                            RuntimeAdapterResult(result.success, result.message, warning = !result.success)
+                        }
+                        "tasker.getvariable",
+                        "tasker.clearvariable",
+                        "tasker.getvariables",
+                        "tasker.pluginaction",
+                        "tasker.profileenable",
+                        "tasker.profiledisable",
+                        "tasker.profiletoggle",
+                        "tasker.profilestate",
+                        "tasker.cancel",
+                        -> RuntimeAdapterResult(
+                            success = false,
+                            message = "$command registriert, Tasker Runner/Receiver-Vertrag noch nicht verbunden (${args.joinToString(",")})",
+                        )
+                        else -> RuntimeAdapterResult(false, "$command ist im Tasker-Adapter unbekannt.")
+                    }
+                },
+                shizukuCommand = { command, args ->
+                    val status = ShizukuRegistration.inspect(context)
+                    when (command) {
+                        "shizuku.isinstalled" -> RuntimeAdapterResult(true, "Shizuku.isInstalled = ${status.installed}", warning = false)
+                        "shizuku.isavailable" -> RuntimeAdapterResult(status.available, "Shizuku.isAvailable = ${status.available}")
+                        "shizuku.permissionstate" -> RuntimeAdapterResult(status.permissionGranted, "Shizuku.permissionState = ${if (status.permissionGranted) "granted" else "missing"}")
+                        "shizuku.requestpermission" -> {
+                            val requested = ShizukuRegistration.requestPermissionIfPossible()
+                            if (!requested) context.safeStartActivity(ShizukuRegistration.settingsIntent(status))
+                            RuntimeAdapterResult(status.available, if (requested) "Shizuku Permission angefragt" else "Shizuku Permission/Settings geöffnet")
+                        }
+                        "shizuku.getuid" -> RuntimeAdapterResult(status.available, "Shizuku.getUid = ${status.uid ?: -1}")
+                        "shizuku.exec",
+                        "shizuku.shell",
+                        -> {
+                            val shellLine = args.firstOrNull().orEmpty()
+                            val result = ShizukuRegistration.runShell(context, shellLine)
+                            RuntimeAdapterResult(
+                                success = result.success,
+                                message = result.summary,
+                                warning = !result.success,
+                            )
+                        }
+                        "shizuku.systemservice" -> {
+                            val serviceName = args.firstOrNull().orEmpty().trimLiteral()
+                            val result = ShizukuRegistration.runShell(
+                                context,
+                                "service check ${serviceName.shellQuote()}",
+                            )
+                            RuntimeAdapterResult(
+                                success = result.success,
+                                message = result.summary,
+                                warning = !result.success,
+                            )
+                        }
+                        "shizuku.call" -> {
+                            val serviceName = args.getOrNull(0).orEmpty().trimLiteral()
+                            val method = args.getOrNull(1).orEmpty().trimLiteral()
+                            val tail = args.getOrNull(2).orEmpty().trim()
+                            val callArgs = if (tail.startsWith("[") && tail.endsWith("]")) {
+                                splitTopLevel(tail.removeSurrounding("[", "]"))
+                                    .joinToString(" ") { it.trimLiteral().shellQuote() }
+                            } else {
+                                tail.trimLiteral()
+                            }
+                            val shellLine = buildString {
+                                append("service call ")
+                                append(serviceName.shellQuote())
+                                append(' ')
+                                append(method.shellQuote())
+                                if (callArgs.isNotBlank()) {
+                                    append(' ')
+                                    append(callArgs)
+                                }
+                            }
+                            val result = ShizukuRegistration.runShell(context, shellLine)
+                            RuntimeAdapterResult(
+                                success = result.success,
+                                message = result.summary,
+                                warning = !result.success,
+                            )
+                        }
+                        "shizuku.binduserservice",
+                        "shizuku.unbinduserservice",
+                        -> RuntimeAdapterResult(
+                            success = false,
+                            message = "$command registriert, Binder-Ausführung noch nicht verbunden (${args.joinToString(",")})",
+                        )
+                        else -> RuntimeAdapterResult(false, "$command ist im Shizuku-Adapter unbekannt.")
+                    }
+                },
+                termuxCommand = { command, args ->
+                    val status = TermuxRegistration.inspect(context)
+                    when (command) {
+                        "termux.isinstalled" -> RuntimeAdapterResult(true, "Termux.isInstalled = ${status.installed}", warning = false)
+                        "termux.canruncommands" -> RuntimeAdapterResult(status.canRunCommands, "Termux.canRunCommands = ${status.canRunCommands}; ${status.summary}")
+                        "termux.get" -> {
+                            val key = args.firstOrNull().orEmpty()
+                            val value = when (key.lowercase()) {
+                                "installed" -> status.installed.toString()
+                                "apiinstalled" -> status.apiInstalled.toString()
+                                "canruncommands" -> status.canRunCommands.toString()
+                                "permission" -> if (status.runCommandPermissionGranted) "granted" else "missing"
+                                "summary", "" -> status.summary
+                                else -> ""
+                            }
+                            RuntimeAdapterResult(true, "Termux.get($key) = $value", warning = false)
+                        }
+                        "termux.shell" -> {
+                            val commandLine = args.firstOrNull().orEmpty()
+                            val result = TermuxRegistration.runCommand(
+                                context,
+                                TermuxRegistration.buildShellRequest(commandLine),
+                            )
+                            RuntimeAdapterResult(result.success, result.message, warning = !result.success)
+                        }
+                        "termux.run" -> {
+                            val path = args.firstOrNull().orEmpty()
+                            val commandArgs = args.drop(1)
+                            val result = TermuxRegistration.runCommand(
+                                context,
+                                TermuxRegistration.buildRunRequest(path, commandArgs),
+                            )
+                            RuntimeAdapterResult(result.success, result.message, warning = !result.success)
+                        }
+                        "termux.api" -> {
+                            val apiCommand = args.firstOrNull().orEmpty().ifBlank { "battery-status" }
+                            val result = TermuxRegistration.runCommand(
+                                context,
+                                TermuxRegistration.buildApiRequest(apiCommand, args.drop(1)),
+                            )
+                            RuntimeAdapterResult(
+                                success = result.success,
+                                message = if (status.apiInstalled) result.message else "${result.message}; Termux:API App nicht erkannt",
+                                warning = !result.success || !status.apiInstalled,
+                            )
+                        }
+                        "termux.writestdin",
+                        "termux.cancel",
+                        -> RuntimeAdapterResult(
+                            success = false,
+                            message = "$command braucht Termux Result-/Session-Bridge und ist als nächster Slice vorgesehen.",
+                        )
+                        else -> RuntimeAdapterResult(false, "$command ist im Termux-Adapter unbekannt.")
+                    }
+                },
+                scrcpyCommand = { command, args ->
+                    val status = Vt2VtUsbAdbBridge.detect(context)
+                    val endpoint = Vt2VtUsbBridgeConfig().endpoint
+                    when (command) {
+                        "scrcpy.hostavailable" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy.hostAvailable = ${status.bridgeReady}; ${status.summary}")
+                        "scrcpy.devices" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy.devices via USB/ADB: ${status.connectedPeripheralCount}")
+                        "scrcpy.connect",
+                        "scrcpy.start",
+                        -> RuntimeAdapterResult(status.bridgeReady, "scrcpy USB/ADB Bridge ${if (status.bridgeReady) "bereit" else "nicht bereit"}: ${endpoint.host}:${endpoint.port}")
+                        "scrcpy.disconnect",
+                        "scrcpy.stop",
+                        -> RuntimeAdapterResult(true, "scrcpy Bridge-Session lokal freigegeben", warning = false)
+                        "scrcpy.isrunning" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy.isRunning = ${status.bridgeReady}")
+                        "scrcpy.get" -> RuntimeAdapterResult(true, "scrcpy.get(${args.firstOrNull().orEmpty()}) = ${status.summary}", warning = false)
+                        "scrcpy.key",
+                        "scrcpy.text",
+                        "scrcpy.scroll",
+                        "scrcpy.setclipboard",
+                        "scrcpy.setscreenpower",
+                        "scrcpy.rotate",
+                        "scrcpy.touch",
+                        -> RuntimeAdapterResult(
+                            success = status.bridgeReady,
+                            message = "$command an USB/ADB Bridge vorbereitet (${args.joinToString(",")})",
+                            warning = !status.bridgeReady,
+                        )
+                        else -> RuntimeAdapterResult(false, "$command ist im scrcpy/ADB-Adapter unbekannt.")
+                    }
+                },
             ),
         )
     }
@@ -1271,6 +1642,19 @@ fun WorkspaceScreen(
             selectedFlowchartNodeForInsert?.let { "${it.value}:insert:$definitionId" } ?: definitionId,
         )
     }
+    val addSceneSaveNode: (ScreenshotCanvasSavedMarker) -> Unit = { marker ->
+        applyFlowchartMutation(
+            FlowchartWorkspaceMutation.AddNode(
+                definitionId = "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}scene.save",
+                afterNodeId = selectedFlowchartNodeForInsert,
+                initialFields = mapOf(
+                    "command" to "sceneSave",
+                    "args" to sceneSaveArgsForMarker(marker),
+                ),
+            ),
+            "scene-save:${marker.id}",
+        )
+    }
     val deleteFlowchartNode: (FlowNodeId) -> Unit = { nodeId ->
         applyFlowchartMutation(
             FlowchartWorkspaceMutation.DeleteNode(nodeId),
@@ -1366,10 +1750,44 @@ fun WorkspaceScreen(
         is EmscriptDryRunResult.Failure -> result.events.size
         null -> 0
     }
+    fun focusRailTraceFromBlockId(blockId: String) {
+        val result = workspaceDryRunResult ?: return
+        val event = result.eventsForRailTrace().lastOrNull { it.blockId == blockId } ?: return
+        val updated = stepperPanelState.copy(
+            selectedStepId = "dry-run-${event.index}",
+            replayIndex = (event.index - 1).coerceAtLeast(0),
+            replayPositionMs = event.index * 180L,
+        )
+        if (updated != stepperPanelState) {
+            stepperPanelState = updated
+            persistStepperState(uiPrefs, updated)
+        }
+    }
+    fun focusRailTraceFromFlowEdge(edgeId: FlowEdgeId) {
+        val result = workspaceDryRunResult ?: return
+        val edge = workflowState.flowchartProjection.graph.edges.firstOrNull { it.id == edgeId } ?: return
+        val sourceBlockId = edge.sourceNodeId.value.removePrefix("block:").takeIf { it != edge.sourceNodeId.value }
+        val targetBlockId = edge.targetNodeId.value.removePrefix("block:").takeIf { it != edge.targetNodeId.value }
+        if (sourceBlockId == null && targetBlockId == null) return
+        val event = result.eventsForRailTrace().lastOrNull { dryRunEvent ->
+            (sourceBlockId == null || dryRunEvent.edgeSourceBlockId == sourceBlockId) &&
+                (targetBlockId == null || dryRunEvent.edgeTargetBlockId == targetBlockId)
+        } ?: return
+        val updated = stepperPanelState.copy(
+            selectedStepId = "dry-run-${event.index}",
+            replayIndex = (event.index - 1).coerceAtLeast(0),
+            replayPositionMs = event.index * 180L,
+        )
+        if (updated != stepperPanelState) {
+            stepperPanelState = updated
+            persistStepperState(uiPrefs, updated)
+        }
+    }
     fun focusBlockFromFlowNode(nodeId: FlowNodeId) {
         val blockId = nodeId.value.removePrefix("block:").takeIf { it != nodeId.value } ?: return
         val session = activeBlockEditorSessionState.value ?: return
         val target = BlockId(blockId).takeIf { it in session.controller.document.blocks } ?: return
+        focusRailTraceFromBlockId(blockId)
         session.controller.replaceWorkspaceDocument(
             newDocument = session.controller.document,
             recordHistory = false,
@@ -1393,6 +1811,7 @@ fun WorkspaceScreen(
         selectedFlowchartNodeId = target
         selectedFlowchartEdgeId = null
         session.controller.dispatch(FlowInteractionAction.SelectNode(target))
+        focusRailTraceFromBlockId(blockId.value)
         studioLogStore.append(
             level = StudioLogLevel.DEBUG,
             source = "BLOCKEDITOR",
@@ -1416,6 +1835,15 @@ fun WorkspaceScreen(
         val result = workspaceDryRunResult ?: return
         val eventCount = dryRunEventCount(result)
         workspaceDryRunStepIndex = stepIndex.coerceIn(0, eventCount)
+        syncRailTraceToDryRunStep(
+            result = result,
+            stepIndex = workspaceDryRunStepIndex,
+            currentState = stepperPanelState,
+            onStateChanged = { updated ->
+                stepperPanelState = updated
+                persistStepperState(uiPrefs, updated)
+            },
+        )
         workspaceDryRunSequence += 1
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
             irGraph = workflowState.irGraph,
@@ -1444,6 +1872,15 @@ fun WorkspaceScreen(
         workspaceDryRunResult = result
         workspaceDryRunRevision = workflowState.revision.toLong()
         workspaceDryRunStepIndex = dryRunEventCount(result)
+        syncRailTraceToDryRunStep(
+            result = result,
+            stepIndex = workspaceDryRunStepIndex,
+            currentState = stepperPanelState,
+            onStateChanged = { updated ->
+                stepperPanelState = updated
+                persistStepperState(uiPrefs, updated)
+            },
+        )
         workspaceDryRunSequence += 1
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
             irGraph = workflowState.irGraph,
@@ -1508,18 +1945,51 @@ fun WorkspaceScreen(
             )
             return
         }
+        val capabilityReport = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document)
+        val accessibilityBlockers = capabilityReport.accessibilityBlockedCommands()
+        if (accessibilityBlockers.isNotEmpty() && !VisualTaskerAccessibilityService.isConnected()) {
+            studioLogStore.append(
+                level = StudioLogLevel.ERROR,
+                source = source,
+                message = "Live-Run wartet auf Accessibility",
+                details = "Blockierte Commands: ${accessibilityBlockers.joinToString(", ")}",
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:basic-run:accessibility-required"
+            )
+            coroutineScope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Accessibility aktivieren für: ${accessibilityBlockers.take(3).joinToString(", ")}",
+                    actionLabel = "Öffnen",
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    context.safeStartActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+            }
+            return
+        }
         coroutineScope.launch {
             studioLogStore.append(
                 level = StudioLogLevel.INFO,
                 source = source,
                 message = "Workspace Basic-Run gestartet",
-                details = workspaceRuntimeCapabilityGate().inspect(workflowState.document).summary,
+                details = capabilityReport.summary,
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:basic-run:start:${workflowState.revision}"
             )
             val result = workspaceBasicRuntime.run(workflowState.document)
             workspaceDryRunResult = result
             workspaceDryRunStepIndex = dryRunEventCount(result)
+            syncRailTraceToDryRunStep(
+                result = result,
+                stepIndex = workspaceDryRunStepIndex,
+                currentState = stepperPanelState,
+                onStateChanged = { updated ->
+                    stepperPanelState = updated
+                    persistStepperState(uiPrefs, updated)
+                },
+            )
             workspaceDryRunSequence += 1
             val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
                 irGraph = workflowState.irGraph,
@@ -1585,10 +2055,10 @@ fun WorkspaceScreen(
         }
     }
     val baseDensity = LocalDensity.current
-    val scaledDensity = remember(baseDensity, uiScale) {
+    val scaledDensity = remember(baseDensity, uiScale, fontScale) {
         Density(
             density = baseDensity.density * uiScale,
-            fontScale = baseDensity.fontScale * uiScale
+            fontScale = baseDensity.fontScale * fontScale
         )
     }
     val density = scaledDensity.density
@@ -1636,11 +2106,29 @@ fun WorkspaceScreen(
             emptyList()
         }
     }
-    val projectedSteps = when {
-        dryRunRecorderSteps.isNotEmpty() -> dryRunRecorderSteps
-        recorderStepsProjection != null -> recorderStepsProjection.invoke()
-        recordingSteps.isNotEmpty() -> recordingSteps
-        else -> demoRecorderSteps
+    val projectedSteps = when (stepperPanelState.railMode.toSurfaceMode()) {
+        RailSurfaceMode.Run -> when {
+            dryRunRecorderSteps.isNotEmpty() -> dryRunRecorderSteps
+            recorderStepsProjection != null -> recorderStepsProjection.invoke()
+            else -> demoRecorderSteps
+        }
+        RailSurfaceMode.Records -> when {
+            recordingSteps.isNotEmpty() -> recordingSteps
+            recorderStepsProjection != null -> recorderStepsProjection.invoke()
+            else -> demoRecorderSteps
+        }
+        RailSurfaceMode.WatchDog -> when {
+            recorderStepsProjection != null -> recorderStepsProjection.invoke()
+            recordingSteps.isNotEmpty() -> recordingSteps
+            else -> demoRecorderSteps
+        }
+    }
+    var selectedRailTraceStepId by remember { mutableStateOf<String?>(null) }
+    val selectedRailTraceStep = remember(projectedSteps, selectedRailTraceStepId) {
+        selectedRailTraceStepId?.let { id -> projectedSteps.firstOrNull { it.id == id } }
+    }
+    val recorderObservations = remember(projectedSteps) {
+        projectedSteps.toRecorderWorldObservations()
     }
     val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
         loadScreenshotCanvasAssets(context)
@@ -1664,6 +2152,9 @@ fun WorkspaceScreen(
                     action.stepId.dryRunEventIndexOrNull()?.let { eventIndex ->
                         renderWorkspaceDryRunStep(eventIndex)
                     }
+                }
+                if (action is PanelAction.SelectStep) {
+                    selectedRailTraceStepId = action.stepId
                 }
                 // Demo mutations are active only when no external projection is attached.
                 if (recorderStepsProjection == null) {
@@ -1689,14 +2180,14 @@ fun WorkspaceScreen(
                 id = id,
                 type = type,
                 title = title,
-                x = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) 32f else 96f,
+                x = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore || type == PanelType.M3Director || type == PanelType.Vt2Vt) 32f else 96f,
                 y = max(96f, workspaceTopGuardPx),
-                width = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) {
+                width = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore || type == PanelType.M3Director || type == PanelType.Vt2Vt) {
                     ((surfaceSize.width / density) - 64f).coerceAtLeast(PANEL_DEFAULT_W)
                 } else {
                     PANEL_DEFAULT_W
                 },
-                height = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore) {
+                height = if (type == PanelType.Screenshot || type == PanelType.Marker || type == PanelType.Vision || type == PanelType.Datastore || type == PanelType.M3Director || type == PanelType.Vt2Vt) {
                     ((surfaceSize.height - workspaceTopGuardPx - workspaceBottomGuardPx) / density).coerceAtLeast(PANEL_DEFAULT_H)
                 } else {
                     PANEL_DEFAULT_H
@@ -1763,12 +2254,14 @@ fun WorkspaceScreen(
         useLargeGrid,
         snapEnabled,
         uiScale,
+        fontScale,
         blockPaletteInsertMode,
         blockEditorMiniMapVisible,
         flowchartMiniMapVisible,
         flowchartDataFlowVisible,
         flowchartRuntimeVisible,
         flowchartDiagnosticsVisible,
+        chromeTabSettings,
     ) {
         uiPrefs.edit()
             .putBoolean("hide_system_bars", hideSystemBars)
@@ -1776,12 +2269,20 @@ fun WorkspaceScreen(
             .putBoolean("grid_large", useLargeGrid)
             .putBoolean("snap_enabled", snapEnabled)
             .putFloat("ui_scale", uiScale)
+            .putFloat("font_scale", fontScale)
             .putString(BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY, blockPaletteInsertMode.name)
             .putBoolean(BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY, blockEditorMiniMapVisible)
             .putBoolean(FLOWCHART_MINIMAP_VISIBLE_PREF_KEY, flowchartMiniMapVisible)
             .putBoolean(FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY, flowchartDataFlowVisible)
             .putBoolean(FLOWCHART_RUNTIME_VISIBLE_PREF_KEY, flowchartRuntimeVisible)
             .putBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, flowchartDiagnosticsVisible)
+            .putBoolean(CHROME_TAB_SHOW_TITLE_PREF_KEY, chromeTabSettings.showTitle)
+            .putBoolean(CHROME_TAB_SHARE_ENABLED_PREF_KEY, chromeTabSettings.shareEnabled)
+            .putBoolean(CHROME_TAB_DOWNLOAD_MENU_PREF_KEY, chromeTabSettings.downloadMenuEnabled)
+            .putBoolean(CHROME_TAB_FAVORITE_MENU_PREF_KEY, chromeTabSettings.favoriteMenuEnabled)
+            .putBoolean(CHROME_TAB_BOTTOM_BAR_PREF_KEY, chromeTabSettings.bottomBarEnabled)
+            .putString(CHROME_TAB_ACTION_ICON_PREF_KEY, chromeTabSettings.actionButtonIcon)
+            .putString(CHROME_TAB_CLOSE_ICON_PREF_KEY, chromeTabSettings.closeButtonIcon)
             .apply()
     }
     LaunchedEffect(appearance) {
@@ -1861,31 +2362,90 @@ fun WorkspaceScreen(
             )
 
             WorkspaceTopAppBar(
-                snapEnabled = snapEnabled,
-                onSnapToggle = { snapEnabled = !snapEnabled },
-                onAutoArrange = {
-                    autoArrangePanels(
-                        panels = panels,
-                        surfaceSize = surfaceSize,
-                        focusedPanelId = focusedPanelId,
-                        topInsetPx = workspaceTopGuardPx,
-                        bottomInsetPx = workspaceBottomGuardPx,
+                projectName = emscriptFileManager.currentName.ifBlank { "draft" },
+                canRunLive = workflowState.document.blocks.isNotEmpty(),
+                onRunLive = { runCurrentWorkspaceLive("WORKSPACE") },
+                onPause = {
+                    studioLogStore.append(
+                        level = StudioLogLevel.WARNING,
+                        source = "WORKSPACE",
+                        message = "Pause angefordert",
+                        details = "Runtime-Pause wird im nächsten Job-Controller-Slice hart verdrahtet.",
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "workspace:runtime-pause-requested"
                     )
                 },
-                onOpenPanel = openPanel,
+                onStop = {
+                    workspaceDryRunResult = null
+                    workspaceDryRunStepIndex = 0
+                    flowRuntimeSnapshot = null
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = "WORKSPACE",
+                        message = "Runtime-Anzeige gestoppt",
+                        details = "Dry/Live Snapshot geleert.",
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "workspace:runtime-stop"
+                    )
+                },
+                onLoadProject = {
+                    replaceWorkflowStateFromJson(loadBlockEditorWorkspaceJson(uiPrefs), "workspace:project-load")
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = "WORKSPACE",
+                        message = "Projekt geladen",
+                        details = emscriptFileManager.currentName.ifBlank { "draft" },
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "workspace:project-load"
+                    )
+                },
+                onSaveProject = {
+                    uiPrefs.edit()
+                        .putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, workflowState.serializedJson)
+                        .putString(TEXT_EDITOR_DRAFT_PREF_KEY, emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }?.content.orEmpty())
+                        .apply()
+                    sessionStore.save(WorkspaceSessionSnapshot(panels = panels.toList()))
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = "WORKSPACE",
+                        message = "Projekt gespeichert",
+                        details = "Workspace=${workflowState.serializedJson.length} Zeichen",
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "workspace:project-save"
+                    )
+                },
+                onClearProject = {
+                    applyWorkspaceJsonChange(
+                        WorkspaceSerializer.serialize(WorkspaceBootstrap.starter()),
+                        "workspace:project-clear"
+                    )
+                    emscriptSession = emscriptSession.updateGeneratedFromBlocks("// Leerer Workspace")
+                },
+                onClearCanvas = {
+                    workspaceCanvasState.selectedAssetId = null
+                    workspaceCanvasState.selectedRegion = null
+                    workspaceCanvasState.selectedPath = null
+                    workspaceCanvasState.referenceMarkerId = null
+                    workspaceCanvasState.visualTestScore = null
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = "CANVAS",
+                        message = "Workspace Canvas geleert",
+                        groupKey = "workspace:canvas-clear"
+                    )
+                },
                 onOpenSettings = { showSettingsSheet = true },
-                onOpenMainScreen = onMainScreenRequested,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .zIndex(10_000f)
+                    .zIndex(900_000f)
             )
 
         panels.sortedBy { it.zIndex }.forEach { panel ->
             if (panel.minimized) return@forEach
             key(panel.id) {
                 val panelTopPx = max(panel.y, workspaceTopGuardPx)
-                val maxWidthDp = ((surfaceSize.width - panel.x).coerceAtLeast(0f) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
-                val maxHeightDp = ((surfaceSize.height - panelTopPx - workspaceBottomGuardPx).coerceAtLeast(0f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
+                val maxWidthDp = (surfaceSize.width.coerceAtLeast(0) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
+                val maxHeightDp = ((surfaceSize.height - workspaceTopGuardPx - workspaceBottomGuardPx).coerceAtLeast(0f) / density).toInt().coerceAtLeast(PANEL_MIN_H.toInt())
                 val panelWidthPx = panel.width * density
                 val panelHeightPx = panel.height * density
                 val panelMaxXPx = max(0f, surfaceSize.width - panelWidthPx)
@@ -1898,9 +2458,10 @@ fun WorkspaceScreen(
                     topGuardPx = workspaceTopGuardPx,
                     bottomGuardPx = workspaceBottomGuardPx,
                 )
+                val isRailTracePanel = panel.type == PanelType.RecorderSteps
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
-                val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore
+                val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore || panel.type == PanelType.M3Director || panel.type == PanelType.Vt2Vt
                 val isLogConsolePanel = panel.type == PanelType.LogConsole || panel.type == PanelType.RuntimeLog
                 val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
@@ -1932,9 +2493,10 @@ fun WorkspaceScreen(
                         railExpanded = expanded
                         persistPanelRailExpanded(uiPrefs, panel.id, expanded)
                     },
-                    showDefaultRailIcons = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
-                    showRailColorPicker = !(isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
+                    showDefaultRailIcons = !(isRailTracePanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
+                    showRailColorPicker = !(isRailTracePanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
 	                    railExpandedWidth = when {
+                        isRailTracePanel -> 240.dp
 	                        isBlockEditorPanel -> 300.dp
 	                        isFlowchartPanel -> 300.dp
                         isLogConsolePanel -> 220.dp
@@ -1942,7 +2504,7 @@ fun WorkspaceScreen(
                         isScreenshotPanel -> 220.dp
                         else -> 186.dp
                     },
-                    railExpandedFillHeight = isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
+                    railExpandedFillHeight = isRailTracePanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
                     headerLeadingContent = {
                         PanelTypeSwitchButton(
                             currentType = panel.type,
@@ -1965,16 +2527,55 @@ fun WorkspaceScreen(
                                 state = screenshotCanvasState,
                                 onExpandRequested = onExpandRequested,
                             )
+                            isRailTracePanel -> RailTraceCompactRail(
+                                onSave = {
+                                    persistStepperState(uiPrefs, stepperPanelState)
+                                    sessionStore.save(WorkspaceSessionSnapshot(panels = panels.toList()))
+                                    studioLogStore.append(
+                                        level = StudioLogLevel.INFO,
+                                        source = "RAILTRACE",
+                                        message = "RailTrace Workspace gespeichert",
+                                        details = "Mode=${stepperPanelState.railMode.name}, Scale=${stepperPanelState.scaleMode.name}, Zoom=${stepperPanelState.timelineZoom}",
+                                        documentRevision = workflowState.revision.toLong(),
+                                        groupKey = "railtrace:state-saved"
+                                    )
+                                },
+                                onUndo = { undoWorkspaceChange() },
+                                onRedo = { redoWorkspaceChange() },
+                                onRunDry = { runCurrentWorkspaceDryRun("RAILTRACE") },
+                                onRunLive = { runCurrentWorkspaceLive("RAILTRACE") },
+                                onStepBack = { renderWorkspaceDryRunStep(workspaceDryRunStepIndex - 1) },
+                                onStepForward = {
+                                    if (workspaceDryRunResult == null) {
+                                        runCurrentWorkspaceDryRun("RAILTRACE")
+                                    } else {
+                                        renderWorkspaceDryRunStep(workspaceDryRunStepIndex + 1)
+                                    }
+                                },
+                                canRunDry = workflowState.emscriptProjection.isSuccess,
+                                canRunLive = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document).realRunAllowed,
+                                canStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
+                                canStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
+                                onZoomIn = {
+                                    stepperPanelState = stepperPanelState.copy(
+                                        timelineZoom = (stepperPanelState.timelineZoom * 1.25f).coerceAtMost(4f)
+                                    )
+                                    persistStepperState(uiPrefs, stepperPanelState)
+                                },
+                                onZoomOut = {
+                                    stepperPanelState = stepperPanelState.copy(
+                                        timelineZoom = (stepperPanelState.timelineZoom / 1.25f).coerceAtLeast(0.5f)
+                                    )
+                                    persistStepperState(uiPrefs, stepperPanelState)
+                                },
+                                onExpandRequested = onExpandRequested,
+                            )
                             isBlockEditorPanel -> BlockEditorCompactCategoryRail(
                                 session = blockEditorSessionState.value,
                                 onExpandRequested = onExpandRequested,
                                 onSave = {
                                     blockEditorSessionState.value?.let { persistBlockEditorSession(uiPrefs, it) }
                                 },
-                                onRunDry = { runCurrentWorkspaceDryRun("BLOCKEDITOR") },
-                                onRunLive = { runCurrentWorkspaceLive("BLOCKEDITOR") },
-                                canDryRun = workflowState.emscriptProjection.isSuccess,
-                                canLiveRun = workspaceRuntimeCapabilityGate().inspect(workflowState.document).realRunAllowed,
                             )
                             isFlowchartPanel -> FlowchartCompactActionRail(
                                 session = flowchartSessionState.value,
@@ -1988,18 +2589,6 @@ fun WorkspaceScreen(
                                 onSave = {
                                     flowchartSessionState.value?.let { persistFlowchartViewSession(uiPrefs, it) }
                                 },
-                                onRunDry = { runCurrentWorkspaceDryRun("FLOWCHART") },
-                                onRunLive = { runCurrentWorkspaceLive("FLOWCHART") },
-                                onStepBack = { renderWorkspaceDryRunStep(workspaceDryRunStepIndex - 1) },
-                                onStepForward = {
-                                    if (workspaceDryRunResult == null) {
-                                        runCurrentWorkspaceDryRun("FLOWCHART")
-                                    } else {
-                                        renderWorkspaceDryRunStep(workspaceDryRunStepIndex + 1)
-                                    }
-                                },
-                                canStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
-                                canStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
                                 dataFlowVisible = flowchartDataFlowVisible,
                                 runtimeVisible = flowchartRuntimeVisible,
                                 diagnosticsVisible = flowchartDiagnosticsVisible,
@@ -2046,8 +2635,6 @@ fun WorkspaceScreen(
                                         )
                                     }
                                 },
-                                onDryRun = { runCurrentWorkspaceDryRun("EMSCRIPT") },
-                                onLiveRun = { runCurrentWorkspaceLive("EMSCRIPT") },
                                 onSave = {
                                     val manual = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
                                     if (manual != null) {
@@ -2074,8 +2661,6 @@ fun WorkspaceScreen(
                                     .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
                                     ?.content
                                     ?.isNotBlank() == true,
-                                canDryRun = workflowState.emscriptProjection.isSuccess,
-                                canLiveRun = workspaceRuntimeCapabilityGate().inspect(workflowState.document).realRunAllowed,
                                 canLoad = emscriptFileManager.scripts.containsKey(emscriptFileManager.currentName.trim())
                             )
                         }
@@ -2103,6 +2688,24 @@ fun WorkspaceScreen(
                                         screenshotCanvasState.refreshAssets()
                                     }
                                 }
+                            )
+                            isRailTracePanel -> RailTraceExpandedRail(
+                                state = stepperPanelState,
+                                onModeChange = { mode ->
+                                    val updated = stepperPanelState.copy(railMode = mode)
+                                    stepperPanelState = updated
+                                    persistStepperState(uiPrefs, updated)
+                                },
+                                onScaleChange = { scale ->
+                                    val updated = stepperPanelState.copy(scaleMode = scale)
+                                    stepperPanelState = updated
+                                    persistStepperState(uiPrefs, updated)
+                                },
+                                onZoomChange = { zoom ->
+                                    val updated = stepperPanelState.copy(timelineZoom = zoom.coerceIn(0.5f, 4f))
+                                    stepperPanelState = updated
+                                    persistStepperState(uiPrefs, updated)
+                                },
                             )
                             isBlockEditorPanel -> BlockEditorPanelRail(
                                 session = blockEditorSessionState.value,
@@ -2236,19 +2839,25 @@ fun WorkspaceScreen(
                         flowchartRuntimeVisible = flowchartRuntimeVisible,
                         flowchartDiagnosticsVisible = flowchartDiagnosticsVisible,
                         stepperPanelState = stepperPanelState,
+                        selectedRailTraceStep = selectedRailTraceStep,
+                        recorderObservations = recorderObservations,
                         recordingSessions = recordingSessions,
                         selectedRecordingSessionPath = selectedRecordingSessionPath,
                         onFlowchartDataFlowVisibleChange = { flowchartDataFlowVisible = it },
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
                         onRecordingSessionSelected = { path -> selectedRecordingSessionPath = path },
+                        onStepperStateChange = { state ->
+                            stepperPanelState = state
+                            persistStepperState(uiPrefs, state)
+                        },
                         onStepperStateSave = { state ->
                             stepperPanelState = state
-                            uiPrefs.edit().putString(STEPPER_STATE_PREF_KEY, state.encode()).apply()
+                            persistStepperState(uiPrefs, state)
                             studioLogStore.append(
                                 level = StudioLogLevel.INFO,
-                                source = "STEPPER",
-                                message = "Stepper-Stand gespeichert",
+                                source = "RAILTRACE",
+                                message = "RailTrace-Stand gespeichert",
                                 details = "Index ${state.replayIndex}, Position ${state.replayPositionMs} ms, Speed ${state.speed.formatSpeedStep()}x",
                                 documentRevision = workflowState.revision.toLong(),
                                 groupKey = "stepper:state-saved"
@@ -2306,6 +2915,8 @@ fun WorkspaceScreen(
                             selectedFlowchartNodeId = nodeId
                             selectedFlowchartEdgeId = edgeId
                             selectedFlowchartNodeForInsert = nodeId
+                            nodeId?.let(::focusBlockFromFlowNode)
+                            edgeId?.let(::focusRailTraceFromFlowEdge)
                         },
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
                         onFlowchartNodeDelete = deleteFlowchartNode,
@@ -2334,6 +2945,7 @@ fun WorkspaceScreen(
                         },
                         screenshotCanvasState = screenshotCanvasState,
                         screenshotAssets = screenshotAssets,
+                        onSceneMarkerSaved = addSceneSaveNode,
                         onWorkspaceJsonChange = applyWorkspaceJsonChange
                     )
                 }
@@ -2399,7 +3011,16 @@ fun WorkspaceScreen(
                     onMainScreenRequested()
                 }
             ),
-            modifier = Modifier.align(Alignment.BottomEnd)
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .zIndex(1_000_000f)
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = (WORKSPACE_TOP_BAR_HEIGHT_DP + 8).dp)
+                .zIndex(1_000_001f)
         )
         }
     }
@@ -2432,6 +3053,8 @@ fun WorkspaceScreen(
             onSnapEnabledChange = { snapEnabled = it },
             uiScale = uiScale,
             onUiScaleChange = { uiScale = it.coerceIn(0.7f, 1.5f) },
+            fontScale = fontScale,
+            onFontScaleChange = { fontScale = it.coerceIn(0.75f, 1.6f) },
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             appearance = appearance,
@@ -2442,12 +3065,41 @@ fun WorkspaceScreen(
             onBlockEditorMiniMapVisibleChange = { blockEditorMiniMapVisible = it },
             flowchartMiniMapVisible = flowchartMiniMapVisible,
             onFlowchartMiniMapVisibleChange = { flowchartMiniMapVisible = it },
+            chromeTabSettings = chromeTabSettings,
+            onChromeTabSettingsChange = { chromeTabSettings = it },
             onResetPanels = {
                 panels.clear()
                 panels.addAll(defaultPanels())
                 nextId = (panels.maxOfOrNull { it.id.removePrefix("panel-").toIntOrNull() ?: 0 } ?: 0) + 1
                 nextZ = (panels.maxOfOrNull { it.zIndex } ?: 0) + 1
                 focusedPanelId = panels.maxByOrNull { it.zIndex }?.id.orEmpty()
+            },
+            onSaveLayout = {
+                sessionStore.save(WorkspaceSessionSnapshot(panels = panels.toList()))
+                studioLogStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "WORKSPACE",
+                    message = "Layout gespeichert",
+                    details = "Panels=${panels.size}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "workspace:layout-save"
+                )
+            },
+            onDeleteLayout = {
+                sessionStore.clear()
+                panels.clear()
+                panels.addAll(defaultPanels())
+                nextId = (panels.maxOfOrNull { it.id.removePrefix("panel-").toIntOrNull() ?: 0 } ?: 0) + 1
+                nextZ = (panels.maxOfOrNull { it.zIndex } ?: 0) + 1
+                focusedPanelId = panels.maxByOrNull { it.zIndex }?.id.orEmpty()
+                studioLogStore.append(
+                    level = StudioLogLevel.WARNING,
+                    source = "WORKSPACE",
+                    message = "Layout gelöscht",
+                    details = "Standard-Layout wiederhergestellt.",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "workspace:layout-delete"
+                )
             },
             onAutoArrange = {
                 autoArrangePanels(
@@ -2633,11 +3285,14 @@ private fun WorkspacePanelContent(
     flowchartRuntimeVisible: Boolean,
     flowchartDiagnosticsVisible: Boolean,
     stepperPanelState: StepperPanelState = StepperPanelState(),
+    selectedRailTraceStep: RecorderStepUi? = null,
+    recorderObservations: List<WorldObservation> = emptyList(),
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
     onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
     onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
     onFlowchartDiagnosticsVisibleChange: (Boolean) -> Unit = {},
+    onStepperStateChange: (StepperPanelState) -> Unit = {},
     onStepperStateSave: (StepperPanelState) -> Unit = {},
     onRecordingSessionSelected: (String) -> Unit = {},
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
@@ -2672,15 +3327,20 @@ private fun WorkspacePanelContent(
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
     screenshotCanvasState: ScreenshotCanvasUiState = remember { ScreenshotCanvasUiState() },
     screenshotAssets: List<ScreenshotCanvasAsset> = emptyList(),
+    onSceneMarkerSaved: (ScreenshotCanvasSavedMarker) -> Unit = {},
     runtimeDatastore: Map<String, String> = emptyMap(),
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
+    val context = LocalContext.current
     when (panel.type) {
         PanelType.RecorderSteps -> RecorderStepsPanel(
             steps = steps,
             actionSink = actionSink,
             activeRuntimeStepIndex = activeRuntimeStepIndex,
             initialState = stepperPanelState,
+            timelineZoom = stepperPanelState.timelineZoom,
+            onTimelineZoomChange = { zoom -> onStepperStateChange(stepperPanelState.copy(timelineZoom = zoom)) },
+            onViewStateChange = onStepperStateChange,
             onSaveState = onStepperStateSave,
             recordingSessions = recordingSessions,
             selectedRecordingSessionPath = selectedRecordingSessionPath,
@@ -2703,12 +3363,6 @@ private fun WorkspacePanelContent(
             runtimeSnapshot = flowRuntimeSnapshot,
             focusedNodeId = focusedFlowchartNodeId,
             focusedEdgeId = focusedFlowchartEdgeId,
-            onRunDry = onRunWorkspaceDry,
-            onRunLive = onRunWorkspaceLive,
-            onStepBack = onDryRunStepBack,
-            onStepForward = onDryRunStepForward,
-            canStepBack = canDryRunStepBack,
-            canStepForward = canDryRunStepForward,
             stepLabel = dryRunStepLabel,
             showMiniMap = flowchartMiniMapVisible,
             dataFlowVisible = flowchartDataFlowVisible,
@@ -2736,7 +3390,7 @@ private fun WorkspacePanelContent(
         )
         PanelType.TextEditor,
         PanelType.Emscript -> {
-            val capabilityReport = workspaceRuntimeCapabilityGate().inspect(workflowState.document)
+            val capabilityReport = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document)
             EmscriptTextEditorPanel(
                 session = emscriptSession,
                 uiState = emscriptEditorUiState,
@@ -2813,7 +3467,7 @@ private fun WorkspacePanelContent(
                 val syncReport = WorkspaceSyncGuard().inspect(workflowState.serializedJson)
                 add(if (syncReport.isValid) "Workspace Sync Guard: OK" else "Workspace Sync Guard: BLOCKED")
                 addAll(syncReport.messages.take(5))
-                val capabilityReport = workspaceRuntimeCapabilityGate().inspect(workflowState.document)
+                val capabilityReport = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document)
                 add(capabilityReport.summary)
                 capabilityReport.capabilities
                     .groupingBy { it.status }
@@ -2839,11 +3493,17 @@ private fun WorkspacePanelContent(
         PanelType.Screenshot -> ScreenshotCanvasPanel(
             state = screenshotCanvasState,
             assets = screenshotAssets,
+            baseResources = workflowState.resources,
+            recorderObservations = recorderObservations,
             markerPanel = false,
         )
         PanelType.Marker -> MarkerCanvasPanel(
             state = screenshotCanvasState,
             assets = screenshotAssets,
+            baseResources = workflowState.resources,
+            selectedRailTraceStep = selectedRailTraceStep,
+            recorderObservations = recorderObservations,
+            onSceneMarkerSaved = onSceneMarkerSaved,
         )
         PanelType.Vision -> VisionCropCanvasPanel(
             state = screenshotCanvasState,
@@ -2855,8 +3515,21 @@ private fun WorkspacePanelContent(
             workflowState = workflowState,
             logStore = logStore,
             datastore = runtimeDatastore,
+            recorderObservations = recorderObservations,
         )
-        PanelType.M3Director -> Unit
+        PanelType.M3Director -> VisualAssetManagerPanel(
+            workflowState = workflowState,
+            screenshotState = screenshotCanvasState,
+            screenshotAssets = screenshotAssets,
+        )
+        PanelType.Vt2Vt -> Vt2VtPanel(
+            workflowState = workflowState,
+            logStore = logStore,
+            flowRuntimeSnapshot = flowRuntimeSnapshot,
+            focusedFlowchartNodeId = focusedFlowchartNodeId,
+            focusedFlowchartEdgeId = focusedFlowchartEdgeId,
+            activeRuntimeStepIndex = activeRuntimeStepIndex,
+        )
     }
 }
 
@@ -3165,6 +3838,213 @@ private fun markerExportCode(marker: ScreenshotCanvasSavedMarker): String {
     }
 }
 
+private fun buildCanvasWorldview(
+    assets: List<ScreenshotCanvasAsset>,
+    markers: List<ScreenshotCanvasSavedMarker>,
+    baseResources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
+    visionObservations: List<WorldObservation> = emptyList(),
+    recorderObservations: List<WorldObservation> = emptyList(),
+): WorldviewDocument {
+    val assetSizes = assets.associate { asset ->
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(asset.file.absolutePath, options)
+        asset.id to (options.outWidth.coerceAtLeast(1) to options.outHeight.coerceAtLeast(1))
+    }
+    val assetResources = assets.map { asset ->
+        WorkspaceResource(
+            id = "screenshot:${asset.id.stableResourceSuffix()}",
+            kind = WorkspaceResourceKind.Screenshot,
+            label = asset.label,
+            uri = asset.file.absolutePath,
+            mimeType = "image/png",
+            packageName = asset.app,
+            activityClass = asset.scene,
+            tags = setOf("canvas", "scene"),
+            metadata = mapOf(
+                "date" to asset.dateLabel,
+                "source" to "canvas",
+            ),
+            updatedAtEpochMs = asset.file.lastModified(),
+        )
+    }
+    val markerResources = markers.mapNotNull { marker ->
+        val size = marker.assetId?.let(assetSizes::get) ?: assetSizes.values.firstOrNull()
+        val referenceWidth = size?.first ?: return@mapNotNull null
+        val referenceHeight = size.second
+        val region = runCatching {
+            WorkspaceRegionBounds(
+                left = (marker.region.x.toFloat() / referenceWidth).coerceIn(0f, 1f),
+                top = (marker.region.y.toFloat() / referenceHeight).coerceIn(0f, 1f),
+                right = ((marker.region.x + marker.region.width).toFloat() / referenceWidth).coerceIn(0f, 1f),
+                bottom = ((marker.region.y + marker.region.height).toFloat() / referenceHeight).coerceIn(0f, 1f),
+            )
+        }.getOrNull()
+        val point = if (marker.markerMode == ScreenshotCanvasMarkerMode.Point) {
+            WorkspacePointBounds(
+                x = ((marker.region.x + marker.region.width / 2f) / referenceWidth).coerceIn(0f, 1f),
+                y = ((marker.region.y + marker.region.height / 2f) / referenceHeight).coerceIn(0f, 1f),
+            )
+        } else {
+            null
+        }
+        WorkspaceResource(
+            id = marker.id.stableMarkerResourceId(marker.markerMode),
+            kind = when (marker.markerMode) {
+                ScreenshotCanvasMarkerMode.Template -> WorkspaceResourceKind.Template
+                ScreenshotCanvasMarkerMode.Region -> WorkspaceResourceKind.Region
+                ScreenshotCanvasMarkerMode.Point,
+                ScreenshotCanvasMarkerMode.Swipe,
+                ScreenshotCanvasMarkerMode.Spline,
+                ScreenshotCanvasMarkerMode.Path,
+                -> WorkspaceResourceKind.Marker
+            },
+            label = marker.label,
+            pluginOwner = "visualtasker.canvas",
+            uri = marker.assetId,
+            mimeType = if (marker.markerMode == ScreenshotCanvasMarkerMode.Template) "image/png" else null,
+            markerMode = when (marker.markerMode) {
+                ScreenshotCanvasMarkerMode.Template,
+                ScreenshotCanvasMarkerMode.Region,
+                -> WorkspaceMarkerMode.Region
+                ScreenshotCanvasMarkerMode.Point -> WorkspaceMarkerMode.Point
+                ScreenshotCanvasMarkerMode.Swipe -> WorkspaceMarkerMode.Swipe
+                ScreenshotCanvasMarkerMode.Spline,
+                ScreenshotCanvasMarkerMode.Path,
+                -> WorkspaceMarkerMode.Path
+            },
+            region = region,
+            point = point,
+            referenceWidthPx = referenceWidth,
+            referenceHeightPx = referenceHeight,
+            tags = setOf("canvas", "marker", marker.markerMode.name.lowercase()),
+            metadata = mapOf(
+                "assetLabel" to (marker.assetLabel ?: "-"),
+                "matchKind" to marker.matchKind.name,
+                "processingMode" to marker.processingMode.name,
+                "threshold" to marker.threshold.toString(),
+                "rotationDegrees" to marker.rotationDegrees.toString(),
+                "export" to markerExportCode(marker),
+            ),
+            updatedAtEpochMs = marker.updatedAt,
+        )
+    }
+    val merged = (baseResources.resources + assetResources + markerResources)
+        .distinctBy { it.id }
+    val projected = WorldviewDocument.fromResources(baseResources.copy(resources = merged))
+    val mergedObservations = (projected.observations + visionObservations + recorderObservations)
+        .distinctBy { it.id }
+        .sortedBy { it.id }
+    return projected.copy(
+        observations = mergedObservations,
+        revision = projected.revision + visionObservations.size + recorderObservations.size,
+    )
+}
+
+private fun String.stableResourceSuffix(): String =
+    hashCode().toString().replace("-", "n")
+
+private fun String.stableMarkerResourceId(mode: ScreenshotCanvasMarkerMode): String {
+    val normalized = lowercase()
+        .replace(Regex("[^a-z0-9._:-]"), "-")
+        .trim('-')
+        .ifBlank { stableResourceSuffix() }
+    val prefix = when (mode) {
+        ScreenshotCanvasMarkerMode.Template -> "template"
+        ScreenshotCanvasMarkerMode.Region -> "region"
+        ScreenshotCanvasMarkerMode.Point,
+        ScreenshotCanvasMarkerMode.Swipe,
+        ScreenshotCanvasMarkerMode.Spline,
+        ScreenshotCanvasMarkerMode.Path,
+        -> "marker"
+    }
+    return if (normalized.startsWith("$prefix:")) normalized else "$prefix:$normalized"
+}
+
+private fun ScreenshotCanvasUiState.toCanvasObservationFilters(): CanvasObservationFilters =
+    CanvasObservationFilters(
+        showAccessibility = showAccessibilityNodes,
+        showClickable = !filterHideClickable,
+        showVisible = !filterHideInvisible,
+        showFocusable = !filterHideNonFocusable,
+        showOcr = showOcrNodes,
+        showOcv = showVisionTemplateNodes,
+        showYolo = showYoloNodes,
+        showDom = showDomNodes,
+        showMarkers = showMarkers,
+    )
+
+private fun ScreenshotCanvasUiState.selectCanvasObservation(item: CanvasObservationItem) {
+    selectedCanvasSourceId = item.sourceId
+    savedMarkers.firstOrNull { marker ->
+        marker.id == item.sourceId || marker.id.stableMarkerResourceId(marker.markerMode) == item.sourceId
+    }?.let { marker ->
+        selectedSavedMarkerId = marker.id
+        selectedRegion = marker.region
+        selectedPath = marker.path
+        markerMode = marker.markerMode
+        matchKind = marker.matchKind
+        processingMode = marker.processingMode
+        templateName = marker.label
+        colourHex = marker.colourHex
+        threshold = marker.threshold
+    } ?: run {
+        templateName = item.label
+    }
+}
+
+private fun ScreenshotCanvasUiState.recordVisionObservation(
+    asset: ScreenshotCanvasAsset?,
+    bitmap: android.graphics.Bitmap?,
+    referenceMarker: ScreenshotCanvasSavedMarker?,
+    score: Float?,
+) {
+    val region = selectedRegion ?: return
+    val imageWidth = bitmap?.width ?: return
+    val imageHeight = bitmap.height
+    val bounds = region.toWorldviewRect(imageWidth, imageHeight) ?: return
+    val normalizedReferenceId = referenceMarker?.id?.stableMarkerResourceId(referenceMarker.markerMode)
+    val seed = listOfNotNull(
+        asset?.id,
+        referenceMarker?.id,
+        region.x.toString(),
+        region.y.toString(),
+        region.width.toString(),
+        region.height.toString(),
+        liveProcessingMode.name,
+        referenceProcessingMode.name,
+        matchKind.name,
+    ).joinToString(":")
+    val observation = CanvasVisionObservationFactory.create(
+        idSeed = seed,
+        label = referenceMarker?.label ?: templateName,
+        matchKind = matchKind.name,
+        processingMode = liveProcessingMode.name,
+        bounds = bounds,
+        score = score ?: 0f,
+        threshold = threshold,
+        assetId = asset?.id,
+        referenceId = normalizedReferenceId,
+        observedAtEpochMs = System.currentTimeMillis(),
+    )
+    vision.observations.removeAll { it.id == observation.id }
+    vision.observations.add(observation)
+    selectedCanvasSourceId = observation.id
+}
+
+private fun ScreenshotCanvasRegion.toWorldviewRect(
+    imageWidth: Int,
+    imageHeight: Int,
+): WorldviewRect? {
+    if (imageWidth <= 0 || imageHeight <= 0 || width <= 0 || height <= 0) return null
+    val left = (x.toFloat() / imageWidth).coerceIn(0f, 1f)
+    val top = (y.toFloat() / imageHeight).coerceIn(0f, 1f)
+    val right = ((x + width).toFloat() / imageWidth).coerceIn(0f, 1f)
+    val bottom = ((y + height).toFloat() / imageHeight).coerceIn(0f, 1f)
+    return runCatching {
+        WorldviewRect(left, top, right, bottom)
+    }.getOrNull()
+}
+
 @Composable
 private fun DatastorePanel(
     state: ScreenshotCanvasUiState,
@@ -3172,6 +4052,7 @@ private fun DatastorePanel(
     workflowState: WorkspaceWorkflowState,
     logStore: StudioLogStore,
     datastore: Map<String, String>,
+    recorderObservations: List<WorldObservation> = emptyList(),
 ) {
     val logChangeToken = logStore.changeToken
     val logEntries = remember(logChangeToken) { logStore.allEntries() }
@@ -3183,6 +4064,53 @@ private fun DatastorePanel(
     }
     val actionMarkers = remember(state.savedMarkers.toList()) {
         state.savedMarkers.filter { it.markerMode != ScreenshotCanvasMarkerMode.Template }
+    }
+    val canvasWorldview = remember(
+        assets,
+        state.savedMarkers.toList(),
+        state.vision.observations.toList(),
+        recorderObservations,
+        workflowState.resources.revision,
+    ) {
+        buildCanvasWorldview(
+            assets = assets,
+            markers = state.savedMarkers,
+            baseResources = workflowState.resources,
+            visionObservations = state.vision.observations,
+            recorderObservations = recorderObservations,
+        )
+    }
+    val visualMemory = remember(canvasWorldview) {
+        VisualUiMemoryProjector.project(canvasWorldview)
+    }
+    val dataProjection = remember(canvasWorldview) {
+        WorldviewDataProjector.project(canvasWorldview)
+    }
+    val canvasObservationProjection = remember(
+        canvasWorldview,
+        state.showAccessibilityNodes,
+        state.filterHideClickable,
+        state.filterHideInvisible,
+        state.filterHideNonFocusable,
+        state.showOcrNodes,
+        state.showVisionTemplateNodes,
+        state.showYoloNodes,
+        state.showDomNodes,
+        state.showMarkers,
+        state.selectedCanvasSourceId,
+    ) {
+        CanvasObservationProjector.project(
+            document = canvasWorldview,
+            filters = state.toCanvasObservationFilters(),
+            selectedSourceId = state.selectedCanvasSourceId,
+        )
+    }
+    val dragProjection = remember(canvasWorldview.resources.revision, canvasWorldview.resources.resources) {
+        WssPanelDragProjector.forResources(
+            panelId = "datastore",
+            bundle = canvasWorldview.resources,
+            panelType = PanelType.Datastore,
+        )
     }
     Column(
         modifier = Modifier
@@ -3198,13 +4126,61 @@ private fun DatastorePanel(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
+                DatastoreSection(visualMemory.title) {
+                    DatastoreMetric("Revision", visualMemory.worldviewRevision.toString())
+                    DatastoreMetric("Provider aktiv", "${visualMemory.activeProviderCount}/${visualMemory.providerStates.size}")
+                    DatastoreMetric(
+                        "Facetten",
+                        visualMemory.facetCounts.joinToString(", ") { "${it.facet.name}:${it.count}" },
+                    )
+                    visualMemory.providerStates.forEach { provider ->
+                        DatastoreMetric(
+                            provider.provider.name,
+                            if (provider.active) "${provider.itemCount} aktiv" else "${provider.itemCount} bereit",
+                        )
+                    }
+                }
+            }
+            item {
                 DatastoreSection("Dataset") {
                     DatastoreMetric("Screenshots", assets.size.toString())
                     DatastoreMetric("Marker", state.savedMarkers.size.toString())
                     DatastoreMetric("Templates", templateMarkers.size.toString())
+                    DatastoreMetric("Visual Assets", "ShapeMaker vorbereitet")
                     DatastoreMetric("Key/Value", datastore.size.toString())
                     DatastoreMetric("Auswahl", selectedMarker?.label ?: "-")
                     DatastoreMetric("Region", state.selectedRegion?.let { "${it.x},${it.y} ${it.width}x${it.height}" } ?: "-")
+                }
+            }
+            item {
+                WssDragTreeSection(
+                    title = "WSS Drag Bus",
+                    projection = dragProjection,
+                    maxItems = 14,
+                )
+            }
+            if (visualMemory.suggestions.isNotEmpty()) {
+                item {
+                    DatastoreSection("Worldview Suggestions") {
+                        visualMemory.suggestions.take(8).forEach { suggestion ->
+                            DatastoreMetric(
+                                suggestion.label,
+                                "${"%.0f".format(suggestion.confidence * 100)}% | ${suggestion.detail}",
+                            )
+                        }
+                    }
+                }
+            }
+            if (dataProjection.observationGroups.isNotEmpty()) {
+                item {
+                    DatastoreSection("Observation History") {
+                        dataProjection.observationGroups.take(10).forEach { group ->
+                            DatastoreMetric(
+                                "${group.provider.name} ${group.label}",
+                                "${group.count} Beobachtungen | latest=${group.latestAtEpochMs} | ${group.sampleObservationIds.take(2).joinToString()}",
+                            )
+                        }
+                    }
                 }
             }
             if (assets.isNotEmpty()) {
@@ -3247,6 +4223,7 @@ private fun DatastorePanel(
                     DatastoreMetric("Blöcke", workflowState.document.blocks.size.toString())
                     DatastoreMetric("Roots", workflowState.document.rootBlocks.size.toString())
                     DatastoreMetric("Revision", workflowState.revision.toString())
+                    DatastoreMetric("Asset Format", "application/vnd.emscript.motion+json")
                 }
             }
             item {
@@ -3321,6 +4298,513 @@ private fun DatastorePanel(
 }
 
 @Composable
+private fun VisualAssetManagerPanel(
+    workflowState: WorkspaceWorkflowState,
+    screenshotState: ScreenshotCanvasUiState,
+    screenshotAssets: List<ScreenshotCanvasAsset>,
+) {
+    val context = LocalContext.current
+    val launchIntent = remember(context) {
+        context.packageManager.getLaunchIntentForPackage(M3_SHAPEMAKER_PACKAGE)
+    }
+    val templateCount = remember(screenshotState.savedMarkers.toList()) {
+        screenshotState.savedMarkers.count { it.markerMode == ScreenshotCanvasMarkerMode.Template }
+    }
+    val visualAssetSteps = remember {
+        listOf(
+            "VisualAsset als kanonisches Asset-Modell verwenden (.ema).",
+            "Block-Shape, Node-Shape, Port-Shape und Icon als Asset-Typen trennen.",
+            "Ports, Anchors und ContentAreas als Semantik aus ShapeMaker übernehmen.",
+            "Compose-Overlay nur an selektierte Blöcke/Nodes koppeln, nicht als dauerhafte Canvas-Wahrheit.",
+            "BlockDesigner mit paralleler FlowNode-Vorschau verbinden.",
+            "Toolbox-Sets für Standard, Custom, Mixed, JavaScript und spätere Plugin-Familien speichern.",
+        )
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("Visual Assets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "M3ShapeMaker Bridge",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            FilledTonalButton(
+                onClick = {
+                    launchIntent?.let { context.startActivity(it) }
+                },
+                enabled = launchIntent != null,
+            ) {
+                Text(if (launchIntent != null) "ShapeMaker öffnen" else "ShapeMaker fehlt")
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                DatastoreSection("Asset Status") {
+                    DatastoreMetric("Format", "application/vnd.emscript.motion+json")
+                    DatastoreMetric("Dateiendung", ".ema")
+                    DatastoreMetric("ShapeMaker", if (launchIntent != null) "installiert" else "nicht installiert")
+                    DatastoreMetric("Screenshots", screenshotAssets.size.toString())
+                    DatastoreMetric("Templates", templateCount.toString())
+                    DatastoreMetric("Workflow Revision", workflowState.revision.toString())
+                }
+            }
+            item {
+                DatastoreSection("WSS Bindings") {
+                    DatastoreMetric("Block Shapes", "geplant")
+                    DatastoreMetric("Flow Nodes", "geplant")
+                    DatastoreMetric("Ports", "geplant")
+                    DatastoreMetric("Icons", "geplant")
+                    DatastoreMetric("Compose Overlay", "selektierte Elemente")
+                    DatastoreMetric("Toolbox Sets", "Standard / Custom / Mixed / JavaScript")
+                }
+            }
+            item {
+                DatastoreSection("Nächste Schritte") {
+                    visualAssetSteps.forEachIndexed { index, step ->
+                        DatastoreMetric("${index + 1}", step)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Vt2VtPanel(
+    workflowState: WorkspaceWorkflowState,
+    logStore: StudioLogStore,
+    flowRuntimeSnapshot: FlowRuntimeSnapshot?,
+    focusedFlowchartNodeId: FlowNodeId?,
+    focusedFlowchartEdgeId: FlowEdgeId?,
+    activeRuntimeStepIndex: Int?,
+) {
+    val deviceLabel = remember {
+        listOfNotNull(Build.MANUFACTURER, Build.MODEL)
+            .joinToString(" ")
+            .ifBlank { "VT Studio WSS" }
+    }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val lanAddresses = remember { runCatching { detectVt2VtLanAddresses() }.getOrDefault(emptyList()) }
+    val usbBridgeConfig = remember { Vt2VtUsbBridgeConfig() }
+    var usbBridgeStatus by remember { mutableStateOf(Vt2VtUsbAdbBridge.detect(context)) }
+    val shizukuStatus = remember { ShizukuRegistration.inspect(context) }
+    val termuxStatus = remember { TermuxRegistration.inspect(context) }
+    var session by remember { mutableStateOf(defaultVt2VtSession(deviceLabel)) }
+    var roleMenuExpanded by remember { mutableStateOf(false) }
+    var remoteHost by remember { mutableStateOf("") }
+    var lanPort by remember { mutableStateOf("47272") }
+    var lanStatus by remember { mutableStateOf("LAN bereit") }
+    var mirrorEnabled by remember { mutableStateOf(false) }
+    var listenerJob by remember { mutableStateOf<Job?>(null) }
+    val logChangeToken = logStore.changeToken
+    val logEntries = remember(logChangeToken) { logStore.allEntries().takeLast(6) }
+    val latestLogEntry = logEntries.lastOrNull()
+    val latestMessage = session.inbound.lastOrNull() ?: session.outbound.lastOrNull()
+
+    fun runtimeMessage(type: Vt2VtMessageType = Vt2VtMessageType.RuntimeStepChanged): Vt2VtMessage =
+        Vt2VtMessage(
+            id = "vt2vt-${session.eventCount + 1}",
+            type = type,
+            sourcePeerId = session.localPeer.id,
+            timestampMs = System.currentTimeMillis(),
+            revision = workflowState.revision.toLong(),
+            payload = when (type) {
+                Vt2VtMessageType.WorkspaceState -> workspacePayload(workflowState)
+                Vt2VtMessageType.SelectionChanged -> selectionPayload(focusedFlowchartNodeId, focusedFlowchartEdgeId)
+                Vt2VtMessageType.LogEntryAdded -> logPayload(latestLogEntry)
+                else -> runtimePayload(
+                    workflowState = workflowState,
+                    snapshot = flowRuntimeSnapshot,
+                    activeRuntimeStepIndex = activeRuntimeStepIndex,
+                    focusedNodeId = focusedFlowchartNodeId,
+                    focusedEdgeId = focusedFlowchartEdgeId
+                )
+            }
+        )
+
+    fun receiveExchange(port: Int) {
+        coroutineScope.launch {
+            runCatching {
+                Vt2VtLanTransport.receiveOnce(
+                    port = port,
+                    localPeerId = session.localPeer.id,
+                    responsePayload = mapOf("pairingCode" to session.pairingCode)
+                )
+            }.onSuccess { exchange ->
+                val remotePeer = Vt2VtPeer(
+                    id = exchange.inbound.sourcePeerId,
+                    label = exchange.remoteAddress,
+                    role = Vt2VtRole.Secondary,
+                    transport = Vt2VtTransport.LanTcp,
+                    state = Vt2VtConnectionState.Connected
+                )
+                session = session.copy(
+                    connectionState = Vt2VtConnectionState.Connected,
+                    localPeer = session.localPeer.copy(transport = Vt2VtTransport.LanTcp),
+                    remotePeers = (session.remotePeers.filterNot { it.id == remotePeer.id } + remotePeer).takeLast(8),
+                    inbound = (session.inbound + exchange.inbound).takeLast(64),
+                    outbound = (session.outbound + exchange.outbound).takeLast(64),
+                    lastError = null
+                )
+                lanStatus = "Empfangen von ${exchange.remoteAddress}: ${exchange.inbound.type.name}"
+            }.onFailure { error ->
+                session = session.copy(connectionState = Vt2VtConnectionState.Error, lastError = error.message)
+                lanStatus = "Empfang fehlgeschlagen: ${error.message ?: error::class.java.simpleName}"
+            }
+        }
+    }
+
+    fun startListener(port: Int) {
+        listenerJob?.cancel()
+        listenerJob = coroutineScope.launch {
+            lanStatus = "Listener aktiv auf Port $port"
+            session = session.copy(
+                connectionState = Vt2VtConnectionState.Pairing,
+                localPeer = session.localPeer.copy(transport = Vt2VtTransport.LanTcp)
+            )
+            while (isActive) {
+                runCatching {
+                    Vt2VtLanTransport.receiveOnce(
+                        port = port,
+                        localPeerId = session.localPeer.id,
+                        timeoutMs = 30_000,
+                        responsePayload = mapOf("pairingCode" to session.pairingCode)
+                    )
+                }.onSuccess { exchange ->
+                    val remotePeer = Vt2VtPeer(
+                        id = exchange.inbound.sourcePeerId,
+                        label = exchange.remoteAddress,
+                        role = Vt2VtRole.Secondary,
+                        transport = Vt2VtTransport.LanTcp,
+                        state = Vt2VtConnectionState.Connected
+                    )
+                    session = session.copy(
+                        connectionState = Vt2VtConnectionState.Connected,
+                        localPeer = session.localPeer.copy(transport = Vt2VtTransport.LanTcp),
+                        remotePeers = (session.remotePeers.filterNot { it.id == remotePeer.id } + remotePeer).takeLast(8),
+                        inbound = (session.inbound + exchange.inbound).takeLast(64),
+                        outbound = (session.outbound + exchange.outbound).takeLast(64),
+                        lastError = null
+                    )
+                    lanStatus = "Listener: ${exchange.inbound.type.name} von ${exchange.remoteAddress}"
+                }.onFailure { error ->
+                    if (isActive) {
+                        lanStatus = "Listener wartet weiter: ${error.message ?: error::class.java.simpleName}"
+                    }
+                }
+            }
+        }
+    }
+
+    fun stopListener() {
+        listenerJob?.cancel()
+        listenerJob = null
+        lanStatus = "Listener gestoppt"
+    }
+
+    fun emitLoopback(type: Vt2VtMessageType) {
+        val message = runtimeMessage(type)
+        session = session.copy(
+            connectionState = Vt2VtConnectionState.Observing,
+            outbound = (session.outbound + message).takeLast(64),
+            inbound = (session.inbound + Vt2VtMessageCodec.decode(Vt2VtMessageCodec.encode(message))).takeLast(64),
+            lastError = null
+        )
+    }
+
+    fun sendLan(type: Vt2VtMessageType) {
+        val endpoint = Vt2VtLanEndpoint(remoteHost, lanPort.toIntOrNull() ?: 47272)
+        val message = runtimeMessage(type)
+        lanStatus = "Sende ${type.name} an ${endpoint.host}:${endpoint.port} ..."
+        session = session.copy(
+            connectionState = Vt2VtConnectionState.Syncing,
+            localPeer = session.localPeer.copy(transport = Vt2VtTransport.LanTcp),
+            outbound = (session.outbound + message).takeLast(64),
+            lastError = null
+        )
+        coroutineScope.launch {
+            runCatching { Vt2VtLanTransport.send(endpoint, message) }
+                .onSuccess { ack ->
+                    val remotePeer = Vt2VtPeer(
+                        id = ack.sourcePeerId,
+                        label = endpoint.host,
+                        role = Vt2VtRole.Observer,
+                        transport = Vt2VtTransport.LanTcp,
+                        state = Vt2VtConnectionState.Connected
+                    )
+                    session = session.copy(
+                        connectionState = Vt2VtConnectionState.Connected,
+                        remotePeers = (session.remotePeers.filterNot { it.id == remotePeer.id } + remotePeer).takeLast(8),
+                        inbound = (session.inbound + ack).takeLast(64),
+                        lastError = null
+                    )
+                    lanStatus = "ACK von ${endpoint.host}: ${ack.payload["ack"] ?: ack.id}"
+                }.onFailure { error ->
+                    session = session.copy(connectionState = Vt2VtConnectionState.Error, lastError = error.message)
+                    lanStatus = "Senden fehlgeschlagen: ${error.message ?: error::class.java.simpleName}"
+                }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { listenerJob?.cancel() }
+    }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val status = Vt2VtUsbAdbBridge.detect(context)
+            usbBridgeStatus = status
+            if (
+                status.bridgeReady &&
+                usbBridgeConfig.autoConnect &&
+                session.localPeer.transport != Vt2VtTransport.UsbAdbBridge
+            ) {
+                remoteHost = usbBridgeConfig.endpoint.host
+                lanPort = usbBridgeConfig.endpoint.port.toString()
+                lanStatus = "USB/ADB Auto-Bridge bereit: ${usbBridgeConfig.reverseCommand}"
+                session = session.copy(
+                    connectionState = Vt2VtConnectionState.Pairing,
+                    localPeer = session.localPeer.copy(transport = Vt2VtTransport.UsbAdbBridge),
+                    lastError = null
+                )
+            }
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+
+    LaunchedEffect(mirrorEnabled, remoteHost, flowRuntimeSnapshot?.sequence, activeRuntimeStepIndex) {
+        if (mirrorEnabled && remoteHost.isNotBlank() && flowRuntimeSnapshot != null) {
+            sendLan(Vt2VtMessageType.RuntimeStepChanged)
+        }
+    }
+
+    LaunchedEffect(mirrorEnabled, remoteHost, latestLogEntry?.id, latestLogEntry?.repeatCount) {
+        if (mirrorEnabled && remoteHost.isNotBlank() && latestLogEntry != null) {
+            sendLan(Vt2VtMessageType.LogEntryAdded)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("VT2VT", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${session.connectionState.name} · ${session.localPeer.role.name}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                FilledTonalButton(onClick = { roleMenuExpanded = true }) {
+                    Text(session.localPeer.role.name)
+                }
+                DropdownMenu(expanded = roleMenuExpanded, onDismissRequest = { roleMenuExpanded = false }) {
+                    Vt2VtRole.entries.forEach { role ->
+                        DropdownMenuItem(
+                            text = { Text(role.name) },
+                            onClick = {
+                                session = session.copy(
+                                    localPeer = session.localPeer.copy(role = role),
+                                    connectionState = Vt2VtConnectionState.Pairing
+                                )
+                                roleMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AssistChip(onClick = {}, label = { Text("Pair ${session.pairingCode}") })
+            AssistChip(onClick = {}, label = { Text(VT2VT_MESSAGE_FORMAT.substringAfterLast('.')) })
+            AssistChip(onClick = {}, label = { Text(lanAddresses.firstOrNull() ?: "Keine LAN-IP") })
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AssistChip(
+                onClick = { usbBridgeStatus = Vt2VtUsbAdbBridge.detect(context) },
+                label = { Text(usbBridgeStatus.summary) },
+            )
+            AssistChip(
+                onClick = { context.safeStartActivity(ShizukuRegistration.settingsIntent(shizukuStatus)) },
+                label = { Text(if (shizukuStatus.available) "Shizuku aktiv" else shizukuStatus.summary) },
+            )
+            AssistChip(
+                onClick = { context.safeStartActivity(TermuxRegistration.settingsIntent(termuxStatus)) },
+                label = { Text(if (termuxStatus.canRunCommands) "Termux aktiv" else termuxStatus.summary) },
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { session = session.withLoopbackHello() }) {
+                Text("Loopback verbinden")
+            }
+            OutlinedButton(
+                onClick = { emitLoopback(Vt2VtMessageType.WorkspaceState) }
+            ) {
+                Text("Loopback Snapshot")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Switch(checked = mirrorEnabled, onCheckedChange = { mirrorEnabled = it })
+                Text("Live Mirror", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = remoteHost,
+                onValueChange = { remoteHost = it.trim() },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("Remote IP") },
+                placeholder = { Text("192.168.x.x") },
+            )
+            OutlinedTextField(
+                value = lanPort,
+                onValueChange = { value -> lanPort = value.filter { it.isDigit() }.take(5) },
+                modifier = Modifier.width(104.dp),
+                singleLine = true,
+                label = { Text("Port") },
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(
+                onClick = {
+                    val port = lanPort.toIntOrNull() ?: 47272
+                    if (listenerJob == null) startListener(port) else stopListener()
+                }
+            ) {
+                Text(if (listenerJob == null) "Listener starten" else "Listener stoppen")
+            }
+            OutlinedButton(onClick = { receiveExchange(lanPort.toIntOrNull() ?: 47272) }) {
+                Text("Einmal empfangen")
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                enabled = remoteHost.isNotBlank(),
+                onClick = { sendLan(Vt2VtMessageType.WorkspaceState) }
+            ) {
+                Text("Workspace")
+            }
+            OutlinedButton(
+                enabled = remoteHost.isNotBlank(),
+                onClick = { sendLan(Vt2VtMessageType.SelectionChanged) }
+            ) {
+                Text("Selection")
+            }
+            OutlinedButton(
+                enabled = remoteHost.isNotBlank(),
+                onClick = { sendLan(Vt2VtMessageType.RuntimeStepChanged) }
+            ) {
+                Text("Runtime")
+            }
+            OutlinedButton(
+                enabled = remoteHost.isNotBlank(),
+                onClick = { sendLan(Vt2VtMessageType.LogEntryAdded) }
+            ) {
+                Text("Log")
+            }
+        }
+        OutlinedButton(
+            enabled = usbBridgeStatus.bridgeReady,
+            onClick = {
+                remoteHost = usbBridgeConfig.endpoint.host
+                lanPort = usbBridgeConfig.endpoint.port.toString()
+                session = session.copy(
+                    connectionState = Vt2VtConnectionState.Pairing,
+                    localPeer = session.localPeer.copy(transport = Vt2VtTransport.UsbAdbBridge),
+                    lastError = null
+                )
+                lanStatus = "USB/ADB Bridge gewählt: ${usbBridgeConfig.reverseCommand}"
+            }
+        ) {
+            Text("USB/ADB Bridge verwenden")
+        }
+        Text(lanStatus, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                DatastoreSection("Session") {
+                    DatastoreMetric("Lokales Gerät", session.localPeer.label)
+                    DatastoreMetric("Peer ID", session.localPeer.id)
+                    DatastoreMetric("Remote Peers", session.remotePeers.size.toString())
+                    DatastoreMetric("Outbound", session.outbound.size.toString())
+                    DatastoreMetric("Inbound", session.inbound.size.toString())
+                    DatastoreMetric("Transport", session.localPeer.transport.name)
+                    DatastoreMetric("LAN IP", lanAddresses.joinToString().ifBlank { "-" })
+                    DatastoreMetric("Status", lanStatus)
+                }
+            }
+            item {
+                DatastoreSection("Workspace Snapshot") {
+                    DatastoreMetric("Revision", workflowState.revision.toString())
+                    DatastoreMetric("Blöcke", workflowState.document.blocks.size.toString())
+                    DatastoreMetric("Flow Nodes", workflowState.flowchartProjection.graph.nodes.size.toString())
+                    DatastoreMetric("Flow Edges", workflowState.flowchartProjection.graph.edges.size.toString())
+                    DatastoreMetric("Runtime Events", flowRuntimeSnapshot?.nodeStates?.size?.toString() ?: "-")
+                    DatastoreMetric("Aktiver Step", activeRuntimeStepIndex?.toString() ?: "-")
+                }
+            }
+            item {
+                DatastoreSection("Remote Events") {
+                    latestMessage?.let { message ->
+                        DatastoreMetric("Letzte Nachricht", message.type.name)
+                        DatastoreMetric("Quelle", message.sourcePeerId)
+                        DatastoreMetric("Revision", message.revision?.toString() ?: "-")
+                        DatastoreMetric("Payload", message.payload.entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "-" })
+                    } ?: DatastoreMetric("Status", "Noch keine Nachricht")
+                }
+            }
+            if (logEntries.isNotEmpty()) {
+                item {
+                    DatastoreSection("Log Mirror") {
+                        logEntries.forEach { entry ->
+                            DatastoreMetric(entry.level.name, "${entry.source}: ${entry.message}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DatastoreSection(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
@@ -3369,9 +4853,169 @@ private fun DatastoreMetric(
 }
 
 @Composable
+private fun WssDragTreeSection(
+    title: String,
+    projection: WssPanelDragProjection,
+    maxItems: Int,
+    modifier: Modifier = Modifier,
+) {
+    val visibleItems = remember(projection.tree, maxItems) {
+        projection.tree.items.flatMap { it.flattenForPreview() }.take(maxItems)
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = projection.dropTarget.kind.name,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                projection.dropTarget.acceptedModes.forEach { mode ->
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(mode.name, style = MaterialTheme.typography.labelSmall) },
+                    )
+                }
+            }
+            if (visibleItems.isEmpty()) {
+                Text(
+                    text = "Keine transportierbaren Items.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                visibleItems.forEach { item ->
+                    WssDragTreePreviewRow(item, projection)
+                }
+                val remaining = projection.tree.items.sumOf { it.countDeep() } - visibleItems.size
+                if (remaining > 0) {
+                    Text(
+                        text = "+$remaining weitere Items",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WssDragTreePreviewRow(
+    item: WssDragTreePreviewItem,
+    projection: WssPanelDragProjection,
+) {
+    val indent = (item.depth * 12).dp
+    val dropEffect = remember(item.payload, projection.dropTarget) {
+        val decision = WssDragRules.decide(item.payload, projection.dropTarget)
+        WssDropEffectResolver.resolve(
+            WssDropResult(
+                target = projection.dropTarget,
+                payload = item.payload,
+                decision = decision,
+            ),
+        )
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = indent),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Icon(
+            Icons.Default.DragHandle,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.payload.label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${item.payload.kind.name} -> ${dropEffect.kind.name}",
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (item.acceptsChildren) {
+            Text(
+                text = item.children.size.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+private data class WssDragTreePreviewItem(
+    val payload: com.visualtasker.wss.workspace.model.WssDragPayload,
+    val acceptsChildren: Boolean,
+    val children: List<WssDragTreeItem>,
+    val depth: Int,
+)
+
+private fun WssDragTreeItem.flattenForPreview(depth: Int = 0): List<WssDragTreePreviewItem> =
+    listOf(
+        WssDragTreePreviewItem(
+            payload = payload,
+            acceptsChildren = acceptsChildren,
+            children = children,
+            depth = depth,
+        )
+    ) + children.flatMap { it.flattenForPreview(depth + 1) }
+
+private fun WssDragTreeItem.countDeep(): Int =
+    1 + children.sumOf { it.countDeep() }
+
+@Composable
 private fun MarkerCanvasPanel(
     state: ScreenshotCanvasUiState,
     assets: List<ScreenshotCanvasAsset>,
+    baseResources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
+    selectedRailTraceStep: RecorderStepUi? = null,
+    recorderObservations: List<WorldObservation> = emptyList(),
+    onSceneMarkerSaved: (ScreenshotCanvasSavedMarker) -> Unit = {},
 ) {
     val selectedAsset = remember(assets, state.selectedAssetId) {
         assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
@@ -3385,6 +5029,53 @@ private fun MarkerCanvasPanel(
         selectedAsset?.file?.absolutePath?.let { path ->
             runCatching { decodeScreenshotBitmap(path) }.getOrNull()
         }
+    }
+    val selectedMarker = remember(state.selectedSavedMarkerId, state.savedMarkers.toList()) {
+        state.savedMarkers.firstOrNull { it.id == state.selectedSavedMarkerId }
+    }
+    val canvasWorldview = remember(
+        assets,
+        state.savedMarkers.toList(),
+        state.vision.observations.toList(),
+        recorderObservations,
+        baseResources.revision,
+    ) {
+        buildCanvasWorldview(
+            assets = assets,
+            markers = state.savedMarkers,
+            baseResources = baseResources,
+            visionObservations = state.vision.observations,
+            recorderObservations = recorderObservations,
+        )
+    }
+    val visualMemory = remember(canvasWorldview) {
+        VisualUiMemoryProjector.project(canvasWorldview)
+    }
+    val canvasObservationProjection = remember(
+        canvasWorldview,
+        state.showAccessibilityNodes,
+        state.filterHideClickable,
+        state.filterHideInvisible,
+        state.filterHideNonFocusable,
+        state.showOcrNodes,
+        state.showVisionTemplateNodes,
+        state.showYoloNodes,
+        state.showDomNodes,
+        state.showMarkers,
+        state.selectedCanvasSourceId,
+    ) {
+        CanvasObservationProjector.project(
+            document = canvasWorldview,
+            filters = state.toCanvasObservationFilters(),
+            selectedSourceId = state.selectedCanvasSourceId,
+        )
+    }
+    val dragProjection = remember(canvasWorldview.resources.revision, canvasWorldview.resources.resources) {
+        WssPanelDragProjector.forResources(
+            panelId = "marker",
+            bundle = canvasWorldview.resources,
+            panelType = PanelType.Marker,
+        )
     }
     Column(
         modifier = Modifier
@@ -3400,9 +5091,24 @@ private fun MarkerCanvasPanel(
             state = state,
             asset = selectedAsset,
             imageSize = bitmap?.let { it.width to it.height },
+            observationProjection = canvasObservationProjection,
+            onSceneMarkerSaved = onSceneMarkerSaved,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
+        )
+        MarkerTraceContextCard(selectedRailTraceStep)
+        WssDragTreeSection(
+            title = "Marker Drag Bus",
+            projection = dragProjection,
+            maxItems = 8,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        MarkerVisualMemoryCard(
+            marker = selectedMarker,
+            worldview = canvasWorldview,
+            visualMemory = visualMemory,
+            selectedSourceId = state.selectedCanvasSourceId,
         )
         ScreenshotCanvasInspector(
             modifier = Modifier.fillMaxWidth(),
@@ -3411,6 +5117,258 @@ private fun MarkerCanvasPanel(
             state = state,
             markerPanel = true,
         )
+    }
+}
+
+@Composable
+private fun MarkerVisualMemoryCard(
+    marker: ScreenshotCanvasSavedMarker?,
+    worldview: WorldviewDocument,
+    visualMemory: VisualUiMemoryProjection,
+    selectedSourceId: String? = null,
+) {
+    val clipboard = LocalClipboardManager.current
+    val markerResourceId = marker?.id?.stableMarkerResourceId(marker.markerMode)
+    val selectedObservation = remember(worldview, selectedSourceId) {
+        selectedSourceId?.let { sourceId -> worldview.observations.firstOrNull { it.id == sourceId } }
+    }
+    val inspectorProjection = remember(worldview, markerResourceId, selectedObservation?.id) {
+        when {
+            selectedObservation != null -> WorldviewInspectorProjector.project(
+                document = worldview,
+                subject = WorldviewInspectorSubject(
+                    kind = WorldviewInspectorSubjectKind.Observation,
+                    id = selectedObservation.id,
+                ),
+            )
+            markerResourceId != null -> WorldviewInspectorProjector.project(
+                document = worldview,
+                subject = WorldviewInspectorSubject(
+                    kind = WorldviewInspectorSubjectKind.Resource,
+                    id = markerResourceId,
+                ),
+            )
+            else -> null
+        }
+    }
+    val suggestionSourceId = selectedObservation?.id ?: markerResourceId
+    val suggestions = remember(visualMemory, suggestionSourceId) {
+        suggestionSourceId
+            ?.let { sourceId -> visualMemory.suggestions.filter { it.sourceId == sourceId } }
+            .orEmpty()
+    }
+    var selectedSuggestionId by remember(markerResourceId, suggestions) {
+        mutableStateOf(suggestions.firstOrNull()?.id)
+    }
+    val selectedSuggestion = suggestions.firstOrNull { it.id == selectedSuggestionId }
+        ?: suggestions.firstOrNull()
+    val preparedAction = remember(marker, selectedObservation, selectedSuggestion) {
+        selectedSuggestion?.let { suggestion ->
+            selectedObservation?.let { observationSuggestionExportCode(it, suggestion) }
+                ?: marker?.let { markerSuggestionExportCode(it, suggestion) }
+        }
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.34f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.26f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "Visual UI Memory",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                text = inspectorProjection?.title
+                    ?: marker?.label
+                    ?: "Kein Marker ausgewaehlt",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val rows = inspectorProjection?.rows.orEmpty()
+            if (rows.isNotEmpty()) {
+                val rowText = rows.take(3).joinToString(" | ") { "${it.label}: ${it.value.ifBlank { "-" }}" }
+                Text(
+                    text = rowText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.76f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Text(
+                    text = "Provider aktiv: ${visualMemory.activeProviderCount}/${visualMemory.providerStates.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.76f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            suggestions.firstOrNull()?.let { suggestion ->
+                Text(
+                    text = "${suggestion.type}: ${suggestion.label} (${("%.0f".format(suggestion.confidence * 100))}%)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.86f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (suggestions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    suggestions.forEach { suggestion ->
+                        FilterChip(
+                            selected = suggestion.id == selectedSuggestion?.id,
+                            onClick = { selectedSuggestionId = suggestion.id },
+                            label = {
+                                Text(
+                                    suggestion.type,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+            preparedAction?.let { action ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.68f),
+                ) {
+                    Text(
+                        text = action,
+                        modifier = Modifier.padding(7.dp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                OutlinedButton(
+                    onClick = { clipboard.setText(AnnotatedString(action)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(32.dp),
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Text("Suggestion Code", modifier = Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+private fun markerSuggestionExportCode(
+    marker: ScreenshotCanvasSavedMarker,
+    suggestion: VisualUiMemorySuggestion,
+): String =
+    when (suggestion.type) {
+        "CREATE_TEMPLATE" -> {
+            val region = marker.region
+            "templateCompare(\"${marker.label}\", region(${region.x}, ${region.y}, ${region.width}, ${region.height}), \"${marker.processingMode.name.lowercase()}\")"
+        }
+        "CREATE_CLICK_ACTION" -> when (marker.markerMode) {
+            ScreenshotCanvasMarkerMode.Point -> {
+                val region = marker.region
+                "clickPoint(${region.x + region.width / 2}, ${region.y + region.height / 2})"
+            }
+            ScreenshotCanvasMarkerMode.Template -> "findTemplate(\"${marker.label}\")"
+            else -> markerExportCode(marker)
+        }
+        else -> markerExportCode(marker)
+    }
+
+private fun observationSuggestionExportCode(
+    observation: WorldObservation,
+    suggestion: VisualUiMemorySuggestion,
+): String =
+    when (suggestion.type) {
+        "CREATE_CLICK_FROM_RECORD" -> observation.point?.let { point ->
+            "clickPoint(${point.x.roundToInt()}, ${point.y.roundToInt()})"
+        } ?: observation.bounds?.let { bounds ->
+            val centerX = ((bounds.left + bounds.right) / 2f).roundToInt()
+            val centerY = ((bounds.top + bounds.bottom) / 2f).roundToInt()
+            "clickPoint($centerX, $centerY)"
+        } ?: "// Keine Koordinate in ${observation.id}"
+        "CREATE_MARKER_FROM_RECORD" -> observation.bounds?.let { bounds ->
+            val x = bounds.left.roundToInt()
+            val y = bounds.top.roundToInt()
+            val width = (bounds.right - bounds.left).roundToInt().coerceAtLeast(1)
+            val height = (bounds.bottom - bounds.top).roundToInt().coerceAtLeast(1)
+            val label = observation.properties["text"] ?: observation.kind.name
+            "markerSave(\"${label.escapeEmscriptString()}\", region($x, $y, $width, $height))"
+        } ?: observation.point?.let { point ->
+            val label = observation.properties["text"] ?: observation.kind.name
+            "markerSave(\"${label.escapeEmscriptString()}\", point(${point.x.roundToInt()}, ${point.y.roundToInt()}))"
+        } ?: "// Keine Marker-Geometrie in ${observation.id}"
+        else -> observation.properties["text"] ?: observation.id
+    }
+
+private fun String.escapeEmscriptString(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"")
+
+@Composable
+private fun MarkerTraceContextCard(
+    step: RecorderStepUi?,
+) {
+    val junctionPlan = remember(step) { step?.let(JunctionatorSeed::fromRailTraceStep) }
+    val primaryCandidate = junctionPlan?.primaryCandidate
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                "RailTrace Sync",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                text = step?.let { "${it.label} | ${it.actionType} | ${it.activityName ?: "Scene offen"}" }
+                    ?: "Kein RailTrace-Step ausgewaehlt",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            step?.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            primaryCandidate?.let { candidate ->
+                Text(
+                    text = "Junktionator: ${candidate.confidence.name} -> ${candidate.outputTargets.joinToString { it.name }}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -3633,13 +5591,20 @@ private fun VisionCropCanvasPanel(
             )
             Button(
                 onClick = {
-                    state.visualTestScore = compareScreenshotRegions(
+                    val score = compareScreenshotRegions(
                         liveBitmap = liveBitmap,
                         liveRegion = state.selectedRegion,
                         liveMode = state.liveProcessingMode,
                         referenceBitmap = referenceBitmap,
                         referenceRegion = referenceMarker?.region,
                         referenceMode = state.referenceProcessingMode,
+                    )
+                    state.visualTestScore = score
+                    state.recordVisionObservation(
+                        asset = selectedAsset,
+                        bitmap = liveBitmap,
+                        referenceMarker = referenceMarker,
+                        score = score,
                     )
                     state.markerStatusMessage = state.visualTestScore?.let { "Vision Match ${"%.1f".format(it * 100)}%" }
                         ?: "Vision Match nicht möglich."
@@ -3848,6 +5813,36 @@ private fun WorkspaceScreenshotCanvasBackground(
             runCatching { decodeScreenshotBitmap(path)?.asImageBitmap() }.getOrNull()
         }
     }
+    val canvasWorldview = remember(
+        assets,
+        state.savedMarkers.toList(),
+        state.vision.observations.toList(),
+    ) {
+        buildCanvasWorldview(
+            assets = assets,
+            markers = state.savedMarkers,
+            visionObservations = state.vision.observations,
+        )
+    }
+    val observationProjection = remember(
+        canvasWorldview,
+        state.showAccessibilityNodes,
+        state.filterHideClickable,
+        state.filterHideInvisible,
+        state.filterHideNonFocusable,
+        state.showOcrNodes,
+        state.showVisionTemplateNodes,
+        state.showYoloNodes,
+        state.showDomNodes,
+        state.showMarkers,
+        state.selectedCanvasSourceId,
+    ) {
+        CanvasObservationProjector.project(
+            document = canvasWorldview,
+            filters = state.toCanvasObservationFilters(),
+            selectedSourceId = state.selectedCanvasSourceId,
+        )
+    }
     Box(
         modifier = modifier
             .background(Color(0xFF050509))
@@ -3858,6 +5853,7 @@ private fun WorkspaceScreenshotCanvasBackground(
                 bitmap = bitmap,
                 asset = selectedAsset,
                 state = state,
+                observationProjection = observationProjection,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -3870,6 +5866,8 @@ private fun WorkspaceScreenshotCanvasBackground(
 private fun ScreenshotCanvasPanel(
     state: ScreenshotCanvasUiState,
     assets: List<ScreenshotCanvasAsset>,
+    baseResources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
+    recorderObservations: List<WorldObservation> = emptyList(),
     markerPanel: Boolean,
 ) {
     val selectedAsset = remember(assets, state.selectedAssetId) {
@@ -3884,6 +5882,40 @@ private fun ScreenshotCanvasPanel(
         selectedAsset?.file?.absolutePath?.let { path ->
             runCatching { decodeScreenshotBitmap(path)?.asImageBitmap() }.getOrNull()
         }
+    }
+    val canvasWorldview = remember(
+        assets,
+        state.savedMarkers.toList(),
+        state.vision.observations.toList(),
+        recorderObservations,
+        baseResources.revision,
+    ) {
+        buildCanvasWorldview(
+            assets = assets,
+            markers = state.savedMarkers,
+            baseResources = baseResources,
+            visionObservations = state.vision.observations,
+            recorderObservations = recorderObservations,
+        )
+    }
+    val observationProjection = remember(
+        canvasWorldview,
+        state.showAccessibilityNodes,
+        state.filterHideClickable,
+        state.filterHideInvisible,
+        state.filterHideNonFocusable,
+        state.showOcrNodes,
+        state.showVisionTemplateNodes,
+        state.showYoloNodes,
+        state.showDomNodes,
+        state.showMarkers,
+        state.selectedCanvasSourceId,
+    ) {
+        CanvasObservationProjector.project(
+            document = canvasWorldview,
+            filters = state.toCanvasObservationFilters(),
+            selectedSourceId = state.selectedCanvasSourceId,
+        )
     }
     Column(
         modifier = Modifier
@@ -3923,6 +5955,7 @@ private fun ScreenshotCanvasPanel(
                 state = state,
                 asset = selectedAsset,
                 imageSize = bitmap?.let { it.width to it.height },
+                observationProjection = observationProjection,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(232.dp),
@@ -3977,6 +6010,7 @@ private fun ScreenshotRegionCanvas(
     bitmap: ImageBitmap,
     asset: ScreenshotCanvasAsset?,
     state: ScreenshotCanvasUiState,
+    observationProjection: CanvasObservationProjection,
     modifier: Modifier = Modifier,
 ) {
     var dragPreviewRegion by remember(asset?.id) { mutableStateOf<ScreenshotCanvasRegion?>(null) }
@@ -4002,6 +6036,9 @@ private fun ScreenshotRegionCanvas(
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     down.consume()
                     val startScreen = down.position
+                    observationProjection.hitTest(startScreen, layout, imageWidth, imageHeight)?.let { item ->
+                        state.selectCanvasObservation(item)
+                    }
                     val startImage = layout.screenToImage(startScreen, imageWidth, imageHeight) ?: return@awaitEachGesture
                     val regionAtStart = state.selectedRegion
                     val screenRect = regionAtStart?.let { layout.regionToScreenRect(it, imageWidth, imageHeight) }
@@ -4166,7 +6203,12 @@ private fun ScreenshotRegionCanvas(
         )
         drawScreenshotRulers(layout = layout, imageWidth = imageWidth, imageHeight = imageHeight)
         drawPanelEdgeRulers(imageWidth = imageWidth, imageHeight = imageHeight)
-        drawCanvasLayerHints(layout = layout, state = state)
+        drawCanvasObservationProjection(
+            layout = layout,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            projection = observationProjection,
+        )
         drawScreenshotRegionOverlay(
             layout = layout,
             imageWidth = imageWidth,
@@ -4358,26 +6400,178 @@ private fun resizeScreenshotRegionFromBottomRight(
     return ScreenshotCanvasRegion(left, top, right - left, bottom - top)
 }
 
-private fun DrawScope.drawCanvasLayerHints(
+private fun DrawScope.drawCanvasObservationProjection(
     layout: ScreenshotFittedImageLayout,
-    state: ScreenshotCanvasUiState,
+    imageWidth: Int,
+    imageHeight: Int,
+    projection: CanvasObservationProjection,
 ) {
-    if (state.showAccessibilityNodes) {
-        drawRect(Color(0xFF4FC3F7).copy(alpha = 0.26f), topLeft = Offset(layout.imageBounds.left + 36f, layout.imageBounds.top + 42f), size = Size(180f, 72f), style = Stroke(2f))
+    if (projection.items.isEmpty()) {
+        drawCanvasHint(layout.imageBounds, "Keine aktiven Observations")
+        return
     }
-    if (state.showDomNodes) {
-        drawRect(Color(0xFFCE93D8).copy(alpha = 0.28f), topLeft = Offset(layout.imageBounds.right - 210f, layout.imageBounds.top + 96f), size = Size(160f, 56f), style = Stroke(2f))
-    }
-    if (state.showOcrNodes) {
-        drawLine(Color(0xFFFFF176).copy(alpha = 0.72f), Offset(layout.imageBounds.left + 18f, layout.imageBounds.center.y), Offset(layout.imageBounds.right - 18f, layout.imageBounds.center.y), 1.8f)
-    }
-    if (state.showVisionTemplateNodes) {
-        drawRect(Color(0xFF81C784).copy(alpha = 0.24f), topLeft = Offset(layout.imageBounds.left + 72f, layout.imageBounds.bottom - 132f), size = Size(210f, 72f), style = Stroke(2f))
-    }
-    if (state.showYoloNodes) {
-        drawCircle(Color(0xFFFF7043).copy(alpha = 0.34f), radius = 24f, center = Offset(layout.imageBounds.right - 88f, layout.imageBounds.top + 86f), style = Stroke(3f))
+    projection.items.forEach { item ->
+        val rect = item.screenRect(layout, imageWidth, imageHeight)
+        val color = item.canvasColor()
+        drawObservationRect(
+            rect = rect,
+            color = color,
+            label = item.label,
+            style = item.lineStyle,
+            fillAlpha = if (item.selected) 0.20f else 0.09f,
+        )
+        if (item.point != null) {
+            drawLine(color, Offset(rect.center.x - 14f, rect.center.y), Offset(rect.center.x + 14f, rect.center.y), 2f, cap = StrokeCap.Round)
+            drawLine(color, Offset(rect.center.x, rect.center.y - 14f), Offset(rect.center.x, rect.center.y + 14f), 2f, cap = StrokeCap.Round)
+        }
     }
 }
+
+private val A11Y_VISIBLE_COLOR = Color(0xFF40C4FF)
+private val A11Y_CLICKABLE_COLOR = Color(0xFF00E676)
+private val A11Y_FOCUSABLE_COLOR = Color(0xFFFFD54F)
+private val OCR_COLOR = Color(0xFFFFF176)
+private val OCV_COLOR = Color(0xFF69F0AE)
+private val YOLO_COLOR = Color(0xFFFF7043)
+private val DOM_COLOR = Color(0xFFCE93D8)
+
+private fun CanvasObservationItem.canvasColor(): Color =
+    when (family) {
+        CanvasObservationFamily.AccessibilityVisible -> A11Y_VISIBLE_COLOR
+        CanvasObservationFamily.AccessibilityClickable -> A11Y_CLICKABLE_COLOR
+        CanvasObservationFamily.AccessibilityFocusable -> A11Y_FOCUSABLE_COLOR
+        CanvasObservationFamily.Ocr -> OCR_COLOR
+        CanvasObservationFamily.Ocv -> OCV_COLOR
+        CanvasObservationFamily.Yolo -> YOLO_COLOR
+        CanvasObservationFamily.Dom -> DOM_COLOR
+        CanvasObservationFamily.Marker -> OCV_COLOR
+        CanvasObservationFamily.Unknown -> Color(0xFFE0E0E0)
+    }
+
+private fun CanvasObservationItem.screenRect(
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+): Rect {
+    bounds?.let { bounds ->
+        val isNormalized = bounds.coordinateSpace.kind == CoordinateSpaceKind.Normalized
+        val leftPx = if (isNormalized) bounds.left * imageWidth else bounds.left
+        val topPx = if (isNormalized) bounds.top * imageHeight else bounds.top
+        val rightPx = if (isNormalized) bounds.right * imageWidth else bounds.right
+        val bottomPx = if (isNormalized) bounds.bottom * imageHeight else bounds.bottom
+        return layout.regionToScreenRect(
+            ScreenshotCanvasRegion(
+                x = leftPx.roundToInt().coerceIn(0, imageWidth - 1),
+                y = topPx.roundToInt().coerceIn(0, imageHeight - 1),
+                width = (rightPx - leftPx).roundToInt().coerceAtLeast(1),
+                height = (bottomPx - topPx).roundToInt().coerceAtLeast(1),
+            ),
+            imageWidth,
+            imageHeight,
+        )
+    }
+    val pointValue = point ?: return Rect.Zero
+    val isNormalized = pointValue.coordinateSpace.kind == CoordinateSpaceKind.Normalized
+    val center = layout.imageToScreenPoint(
+        (if (isNormalized) pointValue.x * imageWidth else pointValue.x).roundToInt(),
+        (if (isNormalized) pointValue.y * imageHeight else pointValue.y).roundToInt(),
+        imageWidth,
+        imageHeight,
+    )
+    val radius = 24f
+    return Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius)
+}
+
+private fun CanvasObservationProjection.hitTest(
+    point: Offset,
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+): CanvasObservationItem? =
+    items.asReversed().firstOrNull { item ->
+        item.screenRect(layout, imageWidth, imageHeight).expandedBy(8f).contains(point)
+    }
+
+private fun Rect.expandedBy(delta: Float): Rect =
+    Rect(left - delta, top - delta, right + delta, bottom + delta)
+
+private fun demoRegionRect(
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+): Rect =
+    layout.regionToScreenRect(
+        ScreenshotCanvasRegion(
+            x = (imageWidth * x).roundToInt(),
+            y = (imageHeight * y).roundToInt(),
+            width = (imageWidth * width).roundToInt().coerceAtLeast(1),
+            height = (imageHeight * height).roundToInt().coerceAtLeast(1),
+        ),
+        imageWidth,
+        imageHeight,
+    )
+
+private fun DrawScope.drawObservationRect(
+    rect: Rect,
+    color: Color,
+    label: String,
+    style: CanvasObservationLineStyle,
+    fillAlpha: Float = 0.10f,
+) {
+    val radius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+    drawRoundRect(
+        color = color.copy(alpha = fillAlpha),
+        topLeft = Offset(rect.left, rect.top),
+        size = Size(rect.width, rect.height),
+        cornerRadius = radius,
+    )
+    val stroke = when (style) {
+        CanvasObservationLineStyle.Solid -> Stroke(width = 2.dp.toPx())
+        CanvasObservationLineStyle.Bold -> Stroke(width = 3.2.dp.toPx())
+        CanvasObservationLineStyle.Dashed -> Stroke(width = 2.2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 8f)))
+        CanvasObservationLineStyle.Underline -> Stroke(width = 2.dp.toPx())
+        CanvasObservationLineStyle.Capsule -> Stroke(width = 2.6.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 5f)))
+    }
+    if (style == CanvasObservationLineStyle.Underline) {
+        drawLine(color, Offset(rect.left, rect.bottom), Offset(rect.right, rect.bottom), stroke.width, cap = StrokeCap.Round)
+        drawLine(color.copy(alpha = 0.52f), Offset(rect.left, rect.center.y), Offset(rect.right, rect.center.y), 1.4f, cap = StrokeCap.Round)
+    } else {
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(rect.left, rect.top),
+            size = Size(rect.width, rect.height),
+            cornerRadius = radius,
+            style = stroke,
+        )
+    }
+    drawObservationLabel(rect, label, color)
+}
+
+private fun DrawScope.drawObservationLabel(rect: Rect, label: String, color: Color) {
+    val text = label.take(24)
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        this.color = color.toArgb()
+        textAlign = android.graphics.Paint.Align.LEFT
+        textSize = 10.dp.toPx()
+        isFakeBoldText = true
+    }
+    val baseline = (rect.top - 5.dp.toPx()).coerceAtLeast(12.dp.toPx())
+    drawContext.canvas.nativeCanvas.drawText(text, rect.left + 3.dp.toPx(), baseline, paint)
+}
+
+private fun markerColor(marker: ScreenshotCanvasSavedMarker): Color =
+    parseHexColor(marker.colourHex) ?: when (marker.matchKind) {
+        ScreenshotCanvasMatchKind.OCR -> OCR_COLOR
+        ScreenshotCanvasMatchKind.OCV -> OCV_COLOR
+    }
+
+private fun parseHexColor(raw: String): Color? =
+    runCatching { Color(android.graphics.Color.parseColor(raw)) }.getOrNull()
 
 private fun DrawScope.drawScreenshotRegionOverlay(
     layout: ScreenshotFittedImageLayout,
@@ -4780,6 +6974,8 @@ private fun MarkerUnderScreenshotPanel(
     state: ScreenshotCanvasUiState,
     asset: ScreenshotCanvasAsset?,
     imageSize: Pair<Int, Int>?,
+    observationProjection: CanvasObservationProjection,
+    onSceneMarkerSaved: (ScreenshotCanvasSavedMarker) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -4796,6 +6992,10 @@ private fun MarkerUnderScreenshotPanel(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
+        )
+        CanvasObservationSummaryCard(
+            projection = observationProjection,
+            selectedSourceId = state.selectedCanvasSourceId,
         )
         OutlinedTextField(
             value = state.templateName,
@@ -4867,6 +7067,7 @@ private fun MarkerUnderScreenshotPanel(
                             state.savedMarkers.add(0, marker)
                         }
                         state.selectedSavedMarkerId = id
+                        onSceneMarkerSaved(marker)
                         "${state.markerMode.name} '${marker.label}' gespeichert."
                     }
                 },
@@ -4945,6 +7146,58 @@ private fun MarkerSavedItemCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+@Composable
+private fun CanvasObservationSummaryCard(
+    projection: CanvasObservationProjection,
+    selectedSourceId: String?,
+) {
+    val selected = remember(projection, selectedSourceId) {
+        projection.items.firstOrNull { it.sourceId == selectedSourceId || it.id == selectedSourceId }
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = selected?.let { "Observation: ${it.label}" } ?: "Observations: ${projection.items.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val familySummary = projection.items
+                .groupingBy { it.family }
+                .eachCount()
+                .entries
+                .sortedBy { it.key.name }
+                .joinToString("  ") { "${it.key.name}:${it.value}" }
+                .ifBlank { "Keine aktiven Layer" }
+            Text(
+                text = familySummary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (projection.ambiguityCandidates.isNotEmpty()) {
+                Text(
+                    text = "Perugger: ${projection.ambiguityCandidates.size} Klaerfall vorbereitet",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -5296,6 +7549,22 @@ private fun markerModeFromRuntime(raw: String): ScreenshotCanvasMarkerMode =
         else -> ScreenshotCanvasMarkerMode.Region
     }
 
+private fun sceneSaveArgsForMarker(marker: ScreenshotCanvasSavedMarker): String =
+    listOf(
+        emscriptStringLiteral(marker.label),
+        emscriptStringLiteral(marker.markerMode.name.lowercase(Locale.ROOT)),
+        marker.region.toSceneRegionLiteral(),
+        emscriptStringLiteral(marker.assetLabel ?: marker.assetId.orEmpty()),
+    ).joinToString(",")
+
+private fun ScreenshotCanvasRegion.toSceneRegionLiteral(): String =
+    "region($x,$y,$width,$height)"
+
+private fun emscriptStringLiteral(raw: String): String =
+    "\"" + raw
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"") + "\""
+
 private fun processingModeFromRuntime(raw: String): ScreenshotCanvasProcessingMode =
     when (raw.trim().lowercase(Locale.ROOT)) {
         "gray", "grey", "grayscale", "grau", "graustufen" -> ScreenshotCanvasProcessingMode.Grayscale
@@ -5307,14 +7576,19 @@ private fun processingModeFromRuntime(raw: String): ScreenshotCanvasProcessingMo
 
 @Composable
 private fun WorkspaceTopAppBar(
-    snapEnabled: Boolean,
-    onSnapToggle: () -> Unit,
-    onAutoArrange: () -> Unit,
-    onOpenPanel: (PanelType) -> Unit,
+    projectName: String,
+    canRunLive: Boolean,
+    onRunLive: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
+    onLoadProject: () -> Unit,
+    onSaveProject: () -> Unit,
+    onClearProject: () -> Unit,
+    onClearCanvas: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenMainScreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val topBarContentColor = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -5323,54 +7597,53 @@ private fun WorkspaceTopAppBar(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
         tonalElevation = 3.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        CompositionLocalProvider(LocalContentColor provides topBarContentColor) {
             Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "VT Studio WSS",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                TooltipIconButton(tooltip = "Neues Panel", onClick = { onOpenPanel(PanelType.BlockEditor) }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.ViewKanban, contentDescription = "BlockEditor öffnen")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "VT Studio WSS · $projectName",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = topBarContentColor
+                    )
+                    TooltipIconButton(tooltip = "Workflow starten", onClick = onRunLive, modifier = Modifier.size(34.dp), enabled = canRunLive) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Workflow starten")
+                    }
+                    TooltipIconButton(tooltip = "Pause", onClick = onPause, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.Pause, contentDescription = "Pause")
+                    }
+                    TooltipIconButton(tooltip = "Stop", onClick = onStop, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.Stop, contentDescription = "Stop")
+                    }
                 }
-                TooltipIconButton(tooltip = "Flowchart öffnen", onClick = { onOpenPanel(PanelType.Flowchart) }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Polyline, contentDescription = "Flowchart öffnen")
-                }
-                TooltipIconButton(tooltip = "TextEditor öffnen", onClick = { onOpenPanel(PanelType.TextEditor) }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Article, contentDescription = "TextEditor öffnen")
-                }
-                TooltipIconButton(tooltip = "Canvas öffnen", onClick = { onOpenPanel(PanelType.Screenshot) }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Photo, contentDescription = "Canvas öffnen")
-                }
-                TooltipIconButton(tooltip = "Marker öffnen", onClick = { onOpenPanel(PanelType.Marker) }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.TouchApp, contentDescription = "Marker öffnen")
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                TooltipIconButton(tooltip = "Auto anordnen", onClick = onAutoArrange, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.AutoAwesomeMosaic, contentDescription = "Auto Arrange")
-                }
-                TooltipIconButton(tooltip = "Snap ${if (snapEnabled) "deaktivieren" else "aktivieren"}", onClick = onSnapToggle, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.GridView, contentDescription = "Snap ${if (snapEnabled) "an" else "aus"}")
-                }
-                TooltipIconButton(tooltip = "Einstellungen", onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
-                }
-                TooltipIconButton(tooltip = "MainScreen starten", onClick = onOpenMainScreen, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.AutoAwesomeMosaic, contentDescription = "MainScreen starten")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TooltipIconButton(tooltip = "Projekt laden", onClick = onLoadProject, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Projekt laden")
+                    }
+                    TooltipIconButton(tooltip = "Projekt speichern", onClick = onSaveProject, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.Save, contentDescription = "Projekt speichern")
+                    }
+                    TooltipIconButton(tooltip = "Projekt leeren", onClick = onClearProject, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Projekt leeren")
+                    }
+                    TooltipIconButton(tooltip = "Canvas Screenshot leeren", onClick = onClearCanvas, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.Photo, contentDescription = "Canvas Screenshot leeren")
+                    }
+                    TooltipIconButton(tooltip = "Einstellungen", onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
+                    }
                 }
             }
         }
@@ -5410,6 +7683,8 @@ private fun WorkspaceRail(
                 PanelType.Marker,
                 PanelType.Vision,
                 PanelType.Datastore,
+                PanelType.M3Director,
+                PanelType.Vt2Vt,
                 PanelType.TextEditor,
                 PanelType.LogConsole,
                 PanelType.DebugInfo
@@ -5443,13 +7718,168 @@ internal fun TooltipIconButton(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RailTraceModeChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+    )
+}
+
+@Composable
+private fun RailTraceSurfaceChip(
+    mode: RailSurfaceMode,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(mode.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+    )
+}
+
+@Composable
+private fun RailTraceTrackChip(track: RailTrack) {
+    AssistChip(
+        onClick = {},
+        label = {
+            Text(
+                "${track.label} ${track.items.size}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
+}
+
+@Composable
+private fun ColumnScope.RailTraceCompactRail(
+    onSave: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    onStepBack: () -> Unit,
+    onStepForward: () -> Unit,
+    canRunDry: Boolean,
+    canRunLive: Boolean,
+    canStepBack: Boolean,
+    canStepForward: Boolean,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onExpandRequested: () -> Unit,
+) {
+    val actions = listOf(
+        WorkspaceRailActionSpec("Save Workspace", Icons.Default.Save, onClick = onSave),
+        WorkspaceRailActionSpec("Undo", Icons.AutoMirrored.Filled.Undo, onClick = onUndo),
+        WorkspaceRailActionSpec("Redo", Icons.AutoMirrored.Filled.Redo, onClick = onRedo),
+        WorkspaceRailActionSpec("Dry Run", Icons.Default.PlayArrow, enabled = canRunDry, onClick = onRunDry),
+        WorkspaceRailActionSpec("Live Run", Icons.Default.PlayCircle, enabled = canRunLive, onClick = onRunLive),
+        WorkspaceRailActionSpec("Step zurück", Icons.Default.SkipPrevious, enabled = canStepBack, onClick = onStepBack),
+        WorkspaceRailActionSpec("Step vor", Icons.Default.SkipNext, enabled = canStepForward, onClick = onStepForward),
+        WorkspaceRailActionSpec("Zoom +", Icons.Default.ZoomIn, onClick = onZoomIn),
+        WorkspaceRailActionSpec("Zoom -", Icons.Default.ZoomOut, onClick = onZoomOut),
+        WorkspaceRailActionSpec("RailTrace Tracks", Icons.Default.ViewKanban, onClick = onExpandRequested),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = true)
+            .verticalScroll(rememberScrollState())
+            .padding(top = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        WorkspaceRailActionList(actions)
+        Spacer(modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun RailTraceExpandedRail(
+    state: StepperPanelState,
+    onModeChange: (RailMode) -> Unit,
+    onScaleChange: (RailScaleMode) -> Unit,
+    onZoomChange: (Float) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("RailTrace", style = MaterialTheme.typography.titleSmall)
+        Text("Rail", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        RailSurfaceMode.entries.forEach { mode ->
+            RailTraceSurfaceChip(
+                mode = mode,
+                selected = state.railMode.toSurfaceMode() == mode,
+                onClick = { onModeChange(mode.defaultRailMode()) },
+            )
+        }
+        Text(
+            text = state.railMode.toSurfaceMode().description,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider()
+        Text("Detailmodus", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val detailModes = when (state.railMode.toSurfaceMode()) {
+            RailSurfaceMode.Records -> listOf(RailMode.Replay, RailMode.Curate)
+            RailSurfaceMode.Run -> listOf(RailMode.Step, RailMode.Program)
+            RailSurfaceMode.WatchDog -> listOf(RailMode.Live)
+        }
+        detailModes.forEach { mode ->
+            RailTraceModeChip(
+                label = mode.name.uppercase(),
+                selected = state.railMode == mode,
+                onClick = { onModeChange(mode) },
+            )
+        }
+        HorizontalDivider()
+        Text("Skalierung", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        RailTraceModeChip(
+            label = "LOGICAL",
+            selected = state.scaleMode == RailScaleMode.Logical,
+            onClick = { onScaleChange(RailScaleMode.Logical) },
+        )
+        RailTraceModeChip(
+            label = "TEMPORAL",
+            selected = state.scaleMode == RailScaleMode.Temporal,
+            onClick = { onScaleChange(RailScaleMode.Temporal) },
+        )
+        HorizontalDivider()
+        Text("Timeline Zoom", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Slider(
+            value = state.timelineZoom,
+            onValueChange = { onZoomChange(it) },
+            valueRange = 0.5f..4f,
+        )
+        Text(
+            "${"%.1f".format(state.timelineZoom)}x",
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun RecorderStepsPanel(
     steps: List<RecorderStepUi>,
     actionSink: PanelActionSink,
     activeRuntimeStepIndex: Int? = null,
     initialState: StepperPanelState = StepperPanelState(),
+    timelineZoom: Float = 1f,
+    onTimelineZoomChange: (Float) -> Unit = {},
+    onViewStateChange: (StepperPanelState) -> Unit = {},
     onSaveState: (StepperPanelState) -> Unit = {},
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
@@ -5458,6 +7888,9 @@ private fun RecorderStepsPanel(
     var selectedStepId by remember { mutableStateOf(initialState.selectedStepId) }
     var replayIndex by remember { mutableIntStateOf(initialState.replayIndex) }
     var replayPositionMs by remember { mutableLongStateOf(initialState.replayPositionMs) }
+    var railMode by remember { mutableStateOf(initialState.railMode) }
+    var railScaleMode by remember { mutableStateOf(initialState.scaleMode) }
+    var localTimelineZoom by remember { mutableFloatStateOf(timelineZoom.coerceIn(0.5f, 4f)) }
     var playing by remember { mutableStateOf(false) }
     val speedSteps = remember { listOf(0.2f, 0.5f, 1f, 2f, 4f) }
     var speedStepIndex by remember {
@@ -5475,6 +7908,25 @@ private fun RecorderStepsPanel(
     val activeStep = steps.getOrNull(safeIndex)
     var sessionMenuExpanded by remember { mutableStateOf(false) }
     val selectedSession = recordingSessions.firstOrNull { it.path == selectedRecordingSessionPath }
+    val railProjection = remember(steps, railMode, railScaleMode) {
+        steps.toRailProjection(mode = railMode, scaleMode = railScaleMode)
+    }
+    val progressFraction = remember(steps.size, safeIndex, replayPositionMs, timelineStartMs, timelineEndMs, railScaleMode) {
+        if (steps.isEmpty()) {
+            0f
+        } else if (railScaleMode == RailScaleMode.Logical) {
+            (safeIndex + 1).toFloat() / steps.size.toFloat()
+        } else {
+            ((replayPositionMs - timelineStartMs).toFloat() / (timelineEndMs - timelineStartMs).toFloat()).coerceIn(0f, 1f)
+        }
+    }
+    LaunchedEffect(timelineZoom) {
+        localTimelineZoom = timelineZoom.coerceIn(0.5f, 4f)
+    }
+    LaunchedEffect(initialState.railMode, initialState.scaleMode) {
+        railMode = initialState.railMode
+        railScaleMode = initialState.scaleMode
+    }
 
     LaunchedEffect(steps.size) {
         if (replayIndex > steps.lastIndex) replayIndex = steps.lastIndex.coerceAtLeast(0)
@@ -5527,14 +7979,30 @@ private fun RecorderStepsPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Step Sequencer", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(railProjection.title, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            railProjection.description,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = "${railMode.name.uppercase()} | ${railScaleMode.name.uppercase()} | ${"%.1f".format(localTimelineZoom)}x",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         text = if (steps.isEmpty()) "0 / 0" else "${safeIndex + 1} / ${steps.size}",
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     TooltipIconButton(
-                        tooltip = "Stepper-Stand speichern",
+                        tooltip = "RailTrace-Stand speichern",
                         onClick = {
                             onSaveState(
                                 StepperPanelState(
@@ -5542,13 +8010,58 @@ private fun RecorderStepsPanel(
                                     replayIndex = safeIndex,
                                     replayPositionMs = replayPositionMs,
                                     speed = speed,
+                                    railMode = railMode,
+                                    scaleMode = railScaleMode,
+                                    timelineZoom = localTimelineZoom,
                                 )
                             )
                         },
                         modifier = Modifier.size(34.dp),
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = "Stepper-Stand speichern", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Save, contentDescription = "RailTrace-Stand speichern", modifier = Modifier.size(18.dp))
                     }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = replayPositionMs.formatTimelineMillis(),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LinearProgressIndicator(
+                        progress = { progressFraction.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(999.dp)),
+                    )
+                    Text(
+                        text = timelineEndMs.formatTimelineMillis(),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = railProjection.tracks.joinToString(separator = "  ") { "${it.label} ${it.items.size}" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "${RailTimelineMarker.Pending.symbol} ${RailTimelineMarker.Recorded.symbol} ${RailTimelineMarker.Active.symbol} ${RailTimelineMarker.Data.symbol} ${RailTimelineMarker.Position.symbol} ${RailTimelineMarker.Warning.symbol}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (recordingSessions.isNotEmpty()) {
                     Box {
@@ -5588,11 +8101,13 @@ private fun RecorderStepsPanel(
                         }
                     }
                 }
-                RecorderTimeline(
+                RailTraceTimeline(
+                    projection = railProjection,
                     steps = steps,
                     activeIndex = safeIndex,
                     selectedStepId = selectedStepId,
                     replayPositionMs = replayPositionMs,
+                    zoom = localTimelineZoom,
                     onSeek = { positionMs ->
                         replayPositionMs = positionMs.coerceIn(timelineStartMs, timelineEndMs)
                         val index = nearestTimelineIndex(timelinePoints, replayPositionMs)
@@ -5604,7 +8119,7 @@ private fun RecorderStepsPanel(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(98.dp),
+                        .height(154.dp),
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -5683,6 +8198,21 @@ private fun RecorderStepsPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Icon(Icons.Default.ZoomOut, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Slider(
+                        value = localTimelineZoom,
+                        onValueChange = {
+                            localTimelineZoom = it.coerceIn(0.5f, 4f)
+                            onTimelineZoomChange(localTimelineZoom)
+                        },
+                        valueRange = 0.5f..4f,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${"%.1f".format(localTimelineZoom)}x",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Slider(
                         value = speedStepIndex.toFloat(),
@@ -5715,10 +8245,12 @@ private fun RecorderStepsPanel(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f),
         ) {
-            items(activityStepGroups, key = { it.key }) { group ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+	            items(activityStepGroups, key = { it.key }) { group ->
+	                Surface(
+	                    modifier = Modifier
+	                        .fillMaxWidth()
+	                        .animateItem(),
+	                    shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.74f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
                 ) {
@@ -5777,11 +8309,7 @@ private fun RecorderStepsPanel(
 }
 
 private fun EmscriptDryRunResult.toRecorderSteps(): List<RecorderStepUi> {
-    val sourceEvents = when (this) {
-        is EmscriptDryRunResult.Success -> events
-        is EmscriptDryRunResult.Failure -> events
-    }
-    return sourceEvents.map { event ->
+    return eventsForRailTrace().map { event ->
         val label = buildString {
             append("#")
             append(event.index)
@@ -5806,6 +8334,31 @@ private fun EmscriptDryRunResult.toRecorderSteps(): List<RecorderStepUi> {
             },
             detail = event.message,
         )
+    }
+}
+
+private fun EmscriptDryRunResult.eventsForRailTrace() = when (this) {
+    is EmscriptDryRunResult.Success -> events
+    is EmscriptDryRunResult.Failure -> events
+}
+
+private fun syncRailTraceToDryRunStep(
+    result: EmscriptDryRunResult,
+    stepIndex: Int,
+    currentState: StepperPanelState,
+    onStateChanged: (StepperPanelState) -> Unit,
+) {
+    val steps = result.toRecorderSteps()
+    val activeIndex = (stepIndex - 1).takeIf { stepIndex > 0 }?.coerceIn(0, (steps.size - 1).coerceAtLeast(0)) ?: 0
+    val activeStep = if (stepIndex > 0) steps.getOrNull(activeIndex) else null
+    val updated = currentState.copy(
+        selectedStepId = activeStep?.id,
+        replayIndex = activeIndex,
+        replayPositionMs = activeStep?.timestampMs ?: 0L,
+        railMode = RailMode.Step,
+    )
+    if (updated != currentState) {
+        onStateChanged(updated)
     }
 }
 
@@ -6143,6 +8696,238 @@ private fun RecorderTimeline(
     }
 }
 
+@Composable
+private fun RailTraceTimeline(
+    projection: RailProjection,
+    steps: List<RecorderStepUi>,
+    activeIndex: Int,
+    selectedStepId: String?,
+    replayPositionMs: Long,
+    zoom: Float,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
+    val activitySegments = remember(timelinePoints) { buildRecorderActivitySegments(timelinePoints) }
+    val minWidth = 360.dp
+    val timelineWidth = maxOf(minWidth, ((steps.size.coerceAtLeast(8) * 42f * zoom.coerceIn(0.5f, 4f))).dp)
+    val timelineScrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
+    val timelineEndMs = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStartMs + 1L) ?: 1L
+    LaunchedEffect(activeIndex, replayPositionMs, timelineWidth, timelineScrollState.maxValue) {
+        if (timelinePoints.isEmpty() || timelineScrollState.maxValue <= 0) return@LaunchedEffect
+        val fraction = if (projection.scaleMode == RailScaleMode.Logical) {
+            activeIndex.toFloat() / (timelinePoints.size - 1).coerceAtLeast(1).toFloat()
+        } else {
+            ((replayPositionMs - timelineStartMs).toFloat() / (timelineEndMs - timelineStartMs).toFloat()).coerceIn(0f, 1f)
+        }
+        val target = with(density) { timelineWidth.toPx() * fraction - 140.dp.toPx() }
+        timelineScrollState.animateScrollTo(target.roundToInt().coerceIn(0, timelineScrollState.maxValue))
+    }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.44f))
+    ) {
+        RailTraceLaneLabels(
+            tracks = projection.tracks.take(5),
+            modifier = Modifier
+                .width(78.dp)
+                .fillMaxHeight(),
+        )
+        Box(modifier = Modifier.weight(1f).fillMaxHeight().horizontalScroll(timelineScrollState)) {
+            RailTraceTimelineCanvas(
+                projection = projection,
+                timelinePoints = timelinePoints,
+                activitySegments = activitySegments,
+                activeIndex = activeIndex,
+                selectedStepId = selectedStepId,
+                replayPositionMs = replayPositionMs,
+                onSeek = onSeek,
+                modifier = Modifier
+                    .width(timelineWidth)
+                    .fillMaxHeight(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RailTraceLaneLabels(
+    tracks: List<RailTrack>,
+    modifier: Modifier = Modifier,
+) {
+    val labelColor = MaterialTheme.colorScheme.onSurface
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f))
+            .padding(start = 6.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text("Scene", style = MaterialTheme.typography.labelSmall, color = muted, maxLines = 1)
+        tracks.forEach { track ->
+            Text(
+                track.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = labelColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RailTraceTimelineCanvas(
+    projection: RailProjection,
+    timelinePoints: List<RecorderTimelinePoint>,
+    activitySegments: List<RecorderActivitySegment>,
+    activeIndex: Int,
+    selectedStepId: String?,
+    replayPositionMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val outline = MaterialTheme.colorScheme.outlineVariant
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val scenePrimary = MaterialTheme.colorScheme.secondaryContainer
+    val sceneSecondary = MaterialTheme.colorScheme.tertiaryContainer
+    val trackColors = mapOf(
+        RailTrackKind.Workflow to MaterialTheme.colorScheme.primary,
+        RailTrackKind.Runtime to MaterialTheme.colorScheme.tertiary,
+        RailTrackKind.Events to MaterialTheme.colorScheme.secondary,
+        RailTrackKind.Data to MaterialTheme.colorScheme.error,
+        RailTrackKind.Observation to MaterialTheme.colorScheme.primaryContainer,
+        RailTrackKind.Worldview to MaterialTheme.colorScheme.tertiaryContainer,
+    )
+    Canvas(
+        modifier = modifier.pointerInput(timelinePoints) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (timelinePoints.isNotEmpty()) {
+                    val timelineStart = timelinePoints.firstOrNull()?.startMs ?: 0L
+                    val timelineEnd = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStart + 1L) ?: 1L
+                    val fraction = (down.position.x / size.width).coerceIn(0f, 1f)
+                    val targetTime = timelineStart + ((timelineEnd - timelineStart) * fraction).toLong()
+                    onSeek(targetTime)
+                }
+                waitForUpOrCancellation()
+            }
+        }
+    ) {
+        val labelPaint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+            isAntiAlias = true
+            textSize = 10.dp.toPx()
+            color = onSurface.toArgb()
+        }
+        val smallLabelPaint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+            isAntiAlias = true
+            textSize = 9.dp.toPx()
+            color = onSurfaceVariant.toArgb()
+        }
+        val left = 18f
+        val right = size.width - 18f
+        val timelineStart = timelinePoints.firstOrNull()?.startMs ?: 0L
+        val timelineEnd = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStart + 1L) ?: 1L
+        fun xForTime(timeMs: Long): Float {
+            if (projection.scaleMode == RailScaleMode.Logical && timelinePoints.isNotEmpty()) {
+                val index = timelinePoints.indexOfFirst { timeMs <= it.endMs }.coerceAtLeast(0)
+                val denom = (timelinePoints.size - 1).coerceAtLeast(1).toFloat()
+                return left + (right - left) * (index / denom)
+            }
+            val fraction = ((timeMs - timelineStart).toFloat() / (timelineEnd - timelineStart).toFloat()).coerceIn(0f, 1f)
+            return left + (right - left) * fraction
+        }
+        val sceneTop = 8f
+        val sceneBottom = 30f
+        val sceneCenterY = (sceneTop + sceneBottom) * 0.5f
+        activitySegments.forEachIndexed { index, segment ->
+            val x1 = xForTime(segment.startMs).coerceIn(left, right)
+            val x2 = xForTime(segment.endMs).coerceIn(left, right).coerceAtLeast(x1 + 10f)
+            val color = if (index % 2 == 0) scenePrimary else sceneSecondary
+            drawRoundRect(
+                color = color.copy(alpha = 0.72f),
+                topLeft = Offset(x1, sceneTop),
+                size = androidx.compose.ui.geometry.Size(x2 - x1, sceneBottom - sceneTop),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f),
+            )
+            val labelSpace = x2 - x1 - 8f
+            if (labelSpace > 34f) {
+                drawContext.canvas.nativeCanvas.drawText(
+                    segment.label.take((labelSpace / 7f).toInt().coerceAtLeast(4)),
+                    x1 + 5f,
+                    sceneCenterY + 3.5f,
+                    smallLabelPaint,
+                )
+            }
+        }
+        val tracks = projection.tracks.take(5)
+        val laneTop = 38f
+        val trackGap = if (tracks.isEmpty()) 26f else (size.height - laneTop - 10f) / tracks.size.coerceAtLeast(1)
+        tracks.forEachIndexed { trackIndex, track ->
+            val y = laneTop + trackGap * trackIndex + trackGap * 0.44f
+            val color = trackColors[track.kind] ?: primary
+            drawLine(
+                color = outline.copy(alpha = 0.45f),
+                start = Offset(left, y),
+                end = Offset(right, y),
+                strokeWidth = 2f,
+                cap = StrokeCap.Round,
+            )
+            track.items.forEach { item ->
+                val point = timelinePoints.firstOrNull { it.step.id == item.sourceId } ?: return@forEach
+                val x = xForTime(point.startMs)
+                val selected = item.sourceId == selectedStepId
+                val active = timelinePoints.indexOf(point) == activeIndex
+                val marker = railTimelineMarkerFor(track.kind, item.status, active = active, selected = selected)
+                val markerPaint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+                    isAntiAlias = true
+                    textSize = if (active || selected) 16.dp.toPx() else 13.dp.toPx()
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    this.color = railTimelineStatusColor(track.kind, item.status, color).toArgb()
+                }
+                val endX = xForTime(item.endMs ?: point.endMs).coerceAtLeast(x + 4f)
+                if (projection.scaleMode == RailScaleMode.Temporal && endX - x > 10f) {
+                    drawLine(
+                        color = color.copy(alpha = if (active || selected) 0.95f else 0.56f),
+                        start = Offset(x, y),
+                        end = Offset(endX, y),
+                        strokeWidth = if (active || selected) 5f else 3f,
+                        cap = StrokeCap.Round,
+                    )
+                }
+                if (active || selected) {
+                    drawCircle(
+                        color = primary.copy(alpha = 0.70f),
+                        radius = 10.5f,
+                        center = Offset(x, y),
+                        style = Stroke(width = 2f),
+                    )
+                }
+                drawContext.canvas.nativeCanvas.drawText(marker.symbol, x, y + 4.5f, markerPaint)
+                if ((selected || active) && item.label.isNotBlank()) {
+                    drawContext.canvas.nativeCanvas.drawText(item.label.take(18), x + 9f, y - 8f, labelPaint)
+                }
+            }
+        }
+        if (timelinePoints.isNotEmpty()) {
+            val playheadX = xForTime(replayPositionMs.coerceIn(timelineStart, timelineEnd))
+            drawLine(
+                color = primary.copy(alpha = 0.88f),
+                start = Offset(playheadX, 8f),
+                end = Offset(playheadX, size.height - 8f),
+                strokeWidth = 1.8f,
+                cap = StrokeCap.Round,
+            )
+            drawCircle(color = primary, radius = 4f, center = Offset(playheadX, 8f))
+        }
+    }
+}
+
 private fun buildRecorderTimelinePoints(steps: List<RecorderStepUi>): List<RecorderTimelinePoint> =
     steps.mapIndexed { index, step ->
         val fallbackStart = index * 1_000L
@@ -6150,6 +8935,36 @@ private fun buildRecorderTimelinePoints(steps: List<RecorderStepUi>): List<Recor
         val fallbackEnd = steps.getOrNull(index + 1)?.timestampMs ?: (start + 700L)
         val end = (step.durationMs?.let { start + it } ?: fallbackEnd).coerceAtLeast(start + 80L)
         RecorderTimelinePoint(step, start, end)
+    }
+
+private fun railTimelineMarkerFor(
+    trackKind: RailTrackKind,
+    status: com.visualtasker.wss.workspace.model.RailItemStatus,
+    active: Boolean,
+    selected: Boolean,
+): RailTimelineMarker =
+    when {
+        active || selected -> RailTimelineMarker.Active
+        status == com.visualtasker.wss.workspace.model.RailItemStatus.Invalid ||
+            status == com.visualtasker.wss.workspace.model.RailItemStatus.Failed -> RailTimelineMarker.Warning
+        trackKind == RailTrackKind.Data -> RailTimelineMarker.Data
+        status == com.visualtasker.wss.workspace.model.RailItemStatus.Recorded -> RailTimelineMarker.Recorded
+        else -> RailTimelineMarker.Pending
+    }
+
+private fun railTimelineStatusColor(
+    trackKind: RailTrackKind,
+    status: com.visualtasker.wss.workspace.model.RailItemStatus,
+    fallback: Color,
+): Color =
+    when {
+        status == com.visualtasker.wss.workspace.model.RailItemStatus.Invalid ||
+            status == com.visualtasker.wss.workspace.model.RailItemStatus.Failed -> Color(0xFFFFC857)
+        status == com.visualtasker.wss.workspace.model.RailItemStatus.Success -> Color(0xFF52D273)
+        status == com.visualtasker.wss.workspace.model.RailItemStatus.Cancelled -> Color(0xFFE57373)
+        status == com.visualtasker.wss.workspace.model.RailItemStatus.Running -> Color(0xFF64B5F6)
+        trackKind == RailTrackKind.Data -> Color(0xFFB388FF)
+        else -> fallback
     }
 
 private fun buildRecorderActivitySegments(points: List<RecorderTimelinePoint>): List<RecorderActivitySegment> {
@@ -6389,20 +9204,12 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
-    onRunDry: () -> Unit,
-    onRunLive: () -> Unit,
-    canDryRun: Boolean,
-    canLiveRun: Boolean,
 ) {
     val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.BlockEditor).mapNotNull { descriptor ->
         descriptor.toBlockEditorRailAction(
             session = session,
             onExpandRequested = onExpandRequested,
             onSave = onSave,
-            onRunDry = onRunDry,
-            onRunLive = onRunLive,
-            canDryRun = canDryRun,
-            canLiveRun = canLiveRun,
         )
     }
     Column(
@@ -6438,10 +9245,6 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
-    onRunDry: () -> Unit,
-    onRunLive: () -> Unit,
-    canDryRun: Boolean,
-    canLiveRun: Boolean,
 ): WorkspaceRailActionSpec? {
     val controller = session?.controller
     val hasSession = session != null
@@ -6479,8 +9282,8 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
             }
             onExpandRequested()
         }
-        EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canDryRun, onClick = onRunDry)
-        EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession && canLiveRun, onClick = onRunLive)
+        EditorActionId.RunDry,
+        EditorActionId.RunLive,
         EditorActionId.ZoomIn,
         EditorActionId.ZoomOut,
         EditorActionId.FitViewport,
@@ -6499,12 +9302,6 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
     selectedEdgeId: FlowEdgeId?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
-    onRunDry: () -> Unit,
-    onRunLive: () -> Unit,
-    onStepBack: () -> Unit,
-    onStepForward: () -> Unit,
-    canStepBack: Boolean,
-    canStepForward: Boolean,
     dataFlowVisible: Boolean,
     runtimeVisible: Boolean,
     diagnosticsVisible: Boolean,
@@ -6557,8 +9354,6 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
             enabled = hasSession,
             onClick = onDiagnosticsToggle,
         )
-        EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onRunDry)
-        EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onRunLive)
         EditorActionId.DeleteSelection -> WorkspaceRailActionSpec(
             label = if (selectedEdgeId != null) "Kante löschen" else "Node löschen",
             icon = editorActionIcon(id),
@@ -6570,6 +9365,8 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
         EditorActionId.ZoomIn,
         EditorActionId.ZoomOut,
         EditorActionId.FitViewport,
+        EditorActionId.RunDry,
+        EditorActionId.RunLive,
         EditorActionId.StepBack,
         EditorActionId.StepForward,
         EditorActionId.ToggleCollapse,
@@ -6870,12 +9667,6 @@ private fun ColumnScope.FlowchartCompactActionRail(
     selectedEdgeId: FlowEdgeId?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
-    onRunDry: () -> Unit,
-    onRunLive: () -> Unit,
-    onStepBack: () -> Unit,
-    onStepForward: () -> Unit,
-    canStepBack: Boolean,
-    canStepForward: Boolean,
     dataFlowVisible: Boolean,
     runtimeVisible: Boolean,
     diagnosticsVisible: Boolean,
@@ -6895,12 +9686,6 @@ private fun ColumnScope.FlowchartCompactActionRail(
             selectedEdgeId = selectedEdgeId,
             onExpandRequested = onExpandRequested,
             onSave = onSave,
-            onRunDry = onRunDry,
-            onRunLive = onRunLive,
-            onStepBack = onStepBack,
-            onStepForward = onStepForward,
-            canStepBack = canStepBack,
-            canStepForward = canStepForward,
             dataFlowVisible = dataFlowVisible,
             runtimeVisible = runtimeVisible,
             diagnosticsVisible = diagnosticsVisible,
@@ -6959,12 +9744,6 @@ private fun FlowchartPanel(
     runtimeSnapshot: FlowRuntimeSnapshot?,
     focusedNodeId: FlowNodeId?,
     focusedEdgeId: FlowEdgeId?,
-    onRunDry: () -> Unit,
-    onRunLive: () -> Unit,
-    onStepBack: () -> Unit,
-    onStepForward: () -> Unit,
-    canStepBack: Boolean,
-    canStepForward: Boolean,
     stepLabel: String?,
     showMiniMap: Boolean,
     dataFlowVisible: Boolean,
@@ -7031,12 +9810,6 @@ private fun FlowchartPanel(
         runtimeSnapshot = runtimeSnapshot,
         focusedNodeId = focusedNodeId,
         focusedEdgeId = focusedEdgeId,
-        onRunDry = onRunDry,
-        onRunLive = onRunLive,
-        onStepBack = onStepBack,
-        onStepForward = onStepForward,
-        canStepBack = canStepBack,
-        canStepForward = canStepForward,
         stepLabel = stepLabel,
         onNodeSelected = onNodeSelected,
         onSelectionChanged = onSelectionChanged,
@@ -7066,6 +9839,7 @@ private fun FlowchartPanel(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MinimizedDock(
     panels: List<PanelState>,
@@ -7089,8 +9863,8 @@ private fun MinimizedDock(
                     panel.id == focusedPanelId -> 0.76f
                     else -> 0.48f
                 }
-                AssistChip(
-                    onClick = { onSelect(panel.id) },
+	                AssistChip(
+	                    onClick = { onSelect(panel.id) },
                     leadingIcon = {
                         Icon(
                             imageVector = iconForPanelType(panel.type),
@@ -7099,7 +9873,10 @@ private fun MinimizedDock(
                         )
                     },
                     label = { Text(displayTitleForPanel(panel)) },
-                    modifier = Modifier.background(Color.Transparent).clip(RoundedCornerShape(10.dp)),
+	                    modifier = Modifier
+	                        .animateItem()
+	                        .background(Color.Transparent)
+	                        .clip(RoundedCornerShape(10.dp)),
                     colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
                         containerColor = panel.accentColor.copy(alpha = alpha * 0.22f),
                         labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
@@ -7131,7 +9908,7 @@ private fun GridBackground(visible: Boolean, stepDp: Float) {
 }
 
 private fun defaultPanels(): List<PanelState> = listOf(
-    workspacePanel("panel-1", PanelType.RecorderSteps, "Stepper", 84f, 112f, 360f, 360f, 1),
+    workspacePanel("panel-1", PanelType.RecorderSteps, "RailTrace", 84f, 112f, 360f, 360f, 1),
     workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor", 470f, 124f, 360f, 300f, 2),
     workspacePanel("panel-3", PanelType.Flowchart, "Flowchart", 470f, 460f, 360f, 300f, 3),
     workspacePanel("panel-4", PanelType.LogConsole, "LogConsole", 860f, 150f, 320f, 240f, 4)
@@ -7258,6 +10035,13 @@ private fun MutableList<RecorderStepUi>.move(from: Int, to: Int) {
     add(to, item)
 }
 
+private fun persistStepperState(
+    uiPrefs: android.content.SharedPreferences,
+    state: StepperPanelState,
+) {
+    uiPrefs.edit().putString(STEPPER_STATE_PREF_KEY, state.encode()).apply()
+}
+
 private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.RecorderSteps -> Icons.AutoMirrored.Filled.Subject
     PanelType.BlockEditor -> Icons.Default.ViewKanban
@@ -7271,7 +10055,8 @@ private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.TextEditor -> Icons.Default.Article
     PanelType.LogConsole -> Icons.Default.BugReport
     PanelType.DebugInfo -> Icons.Default.Terminal
-    PanelType.M3Director -> Icons.Default.SmartToy
+    PanelType.M3Director -> Icons.Default.AutoAwesomeMosaic
+    PanelType.Vt2Vt -> Icons.Default.SyncAlt
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -7289,6 +10074,8 @@ private fun AddPanelDialog(
         PanelType.Marker,
         PanelType.Vision,
         PanelType.Datastore,
+        PanelType.M3Director,
+        PanelType.Vt2Vt,
         PanelType.TextEditor,
         PanelType.LogConsole,
         PanelType.DebugInfo
@@ -7303,12 +10090,44 @@ private fun AddPanelDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Panel-Typ auswählen", style = MaterialTheme.typography.titleMedium)
-            panelTypes.forEach { type ->
-                AssistChip(
-                    onClick = { onSelect(type) },
-                    label = { Text(displayNameForPanelType(type)) },
-                    leadingIcon = { Icon(iconForPanelType(type), contentDescription = null) }
-                )
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 148.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(250.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(panelTypes) { type ->
+                    val accent = defaultAccentForPanelType(type)
+                    Surface(
+                        onClick = { onSelect(type) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = accent.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, accent.copy(alpha = 0.55f)),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                iconForPanelType(type),
+                                contentDescription = null,
+                                tint = accent,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                displayNameForPanelType(type),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
+                }
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text("Floating Overlays", style = MaterialTheme.typography.titleSmall)
@@ -7332,7 +10151,7 @@ private fun AddPanelDialog(
 }
 
 private fun displayNameForPanelType(type: PanelType): String = when (type) {
-    PanelType.RecorderSteps -> "Stepper"
+    PanelType.RecorderSteps -> "RailTrace"
     PanelType.BlockEditor -> "BlockEditor"
     PanelType.Flowchart -> "Flowchart"
     PanelType.Screenshot -> "Canvas"
@@ -7344,7 +10163,8 @@ private fun displayNameForPanelType(type: PanelType): String = when (type) {
     PanelType.TextEditor -> "TextEditor"
     PanelType.LogConsole -> "LogConsole"
     PanelType.DebugInfo -> "Debug"
-    PanelType.M3Director -> "M3Director"
+    PanelType.M3Director -> "VisualAssets"
+    PanelType.Vt2Vt -> "VT2VT"
 }
 
 private fun displayTitleForPanel(panel: PanelState): String {
@@ -7353,7 +10173,7 @@ private fun displayTitleForPanel(panel: PanelState): String {
     val generatedPanelTitle = supportedWorkspacePanelTypes.any { type ->
         val name = displayNameForPanelType(type)
         Regex("^\\s*${Regex.escape(name)}(?:\\s+\\d+)?\\s*$", RegexOption.IGNORE_CASE).matches(panel.title)
-    }
+    } || (panel.type == PanelType.RecorderSteps && Regex("^\\s*Stepper(?:\\s+\\d+)?\\s*$", RegexOption.IGNORE_CASE).matches(panel.title))
     return if (trailingNumber.matches(panel.title) || generatedPanelTitle) canonical else panel.title
 }
 
@@ -7385,6 +10205,7 @@ private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
     PanelType.Vision,
     PanelType.Datastore,
     PanelType.M3Director -> MainPanelType.LIST_TEST
+    PanelType.Vt2Vt -> MainPanelType.LIST_TEST
 }
 
 private fun loadBlockEditorWorkspaceJson(
@@ -7529,6 +10350,8 @@ private fun WorkspaceSettingsBottomSheet(
     onSnapEnabledChange: (Boolean) -> Unit,
     uiScale: Float,
     onUiScaleChange: (Float) -> Unit,
+    fontScale: Float,
+    onFontScaleChange: (Float) -> Unit,
     themeMode: String,
     onThemeModeChange: (String) -> Unit,
     appearance: WorkspaceAppearance,
@@ -7539,7 +10362,11 @@ private fun WorkspaceSettingsBottomSheet(
     onBlockEditorMiniMapVisibleChange: (Boolean) -> Unit,
     flowchartMiniMapVisible: Boolean,
     onFlowchartMiniMapVisibleChange: (Boolean) -> Unit,
+    chromeTabSettings: CustomChromeTabSettings,
+    onChromeTabSettingsChange: (CustomChromeTabSettings) -> Unit,
     onResetPanels: () -> Unit,
+    onSaveLayout: () -> Unit,
+    onDeleteLayout: () -> Unit,
     onAutoArrange: () -> Unit,
     onColorPick: (Color) -> Unit,
     onToggleIconEngine: () -> Unit,
@@ -7551,10 +10378,11 @@ private fun WorkspaceSettingsBottomSheet(
             Tab(selected = tabIndex == 1, onClick = { onTabChange(1) }, text = { Text("Flowchart") })
             Tab(selected = tabIndex == 2, onClick = { onTabChange(2) }, text = { Text("Blockeditor") })
             Tab(selected = tabIndex == 3, onClick = { onTabChange(3) }, text = { Text("Texteditor") })
-            Tab(selected = tabIndex == 4, onClick = { onTabChange(4) }, text = { Text("Browser") })
-            Tab(selected = tabIndex == 5, onClick = { onTabChange(5) }, text = { Text("Extras") })
-            Tab(selected = tabIndex == 6, onClick = { onTabChange(6) }, text = { Text("Farben") })
-            Tab(selected = tabIndex == 7, onClick = { onTabChange(7) }, text = { Text("Keypad") })
+            Tab(selected = tabIndex == 4, onClick = { onTabChange(4) }, text = { Text("ChromeTab") })
+            Tab(selected = tabIndex == 5, onClick = { onTabChange(5) }, text = { Text("Plugins & Extras") })
+            Tab(selected = tabIndex == 6, onClick = { onTabChange(6) }, text = { Text("Tasker") })
+            Tab(selected = tabIndex == 7, onClick = { onTabChange(7) }, text = { Text("Farben") })
+            Tab(selected = tabIndex == 8, onClick = { onTabChange(8) }, text = { Text("Keypad") })
         }
 
         when (tabIndex) {
@@ -7608,6 +10436,17 @@ private fun WorkspaceSettingsBottomSheet(
                         valueRange = 0.7f..1.5f
                     )
                 }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Schriftgrad: ${(fontScale * 100).toInt()}%")
+                    Slider(
+                        value = fontScale,
+                        onValueChange = onFontScaleChange,
+                        valueRange = 0.75f..1.6f
+                    )
+                }
                 Text("Theme")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AssistChip(onClick = { onThemeModeChange("system") }, label = { Text("System") })
@@ -7618,13 +10457,24 @@ private fun WorkspaceSettingsBottomSheet(
                 Button(onClick = onResetPanels, modifier = Modifier.padding(top = 8.dp)) {
                     Text("Panels zurücksetzen")
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(onClick = onSaveLayout, modifier = Modifier.weight(1f)) {
+                        Text("Layout speichern")
+                    }
+                    OutlinedButton(onClick = onDeleteLayout, modifier = Modifier.weight(1f)) {
+                        Text("Layout löschen")
+                    }
+                }
                 Button(onClick = onAutoArrange) {
                     Text("Panels auto anordnen")
                 }
                 Text("Standard bleibt 4x4 (kleines Grid).")
             }
 
-            6 -> Column(
+            7 -> Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
@@ -7684,16 +10534,276 @@ private fun WorkspaceSettingsBottomSheet(
                 miniMapVisible = blockEditorMiniMapVisible,
                 onMiniMapVisibleChange = onBlockEditorMiniMapVisibleChange,
             )
-            3 -> WorkspaceSettingsInfoTab("Texteditor", listOf("Die Workspace-Shell hält Texteditor-Funktionalität außerhalb der Shell-Plugin-Panels."))
-            4 -> WorkspaceSettingsInfoTab("Browser", listOf("Browser-Panels sind in dieser Shell nicht als Platzhalter angeboten."))
-            5 -> ExtrasPermissionsTab()
-            else -> WorkspaceSettingsInfoTab(
+            3 -> WorkspaceSettingsInfoTab("Texteditor", listOf("Texteditor lädt und speichert EMScript-Drafts und synchronisiert gültige Skripte in den gemeinsamen Workflow."))
+            4 -> ChromeTabSettingsTab(
+                settings = chromeTabSettings,
+                onSettingsChange = onChromeTabSettingsChange,
+            )
+            5 -> PluginSettingsTab()
+            6 -> TaskerSettingsTab()
+            8 -> WorkspaceSettingsInfoTab(
                 title = "Keypad",
                 messages = listOf("Keypad-Mapping wird als eigenes Workspace-Panel/Plugin migriert. Icon-Engine kann hier bereits umgeschaltet werden."),
                 actionLabel = "Icon-Engine: ${IconMotionConfig.engine.name}",
                 onAction = onToggleIconEngine
             )
+            else -> WorkspaceSettingsInfoTab("Farben", listOf("Farboptionen sind im Tab Farben erreichbar."))
         }
+    }
+}
+
+@Composable
+private fun ChromeTabSettingsTab(
+    settings: CustomChromeTabSettings,
+    onSettingsChange: (CustomChromeTabSettings) -> Unit,
+) {
+    val context = LocalContext.current
+    val status = CustomChromeTabRegistration.inspect(context)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Custom Chrome Tab", style = MaterialTheme.typography.titleSmall)
+        Text(status.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        HorizontalDivider()
+        SettingSwitchRow("Titel anzeigen", settings.showTitle) {
+            onSettingsChange(settings.copy(showTitle = it))
+        }
+        SettingSwitchRow("Share aktiv", settings.shareEnabled) {
+            onSettingsChange(settings.copy(shareEnabled = it))
+        }
+        SettingSwitchRow("Download-Menüeintrag", settings.downloadMenuEnabled) {
+            onSettingsChange(settings.copy(downloadMenuEnabled = it))
+        }
+        SettingSwitchRow("Favorit-Menüeintrag", settings.favoriteMenuEnabled) {
+            onSettingsChange(settings.copy(favoriteMenuEnabled = it))
+        }
+        SettingSwitchRow("App-BottomBar anzeigen", settings.bottomBarEnabled) {
+            onSettingsChange(settings.copy(bottomBarEnabled = it))
+        }
+        Text("ActionButton Icon", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("open", "star", "save", "share").forEach { icon ->
+                FilterChip(
+                    selected = settings.actionButtonIcon == icon,
+                    onClick = { onSettingsChange(settings.copy(actionButtonIcon = icon)) },
+                    label = { Text(icon) },
+                )
+            }
+        }
+        Text("Close Icon", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("close", "back", "x").forEach { icon ->
+                FilterChip(
+                    selected = settings.closeButtonIcon == icon,
+                    onClick = { onSettingsChange(settings.copy(closeButtonIcon = icon)) },
+                    label = { Text(icon) },
+                )
+            }
+        }
+        ColorAssignmentRow("Toolbar", Color(settings.toolbarColor)) {
+            onSettingsChange(settings.copy(toolbarColor = it.toArgb()))
+        }
+        ColorAssignmentRow("Navigation", Color(settings.navigationBarColor)) {
+            onSettingsChange(settings.copy(navigationBarColor = it.toArgb()))
+        }
+    }
+}
+
+@Composable
+private fun PluginSettingsTab() {
+    val context = LocalContext.current
+    val chromeTab = CustomChromeTabRegistration.inspect(context)
+    var shizuku by remember { mutableStateOf(ShizukuRegistration.inspect(context)) }
+    val termux = TermuxRegistration.inspect(context)
+    val tasker = TaskerRegistration.inspect(context)
+    val usb = Vt2VtUsbAdbBridge.detect(context)
+    LaunchedEffect(context) {
+        while (isActive) {
+            shizuku = ShizukuRegistration.inspect(context)
+            delay(2_000)
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Plugin Adapter", style = MaterialTheme.typography.titleSmall)
+        PluginStatusRow("CustomChromeTab", chromeTab.supported, chromeTab.summary) {}
+        PluginStatusRow("Shizuku Legitimation", shizuku.legitimized, shizuku.summary) {
+            context.safeStartActivity(ShizukuRegistration.settingsIntent(shizuku))
+        }
+        TaskerSettingLine("Shizuku Binder live", shizuku.binderAlive.toString())
+        TaskerSettingLine("Shizuku Runtime bereit", shizuku.available.toString())
+        PluginStatusRow("Termux", termux.canRunCommands, termux.summary) {
+            context.safeStartActivity(TermuxRegistration.settingsIntent(termux))
+        }
+        PluginStatusRow("Tasker", tasker.available, tasker.summary) {
+            context.safeStartActivity(TaskerRegistration.settingsIntent(tasker))
+        }
+        PluginStatusRow("scrcpy/VT2VT USB", usb.bridgeReady, usb.summary) {}
+        HorizontalDivider()
+        ExtrasPermissionsContent()
+    }
+}
+
+@Composable
+private fun TaskerSettingsTab() {
+    val context = LocalContext.current
+    val tasker = TaskerRegistration.inspect(context)
+    var settings by remember(context) { mutableStateOf(TaskerPluginSettings.load(context)) }
+    var sessionRevision by remember { mutableIntStateOf(0) }
+    val latestResult = remember(context, sessionRevision) { TaskerPluginSessionStore.lastResult(context) }
+    val latestError = remember(context, sessionRevision) { TaskerPluginSessionStore.lastError(context) }
+    val updateSettings: (TaskerPluginSettings) -> Unit = { next ->
+        settings = next
+        next.save(context)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Tasker", style = MaterialTheme.typography.titleSmall)
+        PluginStatusRow("Tasker Adapter", tasker.available, tasker.summary) {
+            context.safeStartActivity(TaskerRegistration.settingsIntent(tasker))
+        }
+        HorizontalDivider()
+        Text("Verbindung", style = MaterialTheme.typography.labelLarge)
+        TaskerSettingLine("Paket", tasker.packageName ?: "nicht gefunden")
+        TaskerSettingLine("Installiert", tasker.installed.toString())
+        TaskerSettingLine("Tasker startbar", tasker.launchable.toString())
+        TaskerSettingLine("RUN_TASKS Permission", if (tasker.runTaskPermissionGranted) "granted" else "missing")
+        TaskerSettingLine("Tasker enabled", tasker.taskerEnabled?.toString() ?: "unbekannt")
+        TaskerSettingLine("External Access", tasker.externalAccessAllowed?.toString() ?: "unbekannt")
+        TaskerSettingLine("Task Receiver", tasker.receiverAvailable.toString())
+        Button(
+            onClick = { context.safeStartActivity(TaskerRegistration.settingsIntent(tasker)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (tasker.installed) "Tasker External Access öffnen" else "Tasker installieren/einrichten")
+        }
+        HorizontalDivider()
+        Text("Empfang", style = MaterialTheme.typography.labelLarge)
+        SettingSwitchRow("Tasker-Events in RailTrace aufzeichnen", settings.recordToRailTrace) {
+            updateSettings(settings.copy(recordToRailTrace = it))
+        }
+        SettingSwitchRow("Toast-Rückmeldung anzeigen", settings.showToasts) {
+            updateSettings(settings.copy(showToasts = it))
+        }
+        SettingSwitchRow("Workspace bei Open/Script-Draft öffnen", settings.autoOpenWorkspace) {
+            updateSettings(settings.copy(autoOpenWorkspace = it))
+        }
+        HorizontalDivider()
+        Text("WSS Plugin Action", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "Tasker findet WSS unter Plugin > VisualTasker Studio WSS. Bestehende Actions einmal öffnen und speichern, um neue Felder zu übernehmen.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text("Event-Slots")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            TaskerPluginContract.eventSlotLabels.forEach { (_, label) ->
+                AssistChip(onClick = {}, label = { Text(label) })
+            }
+        }
+        Text("Statuswerte")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            TaskerPluginContract.statusLabels.forEach { (value, label) ->
+                AssistChip(onClick = {}, label = { Text("$label/$value") })
+            }
+        }
+        HorizontalDivider()
+        Text("Session-Dateien", style = MaterialTheme.typography.labelLarge)
+        TaskerSettingLine("Recorder", "emscript-runtime/records/external-tasker-feedback.jsonl")
+        TaskerSettingLine("Result/Ack", "emscript-runtime/tasker/tasker-plugin-sessions.jsonl")
+        HorizontalDivider()
+        Text("Letzte Session", style = MaterialTheme.typography.labelLarge)
+        latestResult?.let { result ->
+            TaskerSettingLine("LastResult", "${result.status} | ${result.runId} | ${result.eventName} | #${result.ordinal}")
+        } ?: Text("Noch kein Tasker Result empfangen.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        latestError?.let { error ->
+            TaskerSettingLine("LastError", "${error.message} | ${error.runId} | ${error.eventName} | #${error.ordinal}")
+        } ?: Text("Kein Tasker Fehler gespeichert.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(
+            onClick = {
+                TaskerPluginSessionStore.clear(context)
+                sessionRevision++
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Tasker Sessions leeren")
+        }
+    }
+}
+
+@Composable
+private fun TaskerSettingLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(0.42f))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.58f),
+        )
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun PluginStatusRow(
+    label: String,
+    ready: Boolean,
+    detail: String,
+    onOpen: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+            .clickable { onOpen() }
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .background(if (ready) Color(0xFF4CAF50) else Color(0xFFFFC857), CircleShape)
+        )
     }
 }
 
@@ -7887,6 +10997,19 @@ private data class PermissionEntry(
 
 @Composable
 private fun ExtrasPermissionsTab() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ExtrasPermissionsContent()
+    }
+}
+
+@Composable
+private fun ExtrasPermissionsContent() {
     val context = LocalContext.current
     val packageName = context.packageName
     val overlayGranted = Settings.canDrawOverlays(context)
@@ -7895,7 +11018,8 @@ private fun ExtrasPermissionsTab() {
     val notificationsGranted = isNotificationAccessGranted(context)
     val microphoneGranted = hasPermission(context, Manifest.permission.RECORD_AUDIO)
     val accessibilityGranted = isAccessibilityEnabledForApp(context)
-    val shizukuGranted = isPackageInstalled(context, "moe.shizuku.privileged.api")
+    val shizukuStatus = ShizukuRegistration.inspect(context)
+    val termuxStatus = TermuxRegistration.inspect(context)
     val rootGranted = isRootAvailable()
 
     val entries = listOf(
@@ -7973,17 +11097,16 @@ private fun ExtrasPermissionsTab() {
         ),
         PermissionEntry(
             label = "Shizuku",
-            granted = shizukuGranted,
+            granted = shizukuStatus.legitimized,
             open = {
-                val intent = if (shizukuGranted) {
-                    Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:moe.shizuku.privileged.api"),
-                    )
-                } else {
-                    Intent(Settings.ACTION_SETTINGS)
-                }
-                context.safeStartActivity(intent)
+                context.safeStartActivity(ShizukuRegistration.settingsIntent(shizukuStatus))
+            },
+        ),
+        PermissionEntry(
+            label = "Termux RUN_COMMAND",
+            granted = termuxStatus.canRunCommands,
+            open = {
+                context.safeStartActivity(TermuxRegistration.settingsIntent(termuxStatus))
             },
         ),
         PermissionEntry(
@@ -7995,27 +11118,19 @@ private fun ExtrasPermissionsTab() {
         ),
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("Permissions und Capabilities", style = MaterialTheme.typography.titleMedium)
-                entries.forEach { entry ->
-                    PermissionStatusRow(entry = entry)
-                }
+            Text("Permissions und Capabilities", style = MaterialTheme.typography.titleMedium)
+            entries.forEach { entry ->
+                PermissionStatusRow(entry = entry)
             }
         }
     }
@@ -8096,12 +11211,154 @@ private fun isAccessibilityEnabledForApp(context: Context): Boolean {
     return enabled.contains(context.packageName, ignoreCase = true)
 }
 
-private fun workspaceRuntimeCapabilityGate(): RuntimeCapabilityGate =
-    if (VisualTaskerAccessibilityService.isConnected()) {
-        RuntimeCapabilityGate.withAccessibilityAdapter()
-    } else {
-        RuntimeCapabilityGate()
+private fun workspaceRuntimeCapabilityGate(context: Context): RuntimeCapabilityGate =
+    RuntimeCapabilityGate.withDeviceAdapters(
+        accessibilityAvailable = VisualTaskerAccessibilityService.isConnected(),
+        customChromeTabAvailable = CustomChromeTabRegistration.inspect(context).supported,
+        shizukuAvailable = ShizukuRegistration.inspect(context).available,
+        termuxAvailable = TermuxRegistration.inspect(context).canRunCommands,
+        taskerAvailable = TaskerRegistration.inspect(context).available,
+        usbAdbBridgeAvailable = Vt2VtUsbAdbBridge.detect(context).bridgeReady,
+    )
+
+private fun RuntimeCapabilityReport.accessibilityBlockedCommands(): List<String> {
+    val accessibilityCommands = setOf("click", "clickPoint", "swipe", "screenshot")
+    return capabilities
+        .filter { it.status == RuntimeCapabilityStatus.BLOCKED }
+        .map { it.command }
+        .filter { command -> accessibilityCommands.any { it.equals(command, ignoreCase = true) } }
+        .distinct()
+}
+
+private data class TaskerRunRequest(
+    val taskName: String,
+    val parameters: List<String>,
+    val variables: Map<String, String>,
+)
+
+private fun parseTaskerRunRequest(args: List<String>): TaskerRunRequest {
+    val taskName = args.firstOrNull().orEmpty().trimLiteral()
+    val tail = args.drop(1)
+    val parameters = mutableListOf<String>()
+    val variables = linkedMapOf<String, String>()
+    tail.forEach { raw ->
+        val value = raw.trim()
+        when {
+            value.startsWith("[") && value.endsWith("]") -> {
+                splitTopLevel(value.removeSurrounding("[", "]")).forEach { parameters += it.trimLiteral() }
+            }
+            value.startsWith("{") && value.endsWith("}") -> {
+                parseTaskerVariableObject(value).forEach { (name, variableValue) -> variables[name] = variableValue }
+            }
+            value.isNotBlank() -> parameters += value.trimLiteral()
+        }
     }
+    return TaskerRunRequest(taskName, parameters, variables)
+}
+
+private fun parseTaskerVariableObject(raw: String): Map<String, String> {
+    val body = raw.trim().removeSurrounding("{", "}").trim()
+    if (body.isBlank()) return emptyMap()
+    return splitTopLevel(body).mapNotNull { pair ->
+        val separator = pair.indexOfTopLevel(':')
+        if (separator < 0) return@mapNotNull null
+        val key = pair.substring(0, separator).trimLiteral()
+        val value = pair.substring(separator + 1).trimLiteral()
+        key.takeIf { it.isNotBlank() }?.let { it to value }
+    }.toMap()
+}
+
+private fun splitTopLevel(source: String): List<String> {
+    if (source.isBlank()) return emptyList()
+    val result = mutableListOf<String>()
+    val current = StringBuilder()
+    var bracketDepth = 0
+    var braceDepth = 0
+    var parenDepth = 0
+    var inString = false
+    var escaped = false
+    source.forEach { char ->
+        if (escaped) {
+            current.append(char)
+            escaped = false
+            return@forEach
+        }
+        if (char == '\\' && inString) {
+            current.append(char)
+            escaped = true
+            return@forEach
+        }
+        if (char == '"') {
+            inString = !inString
+            current.append(char)
+            return@forEach
+        }
+        if (!inString) {
+            when (char) {
+                '[' -> bracketDepth += 1
+                ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+                '{' -> braceDepth += 1
+                '}' -> braceDepth = (braceDepth - 1).coerceAtLeast(0)
+                '(' -> parenDepth += 1
+                ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
+                ',' -> if (bracketDepth == 0 && braceDepth == 0 && parenDepth == 0) {
+                    result += current.toString().trim()
+                    current.clear()
+                    return@forEach
+                }
+            }
+        }
+        current.append(char)
+    }
+    current.toString().trim().takeIf { it.isNotBlank() }?.let(result::add)
+    return result
+}
+
+private fun String.shellQuote(): String {
+    val value = trim()
+    if (value.isBlank()) return "''"
+    if (value.all { it.isLetterOrDigit() || it in setOf('_', '-', '.', '/', ':') }) return value
+    return "'${value.replace("'", "'\"'\"'")}'"
+}
+
+private fun String.indexOfTopLevel(target: Char): Int {
+    var bracketDepth = 0
+    var braceDepth = 0
+    var parenDepth = 0
+    var inString = false
+    var escaped = false
+    forEachIndexed { index, char ->
+        if (escaped) {
+            escaped = false
+            return@forEachIndexed
+        }
+        if (char == '\\' && inString) {
+            escaped = true
+            return@forEachIndexed
+        }
+        if (char == '"') {
+            inString = !inString
+            return@forEachIndexed
+        }
+        if (!inString) {
+            when (char) {
+                '[' -> bracketDepth += 1
+                ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+                '{' -> braceDepth += 1
+                '}' -> braceDepth = (braceDepth - 1).coerceAtLeast(0)
+                '(' -> parenDepth += 1
+                ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
+                target -> if (bracketDepth == 0 && braceDepth == 0 && parenDepth == 0) return index
+            }
+        }
+    }
+    return -1
+}
+
+private fun String.trimLiteral(): String =
+    trim()
+        .removeSurrounding("\"")
+        .replace("\\\"", "\"")
 
 private fun runtimeFilesRoot(context: Context): java.io.File =
     java.io.File(context.filesDir, "emscript-runtime").apply { mkdirs() }

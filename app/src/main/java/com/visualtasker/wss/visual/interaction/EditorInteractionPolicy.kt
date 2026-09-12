@@ -70,8 +70,6 @@ object DefaultEditorInteractionPolicy {
 
     private val blockEditorActions = listOf(
         EditorActionDescriptor(EditorActionId.ToggleCollapse, "Ein-/ausklappen", 100, shared = false),
-        EditorActionDescriptor(EditorActionId.RunDry, "Dry Run", 130, shared = false),
-        EditorActionDescriptor(EditorActionId.RunLive, "Live Run", 140, shared = false),
         EditorActionDescriptor(EditorActionId.OpenBlockDesigner, "Blockdesigner", 910, shared = false),
         EditorActionDescriptor(EditorActionId.ClearWorkspace, "Workspace leeren", 920, shared = false, feedbackEvent = EditorFeedbackEvent.Delete),
     )
@@ -80,10 +78,6 @@ object DefaultEditorInteractionPolicy {
         EditorActionDescriptor(EditorActionId.ToggleDataFlow, "Dataflow", 100, shared = false),
         EditorActionDescriptor(EditorActionId.ToggleRuntime, "Runtime", 110, shared = false),
         EditorActionDescriptor(EditorActionId.ToggleDiagnostics, "Diagnose", 120, shared = false),
-        EditorActionDescriptor(EditorActionId.RunDry, "Dry Run", 130, shared = false),
-        EditorActionDescriptor(EditorActionId.RunLive, "Live Run", 140, shared = false),
-        EditorActionDescriptor(EditorActionId.StepBack, "Step zurueck", 150, shared = false),
-        EditorActionDescriptor(EditorActionId.StepForward, "Step vor", 160, shared = false),
     )
 
     fun actionsFor(projection: EditorProjection): List<EditorActionDescriptor> =

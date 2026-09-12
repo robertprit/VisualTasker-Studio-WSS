@@ -17,8 +17,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AssistChip
@@ -234,16 +232,6 @@ internal fun EmscriptTextEditorPanel(
             )
         },
         onCompileCheck = ::compileCheck,
-        onDryRun = ::dryRun,
-        canDryRun = manualScript().isNotBlank(),
-        onLiveRun = {
-            dryRunDiagnostics = listOf(
-                "Live-Run nutzt das gemeinsame WorkspaceDocument.",
-                "Lokale Textaenderungen zuerst mit Apply uebernehmen."
-            )
-            onLiveRun()
-        },
-        canLiveRun = canLiveRun,
         canApplyDraft = true,
         onRequestApplyPreview = ::buildApplyPreview,
         onConfirmApply = {
@@ -286,13 +274,9 @@ internal fun EmscriptTextEditorPanel(
 internal fun ColumnScope.EmscriptCompactRail(
     onExpandRequested: () -> Unit,
     onCompileCheck: () -> Unit,
-    onDryRun: () -> Unit,
-    onLiveRun: () -> Unit,
     onSave: () -> Unit,
     onLoad: () -> Unit,
     canCompile: Boolean,
-    canDryRun: Boolean,
-    canLiveRun: Boolean,
     canLoad: Boolean
 ) {
     val compactIconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
@@ -302,20 +286,6 @@ internal fun ColumnScope.EmscriptCompactRail(
         enabled = canCompile
     ) {
         Icon(Icons.Default.Build, contentDescription = "Compile Check", tint = compactIconTint)
-    }
-    TooltipIconButton(
-        tooltip = "Dry-Run",
-        onClick = onDryRun,
-        enabled = canDryRun
-    ) {
-        Icon(Icons.Default.PlayArrow, contentDescription = "Dry-Run", tint = compactIconTint)
-    }
-    TooltipIconButton(
-        tooltip = "Live-Run",
-        onClick = onLiveRun,
-        enabled = canLiveRun
-    ) {
-        Icon(Icons.Default.PlayCircle, contentDescription = "Live-Run", tint = compactIconTint)
     }
     TooltipIconButton(
         tooltip = "Dateimanager öffnen",

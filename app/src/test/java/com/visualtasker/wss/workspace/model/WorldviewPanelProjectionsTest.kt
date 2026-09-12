@@ -94,6 +94,103 @@ class WorldviewPanelProjectionsTest {
     }
 
     @Test
+    fun projectsVisualUiMemoryAcrossProvidersFacetsAndSuggestions() {
+        val marker = WorkspaceResource(id = "marker:play", kind = WorkspaceResourceKind.Marker, label = "Play")
+        val template = WorkspaceResource(id = "template:play", kind = WorkspaceResourceKind.Template, label = "Play Template")
+        val dataset = WorkspaceResource(id = "dataset:play", kind = WorkspaceResourceKind.Dataset, label = "Play Samples")
+        val resources = listOf(marker, template, dataset).fold(WorkspaceResourceBundle()) { bundle, resource ->
+            WorkspaceResourceReducer.upsert(bundle, resource)
+        }
+        val base = WorldviewDocument.fromResources(resources)
+        val withVision = WorldviewReducer.upsertObservation(
+            base,
+            WorldObservation(
+                id = "observation:ocr:play",
+                provider = ObservationProvider.Ocr,
+                kind = ObservationKind.Text,
+                sceneId = "scene:resources",
+                confidence = 0.91f,
+                properties = mapOf("text" to "PLAY"),
+            )
+        )
+        val worldview = WorldviewReducer.upsertAmbiguity(
+            withVision,
+            WorldAmbiguity(
+                id = "ambiguity:play-target",
+                type = AmbiguityType.SelectionAmbiguity,
+                subjectRefs = setOf("entity:marker:play"),
+                confidence = 0.66f,
+                impact = "Mehrere Play-Ziele koennten passen.",
+            )
+        )
+
+        val projection = VisualUiMemoryProjector.project(worldview)
+
+        assertEquals("Visual UI Memory", projection.title)
+        assertTrue(projection.providerStates.single { it.provider == VisualUiMemoryProvider.OCR }.active)
+        assertEquals(1, projection.providerStates.single { it.provider == VisualUiMemoryProvider.Marker }.itemCount)
+        assertEquals(1, projection.providerStates.single { it.provider == VisualUiMemoryProvider.Template }.itemCount)
+        assertEquals(1, projection.providerStates.single { it.provider == VisualUiMemoryProvider.ML }.itemCount)
+        assertEquals(1, projection.facetCounts.single { it.facet == VisualUiMemoryFacet.Dataset }.count)
+        assertTrue(projection.suggestions.any { it.id == "suggestion:marker:play:block" })
+        assertTrue(projection.suggestions.any { it.id == "suggestion:template:play:template" })
+        assertTrue(projection.suggestions.any { it.id == "suggestion:ambiguity:play-target:resolve" })
+        assertEquals(
+            "marker:play",
+            projection.suggestions.single { it.id == "suggestion:marker:play:block" }.sourceId,
+        )
+        assertEquals(
+            "CREATE_TEMPLATE",
+            projection.suggestions.single { it.id == "suggestion:template:play:template" }.type,
+        )
+        assertEquals(
+            setOf("entity:marker:play"),
+            projection.suggestions.single { it.id == "suggestion:ambiguity:play-target:resolve" }.evidenceRefs,
+        )
+    }
+
+    @Test
+    fun projectsObservationHistoryAndRecorderSuggestions() {
+        val recorderObservation = WorldObservation(
+            id = "observation:record:login-click",
+            provider = ObservationProvider.Accessibility,
+            kind = ObservationKind.Touch,
+            observedAtEpochMs = 1200L,
+            bounds = WorldviewRect(
+                10f,
+                20f,
+                110f,
+                70f,
+                coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+            ),
+            point = WorldviewPoint(
+                60f,
+                45f,
+                coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+            ),
+            properties = mapOf(
+                "text" to "Click Login",
+                "activity" to "LoginActivity",
+                "source" to "railtrace-recording",
+            ),
+        )
+        val document = WorldviewReducer.upsertObservation(WorldviewDocument(), recorderObservation)
+
+        val dataProjection = WorldviewDataProjector.project(document)
+        val memoryProjection = VisualUiMemoryProjector.project(document)
+
+        assertEquals(1, dataProjection.observationGroups.size)
+        assertEquals("LoginActivity", dataProjection.observationGroups.single().label)
+        assertEquals(ObservationProvider.Accessibility, dataProjection.observationGroups.single().provider)
+        assertTrue(memoryProjection.suggestions.any { it.type == "CREATE_MARKER_FROM_RECORD" })
+        assertTrue(memoryProjection.suggestions.any { it.type == "CREATE_CLICK_FROM_RECORD" })
+        assertEquals(
+            "observation:record:login-click",
+            memoryProjection.suggestions.single { it.type == "CREATE_CLICK_FROM_RECORD" }.sourceId,
+        )
+    }
+
+    @Test
     fun returnsNullForMissingInspectorSubjectAndRejectsInvalidSubjectId() {
         assertNull(
             WorldviewInspectorProjector.project(

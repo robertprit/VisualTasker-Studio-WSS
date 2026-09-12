@@ -120,6 +120,101 @@ class RuntimeCapabilityGate(
                     "screenshot",
                 ),
             )
+
+        fun withDeviceAdapters(
+            accessibilityAvailable: Boolean,
+            customChromeTabAvailable: Boolean,
+            shizukuAvailable: Boolean,
+            termuxAvailable: Boolean,
+            taskerAvailable: Boolean,
+            usbAdbBridgeAvailable: Boolean,
+        ): RuntimeCapabilityGate {
+            var capabilities = BasicRealRunCapabilities
+            var commandNames = BasicRealRunCommandNames
+            if (accessibilityAvailable) {
+                capabilities += CommandCapability.A11Y
+                capabilities += CommandCapability.SCREEN_CAPTURE
+                commandNames += setOf("click", "clickpoint", "swipe", "screenshot")
+            }
+            if (customChromeTabAvailable) {
+                capabilities += CommandCapability.CUSTOM_TAB
+                commandNames += setOf(
+                    "chrometab.issupported",
+                    "chrometab.open",
+                    "chrometab.bind",
+                    "chrometab.create",
+                    "chrometab.maylaunchurl",
+                    "chrometab.requestpostmessagechannel",
+                    "chrometab.postmessage",
+                    "chrometab.validaterelationship",
+                    "chrometab.close",
+                )
+            }
+            if (shizukuAvailable) {
+                capabilities += CommandCapability.SHIZUKU
+                commandNames += setOf(
+                    "shizuku.isinstalled",
+                    "shizuku.isavailable",
+                    "shizuku.getuid",
+                    "shizuku.permissionstate",
+                    "shizuku.requestpermission",
+                    "shizuku.binduserservice",
+                    "shizuku.unbinduserservice",
+                    "shizuku.systemservice",
+                    "shizuku.call",
+                    "shizuku.exec",
+                    "shizuku.shell",
+                )
+            }
+            if (termuxAvailable) {
+                capabilities += CommandCapability.TERMUX
+                commandNames += setOf(
+                    "termux.isinstalled",
+                    "termux.canruncommands",
+                    "termux.writestdin",
+                    "termux.cancel",
+                    "termux.get",
+                    "termux.run",
+                    "termux.shell",
+                    "termux.api",
+                )
+            }
+            if (taskerAvailable) {
+                capabilities += CommandCapability.TASKER
+                commandNames += setOf(
+                    "tasker.isinstalled",
+                    "tasker.isenabled",
+                    "tasker.action",
+                    "tasker.runtask",
+                    "tasker.lastresult",
+                    "tasker.error",
+                )
+            }
+            if (usbAdbBridgeAvailable) {
+                capabilities += CommandCapability.SCRCPY
+                commandNames += setOf(
+                    "scrcpy.hostavailable",
+                    "scrcpy.devices",
+                    "scrcpy.connect",
+                    "scrcpy.disconnect",
+                    "scrcpy.isrunning",
+                    "scrcpy.get",
+                    "scrcpy.key",
+                    "scrcpy.text",
+                    "scrcpy.scroll",
+                    "scrcpy.setclipboard",
+                    "scrcpy.setscreenpower",
+                    "scrcpy.rotate",
+                    "scrcpy.start",
+                    "scrcpy.stop",
+                    "scrcpy.touch",
+                )
+            }
+            return RuntimeCapabilityGate(
+                realRunCapabilities = capabilities,
+                realRunCommandNames = commandNames,
+            )
+        }
     }
 }
 
