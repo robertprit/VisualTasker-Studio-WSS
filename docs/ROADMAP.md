@@ -61,7 +61,9 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Auto-Arrange mit kurzem Routing, wenig Kreuzungen und stabilem Hauptstamm haerten.
 - [x] Auto-Pan beim Draggen am Viewportrand wie im BlockEditor einbauen.
 - [ ] Kanten-Hervorhebung fuer selektierte Nodes und einzeln selektierte Edges finalisieren.
-- [ ] Facet-Handles weiter polieren, Collapse-Verhalten releasefest machen.
+- [x] Facet-Handles mit sichtbarer Bezeichnung, Collapse-Aktion und Kontextmenue ausstatten.
+- [ ] Facet-Collapse-Verhalten mit grossen und verschachtelten Graphen releasefest machen.
+- [ ] Eigene Start-/Terminator-Semantik und -Darstellung fuer Workflow, Recording und DryRun festlegen.
 
 ### M3: EMScript Stabilisieren
 

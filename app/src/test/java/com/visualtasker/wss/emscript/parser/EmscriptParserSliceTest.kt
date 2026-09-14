@@ -10,6 +10,7 @@ import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.blockeditor.ir.IrGraphNodeKind
 import de.visualtasker.blockeditor.ir.validateIntegrity
 import de.visualtasker.blockeditor.ir.validateSemantics
 import de.visualtasker.blockeditor.registry.BlockTypes
@@ -19,6 +20,9 @@ import de.visualtasker.blockeditor.registry.CommandCatalogKind
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.flowchart.domain.FlowEdgeKind
+import de.visualtasker.flowchart.domain.FlowNodeKind
+import de.visualtasker.flowchart.domain.FlowSemanticValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -619,6 +623,55 @@ class EmscriptParserSliceTest {
         val commands = (dryRun as EmscriptDryRunResult.Success).events.mapNotNull { it.command }
         assertTrue("rem.region" in commands)
         assertTrue("rem.flowBreak" in commands)
+    }
+
+    @Test
+    fun remFlowNodes_materializeTypedIrFacetsAndOffPageFlowEdges() {
+        val source = """
+            LET alpha = 1
+            LET beta = 2
+            rem.variableBulk("globals rows", "grid-horizontal", "alpha beta")
+            rem.variableBulk("globals columns", "grid-vertical", "alpha beta")
+            rem.region("main", "facet", "auto")
+            wait(20)
+            rem.flowBreak("continued", "right")
+            rem.offPageOut("A")
+            rem.offPageIn("A")
+            log("done")
+        """.trimIndent()
+
+        val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "rem-flow-projection")
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val regenerated = EmscriptGenerator().generate(imported.document!!)
+        assertTrue(regenerated.contains("rem.variableBulk(\"globals rows\",\"grid-horizontal\",\"alpha beta\");"))
+        assertTrue(regenerated.contains("rem.variableBulk(\"globals columns\",\"grid-vertical\",\"alpha beta\");"))
+        assertTrue(regenerated.contains("rem.offPageOut(\"A\");"))
+        assertTrue(EmscriptWorkspaceImporter().import(regenerated, workspaceId = "rem-flow-roundtrip").isSuccess)
+        val ir = IrGraphGenerator().generate(imported.document!!)
+        val directives = ir.nodes.associateBy { it.properties["remFlowKind"] }
+
+        assertEquals(IrGraphNodeKind.ANNOTATION, directives.getValue("REGION").kind)
+        assertEquals("main", directives.getValue("REGION").properties["remFlow.name"])
+        assertTrue(ir.facets.any { facet ->
+            facet.properties["remFlowKind"] == "VARIABLE_BULK" &&
+                facet.properties["remFlow.layout"] == "grid-horizontal" &&
+                facet.nodeIds.size == 2
+        })
+        assertTrue(ir.facets.any { facet ->
+            facet.properties["remFlowKind"] == "VARIABLE_BULK" &&
+                facet.properties["remFlow.layout"] == "grid-vertical" &&
+                facet.nodeIds.size == 2
+        })
+        assertTrue(ir.facets.any { facet ->
+            facet.properties["remFlowKind"] == "REGION" && facet.label == "main"
+        })
+
+        val flow = IrGraphFlowchartProjector.project(ir).graph
+        assertTrue(flow.edges.any { edge -> edge.kind == FlowEdgeKind.GOTO && edge.label == "A" })
+        assertTrue(flow.nodes.any { node ->
+            node.kind.standard == FlowNodeKind.ANNOTATION &&
+                node.properties["remFlowKind"] == FlowSemanticValue.StringValue("FLOW_BREAK")
+        })
     }
 
     @Test

@@ -55,7 +55,7 @@ object IrGraphFlowchartProjector {
                 ),
             )
         }
-        val projectedEdges = graph.edges.map { edge ->
+        val projectedEdges = projectOffPageEdges(graph, graph.edges.map { edge ->
             de.visualtasker.flowchart.domain.FlowGraphEdge(
                 id = FlowEdgeId(edge.id.value),
                 sourceNodeId = FlowNodeId(edge.sourceNodeId.value),
@@ -68,7 +68,7 @@ object IrGraphFlowchartProjector {
                     FlowGraphExtension("visualtasker.ir-source", sourceExtension(edge.source)),
                 ),
             )
-        }
+        })
         val joinNodes = joinNodes(graph)
         val joinEdges = joinEdges(graph)
         val flowGraph = FlowGraphDocument(
@@ -106,7 +106,38 @@ object IrGraphFlowchartProjector {
         IrGraphNodeKind.DECISION -> FlowNodeKind.DECISION
         IrGraphNodeKind.LOOP -> FlowNodeKind.LOOP_START
         IrGraphNodeKind.VALUE -> FlowNodeKind.INPUT
+        IrGraphNodeKind.ANNOTATION -> FlowNodeKind.ANNOTATION
         IrGraphNodeKind.UNKNOWN -> FlowNodeKind.UNKNOWN_SOURCE
+    }
+
+    private fun projectOffPageEdges(
+        graph: IrGraph,
+        projectedEdges: List<de.visualtasker.flowchart.domain.FlowGraphEdge>,
+    ): List<de.visualtasker.flowchart.domain.FlowGraphEdge> {
+        val outputs = graph.nodes.filter { it.properties["remFlowKind"] == "OFF_PAGE_OUT" }
+        val inputsByConnector = graph.nodes
+            .filter { it.properties["remFlowKind"] == "OFF_PAGE_IN" }
+            .groupBy { it.properties["remFlow.connector"].orEmpty() }
+        val gotoEdges = outputs.mapNotNull { output ->
+            val connector = output.properties["remFlow.connector"].orEmpty()
+            val input = inputsByConnector[connector].orEmpty().firstOrNull() ?: return@mapNotNull null
+            de.visualtasker.flowchart.domain.FlowGraphEdge(
+                id = FlowEdgeId("off-page:${connector}:${output.id.value}:${input.id.value}"),
+                sourceNodeId = FlowNodeId(output.id.value),
+                targetNodeId = FlowNodeId(input.id.value),
+                kind = FlowEdgeKind.GOTO,
+                label = connector,
+                sourceReference = sourceReference(graph, output.source),
+                extensions = listOf(
+                    FlowGraphExtension("visualtasker.off-page-connector", FlowSemanticValue.StringValue(connector)),
+                    FlowGraphExtension("visualtasker.ir-source", sourceExtension(output.source)),
+                ),
+            )
+        }
+        val replacedPairs = gotoEdges.map { it.sourceNodeId to it.targetNodeId }.toSet()
+        return projectedEdges.filterNot { edge ->
+            edge.kind == FlowEdgeKind.SEQUENCE && (edge.sourceNodeId to edge.targetNodeId) in replacedPairs
+        } + gotoEdges
     }
 
     private fun kindFor(kind: IrGraphFacetKind): FlowNodeKind = when (kind) {
@@ -300,7 +331,7 @@ object IrGraphFlowchartProjector {
     private fun nodeProperty(key: String, value: String): FlowSemanticValue =
         when {
             key == "inputPorts" || key == "outputPorts" -> portListValue(value)
-            key in setOf("literalBoolean", "collapsed") -> value.toBooleanStrictOrNull()
+            key in setOf("literalBoolean", "collapsed", "remFlowDirective", "remFlow.active") -> value.toBooleanStrictOrNull()
                 ?.let(FlowSemanticValue::BooleanValue)
                 ?: FlowSemanticValue.StringValue(value)
             key in setOf(

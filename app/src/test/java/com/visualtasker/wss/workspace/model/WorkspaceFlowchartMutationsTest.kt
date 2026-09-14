@@ -505,7 +505,7 @@ class WorkspaceFlowchartMutationsTest {
 
         assertNotEquals(document, updated)
         assertEquals(
-            FieldValue.Text("https://,{incognito:true}"),
+            FieldValue.Text("\"https://\",{incognito:true}"),
             updated.blocks.getValue(commandId).fields["args"],
         )
     }

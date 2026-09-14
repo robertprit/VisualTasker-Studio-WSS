@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 13
+    const val integrationTestScriptVersion: Int = 15
 
     val sampleScript: String = """
         LET v1 = 1
@@ -21,7 +21,10 @@ object EditorDefaults {
         LET nestedScore = 0
         LET result = 0
         REM @vt.group.end id="vars:init"
+        rem.variableBulk("Runtime variables", "grid-horizontal", "loopIndex score nestedScore result")
+        rem.variableBulk("Threshold variables", "grid-vertical", "thresholdLow thresholdHigh")
 
+        rem.region("Runtime setup", "facet", "auto")
         log("integration-start")
         wait(100)
         click("Start")
@@ -34,6 +37,8 @@ object EditorDefaults {
         templateCompare("integrationTemplate", region(10, 20, 240, 160), "grayscale")
         findTemplate("integrationTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
 
+        rem.flowBreak("Main loop", "right")
+        rem.group("Main loop", true)
         REM @vt.group.start id="flow:main-loop" label="Hauptschleife" kind="loop-region"
         LOOP 10
             SET loopIndex = loopIndex + 1
@@ -42,6 +47,7 @@ object EditorDefaults {
             log("loop tick")
             wait(25)
 
+            rem.expressionCapsule("Loop condition", "collapse")
             IF (score + loopIndex) < thresholdLow
                 SET result = score + 1
                 beep(880, 80, 65)
@@ -77,6 +83,9 @@ object EditorDefaults {
         END LOOP
         REM @vt.group.end id="flow:main-loop"
 
+        rem.offPageOut("TAIL")
+        rem.offPageIn("TAIL")
+        rem.layoutHint("vertical", "next")
         markerDelete("integrationRegion")
 
         WHILE loopIndex < 12
