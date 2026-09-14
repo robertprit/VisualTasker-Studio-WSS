@@ -61,11 +61,23 @@ Optional Tests:
 ./gradlew test
 ```
 
+## Manuelle Systemtests
+
+Die versionierte Testdokumentation liegt unter `docs/testing/`.
+
+Empfohlener Einstieg:
+- `docs/testing/README.md` – Teststrategie, Statuswerte und Ablauf
+- `docs/testing/MASTER_TEST_CATALOG.md` – zentrale Gesamtcheckliste
+- `docs/testing/00-CORE-SMOKE.md` – erster 10-Punkte-Core-Smoke-Test vor Detailtests
+
+Die manuellen Tests ergaenzen die vorhandenen Unit-/Regressionstests. Im Vordergrund stehen Systeminvarianten wie Text/Block/Flow/Rail-Synchronisation, Draft-vs.-Canonical-State, Runtime/Recording sowie Worldview-/Observation-Trennung.
+
 ## Wichtige Pfade
 
 - App-Einstieg: `app/src/main/java/com/visualtasker/wss/MainActivity.kt`
 - Workspace UI: `app/src/main/java/com/visualtasker/wss/workspace/ui/WorkspaceScreen.kt`
 - Architekturvertrag: `VISUALTASKER_ARCHITECTURE_CONTRACT.md`
+- Testkatalog: `docs/testing/MASTER_TEST_CATALOG.md`
 
 ## Hinweis
 
