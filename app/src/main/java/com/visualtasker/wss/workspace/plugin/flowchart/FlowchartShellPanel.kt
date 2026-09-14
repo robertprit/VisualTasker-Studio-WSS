@@ -94,11 +94,12 @@ import de.visualtasker.flowchart.compose.FlowchartNodeShapeProvider
 import de.visualtasker.flowchart.compose.FlowchartNodePortRef
 import de.visualtasker.flowchart.compose.FlowchartShapeTokens
 import de.visualtasker.flowchart.compose.FlowchartUiConfig
-import de.visualtasker.flowchart.domain.FlowGraphNode
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
+import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowGraphEdge
+import de.visualtasker.flowchart.domain.FlowGraphNode
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowPoint
@@ -110,6 +111,7 @@ import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.interaction.FlowViewportTransform
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
+import de.visualtasker.flowchart.layout.FlowLayoutOrientation
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.registry.BlockCategories
@@ -150,18 +152,24 @@ fun FlowchartShellPanel(
     onRuntimeLayerVisibleChange: (Boolean) -> Unit = {},
     onDiagnosticsVisibleChange: (Boolean) -> Unit = {},
     showTopToolbar: Boolean = true,
+    viewOrientation: FlowchartViewOrientation = FlowchartViewOrientation.Vertical,
+    reporterNodesVisible: Boolean = true,
+    variableNodesVisible: Boolean = true,
+    operatorNodesVisible: Boolean = true,
 ) {
     val controller = session.controller
     var gridVisible by remember(session.sessionId) { mutableStateOf(true) }
     var selectedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var selectedEdgeId by remember(session.sessionId) { mutableStateOf<FlowEdgeId?>(null) }
     var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
+    var localSelectionEcho by remember(session.sessionId) { mutableStateOf<FlowchartSelectionEcho?>(null) }
     var connectionMenu by remember(session.sessionId) { mutableStateOf<PendingConnectionMenu?>(null) }
     var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.Wrapped) }
     var panelSize by remember(session.sessionId) { mutableStateOf(IntSize.Zero) }
     var draggedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
     var miniMapOffset by remember(session.sessionId) { mutableStateOf(Offset.Zero) }
+    var previousViewOrientation by remember(session.sessionId) { mutableStateOf(viewOrientation) }
     var renderViewDocument by remember(session.sessionId) {
         mutableStateOf(session.viewDocument ?: controller.snapshot().view)
     }
@@ -186,43 +194,6 @@ fun FlowchartShellPanel(
             onViewChanged?.invoke(view)
         }
     }
-    fun centerViewport() {
-        val current = renderViewDocument ?: controller.snapshot().view ?: session.viewDocument ?: return
-        val viewport = fitFlowchartViewport(current, panelSize)
-        applyViewport(viewport)
-    }
-    fun centerFocusedElement(zoomOverride: Double? = null) {
-        val current = renderViewDocument ?: controller.snapshot().view ?: session.viewDocument ?: return
-        val focus = selectedNodeId?.let { nodeId ->
-            current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
-        } ?: selectedEdgeId?.let { edgeId ->
-            session.graphDocument.edges.firstOrNull { it.id == edgeId }?.let { edge ->
-                current.edgeCenter(edge.sourceNodeId, edge.targetNodeId)
-            }
-        } ?: runtimeSnapshot?.activeNodeId?.let { nodeId ->
-            current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
-        } ?: return
-        applyViewport(current.centeredOn(focus, panelSize, zoomOverride ?: current.viewport.zoom))
-    }
-    fun zoomFocused(factor: Double) {
-        val current = renderViewDocument ?: controller.snapshot().view ?: session.viewDocument ?: return
-        val nextZoom = (current.viewport.zoom * factor).coerceIn(0.1, 8.0)
-        if (selectedNodeId != null || selectedEdgeId != null || runtimeSnapshot?.activeNodeId != null) {
-            centerFocusedElement(zoomOverride = nextZoom)
-        } else {
-            val anchor = FlowPoint(panelSize.width / 2.0, panelSize.height / 2.0)
-            val graphAnchor = FlowViewportTransform.screenToGraph(anchor, current.viewport)
-            applyViewport(
-                FlowViewport(
-                    pan = FlowPoint(
-                        x = anchor.x - graphAnchor.x * nextZoom,
-                        y = anchor.y - graphAnchor.y * nextZoom,
-                    ),
-                    zoom = nextZoom,
-                ),
-            )
-        }
-    }
     val handleViewChanged: (FlowViewDocument) -> Unit = remember(session, onViewChanged) {
         { view ->
             renderViewDocument = view
@@ -230,6 +201,81 @@ fun FlowchartShellPanel(
             onViewChanged?.invoke(view)
         }
     }
+    val visibleGraphDocument = remember(
+        session.graphDocument,
+        reporterNodesVisible,
+        variableNodesVisible,
+        operatorNodesVisible,
+    ) {
+        session.graphDocument.filteredForFlowchart(
+            reporterNodesVisible = reporterNodesVisible,
+            variableNodesVisible = variableNodesVisible,
+            operatorNodesVisible = operatorNodesVisible,
+        )
+    }
+    val visibleNodeIds = remember(visibleGraphDocument) {
+        visibleGraphDocument.nodes.mapTo(mutableSetOf()) { it.id }
+    }
+    val visibleViewDocument = remember(renderViewDocument, visibleGraphDocument, visibleNodeIds) {
+        val view = renderViewDocument ?: return@remember null
+        val visibleEdgeIds = visibleGraphDocument.edges.mapTo(mutableSetOf()) { it.id }
+        view.copy(
+            nodeViews = view.nodeViews.filter { it.nodeId in visibleNodeIds },
+            edgeViews = view.edgeViews.filter { it.edgeId in visibleEdgeIds },
+        )
+    }
+    val visibleRuntimeSnapshot = remember(runtimeSnapshot, visibleNodeIds) {
+        runtimeSnapshot?.takeIf { it.activeNodeId == null || it.activeNodeId in visibleNodeIds }
+    }
+    fun baseViewDocument(): FlowViewDocument? =
+        renderViewDocument ?: controller.snapshot().view ?: session.viewDocument
+
+    fun centerViewport() {
+        val current = visibleViewDocument ?: baseViewDocument() ?: return
+        val viewport = fitFlowchartViewport(current, panelSize)
+        applyViewport(viewport)
+    }
+    fun centerFocusedElement(zoomOverride: Double? = null) {
+        val base = baseViewDocument() ?: return
+        val current = visibleViewDocument ?: base
+        val focus = selectedNodeId?.let { nodeId ->
+            current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+                ?: base.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+        } ?: selectedEdgeId?.let { edgeId ->
+            visibleGraphDocument.edges.firstOrNull { it.id == edgeId }?.let { edge ->
+                current.edgeCenter(edge.sourceNodeId, edge.targetNodeId)
+            } ?: session.graphDocument.edges.firstOrNull { it.id == edgeId }?.let { edge ->
+                base.edgeCenter(edge.sourceNodeId, edge.targetNodeId)
+            }
+        } ?: runtimeSnapshot?.activeNodeId?.let { nodeId ->
+            current.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+                ?: base.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+        } ?: return
+        applyViewport(base.centeredOn(focus, panelSize, zoomOverride ?: base.viewport.zoom))
+    }
+    fun zoomFocused(factor: Double) {
+        val current = baseViewDocument() ?: return
+        val nextZoom = (current.viewport.zoom * factor).coerceIn(0.1, 8.0)
+        val anchor = FlowPoint(panelSize.width / 2.0, panelSize.height / 2.0)
+        val graphAnchor = FlowViewportTransform.screenToGraph(anchor, current.viewport)
+        applyViewport(
+            FlowViewport(
+                pan = FlowPoint(
+                    x = anchor.x - graphAnchor.x * nextZoom,
+                    y = anchor.y - graphAnchor.y * nextZoom,
+                ),
+                zoom = nextZoom,
+            ),
+        )
+    }
+    val hiddenNodeFamilies = remember(reporterNodesVisible, variableNodesVisible, operatorNodesVisible) {
+        buildList {
+            if (!reporterNodesVisible) add("Reporter")
+            if (!variableNodesVisible) add("Variablen")
+            if (!operatorNodesVisible) add("Operatoren")
+        }
+    }
+    val hiddenNodeCount = session.graphDocument.nodes.size - visibleGraphDocument.nodes.size
     val callbacks = remember(
         session,
         onNodeSelected,
@@ -244,7 +290,7 @@ fun FlowchartShellPanel(
         onSelectionChanged,
         selectedNodeId,
         selectedEdgeId,
-        runtimeSnapshot?.activeNodeId,
+        visibleRuntimeSnapshot?.activeNodeId,
     ) {
         FlowchartHostCallbacks(
             onViewDocumentChanged = handleViewChanged,
@@ -256,8 +302,8 @@ fun FlowchartShellPanel(
                     pendingConnectionStart = null
                     selectedNodeId = it
                     selectedEdgeId = null
+                    localSelectionEcho = FlowchartSelectionEcho(it, null)
                     onSelectionChanged?.invoke(it, null)
-                    centerFocusedElement()
                     when (options.size) {
                         0 -> Unit
                         1 -> options.single().let { option ->
@@ -269,8 +315,8 @@ fun FlowchartShellPanel(
                 } else {
                     selectedNodeId = it
                     if (it != null) selectedEdgeId = null
+                    localSelectionEcho = FlowchartSelectionEcho(it, if (it == null) selectedEdgeId else null)
                     onSelectionChanged?.invoke(it, null)
-                    if (it != null) centerFocusedElement()
                     if (it != null) onNodeSelected?.invoke(it)
                 }
             },
@@ -279,14 +325,15 @@ fun FlowchartShellPanel(
                 if (it != null) selectedNodeId = null
                 if (it != null) pendingConnectionStart = null
                 if (it != null) connectionMenu = null
+                localSelectionEcho = FlowchartSelectionEcho(null, it)
                 onSelectionChanged?.invoke(null, it)
-                if (it != null) centerFocusedElement()
             },
             onPortConnectionRequested = { source, target ->
                 selectedNodeId = target.nodeId
                 selectedEdgeId = null
                 pendingConnectionStart = null
                 connectionMenu = null
+                localSelectionEcho = FlowchartSelectionEcho(target.nodeId, null)
                 onSelectionChanged?.invoke(target.nodeId, null)
                 playFlowchartRawSound(context, R.raw.flow_snap)
                 onConnectPorts?.invoke(source.nodeId, source.portName, target.nodeId, target.portName, source.kind)
@@ -374,6 +421,15 @@ fun FlowchartShellPanel(
     LaunchedEffect(session.viewDocument, session.graphDocument.documentRevision) {
         renderViewDocument = session.viewDocument ?: controller.snapshot().view
     }
+    LaunchedEffect(viewOrientation) {
+        if (previousViewOrientation == viewOrientation) return@LaunchedEffect
+        previousViewOrientation = viewOrientation
+        controller.replaceLayout(arrangeMode.layoutConfig(viewOrientation))?.let { view ->
+            renderViewDocument = view
+            session.onViewDocumentChanged(view)
+            onViewChanged?.invoke(view)
+        }
+    }
     LaunchedEffect(runtimeSnapshot?.activeNodeId, panelSize) {
         val activeNodeId = runtimeSnapshot?.activeNodeId ?: return@LaunchedEffect
         selectedNodeId = activeNodeId
@@ -381,6 +437,11 @@ fun FlowchartShellPanel(
         centerFocusedElement()
     }
     LaunchedEffect(focusedNodeId, focusedEdgeId, panelSize) {
+        val focus = FlowchartSelectionEcho(focusedNodeId, focusedEdgeId)
+        if (localSelectionEcho == focus) {
+            localSelectionEcho = null
+            return@LaunchedEffect
+        }
         selectedNodeId = focusedNodeId
         selectedEdgeId = focusedEdgeId
         if (focusedNodeId != null || focusedEdgeId != null) centerFocusedElement()
@@ -396,9 +457,9 @@ fun FlowchartShellPanel(
             FlowchartShellGrid(Modifier.matchParentSize())
         }
         FlowchartHost(
-            graphDocument = session.graphDocument,
-            viewDocument = renderViewDocument,
-            runtimeSnapshot = runtimeSnapshot,
+            graphDocument = visibleGraphDocument,
+            viewDocument = visibleViewDocument,
+            runtimeSnapshot = visibleRuntimeSnapshot,
             controller = controller,
             uiConfig = uiConfig,
             callbacks = callbacks,
@@ -422,7 +483,7 @@ fun FlowchartShellPanel(
             val maxMiniMapX = with(density) { (panelSize.width.toFloat() - 118.dp.toPx() - 28.dp.toPx()).coerceAtLeast(0f) }
             val maxMiniMapY = with(density) { (panelSize.height.toFloat() - 82.dp.toPx() - 28.dp.toPx()).coerceAtLeast(0f) }
             FlowchartMiniMap(
-                viewDocument = renderViewDocument ?: controller.snapshot().view,
+                viewDocument = visibleViewDocument ?: renderViewDocument ?: controller.snapshot().view,
                 panelSize = panelSize,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -444,8 +505,17 @@ fun FlowchartShellPanel(
                     },
             )
         }
+        if (hiddenNodeFamilies.isNotEmpty()) {
+            FlowchartVisibilityStatus(
+                hiddenNodeCount = hiddenNodeCount,
+                hiddenFamilies = hiddenNodeFamilies,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 10.dp, start = 128.dp, end = 128.dp),
+            )
+        }
         FlowchartViewportScrollbars(
-            viewDocument = renderViewDocument ?: controller.snapshot().view,
+            viewDocument = visibleViewDocument ?: renderViewDocument ?: controller.snapshot().view,
             panelSize = panelSize,
             modifier = Modifier.matchParentSize(),
         )
@@ -468,12 +538,12 @@ fun FlowchartShellPanel(
             onZoomIn = { zoomFocused(1.2) },
             onCenter = ::centerViewport,
             onArrange = {
-                controller.replaceLayout(arrangeMode.layoutConfig())
+                controller.replaceLayout(arrangeMode.layoutConfig(viewOrientation))
             },
             arrangeMode = arrangeMode,
             onArrangeModeSelected = { mode ->
                 arrangeMode = mode
-                controller.replaceLayout(mode.layoutConfig())
+                controller.replaceLayout(mode.layoutConfig(viewOrientation))
             },
             onGridToggle = { gridVisible = !gridVisible },
             onDataFlowToggle = { onDataFlowVisibleChange(!dataFlowVisible) },
@@ -497,6 +567,7 @@ fun FlowchartShellPanel(
             dataFlowVisible = dataFlowVisible,
             runtimeLayerVisible = runtimeLayerVisible,
             diagnosticsVisible = diagnosticsVisible,
+            viewOrientation = viewOrientation,
             connecting = pendingConnectionStart != null,
         )
         }
@@ -712,6 +783,11 @@ private data class PendingConnectionMenu(
     val options: List<FlowchartConnectionOption>,
 )
 
+private data class FlowchartSelectionEcho(
+    val nodeId: FlowNodeId?,
+    val edgeId: FlowEdgeId?,
+)
+
 private fun fitFlowchartViewport(
     view: FlowViewDocument,
     panelSize: IntSize,
@@ -772,9 +848,10 @@ private enum class FlowchartArrangeMode(
     Wide("Weit", "Mehr Abstand fuer Kanten-Lanes"),
     PreserveManual("Manuell", "Vorhandene Node-Positionen respektieren");
 
-    fun layoutConfig(): FlowLayoutConfig =
+    fun layoutConfig(orientation: FlowchartViewOrientation): FlowLayoutConfig =
         when (this) {
             CodeFlow -> FlowLayoutConfig(
+                orientation = orientation.layoutOrientation,
                 layerSpacing = 156.0,
                 nodeSpacing = 112.0,
                 componentSpacing = 192.0,
@@ -782,6 +859,7 @@ private enum class FlowchartArrangeMode(
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Compact -> FlowLayoutConfig(
+                orientation = orientation.layoutOrientation,
                 layerSpacing = 104.0,
                 nodeSpacing = 56.0,
                 componentSpacing = 112.0,
@@ -789,6 +867,7 @@ private enum class FlowchartArrangeMode(
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Wrapped -> FlowLayoutConfig(
+                orientation = orientation.layoutOrientation,
                 layerSpacing = 104.0,
                 nodeSpacing = 64.0,
                 componentSpacing = 128.0,
@@ -798,6 +877,7 @@ private enum class FlowchartArrangeMode(
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             Wide -> FlowLayoutConfig(
+                orientation = orientation.layoutOrientation,
                 layerSpacing = 176.0,
                 nodeSpacing = 136.0,
                 componentSpacing = 220.0,
@@ -805,9 +885,18 @@ private enum class FlowchartArrangeMode(
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
             PreserveManual -> FlowLayoutConfig(
+                orientation = orientation.layoutOrientation,
                 pinnedNodePolicy = FlowPinnedNodePolicy.HONOR_VIEW,
             )
         }
+}
+
+enum class FlowchartViewOrientation(
+    val displayLabel: String,
+    val layoutOrientation: FlowLayoutOrientation,
+) {
+    Vertical("Vertikal", FlowLayoutOrientation.TOP_TO_BOTTOM),
+    Horizontal("Horizontal", FlowLayoutOrientation.LEFT_TO_RIGHT),
 }
 
 @Composable
@@ -1378,6 +1467,7 @@ private fun FlowchartShellToolbar(
     dataFlowVisible: Boolean,
     runtimeLayerVisible: Boolean,
     diagnosticsVisible: Boolean,
+    viewOrientation: FlowchartViewOrientation,
     connecting: Boolean,
 ) {
     var arrangeMenuExpanded by remember { mutableStateOf(false) }
@@ -1401,7 +1491,7 @@ private fun FlowchartShellToolbar(
             FlowchartToolbarButton("Zentrieren", onCenter) { Icon(Icons.Default.CenterFocusStrong, contentDescription = null) }
             Box {
                 FlowchartToolbarButton(
-                    tooltip = "Auto-Arrange: ${arrangeMode.displayLabel}",
+                    tooltip = "Auto-Arrange: ${arrangeMode.displayLabel} / ${viewOrientation.displayLabel}",
                     onClick = { arrangeMenuExpanded = true },
                 ) {
                     Icon(Icons.Default.AccountTree, contentDescription = null)
@@ -1488,6 +1578,28 @@ private fun FlowchartShellToolbar(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FlowchartVisibilityStatus(
+    hiddenNodeCount: Int,
+    hiddenFamilies: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = Color(0xFF221C2C).copy(alpha = 0.9f),
+        contentColor = Color(0xFFFFD166),
+        tonalElevation = 2.dp,
+    ) {
+        Text(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            text = "${hiddenNodeCount.coerceAtLeast(0)} ausgeblendet: ${hiddenFamilies.joinToString()}",
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1852,6 +1964,59 @@ private fun FlowRuntimeSnapshot.runtimeVariables(): Map<String, String> =
 
 private fun Map<String, FlowSemanticValue>.stringValue(key: String): String? =
     (this[key] as? FlowSemanticValue.StringValue)?.value
+
+private fun FlowGraphDocument.filteredForFlowchart(
+    reporterNodesVisible: Boolean,
+    variableNodesVisible: Boolean,
+    operatorNodesVisible: Boolean,
+): FlowGraphDocument {
+    if (reporterNodesVisible && variableNodesVisible && operatorNodesVisible) return this
+    val visibleNodes = nodes.filter { node ->
+        when {
+            !reporterNodesVisible && node.isReporterNode() -> false
+            !variableNodesVisible && node.isVariableNode() -> false
+            !operatorNodesVisible && node.isOperatorNode() -> false
+            else -> true
+        }
+    }
+    val visibleNodeIds = visibleNodes.mapTo(mutableSetOf()) { it.id }
+    val visibleEdges = edges.filter { it.sourceNodeId in visibleNodeIds && it.targetNodeId in visibleNodeIds }
+    return copy(
+        nodes = visibleNodes,
+        edges = visibleEdges,
+        diagnostics = diagnostics.filter { diagnostic ->
+            diagnostic.nodeId == null || diagnostic.nodeId in visibleNodeIds
+        }.filter { diagnostic ->
+            diagnostic.edgeId == null || visibleEdges.any { it.id == diagnostic.edgeId }
+        },
+        entryNodeId = entryNodeId?.takeIf { it in visibleNodeIds },
+    )
+}
+
+private fun FlowGraphNode.isReporterNode(): Boolean {
+    val blockType = properties.textFor("blockType").orEmpty().lowercase()
+    return kind.standard in setOf(FlowNodeKind.INPUT, FlowNodeKind.OUTPUT, FlowNodeKind.PROPERTY_ACCESS) ||
+        blockType.contains("reporter") ||
+        blockType.startsWith("literal.") ||
+        blockType.startsWith("input.")
+}
+
+private fun FlowGraphNode.isVariableNode(): Boolean {
+    val blockType = properties.textFor("blockType").orEmpty().lowercase()
+    return kind.standard in setOf(FlowNodeKind.ASSIGNMENT, FlowNodeKind.PROPERTY_ACCESS) ||
+        blockType.startsWith("variable.") ||
+        blockType.startsWith("variables.") ||
+        properties.textFor("variableLabel") != null
+}
+
+private fun FlowGraphNode.isOperatorNode(): Boolean {
+    val blockType = properties.textFor("blockType").orEmpty().lowercase()
+    return blockType.startsWith("operator.") ||
+        blockType.startsWith("operators.") ||
+        blockType.startsWith("logic.") ||
+        blockType.startsWith("compare.") ||
+        properties.textFor("operator") != null
+}
 
 private fun Map<String, FlowSemanticValue>.numberValue(key: String): String? =
     (this[key] as? FlowSemanticValue.NumberValue)?.canonicalValue

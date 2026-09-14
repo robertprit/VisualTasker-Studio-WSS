@@ -402,7 +402,7 @@ private class Lexer(private val source: String) {
         }
         val raw = builder.toString()
         val upper = raw.uppercase()
-        if (upper == "REM") {
+        if (upper == "REM" && peek() != '.') {
             skipComment()
             return
         }

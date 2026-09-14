@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -180,7 +181,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -214,6 +217,7 @@ import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
 import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
+import com.visualtasker.wss.emscript.editor.EmscriptTextDropMetrics
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
@@ -251,7 +255,7 @@ import com.visualtasker.wss.workspace.model.PanelAction
 import com.visualtasker.wss.workspace.model.PanelActionSink
 import com.visualtasker.wss.workspace.model.PanelState
 import com.visualtasker.wss.workspace.model.PanelType
-import com.visualtasker.wss.workspace.model.JunctionatorSeed
+import com.visualtasker.wss.workspace.model.JunktorSeed
 import com.visualtasker.wss.workspace.model.RailMode
 import com.visualtasker.wss.workspace.model.RailProjection
 import com.visualtasker.wss.workspace.model.RailScaleMode
@@ -277,6 +281,7 @@ import com.visualtasker.wss.workspace.model.CoordinateSpaceKind
 import com.visualtasker.wss.workspace.model.WorldObservation
 import com.visualtasker.wss.workspace.model.WorldviewDataProjector
 import com.visualtasker.wss.workspace.model.WorldviewDocument
+import com.visualtasker.wss.workspace.model.WorldviewPoint
 import com.visualtasker.wss.workspace.model.WorldviewRect
 import com.visualtasker.wss.workspace.model.WorldviewInspectorProjector
 import com.visualtasker.wss.workspace.model.WorldviewInspectorSubject
@@ -287,7 +292,13 @@ import com.visualtasker.wss.workspace.model.WorkspaceRegionBounds
 import com.visualtasker.wss.workspace.model.WorkspaceResource
 import com.visualtasker.wss.workspace.model.WorkspaceResourceBundle
 import com.visualtasker.wss.workspace.model.WorkspaceResourceKind
+import com.visualtasker.wss.workspace.model.WorkspaceSelectionState
+import com.visualtasker.wss.workspace.model.WssDragPayload
+import com.visualtasker.wss.workspace.model.WssDragPayloadFactory
 import com.visualtasker.wss.workspace.model.WssDragTreeItem
+import com.visualtasker.wss.workspace.model.WssDropEffect
+import com.visualtasker.wss.workspace.model.WssDropEffectApplier
+import com.visualtasker.wss.workspace.model.WssDropEffectKind
 import com.visualtasker.wss.workspace.model.WssDropEffectResolver
 import com.visualtasker.wss.workspace.model.WssDropResult
 import com.visualtasker.wss.workspace.model.WssDragRules
@@ -316,6 +327,7 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartCompactNodeRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartNodeToolboxRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
+import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartViewOrientation
 import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabSettings
 import com.visualtasker.wss.workspace.plugin.runtime.ShizukuRegistration
@@ -412,6 +424,10 @@ private const val FLOWCHART_MINIMAP_VISIBLE_PREF_KEY = "flowchart_minimap_visibl
 private const val FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY = "flowchart_dataflow_visible"
 private const val FLOWCHART_RUNTIME_VISIBLE_PREF_KEY = "flowchart_runtime_visible"
 private const val FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY = "flowchart_diagnostics_visible"
+private const val FLOWCHART_VIEW_ORIENTATION_PREF_KEY = "flowchart_view_orientation"
+private const val FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY = "flowchart_reporter_nodes_visible"
+private const val FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY = "flowchart_variable_nodes_visible"
+private const val FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY = "flowchart_operator_nodes_visible"
 private const val CHROME_TAB_SHOW_TITLE_PREF_KEY = "chrometab_show_title"
 private const val CHROME_TAB_SHARE_ENABLED_PREF_KEY = "chrometab_share_enabled"
 private const val CHROME_TAB_DOWNLOAD_MENU_PREF_KEY = "chrometab_download_menu"
@@ -514,6 +530,14 @@ private enum class ScreenshotCanvasMarkerMode { Template, Region, Point, Swipe, 
 
 private enum class ScreenshotCanvasDrawTool { Line, Circle, Curve, Spline, Path, Polygon, Text, Image, Shape }
 
+private enum class CanvasProjectionRole {
+    WorkspaceHuman,
+    DetailHuman,
+    MarkerConsole,
+    VisionMachine,
+    DatastoreWorldview,
+}
+
 private enum class FloatingOverlayTarget {
     Panel,
     Toolbar,
@@ -594,6 +618,8 @@ private class MarkerConsoleState {
 
 private class VisionCropState {
     var visualTestScore by mutableStateOf<Float?>(null)
+    var selectedAssetId by mutableStateOf<String?>(null)
+    var selectedRegion by mutableStateOf<ScreenshotCanvasRegion?>(null)
     var referenceMarkerId by mutableStateOf<String?>(null)
     var liveProcessingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
     var referenceProcessingMode by mutableStateOf(ScreenshotCanvasProcessingMode.Original)
@@ -674,6 +700,16 @@ private class ScreenshotCanvasUiState(
         get() = vision.visualTestScore
         set(value) {
             vision.visualTestScore = value
+        }
+    var visionAssetId: String?
+        get() = vision.selectedAssetId
+        set(value) {
+            vision.selectedAssetId = value
+        }
+    var visionRegion: ScreenshotCanvasRegion?
+        get() = vision.selectedRegion
+        set(value) {
+            vision.selectedRegion = value
         }
     var referenceMarkerId: String?
         get() = vision.referenceMarkerId
@@ -919,6 +955,27 @@ fun WorkspaceScreen(
     var flowchartDiagnosticsVisible by remember {
         mutableStateOf(uiPrefs.getBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, true))
     }
+    var flowchartViewOrientation by remember {
+        mutableStateOf(
+            runCatching {
+                FlowchartViewOrientation.valueOf(
+                    uiPrefs.getString(
+                        FLOWCHART_VIEW_ORIENTATION_PREF_KEY,
+                        FlowchartViewOrientation.Vertical.name
+                    ) ?: FlowchartViewOrientation.Vertical.name
+                )
+            }.getOrDefault(FlowchartViewOrientation.Vertical)
+        )
+    }
+    var flowchartReporterNodesVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY, true))
+    }
+    var flowchartVariableNodesVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY, true))
+    }
+    var flowchartOperatorNodesVisible by remember {
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY, true))
+    }
     var chromeTabSettings by remember {
         mutableStateOf(
             CustomChromeTabSettings(
@@ -983,6 +1040,7 @@ fun WorkspaceScreen(
         )
     }
     val emscriptEditorUiState = remember { EmscriptEditorUiState() }
+    val textEditorDropMetrics = remember { mutableStateMapOf<String, EmscriptTextDropMetrics>() }
     val studioLogStore = remember { StudioLogStore(maxEntries = 800) }
     val snackbarHostState = remember { SnackbarHostState() }
     val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
@@ -1474,6 +1532,7 @@ fun WorkspaceScreen(
     var workspaceDryRunStepIndex by remember { mutableIntStateOf(0) }
     val activeBlockEditorSessionState = remember { mutableStateOf<BlockEditorShellEditorSession?>(null) }
     val activeFlowchartSessionState = remember { mutableStateOf<FlowchartShellEditorSession?>(null) }
+    var workspaceSelectionState by remember { mutableStateOf(WorkspaceSelectionState()) }
     var selectedFlowchartNodeId by remember { mutableStateOf<FlowNodeId?>(null) }
     var selectedFlowchartEdgeId by remember { mutableStateOf<FlowEdgeId?>(null) }
     val emscriptFileManager = remember {
@@ -1553,6 +1612,60 @@ fun WorkspaceScreen(
                 )
             }
         }
+    }
+    fun currentManualEmscriptDraft(): String =
+        emscriptSession.tabs
+            .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+            ?.content
+            .orEmpty()
+
+    fun applyTextEditorDraftChange(content: String, source: String, pushUndo: Boolean = true) {
+        val current = currentManualEmscriptDraft()
+        if (content == current) return
+        if (pushUndo) {
+            emscriptEditorUiState.pushUndo(EmscriptEditorSession.MANUAL_TAB_ID, current)
+        }
+        emscriptSession = emscriptSession
+            .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
+            .updateManualContent(content)
+        uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+        studioLogStore.append(
+            level = StudioLogLevel.DEBUG,
+            source = "EMSCRIPT",
+            message = "Texteditor Draft aktualisiert",
+            details = "Quelle=$source, Zeichen=${content.length}",
+            documentRevision = workflowState.revision.toLong(),
+            groupKey = "emscript:draft-updated:$source"
+        )
+        when (val preview = emscriptApplyGuard.preview(content, workspaceId = "workflow-main")) {
+            is EmscriptApplyGuardResult.Success -> {
+                applyWorkspaceJsonChange(preview.serializedWorkspaceJson, "$WORKFLOW_SOURCE_EMSCRIPT_APPLY:$source")
+            }
+            is EmscriptApplyGuardResult.Failure -> {
+                studioLogStore.append(
+                    level = StudioLogLevel.WARNING,
+                    source = "EMSCRIPT",
+                    message = "Texteditor Draft nicht auf Workspace anwendbar",
+                    details = "Quelle=$source\n${preview.message}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "emscript:draft-apply-failed:$source"
+                )
+            }
+        }
+    }
+
+    fun undoTextEditorDraftChange(): Boolean {
+        val previous = emscriptEditorUiState.popUndo(EmscriptEditorSession.MANUAL_TAB_ID) ?: return false
+        emscriptEditorUiState.pushRedo(EmscriptEditorSession.MANUAL_TAB_ID, currentManualEmscriptDraft())
+        applyTextEditorDraftChange(previous, "texteditor:undo", pushUndo = false)
+        return true
+    }
+
+    fun redoTextEditorDraftChange(): Boolean {
+        val next = emscriptEditorUiState.popRedo(EmscriptEditorSession.MANUAL_TAB_ID) ?: return false
+        emscriptEditorUiState.pushUndo(EmscriptEditorSession.MANUAL_TAB_ID, currentManualEmscriptDraft())
+        applyTextEditorDraftChange(next, "texteditor:redo", pushUndo = false)
+        return true
     }
     LaunchedEffect(Unit) {
         snapshotFlow {
@@ -1784,6 +1897,7 @@ fun WorkspaceScreen(
         }
     }
     fun focusBlockFromFlowNode(nodeId: FlowNodeId) {
+        workspaceSelectionState = workspaceSelectionState.selectFlowNode(nodeId)
         val blockId = nodeId.value.removePrefix("block:").takeIf { it != nodeId.value } ?: return
         val session = activeBlockEditorSessionState.value ?: return
         val target = BlockId(blockId).takeIf { it in session.controller.document.blocks } ?: return
@@ -1805,6 +1919,7 @@ fun WorkspaceScreen(
     }
     fun focusFlowNodeFromBlock(blockId: BlockId?) {
         val target = blockId?.let { FlowNodeId("block:${it.value}") } ?: return
+        workspaceSelectionState = workspaceSelectionState.selectBlock(blockId)
         val session = activeFlowchartSessionState.value ?: return
         if (session.graphDocument.nodes.none { it.id == target }) return
         selectedFlowchartNodeForInsert = target
@@ -1831,6 +1946,27 @@ fun WorkspaceScreen(
         session?.controller?.dispatch(FlowInteractionAction.SelectNode(target))
         focusBlockFromFlowNode(target)
     }
+    fun updateSelectionFromRuntimeSnapshot(result: EmscriptDryRunResult, snapshot: FlowRuntimeSnapshot) {
+        val sourceLine = activeRuntimeSourceLine(
+            workflowState = workflowState,
+            runtimeSnapshot = snapshot,
+            visibleScriptText = currentManualEmscriptDraft(),
+            projectedScriptText = latestEmscriptProjected,
+        )
+        val activeStepId = if (workspaceDryRunStepIndex > 0) {
+            result.toRecorderSteps().getOrNull(workspaceDryRunStepIndex - 1)?.id
+        } else {
+            null
+        }
+        val activeNodeId = snapshot.activeNodeId
+        workspaceSelectionState = when {
+            activeNodeId != null -> workspaceSelectionState
+                .selectFlowNode(activeNodeId, sourceLine = sourceLine, source = "runtime")
+                .let { state -> activeStepId?.let { state.selectRailStep(it, sourceLine = sourceLine, source = "runtime") } ?: state }
+            activeStepId != null -> workspaceSelectionState.selectRailStep(activeStepId, sourceLine = sourceLine, source = "runtime")
+            else -> workspaceSelectionState
+        }
+    }
     fun renderWorkspaceDryRunStep(stepIndex: Int) {
         val result = workspaceDryRunResult ?: return
         val eventCount = dryRunEventCount(result)
@@ -1853,6 +1989,7 @@ fun WorkspaceScreen(
             maxEventIndex = workspaceDryRunStepIndex,
         )
         flowRuntimeSnapshot = snapshot
+        updateSelectionFromRuntimeSnapshot(result, snapshot)
         focusRuntimeSnapshotActiveNode(snapshot)
     }
     fun runCurrentWorkspaceDryRun(source: String) {
@@ -1889,6 +2026,7 @@ fun WorkspaceScreen(
             sequence = workspaceDryRunSequence,
         )
         flowRuntimeSnapshot = snapshot
+        updateSelectionFromRuntimeSnapshot(result, snapshot)
         focusRuntimeSnapshotActiveNode(snapshot)
         snapshot.diagnostics.forEach { diagnostic ->
             studioLogStore.append(
@@ -2124,14 +2262,38 @@ fun WorkspaceScreen(
         }
     }
     var selectedRailTraceStepId by remember { mutableStateOf<String?>(null) }
-    val selectedRailTraceStep = remember(projectedSteps, selectedRailTraceStepId) {
-        selectedRailTraceStepId?.let { id -> projectedSteps.firstOrNull { it.id == id } }
+    val selectedRailTraceStep = remember(projectedSteps, selectedRailTraceStepId, workspaceSelectionState.railStepId) {
+        (workspaceSelectionState.railStepId ?: selectedRailTraceStepId)?.let { id -> projectedSteps.firstOrNull { it.id == id } }
     }
+    var dropHoverPanelId by remember { mutableStateOf<String?>(null) }
+    var activeWssDragPayload by remember { mutableStateOf<WssDragPayload?>(null) }
+    var activeWssDragPosition by remember { mutableStateOf<Offset?>(null) }
     val recorderObservations = remember(projectedSteps) {
         projectedSteps.toRecorderWorldObservations()
     }
     val workspaceCanvasAssets = remember(workspaceCanvasState.assetRevision) {
         loadScreenshotCanvasAssets(context)
+    }
+    LaunchedEffect(selectedRailTraceStep?.id, workspaceCanvasAssets, workspaceCanvasState.selectedAssetId) {
+        val step = selectedRailTraceStep ?: return@LaunchedEffect
+        val stepAsset = step.matchingScreenshotAsset(workspaceCanvasAssets)
+        if (stepAsset != null && workspaceCanvasState.selectedAssetId != stepAsset.id) {
+            workspaceCanvasState.selectedAssetId = stepAsset.id
+        }
+        val asset = stepAsset
+            ?: workspaceCanvasAssets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId }
+            ?: workspaceCanvasAssets.firstOrNull()
+        val imageSize = asset?.file?.absolutePath?.let(::screenshotBitmapSize)
+        val region = step.toScreenshotCanvasRegion(
+            imageWidth = imageSize?.first ?: 1080,
+            imageHeight = imageSize?.second ?: 2400,
+        )
+        if (region != null) {
+            workspaceCanvasState.selectedRegion = region
+            workspaceCanvasState.selectedPath = null
+            workspaceCanvasState.selectedCanvasSourceId = "recorder:${step.id}"
+            workspaceCanvasState.markerStatusMessage = "RailTrace-Step fokussiert: ${step.label}"
+        }
     }
     LaunchedEffect(context, workspaceCanvasState) {
         var lastSignature = screenshotCanvasAssetSignature(context)
@@ -2155,6 +2317,7 @@ fun WorkspaceScreen(
                 }
                 if (action is PanelAction.SelectStep) {
                     selectedRailTraceStepId = action.stepId
+                    workspaceSelectionState = workspaceSelectionState.selectRailStep(action.stepId)
                 }
                 // Demo mutations are active only when no external projection is attached.
                 if (recorderStepsProjection == null) {
@@ -2170,6 +2333,222 @@ fun WorkspaceScreen(
                 }
                 actionSink?.onPanelAction(action)
             }
+        }
+    }
+    var workspaceWindowOrigin by remember { mutableStateOf(Offset.Zero) }
+    val panelDropBounds = remember { mutableStateMapOf<String, Rect>() }
+    fun PanelState.stateDropBoundsInWindow(): Rect {
+        val left = workspaceWindowOrigin.x + x
+        val top = workspaceWindowOrigin.y + y
+        return Rect(
+            left = left,
+            top = top,
+            right = left + width * density,
+            bottom = top + height * density,
+        )
+    }
+    fun panelAtWindowPosition(windowPosition: Offset): PanelState? =
+        panels
+            .asSequence()
+            .filterNot { it.minimized }
+            .filter { panel ->
+                panelDropBounds[panel.id]?.containsWindowPoint(windowPosition) == true ||
+                    panel.stateDropBoundsInWindow().containsWindowPoint(windowPosition)
+            }
+            .maxByOrNull { it.zIndex }
+
+    fun applyWssDropEffect(effect: WssDropEffect) {
+        if (!effect.isProductive) {
+            studioLogStore.append(
+                level = StudioLogLevel.DEBUG,
+                source = "WSS_DRAG",
+                message = "Drop ignoriert",
+                details = effect.label,
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "wss-drag:none:${effect.payloadId}"
+            )
+            return
+        }
+        when (effect.kind) {
+            WssDropEffectKind.InsertText -> {
+                val current = currentManualEmscriptDraft()
+                val dropY = effect.metadata["dropY"]?.toFloatOrNull()
+                val metrics = textEditorDropMetrics[effect.targetPanelId]
+                val windowY = effect.metadata["windowY"]?.toFloatOrNull()
+                val cursor = if (metrics != null && windowY != null) {
+                    val textLocalY = (windowY - metrics.textFieldBoundsInWindow.top)
+                        .coerceAtLeast(0f)
+                    WssDropEffectApplier.estimateTextCursorForDropY(
+                        currentText = current,
+                        dropY = textLocalY,
+                        lineHeight = metrics.lineHeightPx,
+                        topInset = 0f,
+                    )
+                } else {
+                    WssDropEffectApplier.estimateTextCursorForDropY(current, dropY)
+                }
+                val insertion = WssDropEffectApplier.insertText(current, effect, cursor)
+                applyTextEditorDraftChange(insertion.text, "wss-drag:text:${effect.payloadId}")
+                studioLogStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "WSS_DRAG",
+                    message = "Text-Drop angewendet",
+                    details = "${effect.label}\nCursor=${insertion.cursor}, DropY=${dropY ?: "-"}, WindowY=${windowY ?: "-"}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "wss-drag:text:${effect.payloadId}"
+                )
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = "Text eingefügt: ${effect.commandId ?: effect.label}",
+                        duration = SnackbarDuration.Short,
+                    )
+                }
+            }
+            WssDropEffectKind.CreateBlock,
+            WssDropEffectKind.CreateFlowNode,
+            -> {
+                val result = WssDropEffectApplier.applyToWorkspaceDocument(workflowState.document, effect)
+                if (result.applied) {
+                    applyWorkspaceJsonChange(
+                        WorkspaceSerializer.serialize(result.document),
+                        "wss-drag:${effect.kind.name.lowercase()}:${result.definitionId}"
+                    )
+                    studioLogStore.append(
+                        level = StudioLogLevel.INFO,
+                        source = "WSS_DRAG",
+                        message = "Editor-Drop angewendet",
+                        details = "${effect.label}\nDefinition=${result.definitionId}",
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "wss-drag:editor:${effect.payloadId}"
+                    )
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = "Erzeugt: ${result.definitionId ?: effect.label}",
+                            duration = SnackbarDuration.Short,
+                        )
+                    }
+                } else {
+                    studioLogStore.append(
+                        level = StudioLogLevel.WARNING,
+                        source = "WSS_DRAG",
+                        message = "Editor-Drop nicht anwendbar",
+                        details = "${effect.label}\nCommand=${effect.commandId ?: "-"}",
+                        documentRevision = workflowState.revision.toLong(),
+                        groupKey = "wss-drag:editor-rejected:${effect.payloadId}"
+                    )
+                }
+            }
+            WssDropEffectKind.SelectRailStep -> {
+                WssDropEffectApplier.panelAction(effect)?.let(bridge::onPanelAction)
+                studioLogStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "WSS_DRAG",
+                    message = "RailTrace-Drop angewendet",
+                    details = "${effect.label}\nStep=${effect.stepId ?: "-"}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "wss-drag:rail:${effect.payloadId}"
+                )
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = "RailTrace ausgewählt: ${effect.stepId ?: effect.label}",
+                        duration = SnackbarDuration.Short,
+                    )
+                }
+            }
+            WssDropEffectKind.LinkResource -> {
+                studioLogStore.append(
+                    level = StudioLogLevel.INFO,
+                    source = "WSS_DRAG",
+                    message = "Resource-Drop registriert",
+                    details = "${effect.label}\nResource=${effect.resourceId ?: "-"}",
+                    documentRevision = workflowState.revision.toLong(),
+                    groupKey = "wss-drag:resource:${effect.payloadId}"
+                )
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = "Resource verknüpft: ${effect.resourceId ?: effect.label}",
+                        duration = SnackbarDuration.Short,
+                    )
+                }
+            }
+            WssDropEffectKind.None -> Unit
+        }
+    }
+    fun applyWssPayloadDrop(payload: WssDragPayload, windowPosition: Offset) {
+        dropHoverPanelId = null
+        activeWssDragPayload = null
+        activeWssDragPosition = null
+        val targetPanel = panelAtWindowPosition(windowPosition)
+        if (targetPanel == null) {
+            studioLogStore.append(
+                level = StudioLogLevel.WARNING,
+                source = "WSS_DRAG",
+                message = "Drop ohne Zielpanel",
+                details = "${payload.label} @ ${windowPosition.x.toInt()},${windowPosition.y.toInt()}",
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "wss-drag:no-target:${payload.id}"
+            )
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Drop ohne Ziel: ${payload.label}",
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Short,
+                )
+            }
+            return
+        }
+        val target = WssDragRules.defaultTargetForPanel(targetPanel.id, targetPanel.type)
+        val decision = WssDragRules.decide(payload, target)
+        val targetBounds = panelDropBounds[targetPanel.id] ?: targetPanel.stateDropBoundsInWindow()
+        val dropMetadata = targetBounds.let { bounds ->
+            mapOf(
+                "dropX" to ((windowPosition.x - bounds.left) / density).toString(),
+                "dropY" to ((windowPosition.y - bounds.top) / density).toString(),
+                "windowX" to windowPosition.x.toString(),
+                "windowY" to windowPosition.y.toString(),
+            )
+        }
+        val effect = WssDropEffectResolver.resolve(
+            WssDropResult(
+                target = target,
+                payload = payload,
+                decision = decision,
+            )
+        ).let { resolved -> resolved.copy(metadata = resolved.metadata + dropMetadata) }
+        if (!decision.accepted) {
+            studioLogStore.append(
+                level = StudioLogLevel.WARNING,
+                source = "WSS_DRAG",
+                message = "Drop abgelehnt",
+                details = "${payload.label} -> ${targetPanel.type}\n${decision.reason}",
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "wss-drag:rejected:${payload.id}:${targetPanel.id}"
+            )
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Drop abgelehnt: ${payload.label}",
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Short,
+                )
+            }
+            return
+        }
+        applyWssDropEffect(effect)
+    }
+    fun updateWssPayloadDragHover(payload: WssDragPayload?, windowPosition: Offset?) {
+        val dragStarted = activeWssDragPayload == null && payload != null && windowPosition != null
+        activeWssDragPayload = payload
+        activeWssDragPosition = windowPosition
+        dropHoverPanelId = windowPosition?.let { panelAtWindowPosition(it)?.id }
+        if (dragStarted) {
+            studioLogStore.append(
+                level = StudioLogLevel.DEBUG,
+                source = "WSS_DRAG",
+                message = "Toolbox-Drag gestartet",
+                details = payload?.label.orEmpty(),
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "wss-drag:start:${payload?.id}"
+            )
         }
     }
     val openPanel: (PanelType) -> Unit = { type ->
@@ -2261,6 +2640,10 @@ fun WorkspaceScreen(
         flowchartDataFlowVisible,
         flowchartRuntimeVisible,
         flowchartDiagnosticsVisible,
+        flowchartViewOrientation,
+        flowchartReporterNodesVisible,
+        flowchartVariableNodesVisible,
+        flowchartOperatorNodesVisible,
         chromeTabSettings,
     ) {
         uiPrefs.edit()
@@ -2276,6 +2659,10 @@ fun WorkspaceScreen(
             .putBoolean(FLOWCHART_DATAFLOW_VISIBLE_PREF_KEY, flowchartDataFlowVisible)
             .putBoolean(FLOWCHART_RUNTIME_VISIBLE_PREF_KEY, flowchartRuntimeVisible)
             .putBoolean(FLOWCHART_DIAGNOSTICS_VISIBLE_PREF_KEY, flowchartDiagnosticsVisible)
+            .putString(FLOWCHART_VIEW_ORIENTATION_PREF_KEY, flowchartViewOrientation.name)
+            .putBoolean(FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY, flowchartReporterNodesVisible)
+            .putBoolean(FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY, flowchartVariableNodesVisible)
+            .putBoolean(FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY, flowchartOperatorNodesVisible)
             .putBoolean(CHROME_TAB_SHOW_TITLE_PREF_KEY, chromeTabSettings.showTitle)
             .putBoolean(CHROME_TAB_SHARE_ENABLED_PREF_KEY, chromeTabSettings.shareEnabled)
             .putBoolean(CHROME_TAB_DOWNLOAD_MENU_PREF_KEY, chromeTabSettings.downloadMenuEnabled)
@@ -2350,16 +2737,25 @@ fun WorkspaceScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
+                .onGloballyPositioned { coordinates ->
+                    workspaceWindowOrigin = coordinates.positionInWindow()
+                }
                 .onSizeChanged { surfaceSize = it }
         ) {
             GridBackground(visible = snapEnabled, stepDp = gridSizeDp.toFloat())
-            WorkspaceScreenshotCanvasBackground(
-                state = workspaceCanvasState,
-                assets = workspaceCanvasAssets,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = WORKSPACE_TOP_BAR_HEIGHT_DP.dp)
-            )
+            val focusedPanelType = panels.firstOrNull { it.id == focusedPanelId }?.type
+            val showWorkspaceCanvas = focusedPanelType == PanelType.Marker ||
+                focusedPanelType == PanelType.Screenshot
+            if (showWorkspaceCanvas) {
+                WorkspaceScreenshotCanvasBackground(
+                    state = workspaceCanvasState,
+                    assets = workspaceCanvasAssets,
+                    selectedRailTraceStep = selectedRailTraceStep,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = WORKSPACE_TOP_BAR_HEIGHT_DP.dp)
+                )
+            }
 
             WorkspaceTopAppBar(
                 projectName = emscriptFileManager.currentName.ifBlank { "draft" },
@@ -2441,7 +2837,11 @@ fun WorkspaceScreen(
             )
 
         panels.sortedBy { it.zIndex }.forEach { panel ->
-            if (panel.minimized) return@forEach
+            if (panel.minimized) {
+                panelDropBounds.remove(panel.id)
+                textEditorDropMetrics.remove(panel.id)
+                return@forEach
+            }
             key(panel.id) {
                 val panelTopPx = max(panel.y, workspaceTopGuardPx)
                 val maxWidthDp = (surfaceSize.width.coerceAtLeast(0) / density).toInt().coerceAtLeast(PANEL_MIN_W.toInt())
@@ -2479,7 +2879,7 @@ fun WorkspaceScreen(
                     panel = panel.toMainPanelState(),
                     snapEnabled = snapEnabled,
                     gridSizeDp = gridSizeDp,
-                    isActiveTarget = panel.id == focusedPanelId,
+                    isActiveTarget = panel.id == focusedPanelId || panel.id == dropHoverPanelId,
                     maxWidth = maxWidthDp,
                     maxHeight = maxHeightDp,
                     minPositionYPx = workspaceTopGuardPx,
@@ -2525,6 +2925,7 @@ fun WorkspaceScreen(
                         when {
                             isScreenshotPanel -> ScreenshotCanvasCompactRail(
                                 state = screenshotCanvasState,
+                                panelType = panel.type,
                                 onExpandRequested = onExpandRequested,
                             )
                             isRailTracePanel -> RailTraceCompactRail(
@@ -2576,6 +2977,10 @@ fun WorkspaceScreen(
                                 onSave = {
                                     blockEditorSessionState.value?.let { persistBlockEditorSession(uiPrefs, it) }
                                 },
+                                onRunDry = { runCurrentWorkspaceDryRun("BLOCKEDITOR") },
+                                onRunLive = { runCurrentWorkspaceLive("BLOCKEDITOR") },
+                                canRunDry = workflowState.emscriptProjection.isSuccess,
+                                canRunLive = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document).realRunAllowed,
                             )
                             isFlowchartPanel -> FlowchartCompactActionRail(
                                 session = flowchartSessionState.value,
@@ -2592,20 +2997,36 @@ fun WorkspaceScreen(
                                 dataFlowVisible = flowchartDataFlowVisible,
                                 runtimeVisible = flowchartRuntimeVisible,
                                 diagnosticsVisible = flowchartDiagnosticsVisible,
+                                viewOrientation = flowchartViewOrientation,
+                                reporterNodesVisible = flowchartReporterNodesVisible,
+                                variableNodesVisible = flowchartVariableNodesVisible,
+                                operatorNodesVisible = flowchartOperatorNodesVisible,
                                 onDataFlowToggle = { flowchartDataFlowVisible = !flowchartDataFlowVisible },
                                 onRuntimeToggle = { flowchartRuntimeVisible = !flowchartRuntimeVisible },
                                 onDiagnosticsToggle = { flowchartDiagnosticsVisible = !flowchartDiagnosticsVisible },
+                                onViewOrientationToggle = {
+                                    flowchartViewOrientation = when (flowchartViewOrientation) {
+                                        FlowchartViewOrientation.Vertical -> FlowchartViewOrientation.Horizontal
+                                        FlowchartViewOrientation.Horizontal -> FlowchartViewOrientation.Vertical
+                                    }
+                                },
+                                onReporterNodesToggle = { flowchartReporterNodesVisible = !flowchartReporterNodesVisible },
+                                onVariableNodesToggle = { flowchartVariableNodesVisible = !flowchartVariableNodesVisible },
+                                onOperatorNodesToggle = { flowchartOperatorNodesVisible = !flowchartOperatorNodesVisible },
                                 onDeleteNode = deleteFlowchartNode,
                                 onDisconnectEdge = disconnectFlowchartEdge,
                                 onUndoWorkspace = undoWorkspaceChange,
                                 onRedoWorkspace = redoWorkspaceChange,
+                                onRunDry = { runCurrentWorkspaceDryRun("FLOWCHART") },
+                                onRunLive = { runCurrentWorkspaceLive("FLOWCHART") },
+                                canRunDry = workflowState.emscriptProjection.isSuccess,
+                                canRunLive = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document).realRunAllowed,
                             )
                             isLogConsolePanel -> LogConsoleCompactRail(
                                 store = studioLogStore,
                                 uiState = logConsoleState
                             )
                             isEmscriptPanel -> EmscriptCompactRail(
-                                onExpandRequested = onExpandRequested,
                                 onCompileCheck = {
                                     val manual = emscriptSession.tabs
                                         .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
@@ -2635,33 +3056,24 @@ fun WorkspaceScreen(
                                         )
                                     }
                                 },
-                                onSave = {
-                                    val manual = emscriptSession.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
-                                    if (manual != null) {
-                                        val key = emscriptFileManager.currentName.trim().ifBlank { "draft" }
-                                        emscriptFileManager.currentName = key
-                                        emscriptFileManager.scripts[key] = manual.content
-                                        uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, manual.content).apply()
-                                        studioLogStore.append(
-                                            level = StudioLogLevel.INFO,
-                                            source = "EMSCRIPT",
-                                            message = "Script gespeichert",
-                                            details = "Name=$key",
-                                            documentRevision = workflowState.revision.toLong(),
-                                            groupKey = "emscript:file-saved:$key"
-                                        )
-                                    }
-                                },
-                                onLoad = {
-                                    val key = emscriptFileManager.currentName.trim().ifBlank { return@EmscriptCompactRail }
-                                    val content = emscriptFileManager.scripts[key] ?: return@EmscriptCompactRail
-                                    applyLoadedEmscriptScript(key, content)
-                                },
+                                onEditorCommand = emscriptEditorUiState::dispatch,
                                 canCompile = emscriptSession.tabs
                                     .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
                                     ?.content
                                     ?.isNotBlank() == true,
-                                canLoad = emscriptFileManager.scripts.containsKey(emscriptFileManager.currentName.trim())
+                                canUndo = emscriptEditorUiState.undoStacks[
+                                    emscriptSession.tabs.firstOrNull { it.id == emscriptSession.activeTabId }?.id
+                                        ?: EmscriptEditorSession.MANUAL_TAB_ID
+                                ].orEmpty().isNotEmpty(),
+                                canRedo = emscriptEditorUiState.redoStacks[
+                                    emscriptSession.tabs.firstOrNull { it.id == emscriptSession.activeTabId }?.id
+                                        ?: EmscriptEditorSession.MANUAL_TAB_ID
+                                ].orEmpty().isNotEmpty(),
+                                canEdit = emscriptSession.tabs.firstOrNull { it.id == emscriptSession.activeTabId }?.readOnly != true,
+                                canApply = emscriptSession.tabs
+                                    .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                                    ?.content
+                                    ?.isNotBlank() == true,
                             )
                         }
                     },
@@ -2669,9 +3081,8 @@ fun WorkspaceScreen(
                         when {
                             isScreenshotPanel -> ScreenshotCanvasRail(
                                 state = screenshotCanvasState,
+                                panelType = panel.type,
                                 assets = screenshotAssets,
-                                selectedAssetId = screenshotCanvasState.selectedAssetId,
-                                onSelect = { screenshotCanvasState.selectedAssetId = it },
                                 onRefresh = { screenshotCanvasState.refreshAssets() },
                                 onCapture = {
                                     val target = File(runtimeFilesRoot(context), "screenshots/capture-${System.currentTimeMillis()}.png")
@@ -2691,6 +3102,18 @@ fun WorkspaceScreen(
                             )
                             isRailTracePanel -> RailTraceExpandedRail(
                                 state = stepperPanelState,
+                                steps = projectedSteps,
+                                selectedStepId = selectedRailTraceStepId,
+                                onStepSelected = { step ->
+                                    selectedRailTraceStepId = step.id
+                                    bridge.onPanelAction(PanelAction.SelectStep(step.id))
+                                },
+                                dragProjection = remember(panel.id, projectedSteps) {
+                                    WssPanelDragProjector.forRecorderSteps(panel.id, projectedSteps)
+                                },
+                                onApplyDropEffect = ::applyWssDropEffect,
+                                onPayloadDropped = ::applyWssPayloadDrop,
+                                onPayloadDragPositionChange = ::updateWssPayloadDragHover,
                                 onModeChange = { mode ->
                                     val updated = stepperPanelState.copy(railMode = mode)
                                     stepperPanelState = updated
@@ -2709,7 +3132,10 @@ fun WorkspaceScreen(
                             )
                             isBlockEditorPanel -> BlockEditorPanelRail(
                                 session = blockEditorSessionState.value,
-                                paletteInsertMode = blockPaletteInsertMode
+                                paletteInsertMode = blockPaletteInsertMode,
+                                panelId = panel.id,
+                                onPayloadDropped = ::applyWssPayloadDrop,
+                                onPayloadDragPositionChange = ::updateWssPayloadDragHover,
                             )
                             isFlowchartPanel -> FlowchartNodeToolboxRail(onAddNode = addFlowchartNode)
                             isLogConsolePanel -> LogConsoleExpandedRail(
@@ -2803,6 +3229,8 @@ fun WorkspaceScreen(
                         updatePanel(panels, panel.id) { it.copy(isMaximized = !it.isMaximized) }
                     },
                     onClose = {
+                        panelDropBounds.remove(panel.id)
+                        textEditorDropMetrics.remove(panel.id)
                         panels.removeAll { it.id == panel.id }
                         studioLogStore.append(
                             level = StudioLogLevel.INFO,
@@ -2816,7 +3244,18 @@ fun WorkspaceScreen(
                     onColorChange = { color ->
                         updatePanel(panels, panel.id) { it.copy(accentColor = color) }
                     },
-                    modifier = Modifier.zIndex(panel.zIndex.toFloat())
+                    modifier = Modifier
+                        .zIndex(panel.zIndex.toFloat())
+                        .onGloballyPositioned { coordinates ->
+                            val topLeft = coordinates.positionInWindow()
+                            val size = coordinates.size
+                            panelDropBounds[panel.id] = Rect(
+                                left = topLeft.x,
+                                top = topLeft.y,
+                                right = topLeft.x + size.width,
+                                bottom = topLeft.y + size.height,
+                            )
+                        }
                 ) {
                     WorkspacePanelContent(
                         panel = panel,
@@ -2831,15 +3270,21 @@ fun WorkspaceScreen(
                         latestEmscriptProjected = latestEmscriptProjected,
                         latestEmscriptGenerationFailure = latestEmscriptGenerationFailure,
                         flowRuntimeSnapshot = flowRuntimeSnapshot,
-                        focusedFlowchartNodeId = selectedFlowchartNodeId,
-                        focusedFlowchartEdgeId = selectedFlowchartEdgeId,
+                        focusedFlowchartNodeId = workspaceSelectionState.flowNodeId ?: selectedFlowchartNodeId,
+                        focusedFlowchartEdgeId = workspaceSelectionState.flowEdgeId ?: selectedFlowchartEdgeId,
+                        activeTextSourceLine = workspaceSelectionState.sourceLine,
                         blockEditorMiniMapVisible = blockEditorMiniMapVisible,
                         flowchartMiniMapVisible = flowchartMiniMapVisible,
                         flowchartDataFlowVisible = flowchartDataFlowVisible,
                         flowchartRuntimeVisible = flowchartRuntimeVisible,
                         flowchartDiagnosticsVisible = flowchartDiagnosticsVisible,
+                        flowchartViewOrientation = flowchartViewOrientation,
+                        flowchartReporterNodesVisible = flowchartReporterNodesVisible,
+                        flowchartVariableNodesVisible = flowchartVariableNodesVisible,
+                        flowchartOperatorNodesVisible = flowchartOperatorNodesVisible,
                         stepperPanelState = stepperPanelState,
                         selectedRailTraceStep = selectedRailTraceStep,
+                        selectedRailTraceStepId = workspaceSelectionState.railStepId ?: selectedRailTraceStepId,
                         recorderObservations = recorderObservations,
                         recordingSessions = recordingSessions,
                         selectedRecordingSessionPath = selectedRecordingSessionPath,
@@ -2847,6 +3292,11 @@ fun WorkspaceScreen(
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
                         onRecordingSessionSelected = { path -> selectedRecordingSessionPath = path },
+                        onRailTraceStepSelected = { step ->
+                            selectedRailTraceStepId = step.id
+                            workspaceSelectionState = workspaceSelectionState.selectRailStep(step.id)
+                            bridge.onPanelAction(PanelAction.SelectStep(step.id))
+                        },
                         onStepperStateChange = { state ->
                             stepperPanelState = state
                             persistStepperState(uiPrefs, state)
@@ -2906,12 +3356,18 @@ fun WorkspaceScreen(
                         canDryRunStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
                         dryRunStepLabel = workspaceDryRunResult?.let { "${workspaceDryRunStepIndex}/${dryRunEventCount(it)}" },
                         onFlowchartNodeSelected = { nodeId ->
+                            workspaceSelectionState = workspaceSelectionState.selectFlowNode(nodeId)
                             selectedFlowchartNodeForInsert = nodeId
                             selectedFlowchartNodeId = nodeId
                             selectedFlowchartEdgeId = null
                             focusBlockFromFlowNode(nodeId)
                         },
                         onFlowchartSelectionChanged = { nodeId, edgeId ->
+                            workspaceSelectionState = when {
+                                nodeId != null -> workspaceSelectionState.selectFlowNode(nodeId)
+                                edgeId != null -> workspaceSelectionState.selectFlowEdge(edgeId)
+                                else -> workspaceSelectionState.clearVisualSelection("flowchart")
+                            }
                             selectedFlowchartNodeId = nodeId
                             selectedFlowchartEdgeId = edgeId
                             selectedFlowchartNodeForInsert = nodeId
@@ -2932,6 +3388,12 @@ fun WorkspaceScreen(
                         onFlowchartViewChanged = syncFlowchartView,
                         onWorkspaceUndo = undoWorkspaceChange,
                         onWorkspaceRedo = redoWorkspaceChange,
+                        onApplyDropEffect = ::applyWssDropEffect,
+                        onPayloadDropped = ::applyWssPayloadDrop,
+                        onPayloadDragPositionChange = ::updateWssPayloadDragHover,
+                        onTextDropMetricsChange = { metrics ->
+                            textEditorDropMetrics[panel.id] = metrics
+                        },
                         onFlowRuntimeSnapshotChange = { snapshot ->
                             flowRuntimeSnapshot = snapshot
                             studioLogStore.append(
@@ -2952,10 +3414,30 @@ fun WorkspaceScreen(
             }
         }
 
+        val activeDragPayload = activeWssDragPayload
+        val activeDragPosition = activeWssDragPosition
+        if (activeDragPayload != null && activeDragPosition != null) {
+            WssToolboxDragGhost(
+                payload = activeDragPayload,
+                position = activeDragPosition,
+                targetLabel = activeDragPosition
+                    .let(::panelAtWindowPosition)
+                    ?.let { "${it.type.name}  ${it.title}" },
+                modifier = Modifier.zIndex(1_000_002f),
+            )
+        }
+
         MinimizedDock(
             panels = panels,
             focusedPanelId = focusedPanelId,
+            activeDragPosition = activeWssDragPosition,
             onSelect = { id ->
+                updatePanel(panels, id) { panel ->
+                    panel.copy(minimized = !panel.minimized, zIndex = nextZ++)
+                }
+                focusedPanelId = id
+            },
+            onDragHoverSelect = { id ->
                 updatePanel(panels, id) { it.copy(minimized = false, zIndex = nextZ++) }
                 focusedPanelId = id
             },
@@ -3065,6 +3547,14 @@ fun WorkspaceScreen(
             onBlockEditorMiniMapVisibleChange = { blockEditorMiniMapVisible = it },
             flowchartMiniMapVisible = flowchartMiniMapVisible,
             onFlowchartMiniMapVisibleChange = { flowchartMiniMapVisible = it },
+            flowchartViewOrientation = flowchartViewOrientation,
+            onFlowchartViewOrientationChange = { flowchartViewOrientation = it },
+            flowchartReporterNodesVisible = flowchartReporterNodesVisible,
+            onFlowchartReporterNodesVisibleChange = { flowchartReporterNodesVisible = it },
+            flowchartVariableNodesVisible = flowchartVariableNodesVisible,
+            onFlowchartVariableNodesVisibleChange = { flowchartVariableNodesVisible = it },
+            flowchartOperatorNodesVisible = flowchartOperatorNodesVisible,
+            onFlowchartOperatorNodesVisibleChange = { flowchartOperatorNodesVisible = it },
             chromeTabSettings = chromeTabSettings,
             onChromeTabSettingsChange = { chromeTabSettings = it },
             onResetPanels = {
@@ -3279,13 +3769,19 @@ private fun WorkspacePanelContent(
     flowRuntimeSnapshot: FlowRuntimeSnapshot?,
     focusedFlowchartNodeId: FlowNodeId? = null,
     focusedFlowchartEdgeId: FlowEdgeId? = null,
+    activeTextSourceLine: Int? = null,
     blockEditorMiniMapVisible: Boolean,
     flowchartMiniMapVisible: Boolean,
     flowchartDataFlowVisible: Boolean,
     flowchartRuntimeVisible: Boolean,
     flowchartDiagnosticsVisible: Boolean,
+    flowchartViewOrientation: FlowchartViewOrientation,
+    flowchartReporterNodesVisible: Boolean,
+    flowchartVariableNodesVisible: Boolean,
+    flowchartOperatorNodesVisible: Boolean,
     stepperPanelState: StepperPanelState = StepperPanelState(),
     selectedRailTraceStep: RecorderStepUi? = null,
+    selectedRailTraceStepId: String? = null,
     recorderObservations: List<WorldObservation> = emptyList(),
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
@@ -3295,6 +3791,7 @@ private fun WorkspacePanelContent(
     onStepperStateChange: (StepperPanelState) -> Unit = {},
     onStepperStateSave: (StepperPanelState) -> Unit = {},
     onRecordingSessionSelected: (String) -> Unit = {},
+    onRailTraceStepSelected: (RecorderStepUi) -> Unit = {},
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     logConsoleState: LogConsoleUiState,
@@ -3324,6 +3821,10 @@ private fun WorkspacePanelContent(
     onFlowchartViewChanged: (FlowViewDocument) -> Unit = {},
     onWorkspaceUndo: () -> Boolean = { false },
     onWorkspaceRedo: () -> Boolean = { false },
+    onApplyDropEffect: (WssDropEffect) -> Unit = {},
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit = { _, _ -> },
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit = { _, _ -> },
+    onTextDropMetricsChange: (EmscriptTextDropMetrics) -> Unit = {},
     onFlowRuntimeSnapshotChange: (FlowRuntimeSnapshot) -> Unit = {},
     screenshotCanvasState: ScreenshotCanvasUiState = remember { ScreenshotCanvasUiState() },
     screenshotAssets: List<ScreenshotCanvasAsset> = emptyList(),
@@ -3337,6 +3838,8 @@ private fun WorkspacePanelContent(
             steps = steps,
             actionSink = actionSink,
             activeRuntimeStepIndex = activeRuntimeStepIndex,
+            externalSelectedStepId = selectedRailTraceStepId,
+            onStepSelected = onRailTraceStepSelected,
             initialState = stepperPanelState,
             timelineZoom = stepperPanelState.timelineZoom,
             onTimelineZoomChange = { zoom -> onStepperStateChange(stepperPanelState.copy(timelineZoom = zoom)) },
@@ -3368,6 +3871,10 @@ private fun WorkspacePanelContent(
             dataFlowVisible = flowchartDataFlowVisible,
             runtimeLayerVisible = flowchartRuntimeVisible,
             diagnosticsVisible = flowchartDiagnosticsVisible,
+            viewOrientation = flowchartViewOrientation,
+            reporterNodesVisible = flowchartReporterNodesVisible,
+            variableNodesVisible = flowchartVariableNodesVisible,
+            operatorNodesVisible = flowchartOperatorNodesVisible,
             onNodeSelected = onFlowchartNodeSelected,
             onSelectionChanged = onFlowchartSelectionChanged,
             onNodeDelete = onFlowchartNodeDelete,
@@ -3405,7 +3912,7 @@ private fun WorkspacePanelContent(
                 onLiveRun = { onRunWorkspaceLive() },
                 canLiveRun = capabilityReport.realRunAllowed,
                 liveRunStatus = capabilityReport.summary,
-                activeSourceLine = activeRuntimeSourceLine(
+                activeSourceLine = activeTextSourceLine ?: activeRuntimeSourceLine(
                     workflowState = workflowState,
                     runtimeSnapshot = flowRuntimeSnapshot,
                     visibleScriptText = emscriptSession.tabs
@@ -3423,7 +3930,8 @@ private fun WorkspacePanelContent(
                     comment = appearance.syntaxComment,
                     operator = appearance.syntaxOperator,
                     plain = appearance.syntaxPlain,
-                )
+                ),
+                onTextDropMetricsChange = onTextDropMetricsChange,
             )
         }
         PanelType.RuntimeLog,
@@ -3495,6 +4003,7 @@ private fun WorkspacePanelContent(
             assets = screenshotAssets,
             baseResources = workflowState.resources,
             recorderObservations = recorderObservations,
+            selectedRailTraceStep = selectedRailTraceStep,
             markerPanel = false,
         )
         PanelType.Marker -> MarkerCanvasPanel(
@@ -3504,6 +4013,9 @@ private fun WorkspacePanelContent(
             selectedRailTraceStep = selectedRailTraceStep,
             recorderObservations = recorderObservations,
             onSceneMarkerSaved = onSceneMarkerSaved,
+            onApplyDropEffect = onApplyDropEffect,
+            onPayloadDropped = onPayloadDropped,
+            onPayloadDragPositionChange = onPayloadDragPositionChange,
         )
         PanelType.Vision -> VisionCropCanvasPanel(
             state = screenshotCanvasState,
@@ -3516,6 +4028,9 @@ private fun WorkspacePanelContent(
             logStore = logStore,
             datastore = runtimeDatastore,
             recorderObservations = recorderObservations,
+            onApplyDropEffect = onApplyDropEffect,
+            onPayloadDropped = onPayloadDropped,
+            onPayloadDragPositionChange = onPayloadDragPositionChange,
         )
         PanelType.M3Director -> VisualAssetManagerPanel(
             workflowState = workflowState,
@@ -3536,6 +4051,7 @@ private fun WorkspacePanelContent(
 @Composable
 private fun ColumnScope.ScreenshotCanvasCompactRail(
     state: ScreenshotCanvasUiState,
+    panelType: PanelType,
     onExpandRequested: () -> Unit,
 ) {
     Column(
@@ -3546,30 +4062,65 @@ private fun ColumnScope.ScreenshotCanvasCompactRail(
         verticalArrangement = Arrangement.spacedBy(9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ScreenshotMarkerModeRailButton("Template", Icons.Default.CenterFocusStrong, state.markerMode == ScreenshotCanvasMarkerMode.Template) {
-            state.markerMode = ScreenshotCanvasMarkerMode.Template
-        }
-        ScreenshotMarkerModeRailButton("Region", Icons.Default.GridView, state.markerMode == ScreenshotCanvasMarkerMode.Region) {
-            state.markerMode = ScreenshotCanvasMarkerMode.Region
-        }
-        ScreenshotMarkerModeRailButton("Point", Icons.Default.TouchApp, state.markerMode == ScreenshotCanvasMarkerMode.Point) {
-            state.markerMode = ScreenshotCanvasMarkerMode.Point
-        }
-        ScreenshotMarkerModeRailButton("Swipe", Icons.Default.ArrowForward, state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
-            state.markerMode = ScreenshotCanvasMarkerMode.Swipe
-        }
-        ScreenshotMarkerModeRailButton("Spline", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Spline) {
-            state.markerMode = ScreenshotCanvasMarkerMode.Spline
-        }
-        ScreenshotMarkerModeRailButton("Path", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Path) {
-            state.markerMode = ScreenshotCanvasMarkerMode.Path
-        }
-        ScreenshotMarkerModeRailButton("Multi", Icons.Default.AddCircle, state.multiMarkerMode) {
-            state.multiMarkerMode = !state.multiMarkerMode
+        when (panelType) {
+            PanelType.Marker -> {
+                ScreenshotMarkerModeRailButton("Template", Icons.Default.CenterFocusStrong, state.markerMode == ScreenshotCanvasMarkerMode.Template) {
+                    state.markerMode = ScreenshotCanvasMarkerMode.Template
+                }
+                ScreenshotMarkerModeRailButton("Region", Icons.Default.GridView, state.markerMode == ScreenshotCanvasMarkerMode.Region) {
+                    state.markerMode = ScreenshotCanvasMarkerMode.Region
+                }
+                ScreenshotMarkerModeRailButton("Point", Icons.Default.TouchApp, state.markerMode == ScreenshotCanvasMarkerMode.Point) {
+                    state.markerMode = ScreenshotCanvasMarkerMode.Point
+                }
+                ScreenshotMarkerModeRailButton("Swipe", Icons.Default.ArrowForward, state.markerMode == ScreenshotCanvasMarkerMode.Swipe) {
+                    state.markerMode = ScreenshotCanvasMarkerMode.Swipe
+                }
+                ScreenshotMarkerModeRailButton("Spline", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Spline) {
+                    state.markerMode = ScreenshotCanvasMarkerMode.Spline
+                }
+                ScreenshotMarkerModeRailButton("Path", Icons.Default.Polyline, state.markerMode == ScreenshotCanvasMarkerMode.Path) {
+                    state.markerMode = ScreenshotCanvasMarkerMode.Path
+                }
+                ScreenshotMarkerModeRailButton("Multi", Icons.Default.AddCircle, state.multiMarkerMode) {
+                    state.multiMarkerMode = !state.multiMarkerMode
+                }
+            }
+            PanelType.Screenshot -> {
+                ScreenshotMarkerModeRailButton("Bild", Icons.Default.Photo, state.showScreenshotBg) {
+                    state.showScreenshotBg = !state.showScreenshotBg
+                }
+                ScreenshotMarkerModeRailButton("Marker", Icons.Default.TouchApp, state.showMarkers) {
+                    state.showMarkers = !state.showMarkers
+                }
+                ScreenshotMarkerModeRailButton("Info", Icons.Default.Info, state.inspectorVisible) {
+                    state.inspectorVisible = !state.inspectorVisible
+                }
+            }
+            PanelType.Vision -> {
+                ScreenshotMarkerModeRailButton("Vision", Icons.Default.CenterFocusStrong, true) {
+                    state.visionRegion = state.visionRegion ?: state.selectedRegion
+                }
+                ScreenshotMarkerModeRailButton("Referenz", Icons.Default.SyncAlt, state.referenceMarkerId != null) {
+                    state.referenceMarkerId = state.referenceMarkerId ?: state.savedMarkers.firstOrNull()?.id
+                }
+                ScreenshotMarkerModeRailButton("Test", Icons.Default.PlayArrow, state.visualTestScore != null) {
+                    state.visualTestScore = null
+                }
+            }
+            PanelType.Datastore -> {
+                ScreenshotMarkerModeRailButton("Worldview", Icons.Default.FolderOpen, true) {}
+                ScreenshotMarkerModeRailButton("Marker", Icons.Default.TouchApp, state.showMarkers) {
+                    state.showMarkers = !state.showMarkers
+                }
+            }
+            else -> {
+                ScreenshotMarkerModeRailButton("Panel", iconForPanelType(panelType), true) {}
+            }
         }
         Spacer(modifier = Modifier.weight(1f))
-        TooltipIconButton(tooltip = "Screenshots und Marker", onClick = onExpandRequested, modifier = Modifier.size(34.dp)) {
-            Icon(Icons.Default.Photo, contentDescription = "Screenshots und Marker", modifier = Modifier.size(19.dp))
+        TooltipIconButton(tooltip = "${displayNameForPanelType(panelType)} Rail", onClick = onExpandRequested, modifier = Modifier.size(34.dp)) {
+            Icon(iconForPanelType(panelType), contentDescription = "${displayNameForPanelType(panelType)} Rail", modifier = Modifier.size(19.dp))
         }
     }
 }
@@ -3577,19 +4128,36 @@ private fun ColumnScope.ScreenshotCanvasCompactRail(
 @Composable
 private fun ColumnScope.ScreenshotCanvasRail(
     state: ScreenshotCanvasUiState,
+    panelType: PanelType,
     assets: List<ScreenshotCanvasAsset>,
-    selectedAssetId: String?,
-    onSelect: (String) -> Unit,
     onRefresh: () -> Unit,
     onCapture: () -> Unit,
 ) {
+    val selectedAssetId = if (panelType == PanelType.Vision) {
+        state.visionAssetId ?: state.selectedAssetId
+    } else {
+        state.selectedAssetId
+    }
+    fun selectAsset(assetId: String) {
+        if (panelType == PanelType.Vision) {
+            state.visionAssetId = assetId
+        } else {
+            state.selectedAssetId = assetId
+        }
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Screenshots",
+            text = when (panelType) {
+                PanelType.Vision -> "Vision Quellen"
+                PanelType.Marker -> "Marker Steuerung"
+                PanelType.Screenshot -> "Canvas Detail"
+                PanelType.Datastore -> "Worldview Quellen"
+                else -> displayNameForPanelType(panelType)
+            },
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.labelLarge,
         )
@@ -3620,7 +4188,7 @@ private fun ColumnScope.ScreenshotCanvasRail(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(asset.id) },
+                    .clickable { selectAsset(asset.id) },
                 shape = RoundedCornerShape(8.dp),
                 color = if (selected) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.84f)
@@ -3643,43 +4211,61 @@ private fun ColumnScope.ScreenshotCanvasRail(
                 }
             }
         }
-        item {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            Text(
-                text = "Marker",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        if (state.savedMarkers.isEmpty()) {
+        if (panelType == PanelType.Vision) {
             item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text(
-                    text = "Noch keine gespeicherten Marker.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "Referenz-Marker",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-        }
-        items(state.savedMarkers, key = { it.id }) { marker ->
-            ScreenshotRailSavedMarkerItem(
-                marker = marker,
-                selected = marker.id == state.selectedSavedMarkerId,
-                onSelect = {
-                    state.selectedSavedMarkerId = marker.id
-                    state.selectedAssetId = marker.assetId ?: state.selectedAssetId
-                    state.selectedRegion = marker.region
-                    state.selectedPath = marker.path
-                    state.markerMode = marker.markerMode
-                    state.matchKind = marker.matchKind
-                    state.processingMode = marker.processingMode
-                    state.threshold = marker.threshold
-                    state.rotationDegrees = marker.rotationDegrees
-                    state.matchReadMe = marker.matchReadMe
-                    state.colourHex = marker.colourHex
-                    state.templateName = marker.label
-                    state.markerStatusMessage = "Marker geladen."
-                },
-            )
+            if (state.savedMarkers.isEmpty()) {
+                item {
+                    Text(
+                        text = "Keine Marker als Vision-Referenz.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            items(state.savedMarkers, key = { "vision-ref-${it.id}" }) { marker ->
+                ScreenshotRailSavedMarkerItem(
+                    marker = marker,
+                    selected = marker.id == state.referenceMarkerId,
+                    onSelect = {
+                        state.referenceMarkerId = marker.id
+                        state.visionRegion = state.visionRegion ?: state.selectedRegion ?: marker.region
+                    },
+                )
+            }
+        } else {
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text(
+                    text = "Marker",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            if (state.savedMarkers.isEmpty()) {
+                item {
+                    Text(
+                        text = "Noch keine gespeicherten Marker.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            items(state.savedMarkers, key = { it.id }) { marker ->
+                ScreenshotRailSavedMarkerItem(
+                    marker = marker,
+                    selected = marker.id == state.selectedSavedMarkerId,
+                    onSelect = {
+                        state.selectSavedMarker(marker)
+                    },
+                )
+            }
         }
     }
 }
@@ -3960,36 +4546,54 @@ private fun String.stableMarkerResourceId(mode: ScreenshotCanvasMarkerMode): Str
     return if (normalized.startsWith("$prefix:")) normalized else "$prefix:$normalized"
 }
 
-private fun ScreenshotCanvasUiState.toCanvasObservationFilters(): CanvasObservationFilters =
-    CanvasObservationFilters(
-        showAccessibility = showAccessibilityNodes,
+private fun ScreenshotCanvasUiState.toCanvasObservationFilters(
+    role: CanvasProjectionRole = CanvasProjectionRole.DatastoreWorldview,
+): CanvasObservationFilters {
+    val includeMachineVision = role == CanvasProjectionRole.VisionMachine ||
+        role == CanvasProjectionRole.DatastoreWorldview
+    val includeMachineStructure = includeMachineVision || role == CanvasProjectionRole.DatastoreWorldview
+    return CanvasObservationFilters(
+        showAccessibility = includeMachineStructure && showAccessibilityNodes,
         showClickable = !filterHideClickable,
         showVisible = !filterHideInvisible,
         showFocusable = !filterHideNonFocusable,
-        showOcr = showOcrNodes,
-        showOcv = showVisionTemplateNodes,
-        showYolo = showYoloNodes,
-        showDom = showDomNodes,
+        showOcr = includeMachineVision && showOcrNodes,
+        showOcv = includeMachineVision && showVisionTemplateNodes,
+        showYolo = includeMachineVision && showYoloNodes,
+        showDom = includeMachineStructure && showDomNodes,
         showMarkers = showMarkers,
     )
+}
+
+private fun CanvasProjectionRole.includesVisionObservations(): Boolean =
+    this == CanvasProjectionRole.VisionMachine || this == CanvasProjectionRole.DatastoreWorldview
+
+private fun CanvasProjectionRole.includesRecorderObservations(): Boolean =
+    this != CanvasProjectionRole.VisionMachine
 
 private fun ScreenshotCanvasUiState.selectCanvasObservation(item: CanvasObservationItem) {
     selectedCanvasSourceId = item.sourceId
     savedMarkers.firstOrNull { marker ->
         marker.id == item.sourceId || marker.id.stableMarkerResourceId(marker.markerMode) == item.sourceId
-    }?.let { marker ->
-        selectedSavedMarkerId = marker.id
-        selectedRegion = marker.region
-        selectedPath = marker.path
-        markerMode = marker.markerMode
-        matchKind = marker.matchKind
-        processingMode = marker.processingMode
-        templateName = marker.label
-        colourHex = marker.colourHex
-        threshold = marker.threshold
-    } ?: run {
+    }?.let(::selectSavedMarker) ?: run {
         templateName = item.label
     }
+}
+
+private fun ScreenshotCanvasUiState.selectSavedMarker(marker: ScreenshotCanvasSavedMarker) {
+    selectedSavedMarkerId = marker.id
+    selectedAssetId = marker.assetId ?: selectedAssetId
+    selectedRegion = marker.region
+    selectedPath = marker.path
+    markerMode = marker.markerMode
+    matchKind = marker.matchKind
+    processingMode = marker.processingMode
+    threshold = marker.threshold
+    rotationDegrees = marker.rotationDegrees
+    matchReadMe = marker.matchReadMe
+    colourHex = marker.colourHex
+    templateName = marker.label
+    markerStatusMessage = "Marker geladen."
 }
 
 private fun ScreenshotCanvasUiState.recordVisionObservation(
@@ -3998,7 +4602,7 @@ private fun ScreenshotCanvasUiState.recordVisionObservation(
     referenceMarker: ScreenshotCanvasSavedMarker?,
     score: Float?,
 ) {
-    val region = selectedRegion ?: return
+    val region = visionRegion ?: selectedRegion ?: return
     val imageWidth = bitmap?.width ?: return
     val imageHeight = bitmap.height
     val bounds = region.toWorldviewRect(imageWidth, imageHeight) ?: return
@@ -4053,6 +4657,9 @@ private fun DatastorePanel(
     logStore: StudioLogStore,
     datastore: Map<String, String>,
     recorderObservations: List<WorldObservation> = emptyList(),
+    onApplyDropEffect: (WssDropEffect) -> Unit = {},
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit = { _, _ -> },
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit = { _, _ -> },
 ) {
     val logChangeToken = logStore.changeToken
     val logEntries = remember(logChangeToken) { logStore.allEntries() }
@@ -4154,9 +4761,12 @@ private fun DatastorePanel(
             }
             item {
                 WssDragTreeSection(
-                    title = "WSS Drag Bus",
+                    title = "Datastore Transport",
                     projection = dragProjection,
                     maxItems = 14,
+                    onApplyDropEffect = onApplyDropEffect,
+                    onPayloadDropped = onPayloadDropped,
+                    onPayloadDragPositionChange = onPayloadDragPositionChange,
                 )
             }
             if (visualMemory.suggestions.isNotEmpty()) {
@@ -4858,6 +5468,9 @@ private fun WssDragTreeSection(
     projection: WssPanelDragProjection,
     maxItems: Int,
     modifier: Modifier = Modifier,
+    onApplyDropEffect: (WssDropEffect) -> Unit = {},
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit = { _, _ -> },
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit = { _, _ -> },
 ) {
     val visibleItems = remember(projection.tree, maxItems) {
         projection.tree.items.flatMap { it.flattenForPreview() }.take(maxItems)
@@ -4919,7 +5532,13 @@ private fun WssDragTreeSection(
                 )
             } else {
                 visibleItems.forEach { item ->
-                    WssDragTreePreviewRow(item, projection)
+                    WssDragTreePreviewRow(
+                        item = item,
+                        projection = projection,
+                        onApplyDropEffect = onApplyDropEffect,
+                        onPayloadDropped = onPayloadDropped,
+                        onPayloadDragPositionChange = onPayloadDragPositionChange,
+                    )
                 }
                 val remaining = projection.tree.items.sumOf { it.countDeep() } - visibleItems.size
                 if (remaining > 0) {
@@ -4938,8 +5557,14 @@ private fun WssDragTreeSection(
 private fun WssDragTreePreviewRow(
     item: WssDragTreePreviewItem,
     projection: WssPanelDragProjection,
+    onApplyDropEffect: (WssDropEffect) -> Unit,
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit,
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit,
 ) {
     val indent = (item.depth * 12).dp
+    var rowWindowPosition by remember { mutableStateOf(Offset.Zero) }
+    var dragWindowPosition by remember { mutableStateOf<Offset?>(null) }
+    val isDragging = dragWindowPosition != null
     val dropEffect = remember(item.payload, projection.dropTarget) {
         val decision = WssDragRules.decide(item.payload, projection.dropTarget)
         WssDropEffectResolver.resolve(
@@ -4953,7 +5578,40 @@ private fun WssDragTreePreviewRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = indent),
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isDragging) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                } else {
+                    Color.Transparent
+                }
+            )
+            .onGloballyPositioned { coordinates ->
+                rowWindowPosition = coordinates.positionInWindow()
+            }
+            .pointerInput(item.payload.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { localStart ->
+                        dragWindowPosition = rowWindowPosition + localStart
+                        onPayloadDragPositionChange(item.payload, dragWindowPosition)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragWindowPosition = (dragWindowPosition ?: (rowWindowPosition + change.position)) + dragAmount
+                        onPayloadDragPositionChange(item.payload, dragWindowPosition)
+                    },
+                    onDragEnd = {
+                        dragWindowPosition?.let { onPayloadDropped(item.payload, it) }
+                        dragWindowPosition = null
+                        onPayloadDragPositionChange(null, null)
+                    },
+                    onDragCancel = {
+                        dragWindowPosition = null
+                        onPayloadDragPositionChange(null, null)
+                    },
+                )
+            }
+            .padding(start = indent, top = 4.dp, bottom = 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
@@ -4971,8 +5629,8 @@ private fun WssDragTreePreviewRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${item.payload.kind.name} -> ${dropEffect.kind.name}",
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                text = "${item.payload.kind.wssDisplayName()} - ${dropEffect.kind.wssDisplayName()}",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -4984,6 +5642,19 @@ private fun WssDragTreePreviewRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
+        }
+        if (dropEffect.isProductive) {
+            IconButton(
+                onClick = { onApplyDropEffect(dropEffect) },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "DropEffect anwenden",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
     }
 }
@@ -5008,6 +5679,77 @@ private fun WssDragTreeItem.flattenForPreview(depth: Int = 0): List<WssDragTreeP
 private fun WssDragTreeItem.countDeep(): Int =
     1 + children.sumOf { it.countDeep() }
 
+private fun Rect.containsWindowPoint(point: Offset): Boolean =
+    point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
+
+@Composable
+private fun WssToolboxDragGhost(
+    payload: WssDragPayload,
+    position: Offset,
+    targetLabel: String?,
+    modifier: Modifier = Modifier,
+) {
+    val hasTarget = targetLabel != null
+    Surface(
+        modifier = modifier
+            .offset {
+                IntOffset(
+                    x = (position.x + 14f).roundToInt(),
+                    y = (position.y + 14f).roundToInt(),
+                )
+            }
+            .widthIn(min = 170.dp, max = 260.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = if (hasTarget) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.96f)
+        } else {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.96f)
+        },
+        contentColor = if (hasTarget) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onErrorContainer
+        },
+        tonalElevation = 8.dp,
+        shadowElevation = 10.dp,
+        border = BorderStroke(
+            width = 1.5.dp,
+            color = if (hasTarget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = if (hasTarget) Icons.Default.DragHandle else Icons.Default.Close,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = payload.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = targetLabel ?: "Kein Drop-Ziel",
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = payload.kind.name,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 @Composable
 private fun MarkerCanvasPanel(
     state: ScreenshotCanvasUiState,
@@ -5016,7 +5758,11 @@ private fun MarkerCanvasPanel(
     selectedRailTraceStep: RecorderStepUi? = null,
     recorderObservations: List<WorldObservation> = emptyList(),
     onSceneMarkerSaved: (ScreenshotCanvasSavedMarker) -> Unit = {},
+    onApplyDropEffect: (WssDropEffect) -> Unit = {},
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit = { _, _ -> },
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit = { _, _ -> },
 ) {
+    val role = CanvasProjectionRole.MarkerConsole
     val selectedAsset = remember(assets, state.selectedAssetId) {
         assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
     }
@@ -5036,16 +5782,16 @@ private fun MarkerCanvasPanel(
     val canvasWorldview = remember(
         assets,
         state.savedMarkers.toList(),
-        state.vision.observations.toList(),
-        recorderObservations,
+        if (role.includesVisionObservations()) state.vision.observations.toList() else emptyList(),
+        if (role.includesRecorderObservations()) recorderObservations else emptyList(),
         baseResources.revision,
     ) {
         buildCanvasWorldview(
             assets = assets,
             markers = state.savedMarkers,
             baseResources = baseResources,
-            visionObservations = state.vision.observations,
-            recorderObservations = recorderObservations,
+            visionObservations = if (role.includesVisionObservations()) state.vision.observations else emptyList(),
+            recorderObservations = if (role.includesRecorderObservations()) recorderObservations else emptyList(),
         )
     }
     val visualMemory = remember(canvasWorldview) {
@@ -5066,7 +5812,7 @@ private fun MarkerCanvasPanel(
     ) {
         CanvasObservationProjector.project(
             document = canvasWorldview,
-            filters = state.toCanvasObservationFilters(),
+            filters = state.toCanvasObservationFilters(role),
             selectedSourceId = state.selectedCanvasSourceId,
         )
     }
@@ -5099,10 +5845,13 @@ private fun MarkerCanvasPanel(
         )
         MarkerTraceContextCard(selectedRailTraceStep)
         WssDragTreeSection(
-            title = "Marker Drag Bus",
+            title = "Marker Transport",
             projection = dragProjection,
             maxItems = 8,
             modifier = Modifier.fillMaxWidth(),
+            onApplyDropEffect = onApplyDropEffect,
+            onPayloadDropped = onPayloadDropped,
+            onPayloadDragPositionChange = onPayloadDragPositionChange,
         )
         MarkerVisualMemoryCard(
             marker = selectedMarker,
@@ -5325,7 +6074,7 @@ private fun String.escapeEmscriptString(): String =
 private fun MarkerTraceContextCard(
     step: RecorderStepUi?,
 ) {
-    val junctionPlan = remember(step) { step?.let(JunctionatorSeed::fromRailTraceStep) }
+    val junctionPlan = remember(step) { step?.let(JunktorSeed::fromRailTraceStep) }
     val primaryCandidate = junctionPlan?.primaryCandidate
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -5361,7 +6110,7 @@ private fun MarkerTraceContextCard(
             }
             primaryCandidate?.let { candidate ->
                 Text(
-                    text = "Junktionator: ${candidate.confidence.name} -> ${candidate.outputTargets.joinToString { it.name }}",
+                    text = "Junktor: ${candidate.confidence.name} -> ${candidate.outputTargets.joinToString { it.name }}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f),
                     maxLines = 1,
@@ -5497,8 +6246,20 @@ private fun VisionCropCanvasPanel(
     state: ScreenshotCanvasUiState,
     assets: List<ScreenshotCanvasAsset>,
 ) {
-    val selectedAsset = remember(assets, state.selectedAssetId) {
-        assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
+    val selectedAsset = remember(assets, state.visionAssetId, state.selectedAssetId) {
+        assets.firstOrNull { it.id == state.visionAssetId }
+            ?: assets.firstOrNull { it.id == state.selectedAssetId }
+            ?: assets.firstOrNull()
+    }
+    LaunchedEffect(selectedAsset?.id) {
+        if (selectedAsset != null && state.visionAssetId != selectedAsset.id) {
+            state.visionAssetId = selectedAsset.id
+        }
+    }
+    LaunchedEffect(state.selectedRegion) {
+        if (state.visionRegion == null) {
+            state.visionRegion = state.selectedRegion
+        }
     }
     val liveBitmap = remember(selectedAsset?.id, selectedAsset?.file?.lastModified()) {
         selectedAsset?.file?.absolutePath?.let { path ->
@@ -5548,7 +6309,7 @@ private fun VisionCropCanvasPanel(
                 Text("Vision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 Text(
                     text = state.visualTestScore?.let { "Match ${"%.1f".format(it * 100)}%" }
-                        ?: state.selectedRegion?.let { "${it.width}x${it.height}" }
+                        ?: state.visionRegion?.let { "${it.width}x${it.height}" }
                         ?: "Kein Crop",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -5564,14 +6325,15 @@ private fun VisionCropCanvasPanel(
         ) {
             FilledTonalButton(
                 onClick = {
-                    state.visualTestScore = if (state.selectedRegion == null) null else 0.91f
-                    state.markerStatusMessage = if (state.selectedRegion == null) {
+                    state.visionRegion = state.visionRegion ?: state.selectedRegion
+                    state.visualTestScore = if (state.visionRegion == null) null else 0.91f
+                    state.markerStatusMessage = if (state.visionRegion == null) {
                         "Keine Region markiert."
                     } else {
                         "Crop vorbereitet."
                     }
                 },
-                enabled = state.selectedRegion != null,
+                enabled = state.visionRegion != null || state.selectedRegion != null,
                 modifier = Modifier.height(34.dp),
             ) {
                 Icon(Icons.Default.CenterFocusStrong, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -5593,7 +6355,7 @@ private fun VisionCropCanvasPanel(
                 onClick = {
                     val score = compareScreenshotRegions(
                         liveBitmap = liveBitmap,
-                        liveRegion = state.selectedRegion,
+                        liveRegion = state.visionRegion,
                         liveMode = state.liveProcessingMode,
                         referenceBitmap = referenceBitmap,
                         referenceRegion = referenceMarker?.region,
@@ -5609,7 +6371,7 @@ private fun VisionCropCanvasPanel(
                     state.markerStatusMessage = state.visualTestScore?.let { "Vision Match ${"%.1f".format(it * 100)}%" }
                         ?: "Vision Match nicht möglich."
                 },
-                enabled = liveBitmap != null && state.selectedRegion != null && referenceBitmap != null && referenceMarker != null,
+                enabled = liveBitmap != null && state.visionRegion != null && referenceBitmap != null && referenceMarker != null,
                 modifier = Modifier.height(34.dp),
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
@@ -5676,7 +6438,7 @@ private fun VisionCropCanvasPanel(
             VisionCropPreview(
                 title = "Live Crop",
                 bitmap = liveBitmap,
-                region = state.selectedRegion,
+                region = state.visionRegion,
                 mode = state.liveProcessingMode,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
@@ -5798,8 +6560,10 @@ private fun VisionImageCanvas(
 private fun WorkspaceScreenshotCanvasBackground(
     state: ScreenshotCanvasUiState,
     assets: List<ScreenshotCanvasAsset>,
+    selectedRailTraceStep: RecorderStepUi? = null,
     modifier: Modifier = Modifier,
 ) {
+    val role = CanvasProjectionRole.WorkspaceHuman
     val selectedAsset = remember(assets, state.selectedAssetId) {
         assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
     }
@@ -5816,12 +6580,12 @@ private fun WorkspaceScreenshotCanvasBackground(
     val canvasWorldview = remember(
         assets,
         state.savedMarkers.toList(),
-        state.vision.observations.toList(),
+        if (role.includesVisionObservations()) state.vision.observations.toList() else emptyList(),
     ) {
         buildCanvasWorldview(
             assets = assets,
             markers = state.savedMarkers,
-            visionObservations = state.vision.observations,
+            visionObservations = if (role.includesVisionObservations()) state.vision.observations else emptyList(),
         )
     }
     val observationProjection = remember(
@@ -5839,7 +6603,7 @@ private fun WorkspaceScreenshotCanvasBackground(
     ) {
         CanvasObservationProjector.project(
             document = canvasWorldview,
-            filters = state.toCanvasObservationFilters(),
+            filters = state.toCanvasObservationFilters(role),
             selectedSourceId = state.selectedCanvasSourceId,
         )
     }
@@ -5854,6 +6618,7 @@ private fun WorkspaceScreenshotCanvasBackground(
                 asset = selectedAsset,
                 state = state,
                 observationProjection = observationProjection,
+                selectedRailTraceStep = selectedRailTraceStep,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -5868,8 +6633,10 @@ private fun ScreenshotCanvasPanel(
     assets: List<ScreenshotCanvasAsset>,
     baseResources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
     recorderObservations: List<WorldObservation> = emptyList(),
+    selectedRailTraceStep: RecorderStepUi? = null,
     markerPanel: Boolean,
 ) {
+    val role = if (markerPanel) CanvasProjectionRole.MarkerConsole else CanvasProjectionRole.DetailHuman
     val selectedAsset = remember(assets, state.selectedAssetId) {
         assets.firstOrNull { it.id == state.selectedAssetId } ?: assets.firstOrNull()
     }
@@ -5886,16 +6653,16 @@ private fun ScreenshotCanvasPanel(
     val canvasWorldview = remember(
         assets,
         state.savedMarkers.toList(),
-        state.vision.observations.toList(),
-        recorderObservations,
+        if (role.includesVisionObservations()) state.vision.observations.toList() else emptyList(),
+        if (role.includesRecorderObservations()) recorderObservations else emptyList(),
         baseResources.revision,
     ) {
         buildCanvasWorldview(
             assets = assets,
             markers = state.savedMarkers,
             baseResources = baseResources,
-            visionObservations = state.vision.observations,
-            recorderObservations = recorderObservations,
+            visionObservations = if (role.includesVisionObservations()) state.vision.observations else emptyList(),
+            recorderObservations = if (role.includesRecorderObservations()) recorderObservations else emptyList(),
         )
     }
     val observationProjection = remember(
@@ -5913,7 +6680,7 @@ private fun ScreenshotCanvasPanel(
     ) {
         CanvasObservationProjector.project(
             document = canvasWorldview,
-            filters = state.toCanvasObservationFilters(),
+            filters = state.toCanvasObservationFilters(role),
             selectedSourceId = state.selectedCanvasSourceId,
         )
     }
@@ -5926,6 +6693,7 @@ private fun ScreenshotCanvasPanel(
         ScreenshotCanvasActionBar(
             modifier = Modifier.fillMaxWidth(),
             state = state,
+            role = role,
             markerPanel = markerPanel,
         )
         Column(
@@ -5943,6 +6711,33 @@ private fun ScreenshotCanvasPanel(
                 state = state,
                 markerPanel = markerPanel,
             )
+            if (!markerPanel && bitmap != null && selectedAsset != null) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.Black,
+                ) {
+                    ScreenshotRegionCanvas(
+                        bitmap = bitmap,
+                        asset = selectedAsset,
+                        state = state,
+                        observationProjection = observationProjection,
+                        selectedRailTraceStep = selectedRailTraceStep,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                selectedRailTraceStep?.let { step ->
+                    Text(
+                        text = "RailTrace: ${step.label} | ${step.actionType} | ${step.activityName ?: "Scene offen"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Text(
                 text = markerMetricsTitle(state.selectedRegion, state.markerMode, bitmap?.let { it.width to it.height }),
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
@@ -6011,6 +6806,7 @@ private fun ScreenshotRegionCanvas(
     asset: ScreenshotCanvasAsset?,
     state: ScreenshotCanvasUiState,
     observationProjection: CanvasObservationProjection,
+    selectedRailTraceStep: RecorderStepUi? = null,
     modifier: Modifier = Modifier,
 ) {
     var dragPreviewRegion by remember(asset?.id) { mutableStateOf<ScreenshotCanvasRegion?>(null) }
@@ -6208,6 +7004,12 @@ private fun ScreenshotRegionCanvas(
             imageWidth = imageWidth,
             imageHeight = imageHeight,
             projection = observationProjection,
+        )
+        drawRailTraceStepOverlay(
+            layout = layout,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            step = selectedRailTraceStep,
         )
         drawScreenshotRegionOverlay(
             layout = layout,
@@ -6425,6 +7227,165 @@ private fun DrawScope.drawCanvasObservationProjection(
             drawLine(color, Offset(rect.center.x, rect.center.y - 14f), Offset(rect.center.x, rect.center.y + 14f), 2f, cap = StrokeCap.Round)
         }
     }
+}
+
+private fun DrawScope.drawRailTraceStepOverlay(
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+    step: RecorderStepUi?,
+) {
+    if (step == null) return
+    val color = when (step.status) {
+        StepStatus.Executed -> Color(0xFF00E676)
+        StepStatus.Recorded -> Color(0xFFFFD54F)
+        StepStatus.Edited -> Color(0xFF40C4FF)
+        StepStatus.Invalid -> Color(0xFFFF5252)
+    }
+    step.bounds?.let { bounds ->
+        val rect = worldviewRectToScreen(bounds, layout, imageWidth, imageHeight)
+        drawObservationRect(
+            rect = rect,
+            color = color,
+            label = "Rail ${step.actionType}",
+            style = CanvasObservationLineStyle.Bold,
+            fillAlpha = 0.16f,
+        )
+    }
+    step.point?.let { point ->
+        val center = worldviewPointToScreen(point, layout, imageWidth, imageHeight)
+        val arm = 24.dp.toPx()
+        drawCircle(Color.Black.copy(alpha = 0.58f), radius = 17.dp.toPx(), center = center)
+        drawLine(color, Offset(center.x - arm, center.y), Offset(center.x + arm, center.y), 3.5f, cap = StrokeCap.Round)
+        drawLine(color, Offset(center.x, center.y - arm), Offset(center.x, center.y + arm), 3.5f, cap = StrokeCap.Round)
+        drawCircle(color, radius = 12.dp.toPx(), center = center, style = Stroke(3.dp.toPx()))
+        drawObservationLabel(Rect(center.x + 12f, center.y - 18f, center.x + 160f, center.y + 18f), step.label, color)
+    }
+    if (step.point == null && step.bounds == null && step.actionType.contains("swipe", ignoreCase = true)) {
+        val start = Offset(layout.imageBounds.left + layout.imageBounds.width * 0.35f, layout.imageBounds.top + layout.imageBounds.height * 0.58f)
+        val end = Offset(layout.imageBounds.left + layout.imageBounds.width * 0.68f, layout.imageBounds.top + layout.imageBounds.height * 0.58f)
+        drawLine(color, start, end, 4.dp.toPx(), cap = StrokeCap.Round)
+        drawCircle(color, radius = 7.dp.toPx(), center = start)
+        drawCircle(color, radius = 10.dp.toPx(), center = end, style = Stroke(3.dp.toPx()))
+        drawObservationLabel(Rect(start.x, start.y - 28f, end.x + 120f, start.y + 8f), "Rail Swipe", color)
+    }
+}
+
+private fun worldviewRectToScreen(
+    bounds: WorldviewRect,
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+): Rect {
+    val normalized = bounds.coordinateSpace.kind == CoordinateSpaceKind.Normalized
+    val left = if (normalized) bounds.left * imageWidth else bounds.left
+    val top = if (normalized) bounds.top * imageHeight else bounds.top
+    val right = if (normalized) bounds.right * imageWidth else bounds.right
+    val bottom = if (normalized) bounds.bottom * imageHeight else bounds.bottom
+    return layout.regionToScreenRect(
+        ScreenshotCanvasRegion(
+            x = left.roundToInt().coerceIn(0, imageWidth - 1),
+            y = top.roundToInt().coerceIn(0, imageHeight - 1),
+            width = (right - left).roundToInt().coerceAtLeast(1),
+            height = (bottom - top).roundToInt().coerceAtLeast(1),
+        ),
+        imageWidth,
+        imageHeight,
+    )
+}
+
+private fun RecorderStepUi.toScreenshotCanvasRegion(
+    imageWidth: Int,
+    imageHeight: Int,
+): ScreenshotCanvasRegion? {
+    bounds?.let { bounds ->
+        val normalized = bounds.coordinateSpace.kind == CoordinateSpaceKind.Normalized
+        val left = if (normalized) bounds.left * imageWidth else bounds.left
+        val top = if (normalized) bounds.top * imageHeight else bounds.top
+        val right = if (normalized) bounds.right * imageWidth else bounds.right
+        val bottom = if (normalized) bounds.bottom * imageHeight else bounds.bottom
+        val x = left.roundToInt().coerceIn(0, imageWidth - 1)
+        val y = top.roundToInt().coerceIn(0, imageHeight - 1)
+        val width = (right - left).roundToInt().coerceIn(1, imageWidth - x)
+        val height = (bottom - top).roundToInt().coerceIn(1, imageHeight - y)
+        return ScreenshotCanvasRegion(x, y, width, height)
+    }
+    point?.let { point ->
+        val normalized = point.coordinateSpace.kind == CoordinateSpaceKind.Normalized
+        val x = if (normalized) point.x * imageWidth else point.x
+        val y = if (normalized) point.y * imageHeight else point.y
+        return pointRegion(
+            point = Offset(x, y),
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+        )
+    }
+    return null
+}
+
+private fun RecorderStepUi.matchingScreenshotAsset(
+    assets: List<ScreenshotCanvasAsset>,
+): ScreenshotCanvasAsset? {
+    if (assets.isEmpty()) return null
+    val candidates = screenshotPathCandidates()
+    if (candidates.isEmpty()) return null
+    return assets.firstOrNull { asset ->
+        val absolutePath = asset.file.absolutePath
+        val name = asset.file.name
+        candidates.any { candidate ->
+            absolutePath == candidate ||
+                absolutePath.endsWith(candidate) ||
+                name == candidate ||
+                asset.id == candidate
+        }
+    }
+}
+
+private fun RecorderStepUi.screenshotPathCandidates(): Set<String> {
+    val keys = setOf(
+        "screenshot",
+        "screenshotPath",
+        "screenshot_path",
+        "image",
+        "imagePath",
+        "image_path",
+        "asset",
+        "assetId",
+        "asset_id",
+        "file",
+        "path",
+    )
+    return properties
+        .filterKeys { key -> key in keys }
+        .values
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .toSet()
+}
+
+private fun screenshotBitmapSize(path: String): Pair<Int, Int>? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    return if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+        bounds.outWidth to bounds.outHeight
+    } else {
+        null
+    }
+}
+
+private fun worldviewPointToScreen(
+    point: WorldviewPoint,
+    layout: ScreenshotFittedImageLayout,
+    imageWidth: Int,
+    imageHeight: Int,
+): Offset {
+    val normalized = point.coordinateSpace.kind == CoordinateSpaceKind.Normalized
+    return layout.imageToScreenPoint(
+        x = (if (normalized) point.x * imageWidth else point.x).roundToInt(),
+        y = (if (normalized) point.y * imageHeight else point.y).roundToInt(),
+        imageWidth = imageWidth,
+        imageHeight = imageHeight,
+    )
 }
 
 private val A11Y_VISIBLE_COLOR = Color(0xFF40C4FF)
@@ -6873,6 +7834,7 @@ private fun grayscaleValue(pixel: Int): Int {
 private fun ScreenshotCanvasActionBar(
     modifier: Modifier,
     state: ScreenshotCanvasUiState,
+    role: CanvasProjectionRole,
     markerPanel: Boolean,
 ) {
     Surface(
@@ -6903,16 +7865,21 @@ private fun ScreenshotCanvasActionBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val title = when (role) {
+                    CanvasProjectionRole.WorkspaceHuman -> "Workspace"
+                    CanvasProjectionRole.DetailHuman -> "Canvas Detail"
+                    CanvasProjectionRole.MarkerConsole -> "Marker"
+                    CanvasProjectionRole.VisionMachine -> "Vision"
+                    CanvasProjectionRole.DatastoreWorldview -> "Worldview"
+                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
                 ScreenshotLayerChip("BG", state.showScreenshotBg) { state.showScreenshotBg = !state.showScreenshotBg }
-                ScreenshotLayerChip("A11Y", state.showAccessibilityNodes) { state.showAccessibilityNodes = !state.showAccessibilityNodes }
-                ScreenshotLayerChip("DOM", state.showDomNodes) { state.showDomNodes = !state.showDomNodes }
-                ScreenshotLayerChip("OCR", state.showOcrNodes) { state.showOcrNodes = !state.showOcrNodes }
-                ScreenshotLayerChip("TPL", state.showVisionTemplateNodes) { state.showVisionTemplateNodes = !state.showVisionTemplateNodes }
-                ScreenshotLayerChip("YOLO", state.showYoloNodes) { state.showYoloNodes = !state.showYoloNodes }
                 ScreenshotLayerChip("MRK", state.showMarkers) { state.showMarkers = !state.showMarkers }
-                ScreenshotLayerChip("INV", !state.filterHideInvisible) { state.filterHideInvisible = !state.filterHideInvisible }
-                ScreenshotLayerChip("CLK", !state.filterHideClickable) { state.filterHideClickable = !state.filterHideClickable }
-                ScreenshotLayerChip("FOC", !state.filterHideNonFocusable) { state.filterHideNonFocusable = !state.filterHideNonFocusable }
                 if (markerPanel) {
                     ScreenshotLayerChip("TPL-M", state.markerMode == ScreenshotCanvasMarkerMode.Template) { state.markerMode = ScreenshotCanvasMarkerMode.Template }
                     ScreenshotLayerChip("REG", state.markerMode == ScreenshotCanvasMarkerMode.Region) { state.markerMode = ScreenshotCanvasMarkerMode.Region }
@@ -7804,6 +8771,13 @@ private fun ColumnScope.RailTraceCompactRail(
 @Composable
 private fun RailTraceExpandedRail(
     state: StepperPanelState,
+    steps: List<RecorderStepUi>,
+    selectedStepId: String?,
+    onStepSelected: (RecorderStepUi) -> Unit,
+    dragProjection: WssPanelDragProjection? = null,
+    onApplyDropEffect: (WssDropEffect) -> Unit = {},
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit = { _, _ -> },
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit = { _, _ -> },
     onModeChange: (RailMode) -> Unit,
     onScaleChange: (RailScaleMode) -> Unit,
     onZoomChange: (Float) -> Unit,
@@ -7867,6 +8841,91 @@ private fun RailTraceExpandedRail(
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        HorizontalDivider()
+        Text("Steps", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        RailTraceStepRailList(
+            steps = steps,
+            selectedStepId = selectedStepId ?: state.selectedStepId,
+            onStepSelected = onStepSelected,
+        )
+        dragProjection?.let { projection ->
+            HorizontalDivider()
+            WssDragTreeSection(
+                title = "RailTrace Transport",
+                projection = projection,
+                maxItems = 10,
+                onApplyDropEffect = onApplyDropEffect,
+                onPayloadDropped = onPayloadDropped,
+                onPayloadDragPositionChange = onPayloadDragPositionChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RailTraceStepRailList(
+    steps: List<RecorderStepUi>,
+    selectedStepId: String?,
+    onStepSelected: (RecorderStepUi) -> Unit,
+) {
+    if (steps.isEmpty()) {
+        Text(
+            "Keine Steps geladen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        steps.forEachIndexed { index, step ->
+            val selected = step.id == selectedStepId
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onStepSelected(step) },
+                shape = RoundedCornerShape(8.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f)
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (selected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)
+                    },
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Text(
+                        text = (index + 1).toString().padStart(2, '0'),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            step.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "${step.actionType} | ${step.status.name}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor(step.status),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -7876,6 +8935,8 @@ private fun RecorderStepsPanel(
     steps: List<RecorderStepUi>,
     actionSink: PanelActionSink,
     activeRuntimeStepIndex: Int? = null,
+    externalSelectedStepId: String? = null,
+    onStepSelected: (RecorderStepUi) -> Unit = {},
     initialState: StepperPanelState = StepperPanelState(),
     timelineZoom: Float = 1f,
     onTimelineZoomChange: (Float) -> Unit = {},
@@ -7897,15 +8958,14 @@ private fun RecorderStepsPanel(
         mutableIntStateOf(speedSteps.indexOfClosest(initialState.speed).coerceAtLeast(0))
     }
     val speed = speedSteps[speedStepIndex]
-    var dragAccumulator by remember { mutableFloatStateOf(0f) }
-    val thresholdPx = 56f
     val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
-    val activityStepGroups = remember(steps, timelinePoints) { buildRecorderActivityStepGroups(steps, timelinePoints) }
-    val stepListState = rememberLazyListState()
     val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
     val timelineEndMs = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStartMs + 1L) ?: 1L
     val safeIndex = replayIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0))
     val activeStep = steps.getOrNull(safeIndex)
+    val selectedStep = remember(steps, selectedStepId, safeIndex) {
+        selectedStepId?.let { id -> steps.firstOrNull { it.id == id } } ?: steps.getOrNull(safeIndex)
+    }
     var sessionMenuExpanded by remember { mutableStateOf(false) }
     val selectedSession = recordingSessions.firstOrNull { it.path == selectedRecordingSessionPath }
     val railProjection = remember(steps, railMode, railScaleMode) {
@@ -7927,6 +8987,14 @@ private fun RecorderStepsPanel(
         railMode = initialState.railMode
         railScaleMode = initialState.scaleMode
     }
+    LaunchedEffect(externalSelectedStepId, steps) {
+        val id = externalSelectedStepId ?: return@LaunchedEffect
+        val index = steps.indexOfFirst { it.id == id }
+        if (index < 0) return@LaunchedEffect
+        selectedStepId = id
+        replayIndex = index
+        replayPositionMs = timelinePoints.getOrNull(index)?.startMs ?: replayPositionMs
+    }
 
     LaunchedEffect(steps.size) {
         if (replayIndex > steps.lastIndex) replayIndex = steps.lastIndex.coerceAtLeast(0)
@@ -7938,14 +9006,8 @@ private fun RecorderStepsPanel(
         if (index !in steps.indices) return@LaunchedEffect
         replayIndex = index
         selectedStepId = steps[index].id
+        onStepSelected(steps[index])
         replayPositionMs = timelinePoints.getOrNull(index)?.startMs ?: replayPositionMs
-    }
-    LaunchedEffect(safeIndex, activityStepGroups) {
-        if (steps.isEmpty()) return@LaunchedEffect
-        val groupIndex = activityStepGroups.indexOfFirst { group ->
-            group.steps.any { it.index == safeIndex }
-        }
-        if (groupIndex >= 0) stepListState.animateScrollToItem(groupIndex)
     }
     LaunchedEffect(playing, speed, steps.size, timelineStartMs, timelineEndMs) {
         if (!playing || steps.isEmpty()) return@LaunchedEffect
@@ -7958,6 +9020,7 @@ private fun RecorderStepsPanel(
             if (nextIndex != replayIndex && nextIndex in steps.indices) {
                 replayIndex = nextIndex
                 selectedStepId = steps[nextIndex].id
+                onStepSelected(steps[nextIndex])
                 actionSink.onPanelAction(PanelAction.SelectStep(steps[nextIndex].id))
             }
         }
@@ -8114,6 +9177,7 @@ private fun RecorderStepsPanel(
                         replayIndex = index
                         steps.getOrNull(index)?.let {
                             selectedStepId = it.id
+                            onStepSelected(it)
                             actionSink.onPanelAction(PanelAction.SelectStep(it.id))
                         }
                     },
@@ -8134,6 +9198,7 @@ private fun RecorderStepsPanel(
                             playing = false
                             steps.firstOrNull()?.let {
                                 selectedStepId = it.id
+                                onStepSelected(it)
                                 actionSink.onPanelAction(PanelAction.SelectStep(it.id))
                             }
                         },
@@ -8149,6 +9214,7 @@ private fun RecorderStepsPanel(
                             replayPositionMs = timelinePoints.getOrNull(replayIndex)?.startMs ?: timelineStartMs
                             steps.getOrNull(replayIndex)?.let {
                                 selectedStepId = it.id
+                                onStepSelected(it)
                                 actionSink.onPanelAction(PanelAction.SelectStep(it.id))
                             }
                         },
@@ -8172,6 +9238,7 @@ private fun RecorderStepsPanel(
                             replayPositionMs = timelinePoints.getOrNull(replayIndex)?.startMs ?: timelineEndMs
                             steps.getOrNull(replayIndex)?.let {
                                 selectedStepId = it.id
+                                onStepSelected(it)
                                 actionSink.onPanelAction(PanelAction.SelectStep(it.id))
                             }
                         },
@@ -8238,73 +9305,14 @@ private fun RecorderStepsPanel(
                 )
             }
         }
-        Text("Tippen = Select, Long-Drag = Reorder, Swipe = Delete", color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-        LazyColumn(
-            state = stepListState,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.weight(1f),
-        ) {
-	            items(activityStepGroups, key = { it.key }) { group ->
-	                Surface(
-	                    modifier = Modifier
-	                        .fillMaxWidth()
-	                        .animateItem(),
-	                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.74f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(group.label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                            Text(
-                                "${group.startMs.formatTimelineMillis()} - ${group.endMs.formatTimelineMillis()}",
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        group.steps.forEach { entry ->
-                            RecorderStepListRow(
-                                step = entry.step,
-                                index = entry.index,
-                                safeIndex = safeIndex,
-                                selectedStepId = selectedStepId,
-                                timelinePoints = timelinePoints,
-                                onSelect = { stepIndex, step ->
-                                    selectedStepId = step.id
-                                    replayIndex = stepIndex
-                                    replayPositionMs = timelinePoints.getOrNull(stepIndex)?.startMs ?: replayPositionMs
-                                    actionSink.onPanelAction(PanelAction.SelectStep(step.id))
-                                },
-                                onDelete = { actionSink.onPanelAction(PanelAction.DeleteStep(it.id)) },
-                                onReorder = { from, to -> actionSink.onPanelAction(PanelAction.ReorderStep(from, to)) },
-                                onDragDelta = { deltaY ->
-                                    dragAccumulator += deltaY
-                                    val index = entry.index
-                                    if (dragAccumulator > thresholdPx && index < steps.lastIndex) {
-                                        dragAccumulator = 0f
-                                        index to (index + 1)
-                                    } else if (dragAccumulator < -thresholdPx && index > 0) {
-                                        dragAccumulator = 0f
-                                        index to (index - 1)
-                                    } else {
-                                        null
-                                    }
-                                },
-                                onDragFinished = { dragAccumulator = 0f },
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        RailTraceStepInspector(
+            step = selectedStep,
+            index = selectedStep?.let(steps::indexOf)?.takeIf { it >= 0 },
+            total = steps.size,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
     }
 }
 
@@ -8333,6 +9341,100 @@ private fun EmscriptDryRunResult.toRecorderSteps(): List<RecorderStepUi> {
                 else -> "DryRun Runtime"
             },
             detail = event.message,
+        )
+    }
+}
+
+@Composable
+private fun RailTraceStepInspector(
+    step: RecorderStepUi?,
+    index: Int?,
+    total: Int,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Step Inspector", style = MaterialTheme.typography.titleSmall)
+            if (step == null) {
+                Text(
+                    "Kein Step ausgewaehlt.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
+            RailTraceInspectorRow("Position", "${(index ?: 0) + 1} / $total")
+            RailTraceInspectorRow("Label", step.label)
+            RailTraceInspectorRow("Action", step.actionType)
+            RailTraceInspectorRow("Status", step.status.name, statusColor(step.status))
+            RailTraceInspectorRow("Zeit", step.timestampMs?.formatTimelineMillis() ?: "-")
+            RailTraceInspectorRow("Dauer", step.durationMs?.formatTimelineMillis() ?: "-")
+            RailTraceInspectorRow("Activity", step.activityName ?: "-")
+            step.point?.let { point ->
+                RailTraceInspectorRow("Point", "${point.x.toInt()}, ${point.y.toInt()}")
+            }
+            step.bounds?.let { bounds ->
+                RailTraceInspectorRow(
+                    "Bounds",
+                    "${bounds.left.toInt()},${bounds.top.toInt()} - ${bounds.right.toInt()},${bounds.bottom.toInt()}",
+                )
+            }
+            step.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+                HorizontalDivider()
+                Text("Detail", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (step.properties.isNotEmpty()) {
+                HorizontalDivider()
+                Text("Properties", style = MaterialTheme.typography.labelMedium)
+                step.properties.toSortedMap().forEach { (key, value) ->
+                    RailTraceInspectorRow(key, value)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailTraceInspectorRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.width(86.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = valueColor,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -9204,12 +10306,20 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    canRunDry: Boolean,
+    canRunLive: Boolean,
 ) {
     val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.BlockEditor).mapNotNull { descriptor ->
         descriptor.toBlockEditorRailAction(
             session = session,
             onExpandRequested = onExpandRequested,
             onSave = onSave,
+            onRunDry = onRunDry,
+            onRunLive = onRunLive,
+            canRunDry = canRunDry,
+            canRunLive = canRunLive,
         )
     }
     Column(
@@ -9245,6 +10355,10 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    canRunDry: Boolean,
+    canRunLive: Boolean,
 ): WorkspaceRailActionSpec? {
     val controller = session?.controller
     val hasSession = session != null
@@ -9282,8 +10396,8 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
             }
             onExpandRequested()
         }
-        EditorActionId.RunDry,
-        EditorActionId.RunLive,
+        EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = canRunDry, onClick = onRunDry)
+        EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = canRunLive, onClick = onRunLive)
         EditorActionId.ZoomIn,
         EditorActionId.ZoomOut,
         EditorActionId.FitViewport,
@@ -9305,6 +10419,7 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
     dataFlowVisible: Boolean,
     runtimeVisible: Boolean,
     diagnosticsVisible: Boolean,
+    viewOrientation: FlowchartViewOrientation,
     onDataFlowToggle: () -> Unit,
     onRuntimeToggle: () -> Unit,
     onDiagnosticsToggle: () -> Unit,
@@ -9312,6 +10427,10 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
     onDisconnectEdge: (FlowEdgeId) -> Unit,
     onUndoWorkspace: () -> Boolean,
     onRedoWorkspace: () -> Boolean,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    canRunDry: Boolean,
+    canRunLive: Boolean,
 ): WorkspaceRailActionSpec? {
     val controller = session?.controller
     val hasSession = session != null
@@ -9326,6 +10445,7 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
         EditorActionId.AutoArrange -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
             controller?.replaceLayout(
                 FlowLayoutConfig(
+                    orientation = viewOrientation.layoutOrientation,
                     layerSpacing = 104.0,
                     nodeSpacing = 64.0,
                     componentSpacing = 128.0,
@@ -9362,11 +10482,11 @@ private fun EditorActionDescriptor.toFlowchartRailAction(
             selectedNodeId?.let(onDeleteNode) ?: selectedEdgeId?.let(onDisconnectEdge)
         }
         EditorActionId.OpenPalette -> WorkspaceRailActionSpec("Node-Palette", editorActionIcon(id), enabled = hasSession, onClick = onExpandRequested)
+        EditorActionId.RunDry -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = canRunDry, onClick = onRunDry)
+        EditorActionId.RunLive -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = canRunLive, onClick = onRunLive)
         EditorActionId.ZoomIn,
         EditorActionId.ZoomOut,
         EditorActionId.FitViewport,
-        EditorActionId.RunDry,
-        EditorActionId.RunLive,
         EditorActionId.StepBack,
         EditorActionId.StepForward,
         EditorActionId.ToggleCollapse,
@@ -9440,7 +10560,10 @@ private fun WorkspaceRailActionButton(
 @Composable
 private fun BlockEditorPanelRail(
     session: BlockEditorShellEditorSession?,
-    paletteInsertMode: BlockPaletteInsertMode
+    paletteInsertMode: BlockPaletteInsertMode,
+    panelId: String = "blockeditor",
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit = { _, _ -> },
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit = { _, _ -> },
 ) {
     if (session == null) {
         Text(
@@ -9606,7 +10729,10 @@ private fun BlockEditorPanelRail(
                 items(filteredDefinitions, key = { it.id }) { definition ->
                     BlockEditorRailBlockChip(
                         definition = definition,
+                        panelId = panelId,
                         onAddBlock = session.controller::addBlockFromPalette,
+                        onPayloadDropped = onPayloadDropped,
+                        onPayloadDragPositionChange = onPayloadDragPositionChange,
                     )
                 }
             }
@@ -9614,15 +10740,74 @@ private fun BlockEditorPanelRail(
     }
 }
 
+private fun BlockDefinition.toDragCommandId(): String =
+    (VisualTaskerCommandCatalog.findByBlockType(id)?.id ?: id).toWssDragCommandId()
+
+private fun String.toWssDragCommandId(): String =
+    lowercase()
+        .replace(Regex("[^a-z0-9._:-]+"), "-")
+        .trim('-', '.', ':', '_')
+        .dropWhile { !it.isLetterOrDigit() }
+        .ifBlank { "block" }
+
+private fun BlockDefinition.toDragEmscriptSnippet(): String {
+    val command = VisualTaskerCommandCatalog.findByBlockType(id)
+    return command?.canonicalName?.let { "$it()" } ?: "log(\"${label.replace("\"", "\\\"")}\")"
+}
+
+private fun BlockDefinition.toWssBlockDragPayload(panelId: String): WssDragPayload =
+    WssDragPayloadFactory.fromCommand(
+        commandId = toDragCommandId(),
+        label = label,
+        sourcePanelId = panelId,
+        emscript = toDragEmscriptSnippet(),
+    ).let { payload ->
+        payload.copy(
+            tags = payload.tags + setOf("block", category.lowercase()),
+            data = payload.data + ("blockType" to id),
+        )
+    }
+
 @Composable
 private fun BlockEditorRailBlockChip(
     definition: BlockDefinition,
+    panelId: String,
     onAddBlock: (BlockDefinition) -> Unit,
+    onPayloadDropped: (WssDragPayload, Offset) -> Unit,
+    onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit,
 ) {
     val accent = Color(BlockCategories.metaFor(definition.category).accentArgb)
+    val payload = remember(definition, panelId) { definition.toWssBlockDragPayload(panelId) }
+    var chipWindowPosition by remember { mutableStateOf(Offset.Zero) }
+    var dragWindowPosition by remember { mutableStateOf<Offset?>(null) }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                chipWindowPosition = coordinates.positionInWindow()
+            }
+            .pointerInput(payload.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { localStart ->
+                        dragWindowPosition = chipWindowPosition + localStart
+                        onPayloadDragPositionChange(payload, dragWindowPosition)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragWindowPosition = (dragWindowPosition ?: (chipWindowPosition + change.position)) + dragAmount
+                        onPayloadDragPositionChange(payload, dragWindowPosition)
+                    },
+                    onDragEnd = {
+                        dragWindowPosition?.let { onPayloadDropped(payload, it) }
+                        dragWindowPosition = null
+                        onPayloadDragPositionChange(null, null)
+                    },
+                    onDragCancel = {
+                        dragWindowPosition = null
+                        onPayloadDragPositionChange(null, null)
+                    },
+                )
+            }
             .clickable { onAddBlock(definition) },
         shape = RoundedCornerShape(8.dp),
         color = accent.copy(alpha = 0.26f),
@@ -9670,13 +10855,25 @@ private fun ColumnScope.FlowchartCompactActionRail(
     dataFlowVisible: Boolean,
     runtimeVisible: Boolean,
     diagnosticsVisible: Boolean,
+    viewOrientation: FlowchartViewOrientation,
+    reporterNodesVisible: Boolean,
+    variableNodesVisible: Boolean,
+    operatorNodesVisible: Boolean,
     onDataFlowToggle: () -> Unit,
     onRuntimeToggle: () -> Unit,
     onDiagnosticsToggle: () -> Unit,
+    onViewOrientationToggle: () -> Unit,
+    onReporterNodesToggle: () -> Unit,
+    onVariableNodesToggle: () -> Unit,
+    onOperatorNodesToggle: () -> Unit,
     onDeleteNode: (FlowNodeId) -> Unit,
     onDisconnectEdge: (FlowEdgeId) -> Unit,
     onUndoWorkspace: () -> Boolean,
     onRedoWorkspace: () -> Boolean,
+    onRunDry: () -> Unit,
+    onRunLive: () -> Unit,
+    canRunDry: Boolean,
+    canRunLive: Boolean,
 ) {
     val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.Flowchart).mapNotNull { descriptor ->
         descriptor.toFlowchartRailAction(
@@ -9689,6 +10886,7 @@ private fun ColumnScope.FlowchartCompactActionRail(
             dataFlowVisible = dataFlowVisible,
             runtimeVisible = runtimeVisible,
             diagnosticsVisible = diagnosticsVisible,
+            viewOrientation = viewOrientation,
             onDataFlowToggle = onDataFlowToggle,
             onRuntimeToggle = onRuntimeToggle,
             onDiagnosticsToggle = onDiagnosticsToggle,
@@ -9696,6 +10894,10 @@ private fun ColumnScope.FlowchartCompactActionRail(
             onDisconnectEdge = onDisconnectEdge,
             onUndoWorkspace = onUndoWorkspace,
             onRedoWorkspace = onRedoWorkspace,
+            onRunDry = onRunDry,
+            onRunLive = onRunLive,
+            canRunDry = canRunDry,
+            canRunLive = canRunLive,
         )
     }
     Column(
@@ -9708,6 +10910,34 @@ private fun ColumnScope.FlowchartCompactActionRail(
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         WorkspaceRailActionList(actions)
+        WorkspaceRailActionList(
+            listOf(
+                WorkspaceRailActionSpec(
+                    label = "Ansicht ${viewOrientation.displayLabel}",
+                    icon = Icons.Default.SyncAlt,
+                    enabled = session != null,
+                    onClick = onViewOrientationToggle,
+                ),
+                WorkspaceRailActionSpec(
+                    label = if (reporterNodesVisible) "Reporter aus" else "Reporter an",
+                    icon = if (reporterNodesVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    enabled = session != null,
+                    onClick = onReporterNodesToggle,
+                ),
+                WorkspaceRailActionSpec(
+                    label = if (variableNodesVisible) "Variablen aus" else "Variablen an",
+                    icon = if (variableNodesVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    enabled = session != null,
+                    onClick = onVariableNodesToggle,
+                ),
+                WorkspaceRailActionSpec(
+                    label = if (operatorNodesVisible) "Operatoren aus" else "Operatoren an",
+                    icon = if (operatorNodesVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    enabled = session != null,
+                    onClick = onOperatorNodesToggle,
+                ),
+            )
+        )
         Spacer(modifier = Modifier.weight(1f))
     }
 }
@@ -9749,6 +10979,10 @@ private fun FlowchartPanel(
     dataFlowVisible: Boolean,
     runtimeLayerVisible: Boolean,
     diagnosticsVisible: Boolean,
+    viewOrientation: FlowchartViewOrientation,
+    reporterNodesVisible: Boolean,
+    variableNodesVisible: Boolean,
+    operatorNodesVisible: Boolean,
     onNodeSelected: (FlowNodeId) -> Unit,
     onSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
@@ -9830,6 +11064,10 @@ private fun FlowchartPanel(
         dataFlowVisible = dataFlowVisible,
         runtimeLayerVisible = runtimeLayerVisible,
         diagnosticsVisible = diagnosticsVisible,
+        viewOrientation = viewOrientation,
+        reporterNodesVisible = reporterNodesVisible,
+        variableNodesVisible = variableNodesVisible,
+        operatorNodesVisible = operatorNodesVisible,
         onDataFlowVisibleChange = onDataFlowVisibleChange,
         onRuntimeLayerVisibleChange = onRuntimeVisibleChange,
         onDiagnosticsVisibleChange = onDiagnosticsVisibleChange,
@@ -9844,10 +11082,26 @@ private fun FlowchartPanel(
 private fun MinimizedDock(
     panels: List<PanelState>,
     focusedPanelId: String,
+    activeDragPosition: Offset?,
     onSelect: (String) -> Unit,
+    onDragHoverSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (panels.isEmpty()) return
+    val chipBounds = remember { mutableStateMapOf<String, Rect>() }
+    var lastDragHoverPanelId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeDragPosition, panels.map { it.id to it.minimized }) {
+        val hoverId = activeDragPosition?.let { position ->
+            chipBounds.entries.firstOrNull { (_, bounds) -> bounds.containsWindowPoint(position) }?.key
+        }
+        if (hoverId != null && hoverId != lastDragHoverPanelId) {
+            lastDragHoverPanelId = hoverId
+            onDragHoverSelect(hoverId)
+        }
+        if (hoverId == null) {
+            lastDragHoverPanelId = null
+        }
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(topEnd = 12.dp),
@@ -9875,6 +11129,15 @@ private fun MinimizedDock(
                     label = { Text(displayTitleForPanel(panel)) },
 	                    modifier = Modifier
 	                        .animateItem()
+                        .onGloballyPositioned { coordinates ->
+                            val topLeft = coordinates.positionInWindow()
+                            chipBounds[panel.id] = Rect(
+                                left = topLeft.x,
+                                top = topLeft.y,
+                                right = topLeft.x + coordinates.size.width,
+                                bottom = topLeft.y + coordinates.size.height,
+                            )
+                        }
 	                        .background(Color.Transparent)
 	                        .clip(RoundedCornerShape(10.dp)),
                     colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
@@ -10362,6 +11625,14 @@ private fun WorkspaceSettingsBottomSheet(
     onBlockEditorMiniMapVisibleChange: (Boolean) -> Unit,
     flowchartMiniMapVisible: Boolean,
     onFlowchartMiniMapVisibleChange: (Boolean) -> Unit,
+    flowchartViewOrientation: FlowchartViewOrientation,
+    onFlowchartViewOrientationChange: (FlowchartViewOrientation) -> Unit,
+    flowchartReporterNodesVisible: Boolean,
+    onFlowchartReporterNodesVisibleChange: (Boolean) -> Unit,
+    flowchartVariableNodesVisible: Boolean,
+    onFlowchartVariableNodesVisibleChange: (Boolean) -> Unit,
+    flowchartOperatorNodesVisible: Boolean,
+    onFlowchartOperatorNodesVisibleChange: (Boolean) -> Unit,
     chromeTabSettings: CustomChromeTabSettings,
     onChromeTabSettingsChange: (CustomChromeTabSettings) -> Unit,
     onResetPanels: () -> Unit,
@@ -10383,6 +11654,7 @@ private fun WorkspaceSettingsBottomSheet(
             Tab(selected = tabIndex == 6, onClick = { onTabChange(6) }, text = { Text("Tasker") })
             Tab(selected = tabIndex == 7, onClick = { onTabChange(7) }, text = { Text("Farben") })
             Tab(selected = tabIndex == 8, onClick = { onTabChange(8) }, text = { Text("Keypad") })
+            Tab(selected = tabIndex == 9, onClick = { onTabChange(9) }, text = { Text("AppInfo") })
         }
 
         when (tabIndex) {
@@ -10527,6 +11799,14 @@ private fun WorkspaceSettingsBottomSheet(
             1 -> FlowchartSettingsTab(
                 miniMapVisible = flowchartMiniMapVisible,
                 onMiniMapVisibleChange = onFlowchartMiniMapVisibleChange,
+                viewOrientation = flowchartViewOrientation,
+                onViewOrientationChange = onFlowchartViewOrientationChange,
+                reporterNodesVisible = flowchartReporterNodesVisible,
+                onReporterNodesVisibleChange = onFlowchartReporterNodesVisibleChange,
+                variableNodesVisible = flowchartVariableNodesVisible,
+                onVariableNodesVisibleChange = onFlowchartVariableNodesVisibleChange,
+                operatorNodesVisible = flowchartOperatorNodesVisible,
+                onOperatorNodesVisibleChange = onFlowchartOperatorNodesVisibleChange,
             )
             2 -> BlockEditorSettingsTab(
                 paletteInsertMode = blockPaletteInsertMode,
@@ -10547,8 +11827,41 @@ private fun WorkspaceSettingsBottomSheet(
                 actionLabel = "Icon-Engine: ${IconMotionConfig.engine.name}",
                 onAction = onToggleIconEngine
             )
+            9 -> AppInfoSettingsTab()
             else -> WorkspaceSettingsInfoTab("Farben", listOf("Farboptionen sind im Tab Farben erreichbar."))
         }
+    }
+}
+
+@Composable
+private fun AppInfoSettingsTab() {
+    val context = LocalContext.current
+    val packageInfo = remember(context) {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+    }
+    val versionName = packageInfo?.versionName ?: "unbekannt"
+    val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        packageInfo?.longVersionCode?.toString()
+    } else {
+        @Suppress("DEPRECATION")
+        packageInfo?.versionCode?.toString()
+    } ?: "unbekannt"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("VisualTasker Studio WSS", style = MaterialTheme.typography.titleSmall)
+        TaskerSettingLine("Version", versionName)
+        TaskerSettingLine("VersionCode", versionCode)
+        TaskerSettingLine("Paket", context.packageName)
+        TaskerSettingLine("Git", "https://github.com/robertprit/VisualTasker-Studio-WSS")
+        TaskerSettingLine("Runtime", "Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
+        TaskerSettingLine("Geraet", "${Build.MANUFACTURER} ${Build.MODEL}")
+        TaskerSettingLine("Architektur", "Workspace Shell, Workflow/Record/Worldview getrennt")
+        TaskerSettingLine("Junktor", "Record, Trace, Scan und User Intent werden zu pruefbaren Vorschlaegen verdichtet.")
     }
 }
 
@@ -10876,6 +12189,14 @@ private fun WorkspaceColorPreviewRow(label: String, color: Color) {
 private fun FlowchartSettingsTab(
     miniMapVisible: Boolean,
     onMiniMapVisibleChange: (Boolean) -> Unit,
+    viewOrientation: FlowchartViewOrientation,
+    onViewOrientationChange: (FlowchartViewOrientation) -> Unit,
+    reporterNodesVisible: Boolean,
+    onReporterNodesVisibleChange: (Boolean) -> Unit,
+    variableNodesVisible: Boolean,
+    onVariableNodesVisibleChange: (Boolean) -> Unit,
+    operatorNodesVisible: Boolean,
+    onOperatorNodesVisibleChange: (Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -10885,6 +12206,20 @@ private fun FlowchartSettingsTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Flowchart", style = MaterialTheme.typography.titleSmall)
+        Text("Ansicht", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowchartViewOrientation.entries.forEach { orientation ->
+                AssistChip(
+                    onClick = { onViewOrientationChange(orientation) },
+                    label = { Text(orientation.displayLabel) },
+                    leadingIcon = {
+                        if (orientation == viewOrientation) {
+                            Icon(Icons.Default.GridView, contentDescription = null)
+                        }
+                    },
+                )
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -10892,6 +12227,31 @@ private fun FlowchartSettingsTab(
         ) {
             Text("Minimap anzeigen")
             Switch(checked = miniMapVisible, onCheckedChange = onMiniMapVisibleChange)
+        }
+        Text("Node-Filter", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Reporter Nodes anzeigen")
+            Switch(checked = reporterNodesVisible, onCheckedChange = onReporterNodesVisibleChange)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Variablen Nodes anzeigen")
+            Switch(checked = variableNodesVisible, onCheckedChange = onVariableNodesVisibleChange)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Operator Nodes anzeigen")
+            Switch(checked = operatorNodesVisible, onCheckedChange = onOperatorNodesVisibleChange)
         }
     }
 }

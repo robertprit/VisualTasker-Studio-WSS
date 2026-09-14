@@ -6,6 +6,7 @@ data class WssCommandPaletteItem(
     val category: String,
     val emscript: String,
     val tags: Set<String> = emptySet(),
+    val blockType: String? = null,
 ) {
     init {
         require(id.matches(WSS_PANEL_DRAG_ID_PATTERN)) {
@@ -124,7 +125,14 @@ object WssPanelDragProjector {
                                             label = command.label,
                                             sourcePanelId = panelId,
                                             emscript = command.emscript,
-                                        ).copy(tags = command.tags + "command" + category.lowercase()),
+                                        ).let { payload ->
+                                            payload.copy(
+                                                tags = command.tags + "command" + category.lowercase(),
+                                                data = payload.data + listOfNotNull(
+                                                    command.blockType?.let { "blockType" to it },
+                                                ),
+                                            )
+                                        },
                                     )
                                 },
                         )
@@ -200,7 +208,8 @@ object WssPanelDragProjector {
 private fun String.toDragIdSegment(): String =
     lowercase()
         .replace(Regex("[^a-z0-9._:-]+"), "-")
-        .trim('-')
+        .trim('-', '.', ':', '_')
+        .dropWhile { !it.isLetterOrDigit() }
         .ifBlank { "group" }
 
 private val WSS_PANEL_DRAG_ID_PATTERN = Regex("[a-z0-9][a-z0-9._:-]*")

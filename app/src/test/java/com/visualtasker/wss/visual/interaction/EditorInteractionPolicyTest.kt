@@ -24,6 +24,8 @@ class EditorInteractionPolicyTest {
                 EditorActionId.ZoomOut,
                 EditorActionId.FitViewport,
                 EditorActionId.AutoArrange,
+                EditorActionId.RunDry,
+                EditorActionId.RunLive,
                 EditorActionId.DeleteSelection,
                 EditorActionId.OpenPalette,
             ),
@@ -32,18 +34,18 @@ class EditorInteractionPolicyTest {
     }
 
     @Test
-    fun keepsProjectionSpecificActionsScopedAndLeavesRuntimeToRailTrace() {
+    fun keepsProjectionSpecificActionsScopedAndExposesSharedRuntimeEntrypoints() {
         val blockActionIds = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.BlockEditor).map { it.id }.toSet()
         val flowActionIds = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.Flowchart).map { it.id }.toSet()
 
         assertTrue(EditorActionId.ToggleCollapse in blockActionIds)
         assertTrue(EditorActionId.OpenBlockDesigner in blockActionIds)
-        assertTrue(EditorActionId.RunDry !in blockActionIds)
-        assertTrue(EditorActionId.RunLive !in blockActionIds)
+        assertTrue(EditorActionId.RunDry in blockActionIds)
+        assertTrue(EditorActionId.RunLive in blockActionIds)
         assertTrue(EditorActionId.ToggleDataFlow !in blockActionIds)
 
-        assertTrue(EditorActionId.RunDry !in flowActionIds)
-        assertTrue(EditorActionId.RunLive !in flowActionIds)
+        assertTrue(EditorActionId.RunDry in flowActionIds)
+        assertTrue(EditorActionId.RunLive in flowActionIds)
         assertTrue(EditorActionId.ToggleDataFlow in flowActionIds)
         assertTrue(EditorActionId.ToggleCollapse !in flowActionIds)
         assertTrue(EditorActionId.OpenBlockDesigner !in flowActionIds)

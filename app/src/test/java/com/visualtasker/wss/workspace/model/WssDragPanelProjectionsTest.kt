@@ -52,7 +52,7 @@ class WssDragPanelProjectionsTest {
         val projection = WssPanelDragProjector.forCommandPalette(
             panelId = "palette",
             commands = listOf(
-                WssCommandPaletteItem("wait", "Wait", "Core", "wait(100)"),
+                WssCommandPaletteItem("wait", "Wait", "Core", "wait(100)", blockType = "action.wait"),
                 WssCommandPaletteItem("log", "Log", "Debug", "log(\"x\")"),
                 WssCommandPaletteItem("beep", "Beep", "Core", "beep(1)"),
             ),
@@ -63,11 +63,25 @@ class WssDragPanelProjectionsTest {
         assertTrue(core.acceptsChildren)
         assertEquals(listOf("Beep", "Wait"), core.children.map { it.payload.label })
         assertEquals(WssDragPayloadKind.Command, core.children.first().payload.kind)
+        assertEquals("action.wait", core.children.last().payload.data["blockType"])
+    }
+
+    @Test
+    fun commandPaletteSanitizesUnsafeCategorySegments() {
+        val projection = WssPanelDragProjector.forCommandPalette(
+            panelId = "palette",
+            commands = listOf(
+                WssCommandPaletteItem("custom.block", "Custom", "★ 123 / Custom", "log(\"x\")"),
+            ),
+        )
+
+        assertEquals("group:palette:123-custom", projection.tree.items.single().id)
+        assertEquals("payload:palette:123-custom", projection.tree.items.single().payload.id)
     }
 
     @Test
     fun junctionPlanExposesEvidenceAndCandidates() {
-        val plan = JunctionatorSeed.fromRailTraceStep(
+        val plan = JunktorSeed.fromRailTraceStep(
             RecorderStepUi(
                 id = "step-1",
                 label = "Tap Login",

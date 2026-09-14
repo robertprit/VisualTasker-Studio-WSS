@@ -4,10 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class JunktionatorContractsTest {
+class JunktorContractsTest {
     @Test
     fun clickRecordingStepSeedsEditableAutomationTargets() {
-        val plan = JunctionatorSeed.fromRailTraceStep(
+        val plan = JunktorSeed.fromRailTraceStep(
             RecorderStepUi(
                 id = "record-1",
                 label = "Click Play",
@@ -34,7 +34,7 @@ class JunktionatorContractsTest {
 
     @Test
     fun executedRuntimeStepBecomesVerifiedEvidence() {
-        val plan = JunctionatorSeed.fromRailTraceStep(
+        val plan = JunktorSeed.fromRailTraceStep(
             RecorderStepUi(
                 id = "dry-3",
                 label = "Template verified",

@@ -64,6 +64,8 @@ object DefaultEditorInteractionPolicy {
         EditorActionDescriptor(EditorActionId.ZoomOut, "Zoom -", 50, shared = true),
         EditorActionDescriptor(EditorActionId.FitViewport, "Zentrieren", 60, shared = true),
         EditorActionDescriptor(EditorActionId.AutoArrange, "Auto anordnen", 70, shared = true, feedbackEvent = EditorFeedbackEvent.AutoArrange),
+        EditorActionDescriptor(EditorActionId.RunDry, "Dry Run", 80, shared = true),
+        EditorActionDescriptor(EditorActionId.RunLive, "Live Run", 90, shared = true),
         EditorActionDescriptor(EditorActionId.DeleteSelection, "Auswahl loeschen", 900, shared = true, feedbackEvent = EditorFeedbackEvent.Delete),
         EditorActionDescriptor(EditorActionId.OpenPalette, "Palette", 1000, shared = true),
     )

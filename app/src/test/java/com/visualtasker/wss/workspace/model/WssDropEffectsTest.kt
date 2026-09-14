@@ -74,10 +74,80 @@ class WssDropEffectsTest {
         )
 
         assertEquals(WssDropEffectKind.InsertText, textEffect.kind)
-        assertEquals("log(\"RailTrace: Click Login\")", textEffect.text)
+        assertEquals("click(\"Login\")", textEffect.text)
         assertEquals("step-42", textEffect.stepId)
         assertEquals(WssDropEffectKind.SelectRailStep, railEffect.kind)
         assertEquals("step-42", railEffect.stepId)
+    }
+
+    @Test
+    fun railTraceClickStepExportsClickSnippet() {
+        val payload = WssDragPayloadFactory.fromRecorderStep(
+            step = RecorderStepUi(
+                id = "step-click",
+                label = "Click Login",
+                actionType = "click",
+                status = StepStatus.Recorded,
+                properties = mapOf("text" to "Login"),
+            ),
+            sourcePanelId = "rail",
+        )
+
+        val effect = WssDropEffectResolver.resolve(
+            acceptedDrop(WssDragRules.defaultTargetForPanel("text", PanelType.TextEditor), payload),
+        )
+
+        assertEquals("click(\"Login\")", effect.text)
+    }
+
+    @Test
+    fun railTraceClickStepFallsBackToTouchSnippetWithPoint() {
+        val payload = WssDragPayloadFactory.fromRecorderStep(
+            step = RecorderStepUi(
+                id = "step-touch",
+                label = "Click",
+                actionType = "click",
+                status = StepStatus.Recorded,
+                point = WorldviewPoint(
+                    x = 120f,
+                    y = 240f,
+                    coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+                ),
+            ),
+            sourcePanelId = "rail",
+        )
+
+        val effect = WssDropEffectResolver.resolve(
+            acceptedDrop(WssDragRules.defaultTargetForPanel("text", PanelType.TextEditor), payload),
+        )
+
+        assertEquals("touch([\"down\", 120, 240, \"up\"])", effect.text)
+    }
+
+    @Test
+    fun railTraceSwipeStepExportsSwipeSnippetWithBounds() {
+        val payload = WssDragPayloadFactory.fromRecorderStep(
+            step = RecorderStepUi(
+                id = "step-swipe",
+                label = "Scroll list",
+                actionType = "scroll",
+                status = StepStatus.Recorded,
+                bounds = WorldviewRect(
+                    left = 100f,
+                    top = 200f,
+                    right = 300f,
+                    bottom = 800f,
+                    coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+                ),
+            ),
+            sourcePanelId = "rail",
+        )
+
+        val effect = WssDropEffectResolver.resolve(
+            acceptedDrop(WssDragRules.defaultTargetForPanel("text", PanelType.TextEditor), payload),
+        )
+
+        assertEquals("swipe([200, 800, 200, 200], 1)", effect.text)
     }
 
     @Test

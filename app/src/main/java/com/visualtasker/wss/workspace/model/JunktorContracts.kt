@@ -57,7 +57,7 @@ data class JunctionPlan(
         get() = candidates.maxByOrNull { it.confidence.ordinal }
 }
 
-object JunctionatorSeed {
+object JunktorSeed {
     fun fromRailTraceStep(step: RecorderStepUi): JunctionPlan {
         val evidence = JunctionEvidence(
             id = "evidence:${step.id}",

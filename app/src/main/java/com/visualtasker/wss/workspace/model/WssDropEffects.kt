@@ -154,11 +154,55 @@ private fun WssDragPayload.railTraceSnippet(): String {
     val detail = data["detail"] ?: label
     return when (actionType) {
         "wait" -> "wait(${detail.filter(Char::isDigit).ifBlank { "100" }})"
+        "click",
+        "tap",
+        "longclick",
+        "long_click",
+        -> clickOrTouchSnippet(detail)
+        "swipe",
+        "scroll",
+        -> swipeSnippet() ?: "log(${("RailTrace: $label").emscriptQuote()})"
+        "text.change",
+        "text",
+        "input",
+        -> {
+            val text = data["property:text"] ?: data["property:contentDescription"] ?: label
+            "log(${("Text geaendert: $text").emscriptQuote()})"
+        }
+        "activity.change" -> {
+            val activity = data["activityName"] ?: label
+            "log(${("Activity: $activity").emscriptQuote()})"
+        }
         "log" -> "log(${detail.emscriptQuote()})"
         "beep" -> "beep()"
         "vibrate" -> "vibrate(40)"
         else -> "log(${("RailTrace: $label").emscriptQuote()})"
     }
+}
+
+private fun WssDragPayload.clickOrTouchSnippet(detail: String): String {
+    val text = data["property:text"]
+        ?: data["property:contentDescription"]
+        ?: label.removePrefix("Click").removePrefix("Tap").trim().takeIf { it.isNotBlank() }
+    if (!text.isNullOrBlank()) {
+        return "click(${text.emscriptQuote()})"
+    }
+    val x = data["pointX"]?.toFloatOrNull()?.toInt()
+    val y = data["pointY"]?.toFloatOrNull()?.toInt()
+    return if (x != null && y != null) {
+        "touch([\"down\", $x, $y, \"up\"])"
+    } else {
+        "log(${detail.emscriptQuote()})"
+    }
+}
+
+private fun WssDragPayload.swipeSnippet(): String? {
+    val left = data["boundsLeft"]?.toFloatOrNull()?.toInt() ?: return null
+    val top = data["boundsTop"]?.toFloatOrNull()?.toInt() ?: return null
+    val right = data["boundsRight"]?.toFloatOrNull()?.toInt() ?: return null
+    val bottom = data["boundsBottom"]?.toFloatOrNull()?.toInt() ?: return null
+    val x = (left + right) / 2
+    return "swipe([$x, $bottom, $x, $top], 1)"
 }
 
 private fun String.emscriptQuote(): String =

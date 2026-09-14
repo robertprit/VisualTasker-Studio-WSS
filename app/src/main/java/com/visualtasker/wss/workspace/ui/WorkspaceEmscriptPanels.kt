@@ -12,12 +12,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TextDecrease
+import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -39,8 +48,10 @@ import androidx.compose.ui.unit.dp
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
+import com.visualtasker.wss.emscript.editor.EmscriptEditorCommand
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
 import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
+import com.visualtasker.wss.emscript.editor.EmscriptTextDropMetrics
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
@@ -82,6 +93,7 @@ internal fun EmscriptTextEditorPanel(
     liveRunStatus: String = "",
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
     activeSourceLine: Int? = null,
+    onTextDropMetricsChange: (EmscriptTextDropMetrics) -> Unit = {},
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
     val parser = remember { EmscriptParserSlice() }
@@ -266,18 +278,20 @@ internal fun EmscriptTextEditorPanel(
             plain = MaterialTheme.colorScheme.onSurface
         ),
         activeSourceLine = activeSourceLine,
+        onTextDropMetricsChange = onTextDropMetricsChange,
         modifier = Modifier.fillMaxSize()
     )
 }
 
 @Composable
 internal fun ColumnScope.EmscriptCompactRail(
-    onExpandRequested: () -> Unit,
     onCompileCheck: () -> Unit,
-    onSave: () -> Unit,
-    onLoad: () -> Unit,
+    onEditorCommand: (EmscriptEditorCommand) -> Unit,
     canCompile: Boolean,
-    canLoad: Boolean
+    canUndo: Boolean,
+    canRedo: Boolean,
+    canEdit: Boolean,
+    canApply: Boolean,
 ) {
     val compactIconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
     TooltipIconButton(
@@ -288,23 +302,63 @@ internal fun ColumnScope.EmscriptCompactRail(
         Icon(Icons.Default.Build, contentDescription = "Compile Check", tint = compactIconTint)
     }
     TooltipIconButton(
-        tooltip = "Dateimanager öffnen",
-        onClick = onExpandRequested
+        tooltip = "Undo",
+        onClick = { onEditorCommand(EmscriptEditorCommand.Undo) },
+        enabled = canUndo && canEdit
     ) {
-        Icon(Icons.Default.FolderOpen, contentDescription = "Dateimanager", tint = compactIconTint)
+        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo", tint = compactIconTint)
     }
     TooltipIconButton(
-        tooltip = "Script speichern",
-        onClick = onSave
+        tooltip = "Redo",
+        onClick = { onEditorCommand(EmscriptEditorCommand.Redo) },
+        enabled = canRedo && canEdit
     ) {
-        Icon(Icons.Default.Save, contentDescription = "Speichern", tint = compactIconTint)
+        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo", tint = compactIconTint)
     }
     TooltipIconButton(
-        tooltip = "Script laden",
-        onClick = onLoad,
-        enabled = canLoad
+        tooltip = "Ausschneiden",
+        onClick = { onEditorCommand(EmscriptEditorCommand.Cut) },
+        enabled = canEdit
     ) {
-        Icon(Icons.Default.Upload, contentDescription = "Laden", tint = compactIconTint)
+        Icon(Icons.Default.ContentCut, contentDescription = "Ausschneiden", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Kopieren",
+        onClick = { onEditorCommand(EmscriptEditorCommand.Copy) }
+    ) {
+        Icon(Icons.Default.ContentCopy, contentDescription = "Kopieren", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Einfügen",
+        onClick = { onEditorCommand(EmscriptEditorCommand.Paste) },
+        enabled = canEdit
+    ) {
+        Icon(Icons.Default.ContentPaste, contentDescription = "Einfügen", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Draft anwenden",
+        onClick = { onEditorCommand(EmscriptEditorCommand.ApplyDraft) },
+        enabled = canApply
+    ) {
+        Icon(Icons.Default.Done, contentDescription = "Draft anwenden", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Text kleiner",
+        onClick = { onEditorCommand(EmscriptEditorCommand.TextDecrease) }
+    ) {
+        Icon(Icons.Default.TextDecrease, contentDescription = "Text kleiner", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Text größer",
+        onClick = { onEditorCommand(EmscriptEditorCommand.TextIncrease) }
+    ) {
+        Icon(Icons.Default.TextIncrease, contentDescription = "Text größer", tint = compactIconTint)
+    }
+    TooltipIconButton(
+        tooltip = "Suchen/Ersetzen",
+        onClick = { onEditorCommand(EmscriptEditorCommand.Search) }
+    ) {
+        Icon(Icons.Default.Search, contentDescription = "Suchen/Ersetzen", tint = compactIconTint)
     }
 }
 

@@ -601,6 +601,27 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun remNamespaceCommandsRemainExecutableWhileRemLinesStayComments() {
+        val source = """
+            REM ordinary EMScript comment
+            rem.region("main", "facet", "auto")
+            rem.flowBreak("continuation", "right")
+        """.trimIndent()
+
+        val parsed = EmscriptParserSlice().parse(source)
+        assertTrue(parsed.issues.joinToString { it.message }, parsed.isSuccess)
+        assertEquals(2, parsed.ir!!.statements.size)
+
+        val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "rem-namespace")
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val dryRun = WorkspaceDryRunRuntime().run(imported.document!!)
+        assertTrue(dryRun is EmscriptDryRunResult.Success)
+        val commands = (dryRun as EmscriptDryRunResult.Success).events.mapNotNull { it.command }
+        assertTrue("rem.region" in commands)
+        assertTrue("rem.flowBreak" in commands)
+    }
+
+    @Test
     fun adapterGatedCatalogCommands_dryRunAsWarningsInsteadOfErrors() {
         val entries = VisualTaskerCommandCatalog.allEntries()
             .filter { it.runtime?.dryRunBehavior == "adapter-gated" }

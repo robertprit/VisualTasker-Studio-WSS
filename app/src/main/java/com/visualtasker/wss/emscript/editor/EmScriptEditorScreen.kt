@@ -19,18 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.TextIncrease
-import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,7 +43,6 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,10 +50,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -88,6 +82,12 @@ private data class DisplayLineInfo(
     val isPlaceholder: Boolean = false,
 )
 
+data class EmscriptTextDropMetrics(
+    val textFieldBoundsInWindow: Rect,
+    val verticalScrollPx: Int,
+    val lineHeightPx: Float,
+)
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun EmScriptEditorScreen(
@@ -106,6 +106,7 @@ fun EmScriptEditorScreen(
     diagnostics: List<String>,
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
     activeSourceLine: Int? = null,
+    onTextDropMetricsChange: (EmscriptTextDropMetrics) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val visibleTabs = session.tabs.filter { tab ->
@@ -126,8 +127,8 @@ fun EmScriptEditorScreen(
         mutableStateOf(TextFieldValue(activeTab.content, TextRange(start, end)))
     }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-    val undoStack = remember(activeTab.id) { mutableStateListOf<String>() }
-    val redoStack = remember(activeTab.id) { mutableStateListOf<String>() }
+    val undoStack = uiState.undoStacks[activeTab.id].orEmpty()
+    val redoStack = uiState.redoStacks[activeTab.id].orEmpty()
     val clipboardManager = LocalClipboardManager.current
     val isDark = isSystemInDarkTheme()
     val syntaxPalette = remember(isDark, syntaxPaletteOverride) {
@@ -180,9 +181,20 @@ fun EmScriptEditorScreen(
     } else {
         MaterialTheme.colorScheme.outline
     }
+    var textFieldBoundsInWindow by remember { mutableStateOf<Rect?>(null) }
 
     LaunchedEffect(fontSizeSp) {
         uiState.fontSizeSp = fontSizeSp
+    }
+    LaunchedEffect(textFieldBoundsInWindow, editorScrollState.value, activeLineHeightPx) {
+        val bounds = textFieldBoundsInWindow ?: return@LaunchedEffect
+        onTextDropMetricsChange(
+            EmscriptTextDropMetrics(
+                textFieldBoundsInWindow = bounds,
+                verticalScrollPx = editorScrollState.value,
+                lineHeightPx = activeLineHeightPx,
+            )
+        )
     }
     LaunchedEffect(activeDisplayIndex, fontSizeSp, lineMapping.size, editorScrollState.viewportSize, editorScrollState.maxValue) {
         if (activeDisplayIndex < 0) return@LaunchedEffect
@@ -198,6 +210,63 @@ fun EmScriptEditorScreen(
     }
     LaunchedEffect(activeTab.id, collapsedBlocks) {
         uiState.foldedKeysByTab[activeTab.id] = collapsedBlocks
+    }
+    LaunchedEffect(uiState.pendingCommand) {
+        val event = uiState.pendingCommand ?: return@LaunchedEffect
+        when (event.command) {
+            EmscriptEditorCommand.Undo -> {
+                if (undoStack.isNotEmpty() && !activeTab.readOnly) {
+                    val prev = uiState.popUndo(activeTab.id) ?: return@LaunchedEffect
+                    uiState.pushRedo(activeTab.id, activeTab.content)
+                    onSessionChange(session.updateManualContent(prev))
+                }
+            }
+            EmscriptEditorCommand.Redo -> {
+                if (redoStack.isNotEmpty() && !activeTab.readOnly) {
+                    val next = uiState.popRedo(activeTab.id) ?: return@LaunchedEffect
+                    uiState.pushUndo(activeTab.id, activeTab.content)
+                    onSessionChange(session.updateManualContent(next))
+                }
+            }
+            EmscriptEditorCommand.Cut -> {
+                if (!activeTab.readOnly) {
+                    val sel = editorValue.selection
+                    if (sel.length > 0) {
+                        clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
+                        val newText = editorValue.text.removeRange(sel.min, sel.max)
+                        uiState.pushUndo(activeTab.id, editorValue.text)
+                        onSessionChange(session.updateManualContent(newText))
+                    }
+                }
+            }
+            EmscriptEditorCommand.Copy -> {
+                val sel = editorValue.selection
+                if (sel.length > 0) {
+                    clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
+                }
+            }
+            EmscriptEditorCommand.Paste -> {
+                if (!activeTab.readOnly) {
+                    val clip = clipboardManager.getText()?.text ?: return@LaunchedEffect
+                    val sel = editorValue.selection
+                    val newText = editorValue.text.replaceRange(sel.min, sel.max, clip)
+                    uiState.pushUndo(activeTab.id, editorValue.text)
+                    onSessionChange(session.updateManualContent(newText))
+                }
+            }
+            EmscriptEditorCommand.ApplyDraft -> {
+                if (canApplyDraft) onConfirmApply()
+            }
+            EmscriptEditorCommand.TextDecrease -> {
+                fontSizeSp = (fontSizeSp - 1f).coerceAtLeast(9f)
+            }
+            EmscriptEditorCommand.TextIncrease -> {
+                fontSizeSp = (fontSizeSp + 1f).coerceAtMost(24f)
+            }
+            EmscriptEditorCommand.Search -> {
+                showFindReplace = true
+            }
+        }
     }
 
     Column(
@@ -266,22 +335,6 @@ fun EmScriptEditorScreen(
                         .defaultMinSize(minWidth = 64.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
                         .drawBehind {
-                            if (activeDisplayIndex >= 0) {
-                                val lineTop = activeDisplayIndex * activeLineHeightPx
-                                drawRect(
-                                    color = activeLineHighlightColor.copy(alpha = 0.72f),
-                                    topLeft = Offset(0f, lineTop),
-                                    size = Size(size.width, activeLineHeightPx),
-                                )
-                                drawCircle(
-                                    color = activeLineDotColor,
-                                    radius = 7f * density.density,
-                                    center = Offset(
-                                        8f * density.density,
-                                        lineTop + activeLineHeightPx / 2f,
-                                    ),
-                                )
-                            }
                             val layout = textLayoutResult ?: return@drawBehind
                             lineMapping.forEachIndexed { displayIdx, info ->
                                 if (displayIdx >= layout.lineCount) return@forEachIndexed
@@ -378,9 +431,7 @@ fun EmScriptEditorScreen(
                         } else {
                             newText
                         }
-                        undoStack.add(oldText)
-                        if (undoStack.size > 100) undoStack.removeAt(0)
-                        redoStack.clear()
+                        uiState.pushUndo(activeTab.id, oldText)
                         editorValue = TextFieldValue(finalText, TextRange(value.selection.end.coerceAtMost(finalText.length)))
                         onSessionChange(session.updateManualContent(finalText))
                     },
@@ -388,15 +439,16 @@ fun EmScriptEditorScreen(
                     modifier = Modifier
                         .weight(1f)
                         .horizontalScroll(editorHorizontalScrollState)
+                        .onGloballyPositioned { coordinates ->
+                            val topLeft = coordinates.positionInWindow()
+                            textFieldBoundsInWindow = Rect(
+                                left = topLeft.x,
+                                top = topLeft.y,
+                                right = topLeft.x + coordinates.size.width,
+                                bottom = topLeft.y + coordinates.size.height,
+                            )
+                        }
                         .drawBehind {
-                            if (activeDisplayIndex >= 0) {
-                                val lineTop = activeDisplayIndex * activeLineHeightPx
-                                drawRect(
-                                    color = activeLineHighlightColor,
-                                    topLeft = Offset(0f, lineTop),
-                                    size = Size(size.width, activeLineHeightPx),
-                                )
-                            }
                             val layout = textLayoutResult ?: return@drawBehind
                             if (activeDisplayIndex in 0 until layout.lineCount) {
                                 val lineTop = layout.getLineTop(activeDisplayIndex)
@@ -426,74 +478,6 @@ fun EmScriptEditorScreen(
                         )
                     ),
                     onTextLayout = { result -> textLayoutResult = result },
-                )
-            }
-        }
-
-        Surface(
-            tonalElevation = 2.dp,
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                EditorToolbarIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", {
-                    if (undoStack.isNotEmpty() && !activeTab.readOnly) {
-                        val prev = undoStack.removeLast()
-                        redoStack.add(activeTab.content)
-                        onSessionChange(session.updateManualContent(prev))
-                    }
-                }, enabled = !activeTab.readOnly && undoStack.isNotEmpty())
-                EditorToolbarIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", {
-                    if (redoStack.isNotEmpty() && !activeTab.readOnly) {
-                        val next = redoStack.removeLast()
-                        undoStack.add(activeTab.content)
-                        onSessionChange(session.updateManualContent(next))
-                    }
-                }, enabled = !activeTab.readOnly && redoStack.isNotEmpty())
-                EditorToolbarDivider()
-                EditorToolbarIconButton(Icons.Default.ContentCut, "Ausschneiden", {
-                    if (activeTab.readOnly) return@EditorToolbarIconButton
-                    val sel = editorValue.selection
-                    if (sel.length > 0) {
-                        clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
-                        val newText = editorValue.text.removeRange(sel.min, sel.max)
-                        onSessionChange(session.updateManualContent(newText))
-                    }
-                }, enabled = !activeTab.readOnly)
-                EditorToolbarIconButton(Icons.Default.ContentCopy, "Kopieren", {
-                    val sel = editorValue.selection
-                    if (sel.length > 0) {
-                        clipboardManager.setText(AnnotatedString(editorValue.text.substring(sel.min, sel.max)))
-                    }
-                })
-                EditorToolbarIconButton(Icons.Default.ContentPaste, "Einfügen", {
-                    if (activeTab.readOnly) return@EditorToolbarIconButton
-                    val clip = clipboardManager.getText()?.text ?: return@EditorToolbarIconButton
-                    val sel = editorValue.selection
-                    val newText = editorValue.text.replaceRange(sel.min, sel.max, clip)
-                    onSessionChange(session.updateManualContent(newText))
-                }, enabled = !activeTab.readOnly)
-                EditorToolbarDivider()
-                EditorToolbarIconButton(Icons.Default.Done, "Draft anwenden", {
-                    onConfirmApply()
-                }, enabled = canApplyDraft)
-                EditorToolbarDivider()
-                EditorToolbarIconButton(Icons.Default.TextDecrease, "Text kleiner", {
-                    fontSizeSp = (fontSizeSp - 1f).coerceAtLeast(9f)
-                })
-                EditorToolbarIconButton(Icons.Default.TextIncrease, "Text größer", {
-                    fontSizeSp = (fontSizeSp + 1f).coerceAtMost(24f)
-                })
-                EditorToolbarIconButton(
-                    Icons.Default.Search,
-                    "Suchen/Ersetzen",
-                    { showFindReplace = true },
                 )
             }
         }
@@ -566,9 +550,7 @@ fun EmScriptEditorScreen(
                             if (activeTab.readOnly || findQuery.isBlank()) return@TextButton
                             val replaced = replaceSelectionOrNext(editorValue.text, editorValue.selection, findQuery, replaceValue)
                                 ?: return@TextButton
-                            undoStack.add(editorValue.text)
-                            if (undoStack.size > 100) undoStack.removeAt(0)
-                            redoStack.clear()
+                            uiState.pushUndo(activeTab.id, editorValue.text)
                             editorValue = TextFieldValue(replaced.text, TextRange(replaced.cursor))
                             onSessionChange(session.updateManualContent(replaced.text))
                         },
@@ -579,9 +561,7 @@ fun EmScriptEditorScreen(
                             if (activeTab.readOnly || findQuery.isBlank()) return@TextButton
                             val newText = editorValue.text.replace(findQuery, replaceValue)
                             if (newText != editorValue.text) {
-                                undoStack.add(editorValue.text)
-                                if (undoStack.size > 100) undoStack.removeAt(0)
-                                redoStack.clear()
+                                uiState.pushUndo(activeTab.id, editorValue.text)
                                 editorValue = TextFieldValue(newText, TextRange(newText.length))
                                 onSessionChange(session.updateManualContent(newText))
                             }

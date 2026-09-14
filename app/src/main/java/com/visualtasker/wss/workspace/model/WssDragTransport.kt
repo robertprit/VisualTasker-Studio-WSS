@@ -432,12 +432,25 @@ object WssDragPayloadFactory {
                 put("status", step.status.name)
                 step.activityName?.let { put("activityName", it) }
                 step.detail?.let { put("detail", it) }
+                step.point?.let { point ->
+                    put("pointX", point.x.toString())
+                    put("pointY", point.y.toString())
+                }
+                step.bounds?.let { bounds ->
+                    put("boundsLeft", bounds.left.toString())
+                    put("boundsTop", bounds.top.toString())
+                    put("boundsRight", bounds.right.toString())
+                    put("boundsBottom", bounds.bottom.toString())
+                }
+                step.properties.forEach { (key, value) ->
+                    put("property:$key", value)
+                }
             },
         )
 
     fun fromCommand(commandId: String, label: String, sourcePanelId: String, emscript: String): WssDragPayload =
         WssDragPayload(
-            id = "command:$commandId",
+            id = "command:${commandId.toWssDragIdSegment("command")}",
             kind = WssDragPayloadKind.Command,
             label = label,
             sourcePanelId = sourcePanelId,
@@ -503,5 +516,12 @@ private fun List<WssDragTreeItem>.insertAt(item: WssDragTreeItem, index: Int?): 
 private fun List<WssDragTreeItem>.removeDeep(itemId: String): List<WssDragTreeItem> =
     filterNot { it.id == itemId }
         .map { it.copy(children = it.children.removeDeep(itemId)) }
+
+private fun String.toWssDragIdSegment(fallback: String): String =
+    lowercase()
+        .replace(Regex("[^a-z0-9._:-]+"), "-")
+        .trim('-', '.', ':', '_')
+        .dropWhile { !it.isLetterOrDigit() }
+        .ifBlank { fallback }
 
 private val WSS_DRAG_ID_PATTERN = Regex("[a-z0-9][a-z0-9._:-]*")

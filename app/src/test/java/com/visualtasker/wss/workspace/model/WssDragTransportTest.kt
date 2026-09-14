@@ -32,6 +32,19 @@ class WssDragTransportTest {
     }
 
     @Test
+    fun commandPayloadKeepsOriginalCommandIdButSanitizesTransportId() {
+        val command = WssDragPayloadFactory.fromCommand(
+            commandId = " Tasker.Last Result ",
+            label = "Tasker Last Result",
+            sourcePanelId = "palette",
+            emscript = "tasker.lastResult()",
+        )
+
+        assertEquals("command:tasker.last-result", command.id)
+        assertEquals(" Tasker.Last Result ", command.data["commandId"])
+    }
+
+    @Test
     fun datastoreLinksBroadPayloadsByDefault() {
         val marker = WssDragPayload(
             id = "marker:login",
