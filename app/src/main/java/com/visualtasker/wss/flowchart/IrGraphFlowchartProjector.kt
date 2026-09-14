@@ -14,15 +14,18 @@ import de.visualtasker.flowchart.domain.FlowDocumentId
 import de.visualtasker.flowchart.domain.FlowDocumentRevision
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
+import de.visualtasker.flowchart.domain.FlowExecutionKind
 import de.visualtasker.flowchart.domain.FlowGraphDiagnostic
 import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowGraphExtension
 import de.visualtasker.flowchart.domain.FlowGraphNode
 import de.visualtasker.flowchart.domain.FlowGraphSourceReference
+import de.visualtasker.flowchart.domain.FlowLifecycleSemantics
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowSemanticKind
 import de.visualtasker.flowchart.domain.FlowSemanticValue
+import de.visualtasker.flowchart.domain.FlowTerminatorRole
 
 object IrGraphFlowchartProjector {
     fun project(graph: IrGraph): FlowchartProjectionResult {
@@ -41,14 +44,21 @@ object IrGraphFlowchartProjector {
                 sourceReference = sourceReference(graph, diagnostic.source.blockId, diagnostic.source.slotName),
             )
         }
+        val entryNodeId = graph.entryNodeIds.firstOrNull()?.let { FlowNodeId(it.value) }
         val projectedNodes = graph.nodes.map { node ->
+            val nodeId = FlowNodeId(node.id.value)
             FlowGraphNode(
-                id = FlowNodeId(node.id.value),
+                id = nodeId,
                 kind = FlowSemanticKind(kindFor(node.kind)),
                 label = node.label,
                 sourceReference = sourceReference(graph, node.source),
                 properties = node.properties.mapValues { (key, value) -> nodeProperty(key, value) } +
-                    ("irScope" to FlowSemanticValue.ListValue(node.scopePath.map(FlowSemanticValue::StringValue))),
+                    ("irScope" to FlowSemanticValue.ListValue(node.scopePath.map(FlowSemanticValue::StringValue))) +
+                    if (nodeId == entryNodeId) {
+                        FlowLifecycleSemantics.nodeProperties(FlowExecutionKind.WORKFLOW, FlowTerminatorRole.START)
+                    } else {
+                        emptyMap()
+                    },
                 extensions = listOf(
                     FlowGraphExtension("visualtasker.ir-node-kind", FlowSemanticValue.StringValue(node.kind.name)),
                     FlowGraphExtension("visualtasker.ir-source", sourceExtension(node.source)),
@@ -71,6 +81,12 @@ object IrGraphFlowchartProjector {
         })
         val joinNodes = joinNodes(graph)
         val joinEdges = joinEdges(graph)
+        val lifecycle = appendWorkflowTerminator(
+            graph = graph,
+            entryNodeId = entryNodeId,
+            nodes = projectedNodes + graph.facets.map { facetNode(graph, it) } + joinNodes,
+            edges = projectedEdges + joinEdges,
+        )
         val flowGraph = FlowGraphDocument(
             documentId = FlowDocumentId("flow:${graph.id}"),
             documentRevision = FlowDocumentRevision(graph.sourceRevision),
@@ -78,15 +94,16 @@ object IrGraphFlowchartProjector {
             producerVersion = "1",
             sourceRevision = graph.sourceRevision,
             sourceHash = "${graph.id}:${graph.sourceRevision}:${projectedNodes.size + joinNodes.size}:${projectedEdges.size + joinEdges.size}:${graph.facets.size}",
-            entryNodeId = graph.entryNodeIds.firstOrNull()?.let { FlowNodeId(it.value) },
-            nodes = projectedNodes + graph.facets.map { facetNode(graph, it) } + joinNodes,
-            edges = projectedEdges + joinEdges,
+            entryNodeId = entryNodeId,
+            nodes = lifecycle.nodes,
+            edges = lifecycle.edges,
             diagnostics = diagnostics,
             extensions = listOf(
                 FlowGraphExtension("visualtasker.projection-source", FlowSemanticValue.StringValue("ir-graph")),
                 FlowGraphExtension("visualtasker.ir-scopes", scopesExtension(graph)),
                 FlowGraphExtension("visualtasker.ir-branches", branchesExtension(graph)),
                 FlowGraphExtension("visualtasker.ir-facets", facetsExtension(graph)),
+                FlowLifecycleSemantics.graphExtension(FlowExecutionKind.WORKFLOW),
             ),
         )
         return FlowchartProjectionResult(
@@ -98,6 +115,74 @@ object IrGraphFlowchartProjector {
             },
         )
     }
+
+    private data class LifecycleProjection(
+        val nodes: List<FlowGraphNode>,
+        val edges: List<de.visualtasker.flowchart.domain.FlowGraphEdge>,
+    )
+
+    private fun appendWorkflowTerminator(
+        graph: IrGraph,
+        entryNodeId: FlowNodeId?,
+        nodes: List<FlowGraphNode>,
+        edges: List<de.visualtasker.flowchart.domain.FlowGraphEdge>,
+    ): LifecycleProjection {
+        if (entryNodeId == null) return LifecycleProjection(nodes, edges)
+        val exitId = FlowNodeId("terminator:${graph.id}:workflow")
+        val structuralKinds = FlowEdgeKind.entries.toSet() - setOf(FlowEdgeKind.DATA_FLOW, FlowEdgeKind.CONDITION)
+        val structuralEdges = edges.filter { it.kind in structuralKinds }
+        val outgoingSources = structuralEdges.mapTo(mutableSetOf()) { it.sourceNodeId }
+        val outgoingTargets = structuralEdges.groupBy({ it.sourceNodeId }, { it.targetNodeId })
+        val reachable = linkedSetOf(entryNodeId)
+        val queue = ArrayDeque<FlowNodeId>().apply { add(entryNodeId) }
+        while (queue.isNotEmpty()) {
+            outgoingTargets[queue.removeFirst()].orEmpty().forEach { target ->
+                if (reachable.add(target)) queue.addLast(target)
+            }
+        }
+        val terminalSources = nodes.filter { node ->
+            !node.isBackgroundFacet() &&
+                node.id in reachable &&
+                node.kind.standard !in setOf(FlowNodeKind.INPUT, FlowNodeKind.OUTPUT, FlowNodeKind.PROPERTY_ACCESS) &&
+                node.id !in outgoingSources
+        }
+        val exitNode = FlowGraphNode(
+            id = exitId,
+            kind = FlowSemanticKind(FlowNodeKind.EXIT),
+            label = "Workflow End",
+            properties = FlowLifecycleSemantics.nodeProperties(FlowExecutionKind.WORKFLOW, FlowTerminatorRole.END) + mapOf(
+                "syntheticTerminator" to FlowSemanticValue.BooleanValue(true),
+                "inputPorts" to FlowSemanticValue.ListValue(
+                    listOf(
+                        FlowSemanticValue.ObjectValue(
+                            mapOf(
+                                "name" to FlowSemanticValue.StringValue("in"),
+                                "label" to FlowSemanticValue.StringValue("in"),
+                                "kind" to FlowSemanticValue.StringValue(FlowEdgeKind.SEQUENCE.name),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            extensions = listOf(FlowLifecycleSemantics.graphExtension(FlowExecutionKind.WORKFLOW)),
+        )
+        val exitEdges = terminalSources.map { source ->
+            de.visualtasker.flowchart.domain.FlowGraphEdge(
+                id = FlowEdgeId("terminator:${source.id.value}:workflow"),
+                sourceNodeId = source.id,
+                targetNodeId = exitId,
+                kind = FlowEdgeKind.SEQUENCE,
+                label = "END",
+                sourceReference = source.sourceReference,
+                extensions = listOf(FlowLifecycleSemantics.graphExtension(FlowExecutionKind.WORKFLOW)),
+            )
+        }
+        return LifecycleProjection(nodes + exitNode, edges + exitEdges)
+    }
+
+    private fun FlowGraphNode.isBackgroundFacet(): Boolean =
+        properties["visualFacet"] == FlowSemanticValue.BooleanValue(true) &&
+            properties["syntheticJoin"] != FlowSemanticValue.BooleanValue(true)
 
     private fun kindFor(kind: IrGraphNodeKind): FlowNodeKind = when (kind) {
         IrGraphNodeKind.SCRIPT_ENTRY -> FlowNodeKind.ENTRY

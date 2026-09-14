@@ -22,6 +22,8 @@ import com.visualtasker.wss.workspace.plugin.ShellSaveAcknowledgmentResult
 import com.visualtasker.wss.workspace.plugin.ShellSaveRequest
 import com.visualtasker.wss.workspace.plugin.ShellValidationResult
 import de.visualtasker.flowchart.domain.FlowGraphDocument
+import de.visualtasker.flowchart.domain.FlowNodeViewDefaults
+import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowSize
 import de.visualtasker.flowchart.domain.FlowSurfaceId
 import de.visualtasker.flowchart.domain.FlowViewDocument
@@ -112,11 +114,11 @@ class FlowchartShellEditorSession(
         dirtyState = ShellDirtyState.CLEAN
         hostServices.reportDirtyState(sessionId, dirtyState)
         reportValidation()
-        reportStatus(controller.attachGraph(graphDocument, viewDocument?.let(::normalizeNodeSizes)))
+        reportStatus(controller.attachGraph(graphDocument, viewDocument?.let(::normalizeFlowNodeSizes)))
     }
 
     fun onViewDocumentChanged(view: FlowViewDocument) {
-        val normalized = normalizeNodeSizes(view)
+        val normalized = normalizeFlowNodeSizes(view)
         viewDocument = normalized
         val nextDirty = if (persistedViewContent == encodeView(normalized)) {
             ShellDirtyState.CLEAN
@@ -230,11 +232,8 @@ class FlowchartShellEditorSession(
 
     private fun currentViewContent(): String {
         val view = viewDocument ?: controller.snapshot().view
-        return view?.let(::normalizeNodeSizes)?.let(::encodeView).orEmpty()
+        return view?.let(::normalizeFlowNodeSizes)?.let(::encodeView).orEmpty()
     }
-
-    private fun normalizeNodeSizes(view: FlowViewDocument): FlowViewDocument =
-        view.copy(nodeViews = view.nodeViews.map { it.copy(size = NORMALIZED_NODE_SIZE) })
 
     private fun encodeView(view: FlowViewDocument): String =
         FlowViewJsonCodec(graphDocument).encodeCanonical(view)
@@ -247,7 +246,25 @@ class FlowchartShellEditorSession(
         }
 }
 
-private val NORMALIZED_NODE_SIZE = FlowSize(164.0, 72.0)
+private val NORMALIZED_NODE_SIZE: FlowSize = FlowNodeViewDefaults.StandardSize
+private val LEGACY_FLOW_NODE_SIZE: FlowSize = FlowSize(164.0, 72.0)
+
+internal fun normalizeFlowNodeSizes(view: FlowViewDocument): FlowViewDocument = view.copy(
+    nodeViews = view.nodeViews.map { nodeView ->
+        val previousSize = nodeView.size ?: LEGACY_FLOW_NODE_SIZE
+        if (previousSize == NORMALIZED_NODE_SIZE) {
+            nodeView.copy(size = NORMALIZED_NODE_SIZE)
+        } else {
+            nodeView.copy(
+                position = FlowPoint(
+                    x = nodeView.position.x + (previousSize.width - NORMALIZED_NODE_SIZE.width) / 2.0,
+                    y = nodeView.position.y + (previousSize.height - NORMALIZED_NODE_SIZE.height) / 2.0,
+                ),
+                size = NORMALIZED_NODE_SIZE,
+            )
+        }
+    },
+)
 
 private fun FlowchartStatusCode.toShellRuntimePhase(): ShellRuntimePhase =
     when (this) {

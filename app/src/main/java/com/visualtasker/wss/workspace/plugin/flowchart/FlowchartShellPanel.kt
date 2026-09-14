@@ -97,17 +97,21 @@ import de.visualtasker.flowchart.compose.FlowchartUiConfig
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
+import de.visualtasker.flowchart.domain.FlowExecutionKind
 import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowGraphEdge
 import de.visualtasker.flowchart.domain.FlowGraphNode
+import de.visualtasker.flowchart.domain.FlowLifecycleSemantics
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowNodeKind
+import de.visualtasker.flowchart.domain.FlowNodeViewDefaults
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.domain.FlowSize
 import de.visualtasker.flowchart.domain.FlowViewport
 import de.visualtasker.flowchart.domain.FlowViewDocument
+import de.visualtasker.flowchart.domain.executionKindOrNull
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.flowchart.interaction.FlowViewportTransform
 import de.visualtasker.flowchart.layout.FlowLayoutConfig
@@ -226,6 +230,9 @@ fun FlowchartShellPanel(
     }
     val visibleRuntimeSnapshot = remember(runtimeSnapshot, visibleNodeIds) {
         runtimeSnapshot?.takeIf { it.activeNodeId == null || it.activeNodeId in visibleNodeIds }
+    }
+    val presentationGraphDocument = remember(visibleGraphDocument, visibleRuntimeSnapshot) {
+        visibleGraphDocument.withExecutionPresentation(visibleRuntimeSnapshot?.executionKindOrNull())
     }
     fun baseViewDocument(): FlowViewDocument? =
         renderViewDocument ?: controller.snapshot().view ?: session.viewDocument
@@ -457,7 +464,7 @@ fun FlowchartShellPanel(
             FlowchartShellGrid(Modifier.matchParentSize())
         }
         FlowchartHost(
-            graphDocument = visibleGraphDocument,
+            graphDocument = presentationGraphDocument,
             viewDocument = visibleViewDocument,
             runtimeSnapshot = visibleRuntimeSnapshot,
             controller = controller,
@@ -606,6 +613,14 @@ fun FlowchartShellPanel(
     }
 }
 
+private fun FlowGraphDocument.withExecutionPresentation(kind: FlowExecutionKind?): FlowGraphDocument {
+    if (kind == null) return this
+    return copy(
+        extensions = extensions.filterNot { it.key == FlowLifecycleSemantics.EXECUTION_KIND_KEY } +
+            FlowLifecycleSemantics.graphExtension(kind),
+    )
+}
+
 @Composable
 private fun FlowchartFloatingViewportControls(
     onZoomIn: () -> Unit,
@@ -643,8 +658,8 @@ private fun FlowchartMiniMap(
     if (nodes.size <= 1 || panelSize.width <= 0 || panelSize.height <= 0) return
     val left = nodes.minOf { it.position.x }.toFloat()
     val top = nodes.minOf { it.position.y }.toFloat()
-    val right = nodes.maxOf { it.position.x + (it.size?.width ?: 160.0) }.toFloat()
-    val bottom = nodes.maxOf { it.position.y + (it.size?.height ?: 72.0) }.toFloat()
+    val right = nodes.maxOf { it.position.x + (it.size ?: FlowNodeViewDefaults.StandardSize).width }.toFloat()
+    val bottom = nodes.maxOf { it.position.y + (it.size ?: FlowNodeViewDefaults.StandardSize).height }.toFloat()
     val contentWidth = (right - left).coerceAtLeast(1f)
     val contentHeight = (bottom - top).coerceAtLeast(1f)
     val viewport = viewDocument.viewport
@@ -662,8 +677,8 @@ private fun FlowchartMiniMap(
             val offsetX = (size.width - drawWidth) / 2f
             val offsetY = (size.height - drawHeight) / 2f
             nodes.forEach { node ->
-                val nodeWidth = (node.size?.width ?: 160.0).toFloat()
-                val nodeHeight = (node.size?.height ?: 72.0).toFloat()
+                val nodeWidth = (node.size ?: FlowNodeViewDefaults.StandardSize).width.toFloat()
+                val nodeHeight = (node.size ?: FlowNodeViewDefaults.StandardSize).height.toFloat()
                 drawRoundRect(
                     color = Color(0xFF63C7FF).copy(alpha = 0.64f),
                     topLeft = Offset(
@@ -712,8 +727,8 @@ private fun FlowchartViewportScrollbars(
     val visibleBottom = ((panelSize.height - view.viewport.pan.y) / view.viewport.zoom).toFloat()
     val contentLeft = minOf(nodes.minOf { it.position.x }.toFloat(), visibleLeft)
     val contentTop = minOf(nodes.minOf { it.position.y }.toFloat(), visibleTop)
-    val contentRight = maxOf(nodes.maxOf { it.position.x + (it.size?.width ?: 160.0) }.toFloat(), visibleRight)
-    val contentBottom = maxOf(nodes.maxOf { it.position.y + (it.size?.height ?: 72.0) }.toFloat(), visibleBottom)
+    val contentRight = maxOf(nodes.maxOf { it.position.x + (it.size ?: FlowNodeViewDefaults.StandardSize).width }.toFloat(), visibleRight)
+    val contentBottom = maxOf(nodes.maxOf { it.position.y + (it.size ?: FlowNodeViewDefaults.StandardSize).height }.toFloat(), visibleBottom)
     val contentWidth = (contentRight - contentLeft).coerceAtLeast(1f)
     val contentHeight = (contentBottom - contentTop).coerceAtLeast(1f)
     val visibleWidth = (visibleRight - visibleLeft).coerceAtLeast(1f)
@@ -795,8 +810,8 @@ private fun fitFlowchartViewport(
     if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
     val minX = view.nodeViews.minOf { it.position.x }
     val minY = view.nodeViews.minOf { it.position.y }
-    val maxX = view.nodeViews.maxOf { it.position.x + (it.size?.width ?: 160.0) }
-    val maxY = view.nodeViews.maxOf { it.position.y + (it.size?.height ?: 72.0) }
+    val maxX = view.nodeViews.maxOf { it.position.x + (it.size ?: FlowNodeViewDefaults.StandardSize).width }
+    val maxY = view.nodeViews.maxOf { it.position.y + (it.size ?: FlowNodeViewDefaults.StandardSize).height }
     val contentWidth = (maxX - minX).coerceAtLeast(1.0)
     val contentHeight = (maxY - minY).coerceAtLeast(1.0)
     val horizontalPadding = 72.0
@@ -1747,6 +1762,10 @@ private fun flowchartMaterialNodePath(
 
 private fun flowchartFallbackShapeId(blockType: String, node: FlowGraphNode): Int =
     when {
+        node.kind.standard in setOf(FlowNodeKind.ENTRY, FlowNodeKind.EXIT) &&
+            (node.properties[FlowLifecycleSemantics.EXECUTION_KIND_PROPERTY] as? FlowSemanticValue.StringValue)?.value == FlowExecutionKind.RECORDING.wireValue -> 20
+        node.kind.standard in setOf(FlowNodeKind.ENTRY, FlowNodeKind.EXIT) &&
+            (node.properties[FlowLifecycleSemantics.EXECUTION_KIND_PROPERTY] as? FlowSemanticValue.StringValue)?.value == FlowExecutionKind.DRY_RUN.wireValue -> 19
         blockType.startsWith("event.") -> 1
         blockType.startsWith("action.") || blockType.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX) -> 8
         blockType.startsWith("control.if") -> 4

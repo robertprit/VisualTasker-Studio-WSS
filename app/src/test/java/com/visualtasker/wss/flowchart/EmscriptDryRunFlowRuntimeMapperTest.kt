@@ -9,7 +9,9 @@ import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.flowchart.domain.FlowRuntimeNodeState
+import de.visualtasker.flowchart.domain.FlowExecutionKind
 import de.visualtasker.flowchart.domain.FlowSemanticValue
+import de.visualtasker.flowchart.domain.executionKindOrNull
 import de.visualtasker.flowchart.validation.FlowRuntimeSnapshotValidator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +39,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         assertEquals(graph.documentId, snapshot.documentId)
         assertEquals(graph.documentRevision, snapshot.documentRevision)
         assertEquals(7, snapshot.sequence)
+        assertEquals(FlowExecutionKind.DRY_RUN, snapshot.executionKindOrNull())
         assertTrue(snapshot.nodeStates.isEmpty())
         assertTrue(snapshot.diagnostics.all { it.nodeId == null })
         assertTrue(FlowRuntimeSnapshotValidator.validate(graph, snapshot).isValid)

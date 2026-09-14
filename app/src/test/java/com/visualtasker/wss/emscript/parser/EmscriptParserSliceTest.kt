@@ -21,8 +21,12 @@ import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
 import de.visualtasker.flowchart.domain.FlowEdgeKind
+import de.visualtasker.flowchart.domain.FlowExecutionKind
 import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowSemanticValue
+import de.visualtasker.flowchart.domain.FlowTerminatorRole
+import de.visualtasker.flowchart.domain.executionKind
+import de.visualtasker.flowchart.domain.terminatorRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -667,6 +671,10 @@ class EmscriptParserSliceTest {
         })
 
         val flow = IrGraphFlowchartProjector.project(ir).graph
+        val terminator = flow.nodes.single { it.kind.standard == FlowNodeKind.EXIT }
+        assertEquals(FlowExecutionKind.WORKFLOW, flow.executionKind())
+        assertEquals(FlowTerminatorRole.END, terminator.terminatorRole())
+        assertTrue(flow.edges.any { edge -> edge.targetNodeId == terminator.id })
         assertTrue(flow.edges.any { edge -> edge.kind == FlowEdgeKind.GOTO && edge.label == "A" })
         assertTrue(flow.nodes.any { node ->
             node.kind.standard == FlowNodeKind.ANNOTATION &&

@@ -13,6 +13,7 @@ import com.visualtasker.wss.workspace.plugin.defaultWorkspaceShellPluginRegistry
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import de.visualtasker.flowchart.testsupport.FlowchartFixtures
 import de.visualtasker.flowchart.domain.FlowPoint
+import de.visualtasker.flowchart.domain.FlowSize
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -84,6 +85,26 @@ class FlowchartShellPluginTest {
 
         assertFalse(session.isActive())
         assertNull(session.controller.snapshot().interaction.dragState)
+    }
+
+    @Test
+    fun legacyRectangularNodeViewsMigrateToSquaresWithoutMovingTheirCenters() {
+        val session = FlowchartShellPlugin().createEditorSession(
+            sampleInput(),
+            RecordingShellPluginHostAdapter(),
+        ) as FlowchartShellEditorSession
+        val view = requireNotNull(session.controller.snapshot().view)
+        val legacyNode = view.nodeViews.first().copy(
+            position = FlowPoint(100.0, 200.0),
+            size = FlowSize(164.0, 72.0),
+        )
+
+        val normalized = normalizeFlowNodeSizes(view.copy(nodeViews = listOf(legacyNode)))
+        val migratedNode = normalized.nodeViews.single()
+
+        assertEquals(FlowSize(96.0, 96.0), migratedNode.size)
+        assertEquals(FlowPoint(134.0, 188.0), migratedNode.position)
+        assertEquals(normalized, normalizeFlowNodeSizes(normalized))
     }
 
     private fun sampleInput(): ShellEditorInput =

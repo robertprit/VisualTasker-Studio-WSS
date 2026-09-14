@@ -54,16 +54,17 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 
 ### M2: FlowEditor Auf Editorstatus Bringen
 
-- [ ] Node-Groessen vereinheitlichen.
-- [ ] Reporter/Dataflow/Operator/Compare Nodes visuell und beim Arrange speziell behandeln.
-- [ ] Ports fuer oben/unten Sequence und seitliche Branch/Dataflow-Verbindungen festlegen.
-- [ ] Dock, Undock, Detach und magnetische Ports verlaesslich machen.
+- [x] Node-Groessen auf ein quadratisches 96-x-96-Grundraster vereinheitlichen und Legacy-Views zentriert migrieren.
+- [x] Reporter/Dataflow/Operator/Compare Nodes visuell und beim Arrange speziell behandeln.
+- [x] Ports fuer oben/unten Sequence und seitliche Branch/Dataflow-Verbindungen festlegen.
+- [x] Dock, Undock, Detach und magnetische Ports verlaesslich machen.
 - [ ] Auto-Arrange mit kurzem Routing, wenig Kreuzungen und stabilem Hauptstamm haerten.
 - [x] Auto-Pan beim Draggen am Viewportrand wie im BlockEditor einbauen.
-- [ ] Kanten-Hervorhebung fuer selektierte Nodes und einzeln selektierte Edges finalisieren.
+- [x] Kanten- und Node-Hervorhebung fuer manuelle Auswahl und Runtime-Fokus finalisieren.
 - [x] Facet-Handles mit sichtbarer Bezeichnung, Collapse-Aktion und Kontextmenue ausstatten.
-- [ ] Facet-Collapse-Verhalten mit grossen und verschachtelten Graphen releasefest machen.
-- [ ] Eigene Start-/Terminator-Semantik und -Darstellung fuer Workflow, Recording und DryRun festlegen.
+- [x] Facet-Collapse-Verhalten persistent, Undo-faehig und fuer verschachtelte Graphen absichern.
+- [x] Eigene Start-/Terminator-Semantik und -Darstellung fuer Workflow, Recording und DryRun festlegen.
+- [ ] Recording-Graphprojektion auf den gemeinsamen Start-/Terminator-Vertrag anbinden.
 
 ### M3: EMScript Stabilisieren
 
@@ -281,3 +282,14 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [x] Einfache Recording-JSONL-Pipeline fuer Overlay und Accessibility-Events angelegt und RailTrace-Projektion angebunden.
 - [x] RailTrace kann gespeicherte Recording-Sessions auflisten und eine aktive Session als Step-Projektion anzeigen.
 - [x] Recording-Events werden in RailTrace der letzten Activity zugeordnet, damit passive Activity-Segmente und aktive Aktionen zusammenhaengen.
+
+### 2026-09-15
+
+- [x] Flowchart-Nodes verwenden pluginweit quadratische 96-x-96-Viewports.
+- [x] Alte rechteckige Node-Views werden unter Erhalt ihrer Mittelpunkte migriert.
+- [x] Layout, Rendering, Hit-Testing, Routing, Minimap und Viewport-Fit verwenden dieselbe Standardgroesse.
+- [x] Zoom-Buttons publizieren Viewport-State sofort und benoetigen keinen Canvas-Tap mehr.
+- [x] Manuell selektierte und aktive Runtime-Nodes erhalten eine deutlich sichtbare Doppelkontur mit Halo.
+- [x] Facet-Collapse ist persistent, verschachtelungsfest und Undo-/Redo-faehig.
+- [x] Workflow-/Recording-/DryRun-Lifecycle-Semantik sowie Workflow-End-Terminator sind modelliert.
+- [x] Plugin-, Host-, Installations-, Kaltstart-, Zoom-, Auswahl- und DryRun-Smoke-Tests erfolgreich.

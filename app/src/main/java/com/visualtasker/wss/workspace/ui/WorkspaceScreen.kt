@@ -379,6 +379,7 @@ import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
+import de.visualtasker.flowchart.domain.FlowNodeViewDefaults
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.domain.FlowViewDocument
@@ -10949,8 +10950,8 @@ private fun fitFlowchartViewport(
     if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
     val minX = view.nodeViews.minOf { it.position.x }
     val minY = view.nodeViews.minOf { it.position.y }
-    val maxX = view.nodeViews.maxOf { it.position.x + (it.size?.width ?: 160.0) }
-    val maxY = view.nodeViews.maxOf { it.position.y + (it.size?.height ?: 72.0) }
+    val maxX = view.nodeViews.maxOf { it.position.x + (it.size ?: FlowNodeViewDefaults.StandardSize).width }
+    val maxY = view.nodeViews.maxOf { it.position.y + (it.size ?: FlowNodeViewDefaults.StandardSize).height }
     val contentWidth = (maxX - minX).coerceAtLeast(1.0)
     val contentHeight = (maxY - minY).coerceAtLeast(1.0)
     val horizontalPadding = 72.0

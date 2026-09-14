@@ -7,8 +7,10 @@ import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowEdgeId
+import de.visualtasker.flowchart.domain.FlowExecutionKind
 import de.visualtasker.flowchart.domain.FlowGraphExtension
 import de.visualtasker.flowchart.domain.FlowGraphDocument
+import de.visualtasker.flowchart.domain.FlowLifecycleSemantics
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowRuntimeDiagnostic
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
@@ -87,6 +89,7 @@ object EmscriptDryRunFlowRuntimeMapper {
         events: List<IrGraphRuntimeEvent>,
         result: EmscriptDryRunResult,
     ): List<FlowGraphExtension> = buildList {
+        add(FlowLifecycleSemantics.graphExtension(FlowExecutionKind.DRY_RUN))
         add(runtimeEventExtension(events))
         if (result is EmscriptDryRunResult.Success) {
             add(runtimeVariablesExtension(result.variables))
