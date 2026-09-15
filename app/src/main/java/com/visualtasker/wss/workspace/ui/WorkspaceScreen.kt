@@ -377,12 +377,13 @@ import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
-import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.domain.FlowNodeViewDefaults
 import de.visualtasker.flowchart.domain.FlowPoint
+import de.visualtasker.flowchart.domain.FlowRuntimeDiagnostic
+import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
@@ -2048,7 +2049,7 @@ fun WorkspaceScreen(
                 level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
                 source = source,
                 message = "Runtime-Diagnose ${diagnostic.code}",
-                details = "${diagnostic.code}: ${diagnostic.message}",
+                details = diagnostic.runtimeDetailText(workflowState),
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:dry-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}"
             )
@@ -2156,7 +2157,7 @@ fun WorkspaceScreen(
                     level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
                     source = source,
                     message = "Runtime-Diagnose ${diagnostic.code}",
-                    details = "${diagnostic.code}: ${diagnostic.message}",
+                    details = diagnostic.runtimeDetailText(workflowState),
                     documentRevision = workflowState.revision.toLong(),
                     groupKey = "workspace:basic-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}"
                 )
@@ -4009,7 +4010,7 @@ private fun WorkspacePanelContent(
                     )
                 )
                 flowRuntimeSnapshot?.diagnostics?.take(8)?.forEach { diagnostic ->
-                    add("${diagnostic.severity.name} ${diagnostic.code}: ${diagnostic.message}")
+                    add(diagnostic.runtimeDetailText(workflowState))
                 }
                 latestEmscriptGenerationFailure?.let(::add)
             }
@@ -9501,6 +9502,43 @@ private fun activeRuntimeSourceLine(
         ?: return null
     return findCommandLine(visibleScriptText, commandName)
         ?: findCommandLine(projectedScriptText, commandName)
+}
+
+private fun FlowRuntimeDiagnostic.runtimeDetailText(workflowState: WorkspaceWorkflowState): String {
+    val node = nodeId?.let { id -> workflowState.flowchartProjection.graph.nodes.firstOrNull { it.id == id } }
+    val edge = edgeId?.let { id -> workflowState.flowchartProjection.graph.edges.firstOrNull { it.id == id } }
+    val sourceLine = node?.sourceReference?.span?.startLine
+        ?: edge?.sourceReference?.span?.startLine
+        ?: node?.properties?.textValue("sourceLine")?.toDoubleOrNull()?.toInt()
+    val sourceColumn = node?.sourceReference?.span?.startColumn
+        ?: edge?.sourceReference?.span?.startColumn
+    val blockId = node?.properties?.textValue("blockId")
+        ?: nodeId?.value?.removePrefix("block:")?.takeIf { it != nodeId?.value }
+    return buildString {
+        append(severity.name)
+        append(" ")
+        append(code)
+        append(": ")
+        append(message)
+        val details = buildList {
+            sourceLine?.let { line ->
+                add(
+                    if (sourceColumn != null) {
+                        "Textzeile $line:$sourceColumn"
+                    } else {
+                        "Textzeile $line"
+                    }
+                )
+            }
+            blockId?.let { add("Block $it") }
+            nodeId?.value?.let { add("Node $it") }
+            edgeId?.value?.let { add("Kante $it") }
+        }
+        if (details.isNotEmpty()) {
+            append("\n")
+            append(details.joinToString(" | "))
+        }
+    }
 }
 
 private fun Map<String, FlowSemanticValue>.textValue(key: String): String? =
