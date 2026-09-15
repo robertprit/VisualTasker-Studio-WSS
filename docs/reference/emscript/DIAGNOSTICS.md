@@ -50,6 +50,21 @@ Diese Codes sind historische stabile Referenzen, aber nicht automatisch der voll
 - keine UI-Texte als maschinenlesbare Identität verwenden;
 - als strukturierte Daten in LogConsole, RailTrace, EMScript Editor und AI-Kontext projizierbar sein.
 
+## Aktuelle WSS Runtime-Codes
+
+Runtime- und DryRun-Events transportieren einen optionalen `diagnosticCode`.
+Dieser Code wird aus dem Command-Capability-Descriptor übernommen und in
+FlowRuntime-Diagnostics sowie `visualtasker.runtime-events` projiziert. Dadurch
+können FlowEditor, RailTrace, LogConsole, Debug Panel und Junktor denselben
+maschinellen Fehlergrund verwenden, statt lokale Anzeigenamen wie
+`CAPABILITY_TERMUX` als Identität zu missbrauchen.
+
+| Code | Phase | Bedeutung |
+| --- | --- | --- |
+| `CAPABILITY_ADAPTER_REQUIRED` | RUNTIME | Command ist bekannt, benötigt aber einen noch nicht live verfügbaren Adapter |
+| `CAPABILITY_CATALOG_MISSING` | RUNTIME | Runtime sieht einen Command, der im zentralen Command-Katalog fehlt |
+| `CAPABILITY_BLOCKED` | RUNTIME | Fallback, wenn ein Capability-Warning keinen spezifischen Descriptor-Code hat |
+
 ## Drift-Risiko
 
 Wenn Parser, Blockeditor, Flowchart und Runtime für denselben Fehler unterschiedliche IDs oder Bedeutungen verwenden, entsteht semantischer Drift. Der Diagnostic-Katalog sollte deshalb langfristig aus einem gemeinsamen Contract oder Registry-Modell gespeist werden.

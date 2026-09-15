@@ -53,7 +53,9 @@ object EmscriptDryRunFlowRuntimeMapper {
                                 EmscriptDryRunEventSeverity.ERROR.name -> FlowDiagnosticSeverity.ERROR
                                 else -> FlowDiagnosticSeverity.WARNING
                             },
-                            code = event.capability?.let { "CAPABILITY_$it" } ?: "EMSCRIPT_RUNTIME_NOTICE",
+                            code = event.diagnosticCode
+                                ?: event.capability?.let { "CAPABILITY_$it" }
+                                ?: "EMSCRIPT_RUNTIME_NOTICE",
                             message = event.message,
                             nodeId = event.nodeId?.let { FlowNodeId(it.value) },
                             edgeId = event.edgeId?.let { FlowEdgeId(it.value) },
@@ -111,6 +113,7 @@ object EmscriptDryRunFlowRuntimeMapper {
                     event.command?.let { put("command", FlowSemanticValue.StringValue(it)) }
                     event.capability?.let { put("capability", FlowSemanticValue.StringValue(it)) }
                     event.pluginOwner?.let { put("pluginOwner", FlowSemanticValue.StringValue(it)) }
+                    event.diagnosticCode?.let { put("diagnosticCode", FlowSemanticValue.StringValue(it)) }
                 }
             )
         }

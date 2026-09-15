@@ -27,6 +27,7 @@ data class IrGraphRuntimeEvent(
     val command: String? = null,
     val capability: String? = null,
     val pluginOwner: String? = null,
+    val diagnosticCode: String? = null,
 )
 
 object EmscriptDryRunIrGraphRuntimeMapper {
@@ -108,6 +109,7 @@ object EmscriptDryRunIrGraphRuntimeMapper {
             command = command,
             capability = capability,
             pluginOwner = pluginOwner,
+            diagnosticCode = diagnosticCode,
         )
     }
 }

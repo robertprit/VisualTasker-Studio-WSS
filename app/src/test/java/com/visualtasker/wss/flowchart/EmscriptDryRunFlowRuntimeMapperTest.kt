@@ -202,7 +202,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         assertFalse(snapshot.diagnostics.any { it.message.contains("findTemplate") })
         assertTrue(snapshot.diagnostics.any {
             it.severity.name == "WARNING" &&
-                it.code == "CAPABILITY_TERMUX" &&
+                it.code == "CAPABILITY_ADAPTER_REQUIRED" &&
                 it.message.contains("Termux.shell")
         })
         val runtimeEvents = snapshot.runtimeEvents()
@@ -214,9 +214,10 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         })
         assertTrue(runtimeEvents.any {
             it["severity"] == "WARNING" &&
-                it["command"] == "Termux.shell" &&
-                it["capability"] == "TERMUX" &&
-                it["pluginOwner"] == "visualtasker.termux"
+            it["command"] == "Termux.shell" &&
+            it["capability"] == "TERMUX" &&
+            it["pluginOwner"] == "visualtasker.termux" &&
+            it["diagnosticCode"] == "CAPABILITY_ADAPTER_REQUIRED"
         })
         assertTrue(FlowRuntimeSnapshotValidator.validate(graph, snapshot).isValid)
     }
