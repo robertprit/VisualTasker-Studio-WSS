@@ -109,6 +109,7 @@ ist technisch nah, visuell aber noch nicht final abgenommen.
 - [ ] Command-Catalog fuer alle geplanten Kategorien weiter pflegen und Descriptor in Settings, Toolboxen, Diagnostik und Adapter-Registry durchziehen.
 - [ ] Roundtrip-Tests WSS -> BlockEditor -> EMScript -> IR -> FlowEditor erweitern.
 - [ ] Fehlerdiagnosen mit Source-Mapping, Node/Block-ID und Textzeile ausgeben.
+- [x] EMScript-Import schreibt Source-Zeilenmetadaten auf erzeugte Workspace-Bloecke; IR und Flowchart-SourceReference uebernehmen sie.
 - [ ] Runtime-Capability-Gates fuer noch fehlende Adapter klar anzeigen.
 
 ### M4: Floating Overlays Und LiveMarker
