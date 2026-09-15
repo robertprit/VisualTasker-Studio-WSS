@@ -475,13 +475,6 @@ internal fun DebugInfoPanel(
                 style = MaterialTheme.typography.labelSmall
             )
         }
-        flowRuntimeSnapshot?.diagnostics.orEmpty().forEach { diagnostic ->
-            Text(
-                text = "• ${diagnostic.code}: ${diagnostic.message}",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(
                 onClick = onUseProjection,

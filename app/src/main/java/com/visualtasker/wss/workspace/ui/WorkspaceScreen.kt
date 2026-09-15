@@ -3927,7 +3927,7 @@ private fun WorkspacePanelContent(
                 onWorkspaceDryRun = { onRunWorkspaceDry() },
                 onLiveRun = { onRunWorkspaceLive() },
                 canLiveRun = capabilityReport.realRunAllowed,
-                liveRunStatus = capabilityReport.summary,
+                liveRunStatus = capabilityReport.editorGateSummary(),
                 activeSourceLine = activeTextSourceLine ?: activeRuntimeSourceLine(
                     workflowState = workflowState,
                     runtimeSnapshot = flowRuntimeSnapshot,
@@ -9537,6 +9537,34 @@ private fun FlowRuntimeDiagnostic.runtimeDetailText(workflowState: WorkspaceWork
         if (details.isNotEmpty()) {
             append("\n")
             append(details.joinToString(" | "))
+        }
+    }
+}
+
+private fun RuntimeCapabilityReport.editorGateSummary(): String {
+    val blocked = capabilities
+        .filter { it.status == RuntimeCapabilityStatus.BLOCKED }
+        .take(6)
+    if (blocked.isEmpty()) return summary
+    return buildString {
+        append(summary)
+        append("\nBlockierte Adapter:")
+        blocked.forEach { capability ->
+            append("\n")
+            append(capability.command)
+            capability.diagnosticCode?.let {
+                append(" [")
+                append(it)
+                append("]")
+            }
+            append(": ")
+            append(capability.details)
+        }
+        val remaining = capabilities.count { it.status == RuntimeCapabilityStatus.BLOCKED } - blocked.size
+        if (remaining > 0) {
+            append("\n+")
+            append(remaining)
+            append(" weitere blockierte Commands")
         }
     }
 }
