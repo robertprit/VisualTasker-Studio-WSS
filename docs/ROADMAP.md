@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-09-13
+Stand: 2026-09-15
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
@@ -15,8 +15,11 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - BlockView, FlowView, TextView und RailView speichern eigene Layout-/Draft-/Runtime-Zustaende, aber nicht konkurrierende Workflow-Wahrheiten.
 - Alte Studio-Funktionen werden modular uebernommen: Panel, Plugin, Contract oder Shared Service.
 - Nach Codeaenderungen: Build, Tests, Install, Start und Smoke-Test. Commit/Push nur auf ausdruecklichen Auftrag.
+- Nach Installation und Smoke-Test werden automatische ADB-Klick-/Screenshot-Pruefungen nur nach ausdruecklicher Freigabe ausgefuehrt.
+- Aenderungen an gemeinsam sichtbaren Editor-Panel-Regeln werden fuer BlockEditor und FlowEditor parallel geprueft und, soweit sinnvoll, parallel umgesetzt.
 - RAG kommt erst nach stabiler Release-Basis.
 - AI/ML/Vision erzeugen spaeter strukturierte Results und Proposals, aber keine direkten Mutationen; siehe `docs/adr/0003-ai-proposals-and-structured-results.md`.
+- Der FlowEditor soll kein zweiter zweidimensionaler BlockEditor werden. Er bleibt eine semantische Workflow-/Analyse-Projektion mit optionalen Detail-Layern.
 
 ## Aktueller Status
 
@@ -25,6 +28,8 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - Workspace Shell mit verschiebbaren, minimierbaren und resizbaren Panels.
 - BlockEditor als WSS-Plugin mit Siderail, Toolbox, Inspector, Minimap, Drag/Drop, Docking, Undo/Redo-Grundlage und Runtime-Fokus.
 - FlowEditor als WSS-Plugin mit IR-Projektion, Runtime-Layer, Step-Fokus, Facets, Minimap, Trash, Siderail und View-Persistenz.
+- FlowEditor startet in semantischer Sicht; Reporter, Variablen und Operatoren sind als zuschaltbare Detail-Layer vorgesehen.
+- Flowchart-Viewport-Recovery verwirft stale Layouts robuster, ignoriert Hintergrund-Facets beim Fit und verhindert initiale Runtime-Fokusspruenge aus alten DryRun-/RailTrace-Zustaenden.
 - TextEditor mit EMScript-Draft, Apply-Pfad, Runtime-Zeilenmarkierung und ohne Debug-Footer.
 - RailTrace Panel mit Timeline, Replay, Speed-Control, Step-Fokus, Modus-/Scale-Vertrag und gespeicherter letzter Position.
 - LogConsole und DebugInfo als Shell-Panels.
@@ -35,7 +40,11 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 
 ### Noch Nicht Final
 
-- FlowEditor ist funktional, aber noch nicht finaler Editorstatus.
+- Die aktuellen Audit-Matrizen fuer EMScript/Workflow-Roundtrip,
+  Capability-Drift und Worldview-Drift liegen in `docs/audit/` und dienen als
+  Reparaturkarte fuer die naechsten Architektur- und Editor-Schnitte.
+- FlowEditor ist funktional, aber noch nicht finaler Editorstatus: AutoArrange, semantische Lesbarkeit, Branch-Naehe, Facet-Bounds und Detail-Layer brauchen weitere Haertung.
+- BlockEditor/FlowEditor Panel-Paritaet ist teilweise umgesetzt; Inspector-Sheets sollen unten direkt am Panelrand andocken und gleiche Grundregeln fuer Fokus, Zoom, Selection und Eingabe verwenden.
 - EMScript Parser/Generator/Katalog ist breit, aber noch nicht vollstaendig releasefest.
 - Floating Overlays und LiveMarker sind als Basis vorhanden, aber noch nicht final integriert.
 - Marker/Vision/Canvas/Datastore brauchen saubere Persistenz, klare Contracts und reale Pipeline-Anbindung.
@@ -48,9 +57,11 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 
 - [ ] BlockEditor und FlowEditor Bedienlogik angleichen: Selection, Fokus, Haptik, Sound, Kontextmenues.
 - [ ] Inspector-Inhalte in beiden Editoren entschlacken und Debugdetails in DebugInfo/LogConsole verschieben.
+- [ ] Inspector-Sheets in BlockEditor und FlowEditor ohne unteren Abstand direkt an den Panelrand andocken und Eingabe-/Drag-Hit-Zonen absichern.
 - [ ] Scrollleisten, Minimap-Position, Zoom-auf-Fokus und Centering konsistent machen.
 - [ ] Block/Node-Selektion bidirektional stabil synchronisieren.
 - [ ] Viewport-Freeze- und Fokuswechsel-Regressionen weiter testen.
+- [ ] Panel-Layout-Regeln fuer BlockEditor und FlowEditor parallel pflegen: Iconbar, SideRail, Inspector, Trash, Minimap, Resize- und Hit-Zonen.
 
 ### M2: FlowEditor Auf Editorstatus Bringen
 
@@ -58,20 +69,43 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [x] Reporter/Dataflow/Operator/Compare Nodes visuell und beim Arrange speziell behandeln.
 - [x] Ports fuer oben/unten Sequence und seitliche Branch/Dataflow-Verbindungen festlegen.
 - [x] Dock, Undock, Detach und magnetische Ports verlaesslich machen.
-- [ ] Auto-Arrange mit kurzem Routing, wenig Kreuzungen und stabilem Hauptstamm haerten.
+- [x] Auto-Arrange mit kurzem Routing, wenig Kreuzungen und stabilem Hauptstamm haerten.
 - [x] Auto-Pan beim Draggen am Viewportrand wie im BlockEditor einbauen.
 - [x] Kanten- und Node-Hervorhebung fuer manuelle Auswahl und Runtime-Fokus finalisieren.
 - [x] Facet-Handles mit sichtbarer Bezeichnung, Collapse-Aktion und Kontextmenue ausstatten.
 - [x] Facet-Collapse-Verhalten persistent, Undo-faehig und fuer verschachtelte Graphen absichern.
 - [x] Eigene Start-/Terminator-Semantik und -Darstellung fuer Workflow, Recording und DryRun festlegen.
-- [ ] Recording-Graphprojektion auf den gemeinsamen Start-/Terminator-Vertrag anbinden.
+- [x] Recording-Graphprojektion auf den gemeinsamen Start-/Terminator-Vertrag anbinden.
+
+M2-Zwischenstand 2026-09-15: Alle Standard-Nodearten besitzen eine explizite quadratische
+M3-inspirierte Silhouette. Workflow, Recording und DryRun verwenden getrennte
+Start-/End-Geometrien. Records koennen aus RailTrace als read-only FlowGraphDocument
+projiziert werden; die Flowchart-Standardansicht bleibt aber Workflow-basiert. Layout-,
+Routing-, Interaktions-, Serialisierungs- und Compose-Tests sind gruen. Der Editorstatus
+ist technisch nah, visuell aber noch nicht final abgenommen.
+
+### M2.1: FlowEditor Lesbarkeit Und AutoArrange Finalisieren
+
+- [x] Flowchart-Startansicht von alten RailTrace-/DryRun-Fokuszustaenden entkoppeln.
+- [x] Stale FlowViewDocument erkennen, wenn nur isolierte stabile Nodes matchen.
+- [x] Hintergrund-Facets aus Viewport-Fit-Bounds ausschliessen.
+- [x] Semantische Startsicht fuer Flowchart einfuehren: Reporter, Variablen und Operatoren initial ausgeblendet.
+- [x] Variable-Bulk-Facets nicht mehr links vor den Hauptstamm legen.
+- [ ] Hauptstamm im semantischen Modus kompakter und gleichmaessiger ausrichten.
+- [ ] Branch-Ziele naeher an Decision-Nodes ziehen und Treppenstruktur verbessern.
+- [ ] Technische Detail-Nodes als Layer behandeln, ohne AutoArrange-Hauptfluss zu zerlegen.
+- [ ] Facet-Bounds und Collapsed-Facets duerfen AutoFit und Scroll-Startposition nicht dominieren.
+- [ ] AutoArrange-Modi klar trennen: Semantik, Analyse, Kompakt, Manuell.
+- [ ] Optionales Slot-/Dock-Modell fuer Reporter-/Operator-/Dataflow-Nodes entwerfen, ohne FlowEditor zum 2D-BlockEditor umzubauen.
+- [ ] Port- und Routing-Regeln fuer beidseitige Reporter/Dataflow-Ports weiter haerten.
 
 ### M3: EMScript Stabilisieren
 
 - [ ] Kanonische Syntax vollstaendig dokumentieren.
 - [ ] Parser aus Demo-Subset herausziehen.
 - [ ] Generator fuer alle vorhandenen Grundbefehle vervollstaendigen.
-- [ ] Command-Catalog fuer alle geplanten Kategorien pflegen.
+- [x] Ersten `CommandCapabilityDescriptor` als gemeinsame Ableitung aus dem CommandCatalog fuer RuntimeGate, Adapterbedarf und Live-Implementierungsstatus einfuehren.
+- [ ] Command-Catalog fuer alle geplanten Kategorien weiter pflegen und Descriptor in Settings, Toolboxen, Diagnostik und Adapter-Registry durchziehen.
 - [ ] Roundtrip-Tests WSS -> BlockEditor -> EMScript -> IR -> FlowEditor erweitern.
 - [ ] Fehlerdiagnosen mit Source-Mapping, Node/Block-ID und Textzeile ausgeben.
 - [ ] Runtime-Capability-Gates fuer noch fehlende Adapter klar anzeigen.
@@ -95,6 +129,16 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Filter, Graustufen, Falschfarben, Maskierung und Thresholds ins Vision Panel verlegen.
 - [ ] Template/Marker-Kommandos mit Datastore und Vision verbinden.
 
+### M5.1: Workspace Canvas Als Gemeinsame Visuelle Arbeitsflaeche
+
+- [ ] Workspace Canvas zeigt nur bei aktiven Canvas-/Marker-/Vision-nahen Panels die Screenshot-Arbeitsflaeche, sonst das neutrale Grid.
+- [ ] Canvas Panel bleibt Detailprojektion: fokussierter Crop, Step-Ausschnitt, Marker-Detail oder Screenshot-Ausschnitt.
+- [ ] Vision Panel bleibt exklusiver Machine-Vision-Arbeitsbereich fuer Crop, Filter, Template-Vergleich, OCR/OCV/YOLO/A11Y.
+- [ ] Marker Panel bleibt Steuerkonsole fuer Marker, nicht Canvas-Duplikat.
+- [ ] Marker-Speichern erzeugt immer Ressource plus passenden Block und Node in der Scene-/Marker-Kategorie.
+- [ ] Marker-Modi Region, Template, Point, Swipe, Spline, Path, Multi und Draw-Familie konsistent persistieren.
+- [ ] RailTrace-Record-Steps projizieren Screenshots, Klicks, Swipes, Pfade und erkannte Entities auf Workspace Canvas und Canvas Panel.
+
 ### M6: Datastore Und Worldview
 
 - [ ] Datastore Panel als zentrale Datenansicht fuer Ressourcen ausbauen.
@@ -107,6 +151,17 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Import-Mapping aus altem Studio fuer Marker/Templates/Screenshots erweitern.
 - [ ] Worldview Contracts fuer UI-Elemente, Ressourcen, Overlays und Vision-Ergebnisse haerten.
 - [ ] Export/Import und Migrationen fuer Workspace-Ressourcen einbauen.
+
+### M6.1: Visual Abstraction Layer Und VisualAsset Manager
+
+- [ ] VAL als gemeinsame Sprache fuer Block-, Node-, Port-, Facet-, Marker- und Overlay-Darstellung festziehen.
+- [ ] M3ShapeMaker als VisualAsset Manager fuer Blockformen, Nodeformen, Portformen, Icons, Handles und Facet-Designs anbinden.
+- [ ] BlockDesigner zeigt parallel betroffene FlowchartNode-Vorschau an.
+- [ ] Asset-Katalog fuer Standard-, Custom- und Plugin-Assets speichern, bearbeiten, loeschen und versionieren.
+- [ ] Austauschbare Toolbox-Sets fuer Standard, Custom, Mixed, JavaScript und Plugin-Familien einrichten.
+- [ ] `.ema`-Dateien fuer Shapes, Motion, Draw-Pfade und wiederverwendbare visuelle Assets spezifizieren.
+- [ ] Compose-Overlay-Controls nur als bewusstes Rich-Overlay-Konzept behandeln; gezeichnete Block-/Node-Kerne bleiben performant und serialisierbar.
+- [ ] DnD-Listen als generische Item-Transport-Schicht fuer Marker, RailTrace, Inspector, Datastore, TextEditor, BlockEditor und FlowEditor ausbauen.
 
 ### M7: Recording Und RailTrace
 
@@ -124,6 +179,17 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] Canvas Panel als fokussierten Scene-Inspector fuer Record-Steps, Screenshots, Activities, Klicks, Gesten und erkannte Entities ausbauen.
 - [ ] Marker Panel als jederzeit editierbare Anpassungszentrale fuer RailTrace/Canvas/Datastore etablieren.
 - [ ] Junktor vorbereiten: Record/Scan/Trace/User Intent/Datastore zu pruefbaren Block-, Flow- und EMScript-Vorschlaegen konkretisieren.
+
+### M7.1: RailTrace Als Zentrale Runtime-Sicht
+
+- [ ] RailTrace zeigt strikt getrennte Modi: Last Records/Live Recording, Dry/Wet Run und WatchDog.
+- [ ] DryRun/WetRun globale Steuerung aus RailTrace heraus finalisieren und redundante Run-Buttons aus anderen Panels entfernen.
+- [ ] Step-Liste in SideRail fuehren; Panel-Inhalt zeigt Timeline, Progress, Lanes und Step-Inspector.
+- [ ] Aktiver Runtime-Step zentriert TextEditor-Zeile, BlockEditor-Block, FlowEditor-Node/Kante und Step-Liste.
+- [ ] Activity-/Scene-Band als passive Dauer oberhalb aktiver Event-Lanes darstellen.
+- [ ] Fehler, Invalids und Resultate direkt auf Timeline projizieren.
+- [ ] Variables-/Observations-Lane ergaenzen.
+- [ ] Recording-Replay-Hakeln analysieren und Render-/Tick-Strategie optimieren.
 
 ### M8: Alte Studio-Funktionen Modular Uebernehmen
 
@@ -146,6 +212,15 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - [ ] VT2VT RuntimeTrace/Log/RailTrace Live-Mirror zwischen zwei Geraeten testen.
 - [ ] Vision-Scan-Pipeline fuer OCR, OCV, YOLO und A11Y entwerfen.
 - [ ] YOLO/Wisely Cloud-Training nur vorbereiten, nicht vor Stable-V1 erzwingen.
+
+### M9.1: Plugin-Adapter Und Beispielprofile
+
+- [ ] Tasker-Settings-Tab, Beispielprofil, Testevent und Action mit Rueckmeldung final pruefbar machen.
+- [ ] Tasker Result-/Error-Namen kurz und konfliktfrei halten, z.B. `Tasker.lastResult` und `Tasker.error`.
+- [ ] Shizuku UserService statt privater/reflection APIs fuer echte Shell-Ausfuehrung finalisieren.
+- [ ] Termux RUN_COMMAND mit dokumentierter `allow-external-apps=true`-Pruefung finalisieren.
+- [ ] CustomChromeTab Settings fuer Farben, Close/Share/Download/Favoriten/Menu/ActionIcon und BottomBar vervollstaendigen.
+- [ ] scrcpy/VT2VT USB-/ADB-nahe Verbindung als schneller Transportpfad vorbereiten.
 
 ### M10: Release-Haertung
 

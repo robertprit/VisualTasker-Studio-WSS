@@ -2,12 +2,13 @@ package com.visualtasker.wss.emscript.runtime
 
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.registry.CommandCapability
+import de.visualtasker.blockeditor.registry.CommandCapabilityDescriptor
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 
 class RuntimeCapabilityGate(
     private val realRunCapabilities: Set<CommandCapability> = BasicRealRunCapabilities,
-    private val realRunCommandNames: Set<String> = BasicRealRunCommandNames,
 ) {
     fun inspect(document: WorkspaceDocument): RuntimeCapabilityReport {
         val commands = document.blocks.values
@@ -19,20 +20,24 @@ class RuntimeCapabilityGate(
     }
 
     private fun CommandCatalogEntry.runtimeCapability(): RuntimeCapability {
-        val command = canonicalName
-        val gate = runtime?.liveCapabilityGate
-        if (isBasicRuntimeReady(realRunCommandNames, realRunCapabilities)) {
+        val descriptor = toCapabilityDescriptor()
+        val gate = descriptor.requiredAdapter
+        if (descriptor.isLiveReady(realRunCapabilities)) {
             return RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.REAL_RUN_READY,
                 details = "Live-Adapter lokal verfügbar.",
             )
         }
-        if (runtime?.dryRunBehavior == "adapter-gated") {
+        if (descriptor.dryRunBehavior == "adapter-gated") {
             return RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
-                details = "Real-Run benötigt den Adapter ${pluginOwner}.",
+                details = if (!descriptor.liveImplemented) {
+                    "Real-Run für ${canonicalName} ist noch nicht implementiert."
+                } else {
+                    "Real-Run benötigt den Adapter ${pluginOwner}."
+                },
             )
         }
         return when (gate) {
@@ -41,26 +46,26 @@ class RuntimeCapabilityGate(
             CommandCapability.FEEDBACK,
             CommandCapability.DEBUG,
             -> if (gate in realRunCapabilities) RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.REAL_RUN_READY,
                 details = "Basic-Run lokal ausführbar.",
             ) else RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
             )
             CommandCapability.A11Y -> RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Real-Run benötigt Accessibility/Shizuku-Ausführungsadapter und Capability-Freigabe.",
             )
             null -> RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Kein Runtime-Adapter registriert.",
             )
             else -> RuntimeCapability(
-                command = command,
+                command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
             )
@@ -77,48 +82,16 @@ class RuntimeCapabilityGate(
         )
 
         val BasicRealRunCommandNames: Set<String> = setOf(
-            "onstart",
-            "wait",
-            "beep",
-            "vibrate",
-            "log",
-            "file.readtext",
-            "file.writetext",
-            "clipboard.get",
-            "clipboard.set",
-            "cache.clear",
-            "sys.info",
-            "env.get",
-            "let",
-            "set",
-            "get",
-            "repeat",
-            "while",
-            "if",
-            "boolean",
-            "and",
-            "or",
-            "operate",
-            "compare",
-            "number",
-            "string",
-            "findtemplate",
-            "markersave",
-            "markerload",
-            "markerdelete",
-            "templatedefine",
-            "templatecompare",
+            *VisualTaskerCommandCatalog.runtimeCapabilityDescriptors()
+                .filter { it.requiredAdapter in BasicRealRunCapabilities && it.liveImplemented }
+                .flatMap { it.acceptedNames }
+                .map { it.lowercase() }
+                .toTypedArray(),
         )
 
         fun withAccessibilityAdapter(): RuntimeCapabilityGate =
             RuntimeCapabilityGate(
                 realRunCapabilities = BasicRealRunCapabilities + CommandCapability.A11Y + CommandCapability.SCREEN_CAPTURE,
-                realRunCommandNames = BasicRealRunCommandNames + setOf(
-                    "click",
-                    "clickpoint",
-                    "swipe",
-                    "screenshot",
-                ),
             )
 
         fun withDeviceAdapters(
@@ -130,100 +103,43 @@ class RuntimeCapabilityGate(
             usbAdbBridgeAvailable: Boolean,
         ): RuntimeCapabilityGate {
             var capabilities = BasicRealRunCapabilities
-            var commandNames = BasicRealRunCommandNames
             if (accessibilityAvailable) {
                 capabilities += CommandCapability.A11Y
                 capabilities += CommandCapability.SCREEN_CAPTURE
-                commandNames += setOf("click", "clickpoint", "swipe", "screenshot")
             }
             if (customChromeTabAvailable) {
                 capabilities += CommandCapability.CUSTOM_TAB
-                commandNames += setOf(
-                    "chrometab.issupported",
-                    "chrometab.open",
-                    "chrometab.bind",
-                    "chrometab.create",
-                    "chrometab.maylaunchurl",
-                    "chrometab.requestpostmessagechannel",
-                    "chrometab.postmessage",
-                    "chrometab.validaterelationship",
-                    "chrometab.close",
-                )
             }
             if (shizukuAvailable) {
                 capabilities += CommandCapability.SHIZUKU
-                commandNames += setOf(
-                    "shizuku.isinstalled",
-                    "shizuku.isavailable",
-                    "shizuku.getuid",
-                    "shizuku.permissionstate",
-                    "shizuku.requestpermission",
-                    "shizuku.binduserservice",
-                    "shizuku.unbinduserservice",
-                    "shizuku.systemservice",
-                    "shizuku.call",
-                    "shizuku.exec",
-                    "shizuku.shell",
-                )
             }
             if (termuxAvailable) {
                 capabilities += CommandCapability.TERMUX
-                commandNames += setOf(
-                    "termux.isinstalled",
-                    "termux.canruncommands",
-                    "termux.writestdin",
-                    "termux.cancel",
-                    "termux.get",
-                    "termux.run",
-                    "termux.shell",
-                    "termux.api",
-                )
             }
             if (taskerAvailable) {
                 capabilities += CommandCapability.TASKER
-                commandNames += setOf(
-                    "tasker.isinstalled",
-                    "tasker.isenabled",
-                    "tasker.action",
-                    "tasker.runtask",
-                    "tasker.lastresult",
-                    "tasker.error",
-                )
             }
             if (usbAdbBridgeAvailable) {
                 capabilities += CommandCapability.SCRCPY
-                commandNames += setOf(
-                    "scrcpy.hostavailable",
-                    "scrcpy.devices",
-                    "scrcpy.connect",
-                    "scrcpy.disconnect",
-                    "scrcpy.isrunning",
-                    "scrcpy.get",
-                    "scrcpy.key",
-                    "scrcpy.text",
-                    "scrcpy.scroll",
-                    "scrcpy.setclipboard",
-                    "scrcpy.setscreenpower",
-                    "scrcpy.rotate",
-                    "scrcpy.start",
-                    "scrcpy.stop",
-                    "scrcpy.touch",
-                )
             }
             return RuntimeCapabilityGate(
                 realRunCapabilities = capabilities,
-                realRunCommandNames = commandNames,
             )
         }
     }
 }
 
 internal fun CommandCatalogEntry.isBasicRuntimeReady(
-    realRunCommandNames: Set<String> = RuntimeCapabilityGate.BasicRealRunCommandNames,
     realRunCapabilities: Set<CommandCapability> = RuntimeCapabilityGate.BasicRealRunCapabilities,
 ): Boolean =
-    canonicalName.lowercase() in realRunCommandNames &&
-        runtime?.liveCapabilityGate in realRunCapabilities
+    toCapabilityDescriptor().isLiveReady(realRunCapabilities)
+
+private fun CommandCapabilityDescriptor.isLiveReady(
+    realRunCapabilities: Set<CommandCapability>,
+): Boolean =
+    liveImplemented &&
+        requiredAdapter != null &&
+        requiredAdapter in realRunCapabilities
 
 data class RuntimeCapabilityReport(
     val capabilities: List<RuntimeCapability>,

@@ -137,7 +137,7 @@ class RuntimeCapabilityGateTest {
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.runTask"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.lastResult"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.error"])
-        assertEquals(RuntimeCapabilityStatus.BLOCKED, states["Tasker.getVariable"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.getVariable"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Scrcpy.hostAvailable"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Scrcpy.connect"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Scrcpy.touch"])

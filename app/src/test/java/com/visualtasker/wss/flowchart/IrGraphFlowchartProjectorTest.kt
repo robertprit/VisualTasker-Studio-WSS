@@ -1,5 +1,7 @@
 package com.visualtasker.wss.flowchart
 
+import com.visualtasker.wss.emscript.editor.EditorDefaults
+import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import de.visualtasker.blockeditor.domain.BlockId
 import de.visualtasker.blockeditor.domain.ConnectionId
 import de.visualtasker.blockeditor.domain.FieldValue
@@ -20,6 +22,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IrGraphFlowchartProjectorTest {
+    @Test
+    fun `command catalog breadth test script projects a populated workflow graph`() {
+        val document = EmscriptWorkspaceImporter()
+            .import(EditorDefaults.commandCatalogBreadthTestScript, workspaceId = "workflow-main")
+            .document
+            ?: error("Breadth test script must import into a workspace document")
+        val graph = IrGraphFlowchartProjector.project(IrGraphGenerator().generate(document)).graph
+        val visibleNodes = graph.nodes.filterNot {
+            it.properties["visualFacet"] == FlowSemanticValue.BooleanValue(true) &&
+                it.properties["syntheticJoin"] != FlowSemanticValue.BooleanValue(true)
+        }
+
+        assertTrue("Expected many projected nodes, got ${visibleNodes.size}", visibleNodes.size > 20)
+        assertTrue(visibleNodes.any { it.kind.standard == FlowNodeKind.ENTRY })
+        assertTrue(visibleNodes.any { it.kind.standard == FlowNodeKind.ACTION })
+        assertTrue(visibleNodes.any { it.kind.standard == FlowNodeKind.DECISION })
+        assertTrue(visibleNodes.any { it.kind.standard == FlowNodeKind.EXIT })
+    }
+
     @Test
     fun `ir projection exposes editor ports field properties scopes branches and source mapping`() {
         val workspace = buildWorkspace()

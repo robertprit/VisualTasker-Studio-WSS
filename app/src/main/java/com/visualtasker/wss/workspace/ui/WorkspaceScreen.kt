@@ -429,6 +429,7 @@ private const val FLOWCHART_VIEW_ORIENTATION_PREF_KEY = "flowchart_view_orientat
 private const val FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY = "flowchart_reporter_nodes_visible"
 private const val FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY = "flowchart_variable_nodes_visible"
 private const val FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY = "flowchart_operator_nodes_visible"
+private const val FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY = "flowchart_semantic_visibility_migration_v1"
 private const val CHROME_TAB_SHOW_TITLE_PREF_KEY = "chrometab_show_title"
 private const val CHROME_TAB_SHARE_ENABLED_PREF_KEY = "chrometab_share_enabled"
 private const val CHROME_TAB_DOWNLOAD_MENU_PREF_KEY = "chrometab_download_menu"
@@ -865,6 +866,17 @@ fun WorkspaceScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val uiPrefs = remember(context) { context.getSharedPreferences("panel_ui_options", Context.MODE_PRIVATE) }
+    remember(uiPrefs) {
+        if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
+            uiPrefs.edit()
+                .putBoolean(FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY, false)
+                .putBoolean(FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY, false)
+                .putBoolean(FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY, false)
+                .putBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, true)
+                .apply()
+        }
+        Unit
+    }
     val sessionStore = remember(context) { WorkspaceSessionStore(context) }
     val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }
     DisposableEffect(toneGenerator) {
@@ -969,13 +981,13 @@ fun WorkspaceScreen(
         )
     }
     var flowchartReporterNodesVisible by remember {
-        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY, true))
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_REPORTER_NODES_VISIBLE_PREF_KEY, false))
     }
     var flowchartVariableNodesVisible by remember {
-        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY, true))
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_VARIABLE_NODES_VISIBLE_PREF_KEY, false))
     }
     var flowchartOperatorNodesVisible by remember {
-        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY, true))
+        mutableStateOf(uiPrefs.getBoolean(FLOWCHART_OPERATOR_NODES_VISIBLE_PREF_KEY, false))
     }
     var chromeTabSettings by remember {
         mutableStateOf(

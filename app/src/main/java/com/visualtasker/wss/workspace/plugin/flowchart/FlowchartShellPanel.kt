@@ -174,6 +174,9 @@ fun FlowchartShellPanel(
     var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
     var miniMapOffset by remember(session.sessionId) { mutableStateOf(Offset.Zero) }
     var previousViewOrientation by remember(session.sessionId) { mutableStateOf(viewOrientation) }
+    var lastCenteredExternalFocus by remember(session.sessionId) { mutableStateOf(FlowchartSelectionEcho(null, null)) }
+    var externalFocusInitialized by remember(session.sessionId) { mutableStateOf(false) }
+    var runtimeFocusInitialized by remember(session.sessionId) { mutableStateOf(false) }
     var renderViewDocument by remember(session.sessionId) {
         mutableStateOf(session.viewDocument ?: controller.snapshot().view)
     }
@@ -239,8 +242,29 @@ fun FlowchartShellPanel(
 
     fun centerViewport() {
         val current = visibleViewDocument ?: baseViewDocument() ?: return
-        val viewport = fitFlowchartViewport(current, panelSize)
+        val viewport = fitFlowchartViewport(current, visibleGraphDocument, panelSize, visibleGraphDocument.entryNodeId)
         applyViewport(viewport)
+    }
+    fun replaceMissingVisibleLayout() {
+        if (visibleGraphDocument.nodes.isEmpty()) return
+        if (panelSize.width <= 0 || panelSize.height <= 0) return
+        val current = baseViewDocument()
+        val matchingVisibleNodes = current?.nodeViews.orEmpty().count { it.nodeId in visibleNodeIds }
+        val hasEnoughVisibleNodes = matchingVisibleNodes > 0 &&
+            (visibleGraphDocument.nodes.size <= 2 || matchingVisibleNodes > 1)
+        if (hasEnoughVisibleNodes) {
+            val visibleView = visibleViewDocument ?: current ?: return
+            if (visibleView.visibleNodeCountInViewport(panelSize) <= 1 && visibleView.nodeViews.size > 1) {
+                applyViewport(fitFlowchartViewport(visibleView, visibleGraphDocument, panelSize, visibleGraphDocument.entryNodeId))
+            }
+            return
+        }
+        controller.replaceLayout(arrangeMode.layoutConfig(viewOrientation))?.let { layoutView ->
+            renderViewDocument = layoutView
+            session.onViewDocumentChanged(layoutView)
+            onViewChanged?.invoke(layoutView)
+            applyViewport(fitFlowchartViewport(layoutView, visibleGraphDocument, panelSize, visibleGraphDocument.entryNodeId))
+        }
     }
     fun centerFocusedElement(zoomOverride: Double? = null) {
         val base = baseViewDocument() ?: return
@@ -428,6 +452,15 @@ fun FlowchartShellPanel(
     LaunchedEffect(session.viewDocument, session.graphDocument.documentRevision) {
         renderViewDocument = session.viewDocument ?: controller.snapshot().view
     }
+    LaunchedEffect(
+        visibleGraphDocument.documentRevision,
+        visibleGraphDocument.nodes.size,
+        visibleNodeIds,
+        renderViewDocument?.nodeViews?.map { it.nodeId },
+        panelSize,
+    ) {
+        replaceMissingVisibleLayout()
+    }
     LaunchedEffect(viewOrientation) {
         if (previousViewOrientation == viewOrientation) return@LaunchedEffect
         previousViewOrientation = viewOrientation
@@ -441,6 +474,10 @@ fun FlowchartShellPanel(
         val activeNodeId = runtimeSnapshot?.activeNodeId ?: return@LaunchedEffect
         selectedNodeId = activeNodeId
         selectedEdgeId = null
+        if (!runtimeFocusInitialized) {
+            runtimeFocusInitialized = true
+            return@LaunchedEffect
+        }
         centerFocusedElement()
     }
     LaunchedEffect(focusedNodeId, focusedEdgeId, panelSize) {
@@ -451,7 +488,25 @@ fun FlowchartShellPanel(
         }
         selectedNodeId = focusedNodeId
         selectedEdgeId = focusedEdgeId
-        if (focusedNodeId != null || focusedEdgeId != null) centerFocusedElement()
+        when {
+            focusedNodeId != null -> controller.dispatch(FlowInteractionAction.SelectNode(focusedNodeId))
+            focusedEdgeId != null -> controller.dispatch(FlowInteractionAction.SelectEdge(focusedEdgeId))
+        }
+        if (!externalFocusInitialized) {
+            externalFocusInitialized = true
+            lastCenteredExternalFocus = focus
+            return@LaunchedEffect
+        }
+        if (
+            focusedNodeId != null &&
+            lastCenteredExternalFocus != focus &&
+            controller.snapshot().interaction.dragState == null &&
+            draggedNodeId == null &&
+            pendingConnectionStart == null
+        ) {
+            lastCenteredExternalFocus = focus
+            centerFocusedElement()
+        }
     }
 
     Box(
@@ -805,13 +860,21 @@ private data class FlowchartSelectionEcho(
 
 private fun fitFlowchartViewport(
     view: FlowViewDocument,
+    graph: FlowGraphDocument,
     panelSize: IntSize,
+    anchorNodeId: FlowNodeId? = null,
 ): FlowViewport {
     if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
-    val minX = view.nodeViews.minOf { it.position.x }
-    val minY = view.nodeViews.minOf { it.position.y }
-    val maxX = view.nodeViews.maxOf { it.position.x + (it.size ?: FlowNodeViewDefaults.StandardSize).width }
-    val maxY = view.nodeViews.maxOf { it.position.y + (it.size ?: FlowNodeViewDefaults.StandardSize).height }
+    val fitNodeIds = graph.nodes
+        .filterNot { it.isViewportBackgroundFacet() }
+        .mapTo(mutableSetOf()) { it.id }
+    val fitNodes = view.nodeViews
+        .filter { it.nodeId in fitNodeIds }
+        .ifEmpty { view.nodeViews }
+    val minX = fitNodes.minOf { it.position.x }
+    val minY = fitNodes.minOf { it.position.y }
+    val maxX = fitNodes.maxOf { it.position.x + (it.size ?: FlowNodeViewDefaults.StandardSize).width }
+    val maxY = fitNodes.maxOf { it.position.y + (it.size ?: FlowNodeViewDefaults.StandardSize).height }
     val contentWidth = (maxX - minX).coerceAtLeast(1.0)
     val contentHeight = (maxY - minY).coerceAtLeast(1.0)
     val horizontalPadding = 72.0
@@ -819,12 +882,51 @@ private fun fitFlowchartViewport(
     val bottomPadding = 156.0
     val availableWidth = (panelSize.width - horizontalPadding * 2.0).coerceAtLeast(120.0)
     val availableHeight = (panelSize.height - topPadding - bottomPadding).coerceAtLeast(120.0)
-    val zoom = minOf(1.8, maxOf(0.18, minOf(availableWidth / contentWidth, availableHeight / contentHeight)))
+    val zoom = minOf(1.8, maxOf(0.34, minOf(availableWidth / contentWidth, availableHeight / contentHeight)))
+    val anchorNode = anchorNodeId?.let { nodeId -> fitNodes.firstOrNull { it.nodeId == nodeId } }
+    if (anchorNode != null && view.nodeViews.size > 1) {
+        return FlowViewport(
+            pan = FlowPoint(
+                x = horizontalPadding - anchorNode.position.x * zoom,
+                y = topPadding - anchorNode.position.y * zoom,
+            ),
+            zoom = zoom,
+        )
+    }
+    val scaledWidth = contentWidth * zoom
+    val scaledHeight = contentHeight * zoom
     val pan = FlowPoint(
-        x = horizontalPadding + (availableWidth - contentWidth * zoom) / 2.0 - minX * zoom,
-        y = topPadding + (availableHeight - contentHeight * zoom) / 2.0 - minY * zoom,
+        x = if (scaledWidth <= availableWidth) {
+            horizontalPadding + (availableWidth - scaledWidth) / 2.0 - minX * zoom
+        } else {
+            horizontalPadding - minX * zoom
+        },
+        y = if (scaledHeight <= availableHeight) {
+            topPadding + (availableHeight - scaledHeight) / 2.0 - minY * zoom
+        } else {
+            topPadding - minY * zoom
+        },
     )
     return FlowViewport(pan = pan, zoom = zoom)
+}
+
+private fun FlowViewDocument.visibleNodeCountInViewport(panelSize: IntSize): Int {
+    if (panelSize.width <= 0 || panelSize.height <= 0 || viewport.zoom <= 0.0) return nodeViews.size
+    val visibleLeft = -viewport.pan.x / viewport.zoom
+    val visibleTop = -viewport.pan.y / viewport.zoom
+    val visibleRight = (panelSize.width - viewport.pan.x) / viewport.zoom
+    val visibleBottom = (panelSize.height - viewport.pan.y) / viewport.zoom
+    return nodeViews.count { node ->
+        val size = node.size ?: FlowNodeViewDefaults.StandardSize
+        val nodeLeft = node.position.x
+        val nodeTop = node.position.y
+        val nodeRight = nodeLeft + size.width
+        val nodeBottom = nodeTop + size.height
+        nodeRight >= visibleLeft &&
+            nodeLeft <= visibleRight &&
+            nodeBottom >= visibleTop &&
+            nodeTop <= visibleBottom
+    }
 }
 
 private fun FlowViewDocument.centeredOn(
@@ -843,7 +945,7 @@ private fun FlowViewDocument.centeredOn(
 }
 
 private fun de.visualtasker.flowchart.domain.FlowNodeView.centerPoint(): FlowPoint {
-    val size = size ?: FlowSize(128.0, 56.0)
+    val size = size ?: FlowNodeViewDefaults.StandardSize
     return FlowPoint(position.x + size.width / 2.0, position.y + size.height / 2.0)
 }
 
@@ -1727,67 +1829,24 @@ private fun categoryOrder(category: String): Int =
     BlockCategories.all.indexOfFirst { it.id == category }.takeIf { it >= 0 } ?: Int.MAX_VALUE
 
 private fun flowchartPaletteShapeId(blockType: String, category: String): Int =
-    when {
-        blockType.startsWith("event.") -> 1
-        blockType.startsWith("control.if") -> 4
-        blockType == BlockTypes.CONTROL_REPEAT -> 15
-        blockType == BlockTypes.CONTROL_WHILE -> 16
-        blockType == BlockTypes.LOGIC_COMPARE -> 5
-        blockType == BlockTypes.VARIABLE_GET || blockType == BlockTypes.VARIABLE_SET -> 17
-        blockType == BlockTypes.LOGIC_OPERATE -> 18
-        blockType == BlockTypes.LOGIC_AND || blockType == BlockTypes.LOGIC_OR -> 19
-        blockType.startsWith("feedback.") -> 20
-        category == BlockCategories.DEBUG -> 21
-        category == BlockCategories.VISION || category == BlockCategories.PERCEPTION -> 13
-        category == BlockCategories.CHROME_TAB -> 12
-        category == BlockCategories.TASKER -> 11
-        category == BlockCategories.TERMUX || category == BlockCategories.SHIZUKU || category == BlockCategories.SCRCPY -> 10
-        else -> 2
-    }
+    flowchartPaletteShape(blockType, category).paletteId
 
 private fun flowchartMaterialNodePath(
     node: FlowGraphNode,
     width: Float,
     height: Float,
 ): Path {
-    val blockType = (node.properties["blockType"] as? FlowSemanticValue.StringValue)?.value.orEmpty()
-    val category = DefaultBlockRegistry.allDefinitions().firstOrNull { it.id == blockType }?.category
-    val shapeId = if (category != null) {
-        flowchartPaletteShapeId(blockType, category)
-    } else {
-        flowchartFallbackShapeId(blockType, node)
-    }
-    return flowchartLegendShapePath(shapeId, width, height)
+    return flowchartNodeShapePath(flowchartNodeShape(node), width, height)
 }
 
-private fun flowchartFallbackShapeId(blockType: String, node: FlowGraphNode): Int =
-    when {
-        node.kind.standard in setOf(FlowNodeKind.ENTRY, FlowNodeKind.EXIT) &&
-            (node.properties[FlowLifecycleSemantics.EXECUTION_KIND_PROPERTY] as? FlowSemanticValue.StringValue)?.value == FlowExecutionKind.RECORDING.wireValue -> 20
-        node.kind.standard in setOf(FlowNodeKind.ENTRY, FlowNodeKind.EXIT) &&
-            (node.properties[FlowLifecycleSemantics.EXECUTION_KIND_PROPERTY] as? FlowSemanticValue.StringValue)?.value == FlowExecutionKind.DRY_RUN.wireValue -> 19
-        blockType.startsWith("event.") -> 1
-        blockType.startsWith("action.") || blockType.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX) -> 8
-        blockType.startsWith("control.if") -> 4
-        blockType.startsWith("logic.compare") -> 5
-        blockType.startsWith("variable.") || blockType.startsWith("variables.") -> 6
-        blockType.startsWith("logic.") -> 7
-        blockType.startsWith("control.") -> 9
-        blockType.startsWith("feedback.") -> 8
-        blockType.startsWith("vision.") || blockType.startsWith("perception.") -> 13
-        blockType.startsWith("chromeTab.") -> 12
-        blockType.startsWith("tasker.") -> 11
-        blockType.startsWith("termux.") || blockType.startsWith("shizuku.") || blockType.startsWith("scrcpy.") -> 10
-        node.kind.standard == FlowNodeKind.ENTRY || node.kind.standard == FlowNodeKind.EXIT -> 1
-        node.kind.standard == FlowNodeKind.DECISION -> 4
-        node.kind.standard == FlowNodeKind.LOOP_START || node.kind.standard == FlowNodeKind.LOOP_END -> 15
-        node.kind.standard == FlowNodeKind.ASSIGNMENT || node.kind.standard == FlowNodeKind.PROPERTY_ACCESS -> 17
-        node.kind.standard == FlowNodeKind.INPUT || node.kind.standard == FlowNodeKind.OUTPUT -> 5
-        node.kind.standard == FlowNodeKind.ACTION -> 8
-        else -> 2
-    }
-
 private fun flowchartLegendShapePath(
+    shapeId: Int,
+    width: Float,
+    height: Float,
+): Path = flowchartNodeShapePath(FlowchartNodeShape.fromPaletteId(shapeId), width, height)
+
+@Suppress("unused")
+private fun legacyFlowchartLegendShapePath(
     shapeId: Int,
     width: Float,
     height: Float,
@@ -2019,6 +2078,10 @@ private fun FlowGraphNode.isReporterNode(): Boolean {
         blockType.startsWith("literal.") ||
         blockType.startsWith("input.")
 }
+
+private fun FlowGraphNode.isViewportBackgroundFacet(): Boolean =
+    properties["visualFacet"] == FlowSemanticValue.BooleanValue(true) &&
+        properties["syntheticJoin"] != FlowSemanticValue.BooleanValue(true)
 
 private fun FlowGraphNode.isVariableNode(): Boolean {
     val blockType = properties.textFor("blockType").orEmpty().lowercase()
