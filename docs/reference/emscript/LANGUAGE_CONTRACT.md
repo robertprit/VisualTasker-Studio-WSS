@@ -10,25 +10,84 @@
 
 EMScript ist eine Projektion derselben Workflow-Semantik, die auch Blockeditor und Flowchart darstellen. Parser-Syntax, Blocktypen, Flow-Nodes, Runtime-Instruktionen und Provider-Aufrufe dürfen deshalb keine konkurrierenden Wahrheiten bilden.
 
-## Hybrid-Syntax
+## Kanonische WSS-Syntax
 
-Der alte Vertrag unterscheidet zwei Ebenen:
+WSS verwendet EMScript als lesbare Script-Projektion des kanonischen
+WorkflowDocuments. Generatoren emittieren nur die folgende kanonische Form:
 
-1. line-orientierte Kernsyntax für Kontrollfluss, Variablen, Waits, Funktionen und Fehlerbehandlung;
-2. typisierte Capability Calls für erweiterbare Funktionen.
+- Commands sind Funktionsaufrufe: `wait(500)`, `click("OK")`, `beep(1000,200,100)`, `vibrate(80)`.
+- Erweiterte Provider-/Plugin-Commands verwenden Namespace und Member:
+  `Clipboard.set("value")`, `Tasker.runTask("Name")`, `ChromeTab.open("https://example.org")`.
+- Variablen werden mit `LET name = expr` deklariert und mit `SET name = expr` veraendert.
+- Reporter/Expressions werden in Slots eingebettet und koennen Literale,
+  Variablen, Funktionsaufrufe, Compare- und Operator-Ausdruecke enthalten.
+- Kommentare sind `// ...` oder klassische `REM ...`-Zeilen.
+- REM-FlowNodes sind keine Kommentare, sondern Namespace-Commands wie
+  `rem.region("main","facet","auto")` und `rem.flowBreak("continued","right")`.
 
 Beispiel:
 
 ```emscript
-Browser.open(url="https://example.org", target=BrowserTarget.SYSTEM)
-SET tab = Browser.openCustomTab(url="https://example.org")
+LET retry = 0
+SET retry = retry + 1
+wait(500)
+Clipboard.set("visualtasker")
+IF retry > 0
+    log("running")
+ELSE
+    vibrate(40)
+END IF
 ```
 
-Capability Calls werden über registrierte Descriptoren aufgelöst. Sie sind weder Reflection noch frei erfundener Object Dispatch.
+Capability Calls werden ueber registrierte Descriptoren aufgeloest. Sie sind
+weder Reflection noch frei erfundener Object Dispatch.
+
+## Kontrollfluss
+
+Kanonische Control-Blöcke bleiben line-orientiert und verwenden schliessende
+Keywords, damit TextEditor, BlockEditor und FlowEditor denselben Scope eindeutig
+rekonstruieren koennen:
+
+```emscript
+repeat (3) {
+    wait(100)
+}
+
+while (retry < 3) {
+    SET retry = retry + 1
+}
+
+IF score > 10
+    log("high")
+ELSE IF score > 5
+    log("medium")
+ELSE
+    log("low")
+END IF
+```
+
+Der Parser darf akzeptierte Schreibweisen normalisieren. Der Generator soll
+konsequent die kanonische Schreibweise ausgeben.
+
+## Argumente Und Typen
+
+Argumente werden positionsbasiert oder, sobald ein Command dies ausdruecklich
+unterstuetzt, benannt uebergeben. Der CommandCatalog ist die Quelle fuer
+Argumentnamen, Defaults, Pflichtfelder, Typen und Capability-Bedarf.
+
+Aktuelle Grundtypen:
+
+- `TEXT` / String-Literal: `"Login"`.
+- `NUMBER`: `1`, `3.14`.
+- `BOOLEAN`: `true`, `false`, Compare-Ausdruck oder Bool-Reporter.
+- `DURATION_MS`: numerische Millisekunden.
+- `PERCENT`: normalisierte Zahl oder Prozentwert nach Command-Vertrag.
+- `REGION`: Region-/Marker-Ausdruck, z.B. `region(10,20,240,160)`.
+- `ANY`: strukturierter Platzhalter fuer noch nicht final typisierte Werte.
 
 ## Stabile Grundregeln aus v0.1
 
-- `SET` war kanonisch; `LET` wurde als Legacy-Alias akzeptiert.
+- `LET` deklariert, `SET` veraendert. Beide sind heute kanonische WSS-Keywords.
 - Generatoren sollten nur kanonische Syntax emittieren.
 - Parser dürfen dokumentierte Legacy-Formen normalisieren.
 - unbekannte, doppelte oder fehlende Argumente müssen deterministisch diagnostiziert werden.
@@ -51,11 +110,13 @@ Legacy-Syntax darf akzeptiert und normalisiert werden, ohne dass sie neue kanoni
 
 ## Offene Prüfpunkte vor einer neuen normativen EMScript-Version
 
-Diese alte Referenz legt nicht fest, was im heutigen WSS bereits implementiert ist. Vor einer normativen WSS-Version müssen insbesondere gegen Code und Tests geprüft werden:
+Diese Referenz beschreibt den aktuellen WSS-Stand, ist aber noch kein
+vollstaendiger Stable-V1-Sprachstandard. Vor einer normativen WSS-Version
+muessen insbesondere gegen Code und Tests geprueft werden:
 
-- aktueller Typvertrag (`String`, `Number`, `Bool`, `Any` usw.);
-- `LET`/`SET`-Semantik im aktuellen Parser/Generator;
-- Funktionen, Loops und TRY/CATCH;
+- vollstaendiger Typvertrag (`String`, `Number`, `Bool`, `Any`, `Region`,
+  `Image`, `Path`, `Scene`, `DatasetRef` usw.);
+- Try/Catch- und Fehlergrenzen;
 - strukturierte Werte;
 - Await/Event-Semantik;
 - Browser-, Tasker-, Shizuku-, Termux- und weitere Capabilities;

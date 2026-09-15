@@ -101,7 +101,7 @@ ist technisch nah, visuell aber noch nicht final abgenommen.
 
 ### M3: EMScript Stabilisieren
 
-- [ ] Kanonische Syntax vollstaendig dokumentieren.
+- [x] Kanonische Syntax vollstaendig dokumentieren.
 - [ ] Parser aus Demo-Subset herausziehen.
 - [ ] Generator fuer alle vorhandenen Grundbefehle vervollstaendigen.
 - [x] Ersten `CommandCapabilityDescriptor` als gemeinsame Ableitung aus dem CommandCatalog fuer RuntimeGate, Adapterbedarf und Live-Implementierungsstatus einfuehren.
