@@ -570,6 +570,39 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun importedWorkspaceCarriesSourceLinesIntoIrAndFlowchart() {
+        val source = """
+            LET value = 1
+            wait(50)
+            IF value > 0
+                log("then")
+            END IF
+        """.trimIndent()
+
+        val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "source-lines")
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val document = imported.document!!
+        val waitBlock = document.blocks.values.single { it.type == BlockTypes.ACTION_WAIT }
+        val ifBlock = document.blocks.values.single { it.type == BlockTypes.CONTROL_IF }
+        val logBlock = document.blocks.values.single { it.type == BlockTypes.DEBUG_LOG }
+
+        assertEquals("2", waitBlock.metadata["emscript.source.line"])
+        assertEquals("1", waitBlock.metadata["emscript.source.column"])
+        assertEquals("3", ifBlock.metadata["emscript.source.line"])
+        assertEquals("4", logBlock.metadata["emscript.source.line"])
+
+        val irGraph = IrGraphGenerator().generate(document)
+        val waitIrNode = irGraph.nodes.single { it.id.value == "block:${waitBlock.id.value}" }
+        assertEquals(2, waitIrNode.source.sourceLine)
+        assertEquals(1, waitIrNode.source.sourceColumn)
+
+        val flowchart = IrGraphFlowchartProjector.project(irGraph).graph
+        val waitFlowNode = flowchart.nodes.single { it.id.value == "block:${waitBlock.id.value}" }
+        assertEquals(2, waitFlowNode.sourceReference?.span?.startLine)
+        assertEquals(1, waitFlowNode.sourceReference?.span?.startColumn)
+    }
+
+    @Test
     fun nestedFlowStressScript_survivesParserWorkspaceIrFlowchartAndDryRun() {
         val source = EditorDefaults.nestedFlowStressTestScript
         val parsed = EmscriptParserSlice().parse(source)

@@ -40,7 +40,7 @@ class EmscriptWorkspaceImporter(
             issues = parsed.issues,
         )
         return runCatching {
-            val assembler = WorkspaceAssembler(workspaceId)
+            val assembler = WorkspaceAssembler(workspaceId, EmscriptSourceLineCursor(script))
             val document = assembler.build(ir, EmscriptEditorFacetScanner.scan(script))
             EmscriptImportResult(ir = ir, document = document, issues = emptyList())
         }.getOrElse { error ->
@@ -59,9 +59,50 @@ class EmscriptWorkspaceImporter(
     }
 }
 
-private class WorkspaceAssembler(workspaceId: String) {
+private data class EmscriptSourceLocation(
+    val line: Int,
+    val column: Int,
+)
+
+private class EmscriptSourceLineCursor(script: String) {
+    private val locations = script
+        .lineSequence()
+        .mapIndexedNotNull { index, rawLine ->
+            val trimmed = rawLine.trimStart()
+            val uppercase = trimmed.uppercase()
+            val isStatementLike = trimmed.isNotBlank() &&
+                !trimmed.startsWith("//") &&
+                !uppercase.startsWith("REM ") &&
+                uppercase != "REM" &&
+                uppercase != "ELSE" &&
+                !uppercase.startsWith("END ") &&
+                trimmed != "}" &&
+                trimmed != "{"
+            if (!isStatementLike) {
+                null
+            } else {
+                EmscriptSourceLocation(
+                    line = index + 1,
+                    column = rawLine.indexOf(trimmed).coerceAtLeast(0) + 1,
+                )
+            }
+        }
+        .toList()
+    private var index = 0
+
+    fun nextStatement(): EmscriptSourceLocation? =
+        locations.getOrNull(index).also {
+            if (it != null) index += 1
+        }
+}
+
+private class WorkspaceAssembler(
+    workspaceId: String,
+    private val sourceLines: EmscriptSourceLineCursor,
+) {
     private val registry = CompositeBlockRegistry()
     private var document = WorkspaceDocument(id = workspaceId)
+    private var currentSourceLocation: EmscriptSourceLocation? = null
 
     fun build(ir: EmscriptIrScript, facets: List<EmscriptGroupFacet> = emptyList()): WorkspaceDocument {
         val startBlock = instantiate(BlockTypes.EVENT_START)
@@ -109,7 +150,8 @@ private class WorkspaceAssembler(workspaceId: String) {
     }
 
     private fun emitStatement(statement: EmscriptIrStatement): BlockId {
-        return when (statement) {
+        return withSourceLocation(sourceLines.nextStatement()) {
+            when (statement) {
             is EmscriptIrStatement.Let -> {
                 ensureVariable(
                     variableId = statement.variable,
@@ -211,6 +253,17 @@ private class WorkspaceAssembler(workspaceId: String) {
                 }
                 ifBlock
             }
+        }
+        }
+    }
+
+    private fun <T> withSourceLocation(location: EmscriptSourceLocation?, block: () -> T): T {
+        val previous = currentSourceLocation
+        currentSourceLocation = location
+        return try {
+            block()
+        } finally {
+            currentSourceLocation = previous
         }
     }
 
@@ -557,7 +610,21 @@ private class WorkspaceAssembler(workspaceId: String) {
         val before = document.blocks.keys
         apply(WorkspaceAction.InstantiateBlock(definitionId = definitionId, x = 64f, y = 64f))
         val created = document.blocks.keys - before
-        return created.firstOrNull() ?: error("Block $definitionId konnte nicht instanziert werden.")
+        val blockId = created.firstOrNull() ?: error("Block $definitionId konnte nicht instanziert werden.")
+        annotateSource(blockId)
+        return blockId
+    }
+
+    private fun annotateSource(blockId: BlockId) {
+        val location = currentSourceLocation ?: return
+        val block = document.blocks[blockId] ?: return
+        document = document.copy(
+            blocks = document.blocks + (blockId to block.copy(
+                metadata = block.metadata +
+                    ("emscript.source.line" to location.line.toString()) +
+                    ("emscript.source.column" to location.column.toString()),
+            )),
+        )
     }
 
     private fun BlockId.withElseIfBranches(elseIfCount: Int): BlockId {
