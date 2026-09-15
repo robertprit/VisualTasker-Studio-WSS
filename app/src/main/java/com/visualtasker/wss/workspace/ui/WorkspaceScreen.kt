@@ -369,6 +369,8 @@ import de.visualtasker.blockeditor.domain.BlockId
 import de.visualtasker.blockeditor.registry.BlockDefinition
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.CommandCapability
+import de.visualtasker.blockeditor.registry.CommandCapabilityDescriptor
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
@@ -11947,6 +11949,25 @@ private fun PluginSettingsTab() {
     val termux = TermuxRegistration.inspect(context)
     val tasker = TaskerRegistration.inspect(context)
     val usb = Vt2VtUsbAdbBridge.detect(context)
+    val descriptors = remember { VisualTaskerCommandCatalog.runtimeCapabilityDescriptors() }
+    val availableCapabilities = remember(chromeTab, shizuku, termux, tasker, usb) {
+        buildSet {
+            add(CommandCapability.CORE)
+            add(CommandCapability.TIMING)
+            add(CommandCapability.FEEDBACK)
+            add(CommandCapability.DEBUG)
+            add(CommandCapability.VISION)
+            if (isAccessibilityEnabledForApp(context)) {
+                add(CommandCapability.A11Y)
+                add(CommandCapability.SCREEN_CAPTURE)
+            }
+            if (chromeTab.supported) add(CommandCapability.CUSTOM_TAB)
+            if (shizuku.available) add(CommandCapability.SHIZUKU)
+            if (termux.canRunCommands) add(CommandCapability.TERMUX)
+            if (tasker.available) add(CommandCapability.TASKER)
+            if (usb.bridgeReady) add(CommandCapability.SCRCPY)
+        }
+    }
     LaunchedEffect(context) {
         while (isActive) {
             shizuku = ShizukuRegistration.inspect(context)
@@ -11974,8 +11995,76 @@ private fun PluginSettingsTab() {
             context.safeStartActivity(TaskerRegistration.settingsIntent(tasker))
         }
         PluginStatusRow("scrcpy/VT2VT USB", usb.bridgeReady, usb.summary) {}
+        CapabilityDescriptorSummarySection(
+            descriptors = descriptors,
+            availableCapabilities = availableCapabilities,
+        )
         HorizontalDivider()
         ExtrasPermissionsContent()
+    }
+}
+
+@Composable
+private fun CapabilityDescriptorSummarySection(
+    descriptors: List<CommandCapabilityDescriptor>,
+    availableCapabilities: Set<CommandCapability>,
+) {
+    val runtimeDescriptors = descriptors.filter { it.requiredAdapter != null }
+    val liveReady = runtimeDescriptors.count { it.liveImplemented && it.requiredAdapter in availableCapabilities }
+    val notImplemented = runtimeDescriptors.count { !it.liveImplemented }
+    val blocked = (runtimeDescriptors.size - liveReady - notImplemented).coerceAtLeast(0)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Command Capabilities", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "$liveReady live-ready, $blocked adapter-blockiert, $notImplemented noch ohne Live-Pfad",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            runtimeDescriptors
+                .groupBy { it.requiredAdapter ?: CommandCapability.CORE }
+                .toSortedMap(compareBy { it.name })
+                .forEach { (capability, entries) ->
+                    val readyCount = entries.count { it.liveImplemented && capability in availableCapabilities }
+                    val missingImplementationCount = entries.count { !it.liveImplemented }
+                    CapabilityDescriptorRow(
+                        label = capability.name,
+                        detail = "${entries.size} Befehle | $readyCount live | $missingImplementationCount geplant",
+                        ready = entries.isNotEmpty() && readyCount == entries.count { it.liveImplemented },
+                    )
+                }
+        }
+    }
+}
+
+@Composable
+private fun CapabilityDescriptorRow(
+    label: String,
+    detail: String,
+    ready: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            Text(detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(if (ready) Color(0xFF4CAF50) else Color(0xFFFFC857), CircleShape),
+        )
     }
 }
 
