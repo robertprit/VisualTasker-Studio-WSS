@@ -27,6 +27,7 @@ class RuntimeCapabilityGate(
                 command = canonicalName,
                 status = RuntimeCapabilityStatus.REAL_RUN_READY,
                 details = "Live-Adapter lokal verfügbar.",
+                diagnosticCode = null,
             )
         }
         if (descriptor.dryRunBehavior == "adapter-gated") {
@@ -38,6 +39,7 @@ class RuntimeCapabilityGate(
                 } else {
                     "Real-Run benötigt den Adapter ${pluginOwner}."
                 },
+                diagnosticCode = descriptor.diagnosticCode,
             )
         }
         return when (gate) {
@@ -49,25 +51,30 @@ class RuntimeCapabilityGate(
                 command = canonicalName,
                 status = RuntimeCapabilityStatus.REAL_RUN_READY,
                 details = "Basic-Run lokal ausführbar.",
+                diagnosticCode = null,
             ) else RuntimeCapability(
                 command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
+                diagnosticCode = descriptor.diagnosticCode,
             )
             CommandCapability.A11Y -> RuntimeCapability(
                 command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Real-Run benötigt Accessibility/Shizuku-Ausführungsadapter und Capability-Freigabe.",
+                diagnosticCode = descriptor.diagnosticCode,
             )
             null -> RuntimeCapability(
                 command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Kein Runtime-Adapter registriert.",
+                diagnosticCode = descriptor.diagnosticCode,
             )
             else -> RuntimeCapability(
                 command = canonicalName,
                 status = RuntimeCapabilityStatus.BLOCKED,
                 details = "Capability ${gate.name} ist im Live-Runtime-Gate noch blockiert.",
+                diagnosticCode = descriptor.diagnosticCode,
             )
         }
     }
@@ -161,6 +168,7 @@ data class RuntimeCapability(
     val command: String,
     val status: RuntimeCapabilityStatus,
     val details: String,
+    val diagnosticCode: String? = null,
 )
 
 enum class RuntimeCapabilityStatus {

@@ -119,7 +119,8 @@ class WorkspaceDryRunRuntimeTest {
             it.blockId != null &&
                 it.kind == "capability" &&
                 it.command == "Termux.shell" &&
-                it.pluginOwner == "visualtasker.termux"
+                it.pluginOwner == "visualtasker.termux" &&
+                it.diagnosticCode == "CAPABILITY_ADAPTER_REQUIRED"
         })
     }
 
@@ -164,5 +165,9 @@ class WorkspaceDryRunRuntimeTest {
             )
         })
         assertTrue(capabilityWarnings.any { it.command == "touch" })
+        assertTrue(capabilityWarnings.any {
+            it.command == "touch" &&
+                it.diagnosticCode == "CAPABILITY_ADAPTER_REQUIRED"
+        })
     }
 }

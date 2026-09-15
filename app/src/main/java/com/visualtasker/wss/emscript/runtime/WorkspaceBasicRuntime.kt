@@ -31,6 +31,7 @@ class WorkspaceBasicRuntime(
                                 EmscriptDryRunEventSeverity.WARNING
                             },
                             command = capability.command,
+                            diagnosticCode = capability.diagnosticCode,
                         )
                     },
             )

@@ -7,6 +7,7 @@ import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import de.visualtasker.blockeditor.registry.CommandCapability
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 
 data class EmscriptDryRunConfig(
     val maxSteps: Int = 2_000,
@@ -31,6 +32,7 @@ data class EmscriptDryRunEvent(
     val command: String? = null,
     val capability: String? = null,
     val pluginOwner: String? = null,
+    val diagnosticCode: String? = null,
 )
 
 sealed interface EmscriptDryRunResult {
@@ -244,6 +246,7 @@ private class Interpreter(
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(command)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
         val gate = entry?.runtime?.liveCapabilityGate
+        val descriptor = entry?.toCapabilityDescriptor()
         val basicReady = entry?.isBasicRuntimeReady() == true
         val adapterGated = !basicReady && entry?.runtime?.dryRunBehavior == "adapter-gated"
         val pluginOwner = entry?.pluginOwner
@@ -267,6 +270,11 @@ private class Interpreter(
             command = entry?.canonicalName ?: command,
             capability = gate?.name,
             pluginOwner = pluginOwner,
+            diagnosticCode = when {
+                entry == null -> "CAPABILITY_CATALOG_MISSING"
+                severity == EmscriptDryRunEventSeverity.WARNING -> descriptor?.diagnosticCode ?: "CAPABILITY_BLOCKED"
+                else -> null
+            },
         )
     }
 }

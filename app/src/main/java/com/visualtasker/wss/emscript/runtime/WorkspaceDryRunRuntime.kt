@@ -12,6 +12,7 @@ import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.domain.asString
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 import com.visualtasker.wss.emscript.parser.EmscriptBinaryOp
 import com.visualtasker.wss.emscript.parser.EmscriptIrExpression
 import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
@@ -329,6 +330,7 @@ private class WorkspaceInterpreter(
     private fun emitBlock(blockId: BlockId, kind: String, message: String) {
         val entry = document.blocks[blockId]?.let { block -> VisualTaskerCommandCatalog.findByBlockType(block.type) }
         val gate = entry?.runtime?.liveCapabilityGate
+        val descriptor = entry?.toCapabilityDescriptor()
         events += EmscriptDryRunEvent(
             index = events.size + 1,
             kind = kind,
@@ -337,6 +339,7 @@ private class WorkspaceInterpreter(
             command = entry?.canonicalName,
             capability = gate?.name,
             pluginOwner = entry?.pluginOwner,
+            diagnosticCode = descriptor?.diagnosticCode?.takeIf { kind == "capability" },
         )
     }
 
@@ -360,6 +363,7 @@ private class WorkspaceInterpreter(
             ?: VisualTaskerCommandCatalog.findByCanonicalName(command)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
         val gate = entry?.runtime?.liveCapabilityGate
+        val descriptor = entry?.toCapabilityDescriptor()
         val basicReady = entry?.isBasicRuntimeReady() == true
         val adapterGated = !basicReady && entry?.runtime?.dryRunBehavior == "adapter-gated"
         val severity = if (!basicReady && (adapterGated || gate.isRuntimeBlocked())) {
@@ -382,6 +386,11 @@ private class WorkspaceInterpreter(
             command = entry?.canonicalName ?: command,
             capability = gate?.name,
             pluginOwner = entry?.pluginOwner,
+            diagnosticCode = when {
+                entry == null -> "CAPABILITY_CATALOG_MISSING"
+                severity == EmscriptDryRunEventSeverity.WARNING -> descriptor?.diagnosticCode ?: "CAPABILITY_BLOCKED"
+                else -> null
+            },
         )
     }
 

@@ -78,7 +78,8 @@ class EmscriptDryRunRuntimeTest {
         assertTrue(result.events.any {
             it.kind == "capability" &&
                 it.command == "Termux.shell" &&
-                it.pluginOwner == "visualtasker.termux"
+                it.pluginOwner == "visualtasker.termux" &&
+                it.diagnosticCode == "CAPABILITY_ADAPTER_REQUIRED"
         })
     }
 }
