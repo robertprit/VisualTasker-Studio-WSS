@@ -2048,7 +2048,7 @@ fun WorkspaceScreen(
                 level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
                 source = source,
                 message = "Runtime-Diagnose ${diagnostic.code}",
-                details = diagnostic.message,
+                details = "${diagnostic.code}: ${diagnostic.message}",
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:dry-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}"
             )
@@ -2156,7 +2156,7 @@ fun WorkspaceScreen(
                     level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
                     source = source,
                     message = "Runtime-Diagnose ${diagnostic.code}",
-                    details = diagnostic.message,
+                    details = "${diagnostic.code}: ${diagnostic.message}",
                     documentRevision = workflowState.revision.toLong(),
                     groupKey = "workspace:basic-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}"
                 )
@@ -3999,7 +3999,8 @@ private fun WorkspacePanelContent(
                     .sortedBy { it.key.name }
                     .forEach { (status, count) -> add("Runtime $status: $count") }
                 capabilityReport.capabilities.take(10).forEach { capability ->
-                    add("${capability.command}: ${capability.status} - ${capability.details}")
+                    val diagnosticPrefix = capability.diagnosticCode?.let { "[$it] " }.orEmpty()
+                    add("${capability.command}: ${capability.status} - $diagnosticPrefix${capability.details}")
                 }
                 addAll(
                     VisualSemanticsReporter.summarizeFlowchart(

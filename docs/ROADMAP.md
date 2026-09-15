@@ -105,6 +105,7 @@ ist technisch nah, visuell aber noch nicht final abgenommen.
 - [ ] Parser aus Demo-Subset herausziehen.
 - [ ] Generator fuer alle vorhandenen Grundbefehle vervollstaendigen.
 - [x] Ersten `CommandCapabilityDescriptor` als gemeinsame Ableitung aus dem CommandCatalog fuer RuntimeGate, Adapterbedarf und Live-Implementierungsstatus einfuehren.
+- [x] Runtime-/DryRun-/FlowRuntime-Events transportieren stabile `diagnosticCode`-Werte bis in Log-/Debug-Projektionen.
 - [ ] Command-Catalog fuer alle geplanten Kategorien weiter pflegen und Descriptor in Settings, Toolboxen, Diagnostik und Adapter-Registry durchziehen.
 - [ ] Roundtrip-Tests WSS -> BlockEditor -> EMScript -> IR -> FlowEditor erweitern.
 - [ ] Fehlerdiagnosen mit Source-Mapping, Node/Block-ID und Textzeile ausgeben.
