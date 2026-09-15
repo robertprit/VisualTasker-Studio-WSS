@@ -6,6 +6,14 @@
 >
 > **Authority:** This document is a briefing and decision backlog, not a normative contract. `VISUALTASKER_ARCHITECTURE_CONTRACT.md` and accepted ADRs remain authoritative.
 
+## Confirmed terminology and product decisions
+
+The following are already decided and must not be reopened by the audit without concrete contradictory implementation evidence:
+
+- **Junktor** is the canonical term. It is intentionally derived from the syntactically/linguistically appropriate relation term; `Junktionator` is only a historical joke/alias and must not appear as an architectural identifier.
+- **ShapeMaker is an integrated VisualTasker Studio tool**, not merely an optional external integration. A visual development Studio should provide a native drawing/shape authoring surface. ShapeMaker may retain modular/service boundaries internally, but from the Studio product architecture it belongs to the integrated authoring toolset.
+- ShapeMaker is expected to support reusable visual assets for WSS/VAL, overlays, indicators, Block/Node forms and programmable/animated visual appearances. Its contracts must avoid making drawing state a competing Workflow or Worldview truth.
+
 ## Why this exists
 
 The legacy-reference audit mainly covers EMScript round-trip, capabilities/providers, runtime compatibility and Vision → Worldview boundaries. Several newer architecture strands were developed after the old Studio contracts and therefore must be consolidated separately rather than inferred from legacy documentation.
@@ -14,7 +22,7 @@ The next audit should inventory current WSS docs, skills/prompts and implementat
 
 ## Architecture families to consolidate
 
-### 1. VAL / WSS Visual Semantics
+### 1. VAL / WSS Visual Semantics + integrated ShapeMaker
 
 Target chain:
 
@@ -26,8 +34,18 @@ Audit:
 - color must support meaning, never be the only carrier;
 - projection kinds including Block, Flow, RailTrace, Inspector, World/Scene and AI projections;
 - connector semantics such as CONTROL_FLOW, VALUE_FLOW, OBSERVES, RESOLVES_TO, DERIVED_FROM, REFERENCES, EXPECTS, TRANSITIONS_TO, USES_RESOURCE, CONFLICTS_WITH, PROPOSES;
-- relationship to Material 3 Expressive shapes and ShapeMaker integration;
+- relationship to Material 3 Expressive shapes;
+- **ShapeMaker as the integrated Studio drawing/shape/animation authoring tool**;
+- contracts between ShapeMaker assets and VAL/WSS visual policies;
+- use of ShapeMaker assets for overlays, system-wide visual indicators, Block/Node forms, reusable visual resources and programmable/animated appearances;
+- import/export and stable asset identity;
 - whether a Visual Semantics Inspector is useful for debugging policies.
+
+Architectural boundary:
+
+`ShapeMaker creates/manages visual assets and animations; VAL assigns semantic visual meaning; projections consume the resulting visual policy/assets.`
+
+ShapeMaker must not independently decide Workflow intent, Worldview truth or Runtime authority.
 
 ### 2. VT Intelligence Runtime
 
@@ -308,6 +326,17 @@ Separate evaluation suites are needed for different failure modes:
 
 Evaluation must precede automatic promotion of a model candidate.
 
+### 16. Junktor semantics
+
+`Junktor` is the canonical architectural term for explicit semantic/evidence relations. Candidate kinds currently include:
+- CONJUNCTION
+- SUBJUNCTION
+- DISJUNCTION
+- ADJUNCTION
+- BIJUNCTION
+
+The audit should locate existing relation/reasoning implementations and determine where Junktor belongs without conflating it with EntityResolver. EntityResolver is a process; Junktor expresses a typed reasoning/evidence relation used for interpretation and explanation. Junktor itself has no mutation authority.
+
 ## Cross-cutting invariants
 
 Preserve these through every future contract:
@@ -345,8 +374,10 @@ A future Codex/architecture audit should create or propose:
 14. `docs/reference/learning/YOLO_TRAINING.md`
 15. `docs/reference/visual/VAL_CONTRACT.md`
 16. `docs/reference/visual/AI_VISUAL_SEMANTICS.md`
-17. `docs/reference/worldview/PREDICTION_VS_OBSERVATION.md`
-18. `docs/reference/worldview/ENTITY_RESOLUTION.md`
+17. `docs/reference/visual/SHAPEMAKER_INTEGRATION.md`
+18. `docs/reference/worldview/PREDICTION_VS_OBSERVATION.md`
+19. `docs/reference/worldview/ENTITY_RESOLUTION.md`
+20. `docs/reference/worldview/JUNKTOR_SEMANTICS.md`
 
 Do not create these as normative contracts merely from this briefing. First inventory existing implementation/docs/prompts, mark each concept `DECIDED`, `PARTIAL`, `PROPOSED`, `UNKNOWN`, or `OWNER_DECISION_REQUIRED`, then promote only confirmed material.
 
@@ -365,20 +396,21 @@ The following should remain explicitly open until evidence or product preference
 9. Which AI work events are useful as visible projections without exposing private reasoning.
 10. How much prediction state is persisted versus recomputed.
 11. Whether Visual Semantics Inspector is a release feature or developer-only tool.
-12. ShapeMaker service/plugin boundary and which visual assets remain VTS-owned.
+12. ShapeMaker's internal module/service contract, persistence ownership and asset API. **Its integration into VisualTasker Studio is already decided.**
+13. Exact Junktor storage/projection representation and whether all five candidate kinds belong in the first implementation. **The canonical term `Junktor` is already decided.**
 
 ## Recommended execution order
 
 Do not implement all of this at once.
 
 1. Finish current Code-vs-Contract red-zone audit.
-2. Inventory AI/learning/VAL prompts, skills, docs and code.
+2. Inventory AI/learning/VAL/ShapeMaker/Junktor prompts, skills, docs and code.
 3. Freeze vocabulary and authority boundaries.
 4. Define Learning Architecture + Dataset Lifecycle + Model Registry.
 5. Define Intelligence Runtime + Model Routing + structured results.
 6. Define ecological recording / active learning loop.
 7. Define individual LLM, Function Learning, ML and YOLO training contracts.
-8. Bind them to WSS/VAL projections.
+8. Bind them to WSS/VAL projections and integrated ShapeMaker assets.
 9. Add evaluation suites before production model promotion.
 
 This ordering keeps the project from accidentally turning "AI integration" into a second runtime, a second database, a second Worldview and a surprisingly confident fifth editor.
