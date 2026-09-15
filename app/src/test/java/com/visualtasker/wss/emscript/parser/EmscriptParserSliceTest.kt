@@ -5,6 +5,7 @@ import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.isBasicRuntimeReady
+import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
@@ -550,7 +551,22 @@ class EmscriptParserSliceTest {
         assertTrue(regenerated.contains("vibrate("))
 
         assertTrue(EmscriptDryRunRuntime().run(source) is EmscriptDryRunResult.Success)
-        assertTrue(WorkspaceDryRunRuntime().run(document) is EmscriptDryRunResult.Success)
+        val workspaceDryRun = WorkspaceDryRunRuntime().run(document)
+        assertTrue(workspaceDryRun is EmscriptDryRunResult.Success)
+        val runtimeEvents = (workspaceDryRun as EmscriptDryRunResult.Success).events
+        val capabilityWarnings = runtimeEvents.filter {
+            it.kind == "capability" && it.severity.name == "WARNING"
+        }
+        assertTrue(capabilityWarnings.isNotEmpty())
+        assertTrue(capabilityWarnings.all { it.diagnosticCode == "CAPABILITY_ADAPTER_REQUIRED" })
+        val runtimeSnapshot = EmscriptDryRunFlowRuntimeMapper.map(
+            irGraph = irGraph,
+            graph = flowchart,
+            result = workspaceDryRun,
+            sequence = 31,
+            capturedAtEpochMs = 42,
+        )
+        assertTrue(runtimeSnapshot.diagnostics.any { it.code == "CAPABILITY_ADAPTER_REQUIRED" })
     }
 
     @Test
@@ -704,6 +720,7 @@ class EmscriptParserSliceTest {
             .toSet()
         assertEquals(expectedWarnings, warnings.mapNotNull { it.command }.toSet())
         assertTrue(warnings.all { it.message.contains("Adapter noch nicht live") || it.message.contains("Live-Capability noch blockiert") })
+        assertTrue(warnings.all { it.diagnosticCode == "CAPABILITY_ADAPTER_REQUIRED" })
     }
 
     @Test
