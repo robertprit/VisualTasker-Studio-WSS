@@ -340,6 +340,7 @@ private class WorkspaceInterpreter(
             capability = gate?.name,
             pluginOwner = entry?.pluginOwner,
             diagnosticCode = descriptor?.diagnosticCode?.takeIf { kind == "capability" },
+            sourceLine = document.blocks[blockId]?.emscriptSourceLine(),
         )
     }
 
@@ -351,6 +352,7 @@ private class WorkspaceInterpreter(
             edgeSourceBlockId = source.value,
             edgeTargetBlockId = target.value,
             edgeKind = kind,
+            sourceLine = document.blocks[source]?.emscriptSourceLine(),
         )
     }
 
@@ -391,6 +393,7 @@ private class WorkspaceInterpreter(
                 severity == EmscriptDryRunEventSeverity.WARNING -> descriptor?.diagnosticCode ?: "CAPABILITY_BLOCKED"
                 else -> null
             },
+            sourceLine = block.emscriptSourceLine(),
         )
     }
 
@@ -429,6 +432,9 @@ private class WorkspaceInterpreter(
             is FieldValue.Text -> value.value.equals("true", ignoreCase = true)
             else -> false
         }
+
+    private fun BlockNode.emscriptSourceLine(): Int? =
+        metadata["emscript.source.line"]?.toIntOrNull()
 }
 
 private fun EmscriptValue.asDoubleDryRun(context: String): Double =

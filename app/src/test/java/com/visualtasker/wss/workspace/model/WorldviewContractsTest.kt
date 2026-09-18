@@ -110,6 +110,39 @@ class WorldviewContractsTest {
         assertEquals(WorldEntityKind.UiElement, worldview.findEntity("entity:marker:login")?.kind)
         assertEquals(listOf(marker), worldview.resourcesForEntity("entity:marker:login"))
         assertEquals(WorldviewRect(0.1f, 0.2f, 0.3f, 0.4f), worldview.observations.single().bounds)
+        assertEquals(ObservationProvider.Accessibility, worldview.observations.single().provider)
+        assertEquals(ObservationKind.Bounds, worldview.observations.single().kind)
+    }
+
+    @Test
+    fun projectsHumanAndVisionResourcesWithDistinctProviders() {
+        val humanMarker = WorkspaceResource(
+            id = "marker:human-tap",
+            kind = WorkspaceResourceKind.Marker,
+            label = "Human Tap",
+            pluginOwner = "visualtasker.canvas",
+            markerMode = WorkspaceMarkerMode.Point,
+            point = WorkspacePointBounds(0.4f, 0.6f),
+            metadata = mapOf("source" to "live-overlay"),
+        )
+        val visionTemplate = WorkspaceResource(
+            id = "template:vision-login",
+            kind = WorkspaceResourceKind.Template,
+            label = "Vision Login",
+            pluginOwner = "visualtasker.vision.template",
+            region = WorkspaceRegionBounds(0.1f, 0.2f, 0.3f, 0.4f),
+            metadata = mapOf("matchKind" to "OCV"),
+        )
+
+        val worldview = WorldviewDocument.fromResources(
+            WorkspaceResourceBundle(resources = listOf(humanMarker, visionTemplate)),
+        )
+        val observations = worldview.observations.associateBy { it.entityId }
+
+        assertEquals(ObservationProvider.User, observations.getValue("entity:marker:human-tap").provider)
+        assertEquals(ObservationKind.Touch, observations.getValue("entity:marker:human-tap").kind)
+        assertEquals(ObservationProvider.OpenCv, observations.getValue("entity:template:vision-login").provider)
+        assertEquals(ObservationKind.TemplateMatch, observations.getValue("entity:template:vision-login").kind)
     }
 
     @Test

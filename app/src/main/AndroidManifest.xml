@@ -16,6 +16,7 @@
         <package android:name="com.termux.api" />
         <package android:name="net.dinglisch.android.tasker" />
         <package android:name="net.dinglisch.android.taskerm" />
+        <package android:name="com.m3shapes.editor" />
     </queries>
 
     <application

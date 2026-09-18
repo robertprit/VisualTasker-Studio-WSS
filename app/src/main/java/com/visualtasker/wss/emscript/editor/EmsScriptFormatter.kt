@@ -46,6 +46,10 @@ object EmsScriptFormatter {
     private fun indentDeltaForLine(normalizedUpper: String): IndentDelta {
         val first = normalizedUpper.trim()
         return when {
+            first.startsWith("}") && first.endsWith("{") ->
+                IndentDelta(dedentBefore = 1, indentAfter = 1)
+            first.startsWith("}") -> IndentDelta(dedentBefore = 1)
+            first.endsWith("{") -> IndentDelta(indentAfter = 1)
             first.startsWith("END IF") || first == "ENDIF" ||
                 first.startsWith("END FOR") || first == "ENDFOR" ||
                 first.startsWith("END LOOP") || first == "ENDLOOP" ||
@@ -64,6 +68,7 @@ object EmsScriptFormatter {
     private fun normalizeCodeLine(code: String): String {
         val trimmed = code.trim()
         val (phrase, remainder) = extractLeadingPhrase(trimmed)
+        if (phrase.isEmpty()) return collapseSpacesPreservingStrings(remainder)
         val normalizedPhrase = when (phrase.uppercase()) {
             "ENDIF" -> "END IF"
             "ENDFOR" -> "END FOR"
@@ -105,30 +110,26 @@ object EmsScriptFormatter {
 
     private fun collapseSpacesPreservingStrings(text: String): String {
         if (text.isBlank()) return ""
-        val parts = mutableListOf<String>()
-        val current = StringBuilder()
+        val result = StringBuilder()
         var inString = false
+        var pendingSpace = false
         text.forEach { ch ->
             when {
                 ch == '"' -> {
-                    if (current.isNotBlank() && !inString) {
-                        parts += current.toString().trim()
-                        current.clear()
-                    }
+                    if (pendingSpace && result.isNotEmpty()) result.append(' ')
+                    pendingSpace = false
                     inString = !inString
-                    current.append(ch)
+                    result.append(ch)
                 }
-                inString -> current.append(ch)
-                ch.isWhitespace() -> {
-                    if (current.isNotBlank()) {
-                        parts += current.toString().trim()
-                        current.clear()
-                    }
+                inString -> result.append(ch)
+                ch.isWhitespace() -> pendingSpace = true
+                else -> {
+                    if (pendingSpace && result.isNotEmpty()) result.append(' ')
+                    pendingSpace = false
+                    result.append(ch)
                 }
-                else -> current.append(ch)
             }
         }
-        if (current.isNotBlank()) parts += current.toString().trim()
-        return parts.joinToString(" ")
+        return result.toString()
     }
 }

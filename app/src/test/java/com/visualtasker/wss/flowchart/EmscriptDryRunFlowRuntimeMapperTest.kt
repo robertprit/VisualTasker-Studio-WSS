@@ -38,6 +38,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
 
         assertEquals(graph.documentId, snapshot.documentId)
         assertEquals(graph.documentRevision, snapshot.documentRevision)
+        assertEquals("emscript-dry-run:7", snapshot.runId.value)
         assertEquals(7, snapshot.sequence)
         assertEquals(FlowExecutionKind.DRY_RUN, snapshot.executionKindOrNull())
         assertTrue(snapshot.nodeStates.isEmpty())
@@ -129,6 +130,16 @@ class EmscriptDryRunFlowRuntimeMapperTest {
         assertEquals(FlowRuntimeNodeState.SKIPPED, snapshot.nodeStates[thenNode.id])
         assertEquals(FlowRuntimeNodeState.SUCCEEDED, snapshot.nodeStates[elseNode.id])
         assertTrue(snapshot.extensions.any { it.key == "visualtasker.runtime-events" })
+        val executionTrace = snapshot.executionTrace()
+        assertEquals("emscript-dry-run:2", executionTrace["runId"])
+        assertEquals("DryRun", executionTrace["mode"])
+        assertEquals("true", executionTrace["completed"])
+        assertEquals("workspace-emscript", executionTrace["sourceSessionId"])
+        assertTrue(snapshot.executionTraceOperations().any {
+            it["runId"] == "emscript-dry-run:2" &&
+                it["kind"] == "log" &&
+                it["status"] == "Succeeded"
+        })
         assertTrue(snapshot.runtimeVariables().containsKey("value"))
         assertTrue(snapshot.traversedEdgeIds.any { edgeId ->
             graph.edges.any { it.id == edgeId && it.kind.name == "FALSE_BRANCH" }
@@ -251,6 +262,45 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             .map { event ->
                 event.values.mapNotNull { (key, value) ->
                     val rendered = (value as? FlowSemanticValue.StringValue)?.value ?: return@mapNotNull null
+                    key to rendered
+                }.toMap()
+            }
+
+    private fun de.visualtasker.flowchart.domain.FlowRuntimeSnapshot.executionTrace(): Map<String, String> =
+        extensions
+            .firstOrNull { it.key == "visualtasker.execution-trace" }
+            ?.value
+            ?.let { it as? FlowSemanticValue.ObjectValue }
+            ?.values
+            .orEmpty()
+            .mapNotNull { (key, value) ->
+                val rendered = when (value) {
+                    is FlowSemanticValue.StringValue -> value.value
+                    is FlowSemanticValue.NumberValue -> value.canonicalValue
+                    else -> return@mapNotNull null
+                }
+                key to rendered
+            }
+            .toMap()
+
+    private fun de.visualtasker.flowchart.domain.FlowRuntimeSnapshot.executionTraceOperations(): List<Map<String, String>> =
+        extensions
+            .firstOrNull { it.key == "visualtasker.execution-trace" }
+            ?.value
+            ?.let { it as? FlowSemanticValue.ObjectValue }
+            ?.values
+            ?.get("operations")
+            ?.let { it as? FlowSemanticValue.ListValue }
+            ?.values
+            .orEmpty()
+            .mapNotNull { it as? FlowSemanticValue.ObjectValue }
+            .map { operation ->
+                operation.values.mapNotNull { (key, value) ->
+                    val rendered = when (value) {
+                        is FlowSemanticValue.StringValue -> value.value
+                        is FlowSemanticValue.NumberValue -> value.canonicalValue
+                        else -> return@mapNotNull null
+                    }
                     key to rendered
                 }.toMap()
             }

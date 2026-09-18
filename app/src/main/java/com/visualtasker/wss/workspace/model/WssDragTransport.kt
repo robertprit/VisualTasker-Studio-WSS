@@ -403,6 +403,7 @@ object WssDragPayloadFactory {
                 WorkspaceResourceKind.Template,
                 -> WssDragPayloadKind.Marker
                 WorkspaceResourceKind.Dataset -> WssDragPayloadKind.DatasetEntry
+                WorkspaceResourceKind.VisualAsset -> WssDragPayloadKind.VisualAsset
                 else -> WssDragPayloadKind.Resource
             },
             label = resource.label,

@@ -561,6 +561,8 @@ fun syncRootPositionsFromFlowchartView(
     viewDocument.nodeViews.forEach { nodeView ->
         val blockId = nodeView.nodeId.toWorkspaceBlockId() ?: return@forEach
         if (blockId !in updated.rootBlocks || blockId !in updated.blocks) return@forEach
+        val block = updated.blocks.getValue(blockId)
+        if (block.allConnections().none { it.connectedTo != null }) return@forEach
         val current = updated.rootPositions[blockId]
         val nextX = nodeView.position.x.toFloat()
         val nextY = nodeView.position.y.toFloat()

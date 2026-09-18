@@ -637,7 +637,7 @@ class WorkspaceFlowchartMutationsTest {
     }
 
     @Test
-    fun `sync root positions from flowchart view updates workspace roots`() {
+    fun `sync root positions keeps unconnected block layout independent`() {
         val document = addFlowchartNodeToWorkspace(
             WorkspaceDocument(id = "flowchart-move-test"),
             BlockTypes.ACTION_WAIT,
@@ -649,9 +649,7 @@ class WorkspaceFlowchartMutationsTest {
             flowView("block:${blockId.value}", x = 240.0, y = 320.0),
         )
 
-        assertNotEquals(document, updated)
-        assertEquals(240f, updated.rootPositions.getValue(blockId).x)
-        assertEquals(320f, updated.rootPositions.getValue(blockId).y)
+        assertEquals(document, updated)
     }
 
     @Test

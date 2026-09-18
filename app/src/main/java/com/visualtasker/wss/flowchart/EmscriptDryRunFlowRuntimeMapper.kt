@@ -1,8 +1,12 @@
 package com.visualtasker.wss.flowchart
 
-import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunEventSeverity
+import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
+import com.visualtasker.wss.emscript.runtime.ExecutionMode
+import com.visualtasker.wss.emscript.runtime.ExecutionRunId
+import com.visualtasker.wss.emscript.runtime.ExecutionSourceKind
+import com.visualtasker.wss.emscript.runtime.toExecutionTrace
 import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
@@ -72,9 +76,11 @@ object EmscriptDryRunFlowRuntimeMapper {
                 )
             )
         }
+        val traceRunId = "emscript-dry-run:$sequence"
+        val sourceSessionId = "workspace-emscript"
         return FlowRuntimeSnapshot(
-            runId = FlowRunId("emscript-dry-run"),
-            sourceSessionId = FlowSourceSessionId("workspace-emscript"),
+            runId = FlowRunId(traceRunId),
+            sourceSessionId = FlowSourceSessionId(sourceSessionId),
             documentId = graph.documentId,
             documentRevision = graph.documentRevision,
             sequence = sequence,
@@ -83,16 +89,26 @@ object EmscriptDryRunFlowRuntimeMapper {
             nodeStates = nodeStates,
             traversedEdgeIds = traversedEdges,
             diagnostics = diagnostics,
-            extensions = runtimeExtensions(irRuntime.events, result),
+            extensions = runtimeExtensions(
+                events = irRuntime.events,
+                result = result,
+                runId = traceRunId,
+                sourceSessionId = sourceSessionId,
+                capturedAtEpochMs = capturedAtEpochMs,
+            ),
         )
     }
 
     private fun runtimeExtensions(
         events: List<IrGraphRuntimeEvent>,
         result: EmscriptDryRunResult,
+        runId: String,
+        sourceSessionId: String,
+        capturedAtEpochMs: Long,
     ): List<FlowGraphExtension> = buildList {
         add(FlowLifecycleSemantics.graphExtension(FlowExecutionKind.DRY_RUN))
         add(runtimeEventExtension(events))
+        add(executionTraceExtension(result, runId, sourceSessionId, capturedAtEpochMs))
         if (result is EmscriptDryRunResult.Success) {
             add(runtimeVariablesExtension(result.variables))
         }
@@ -130,6 +146,75 @@ object EmscriptDryRunFlowRuntimeMapper {
                 variables.mapValues { (_, value) -> FlowSemanticValue.StringValue(value.renderRuntimeValue()) }
             ),
         )
+
+    private fun executionTraceExtension(
+        result: EmscriptDryRunResult,
+        runId: String,
+        sourceSessionId: String,
+        capturedAtEpochMs: Long,
+    ): FlowGraphExtension {
+        val trace = result.toExecutionTrace(
+            runId = ExecutionRunId(runId),
+            mode = ExecutionMode.DryRun,
+            sourceSessionId = sourceSessionId,
+            startedAtEpochMs = capturedAtEpochMs,
+            completedAtEpochMs = capturedAtEpochMs,
+        )
+        return FlowGraphExtension(
+            key = "visualtasker.execution-trace",
+            value = FlowSemanticValue.ObjectValue(
+                buildMap {
+                    put("runId", FlowSemanticValue.StringValue(trace.runId.value))
+                    put("mode", FlowSemanticValue.StringValue(trace.mode.name))
+                    put("sourceSessionId", FlowSemanticValue.StringValue(trace.sourceSessionId))
+                    put("completed", FlowSemanticValue.StringValue(trace.completed.toString()))
+                    put("startedAtEpochMs", FlowSemanticValue.NumberValue(trace.startedAtEpochMs.toString()))
+                    trace.completedAtEpochMs?.let {
+                        put("completedAtEpochMs", FlowSemanticValue.NumberValue(it.toString()))
+                    }
+                    trace.failureMessage?.let { put("failureMessage", FlowSemanticValue.StringValue(it)) }
+                    put("operationCount", FlowSemanticValue.NumberValue(trace.operations.size.toString()))
+                    put("warningCount", FlowSemanticValue.NumberValue(trace.warningCount.toString()))
+                    put("errorCount", FlowSemanticValue.NumberValue(trace.errorCount.toString()))
+                    put(
+                        "operations",
+                        FlowSemanticValue.ListValue(
+                            trace.operations.map { operation ->
+                                FlowSemanticValue.ObjectValue(
+                                    buildMap {
+                                        put("id", FlowSemanticValue.StringValue(operation.id.value))
+                                        put("runId", FlowSemanticValue.StringValue(operation.runId.value))
+                                        put("index", FlowSemanticValue.NumberValue(operation.index.toString()))
+                                        put("kind", FlowSemanticValue.StringValue(operation.kind))
+                                        put("status", FlowSemanticValue.StringValue(operation.status.name))
+                                        put("message", FlowSemanticValue.StringValue(operation.message))
+                                        operation.command?.let { put("command", FlowSemanticValue.StringValue(it)) }
+                                        operation.capability?.let { put("capability", FlowSemanticValue.StringValue(it)) }
+                                        operation.pluginOwner?.let { put("pluginOwner", FlowSemanticValue.StringValue(it)) }
+                                        operation.diagnosticCode?.let { put("diagnosticCode", FlowSemanticValue.StringValue(it)) }
+                                        operation.correlationId?.let { put("correlationId", FlowSemanticValue.StringValue(it)) }
+                                        operation.sourceRef?.let { source ->
+                                            put("sourceKind", FlowSemanticValue.StringValue(source.kind.name))
+                                            put(
+                                                "sourceId",
+                                                FlowSemanticValue.StringValue(
+                                                    when (source.kind) {
+                                                        ExecutionSourceKind.Edge -> "${source.id}->${source.edgeTargetId.orEmpty()}"
+                                                        else -> source.id
+                                                    }
+                                                )
+                                            )
+                                            source.edgeKind?.let { put("edgeKind", FlowSemanticValue.StringValue(it)) }
+                                        }
+                                    }
+                                )
+                            }
+                        )
+                    )
+                }
+            ),
+        )
+    }
 
     private fun EmscriptValue.renderRuntimeValue(): String = when (this) {
         is EmscriptValue.NumberValue -> if (value.isFinite() && value % 1.0 == 0.0) value.toLong().toString() else value.toString()

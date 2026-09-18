@@ -364,7 +364,94 @@ object EditorDefaults {
         log("nested-stress-end")
     """.trimIndent()
 
-    val allSamples: Map<String, String> = mapOf(
+    val basicTestScript: String = """
+        LET counter = 0
+        LET total = 0
+        LET limit = 3
+
+        log("basic-start")
+        beep(660, 40, 35)
+        vibrate(20)
+        LOOP 3
+            SET counter = counter + 1
+            SET total = total + counter
+            IF total < limit
+                log("basic-low")
+            ELSEIF total == limit
+                wait(10)
+            ELSE
+                beep()
+            END IF
+        END LOOP
+        WHILE counter < 4
+            SET counter = counter + 1
+        END WHILE
+        log("basic-end")
+    """.trimIndent()
+
+    val visionTestScript: String = """
+        log("vision-start")
+        screenshot("screenshots/stable-vision.png")
+        markerSave("stableVisionRegion", region(180, 420, 540, 780), "region", 0.85)
+        markerLoad("stableVisionRegion")
+        highlight(region(180, 420, 540, 780))
+        ocr(region(180, 420, 540, 780), 3000)
+        findText("VisualTasker", 3000)
+        templateDefine("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
+        templateCompare("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
+        findTemplate("stableVisionTemplate.png", 0.85, 3000, 1, region(180, 420, 540, 780))
+        sceneSave("stableVisionScene", "region", region(180, 420, 540, 780), "screenshots/stable-vision.png")
+        markerDelete("stableVisionRegion")
+        log("vision-end")
+    """.trimIndent()
+
+    val runtimeTestScript: String = """
+        log("runtime-start")
+        clickPoint(540, 1100, 1)
+        touch([540, 1100])
+        swipe([540, 1500, 540, 850], 1)
+        screenshot("screenshots/stable-runtime.png")
+        Clipboard.set("visualtasker-runtime")
+        Clipboard.get()
+        File.writeText("stable-runtime.txt", "ready")
+        File.readText("stable-runtime.txt")
+        Cache.clear()
+        Sys.info()
+        Env.get("ANDROID_VERSION")
+        log("runtime-end")
+    """.trimIndent()
+
+    val pluginTestScript: String = """
+        log("plugin-start")
+        ChromeTab.isSupported()
+        Tasker.isInstalled()
+        Tasker.lastResult()
+        Tasker.error()
+        Shizuku.isInstalled()
+        Shizuku.permissionState()
+        Shizuku.isAvailable()
+        Shizuku.getUid()
+        Termux.isInstalled()
+        Termux.canRunCommands()
+        Scrcpy.hostAvailable()
+        Scrcpy.devices()
+        ChromeTab.open("https://example.com")
+        Tasker.runTask("VT WSS Demo Echo", ["stable-v1"])
+        Shizuku.shell("id")
+        Termux.shell("printf visualtasker")
+        Scrcpy.start("")
+        log("plugin-end")
+    """.trimIndent()
+
+    val stableV1TestSuite: Map<String, String> = linkedMapOf(
+        "Test: Basic" to basicTestScript,
+        "Test: Vision" to visionTestScript,
+        "Test: Runtime" to runtimeTestScript,
+        "Test: Plugins" to pluginTestScript,
+        "Test: Stress" to nestedFlowStressTestScript,
+    )
+
+    val allSamples: Map<String, String> = linkedMapOf(
         "Referenz" to sampleScript,
         "Loop" to """
             SET i = 0
@@ -378,5 +465,5 @@ object EditorDefaults {
         "Stress: Verschachtelt" to nestedFlowStressTestScript,
         "Branch: ElseIf" to elseifBranchTestScript,
         "Branch: Fallback" to fallbackBranchTestScript,
-    )
+    ) + stableV1TestSuite
 }

@@ -174,7 +174,10 @@ fun EmScriptEditorScreen(
     val activeDisplayIndex = remember(activeOriginalLine, lineMapping) {
         lineMapping.indexOfFirst { it.originalLine == activeOriginalLine }
     }
-    val activeLineHeightPx = with(density) { (fontSizeSp * 1.7f).dp.toPx().coerceAtLeast(1f) }
+    val activeLineHeightPx = textLayoutResult
+        ?.takeIf { it.lineCount > 0 }
+        ?.let { layout -> (layout.getLineBottom(0) - layout.getLineTop(0)).coerceAtLeast(1f) }
+        ?: with(density) { codeLineHeight.toPx().coerceAtLeast(1f) }
     val activeLineHighlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     val activeLineDotColor = if (activeSourceLine != null) {
         MaterialTheme.colorScheme.tertiary

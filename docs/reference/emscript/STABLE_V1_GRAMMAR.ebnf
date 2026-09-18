@@ -1,0 +1,48 @@
+(* VisualTasker Studio WSS EMScript Stable V1 *)
+
+script          = { line } ;
+line            = statement, [ line_end ] | comment, [ line_end ] | line_end ;
+statement       = declaration | assignment | command | if_block | loop_block | while_block ;
+
+declaration     = "LET", identifier, "=", expression ;
+assignment      = "SET", identifier, "=", expression ;
+command         = qualified_name, "(", [ argument_list ], ")", [ ";" ] ;
+
+if_block        = "IF", expression, line_end,
+                  { line },
+                  { elseif_branch },
+                  [ else_branch ],
+                  "END IF" ;
+elseif_branch   = ( "ELSEIF" | "ELSE IF" ), expression, line_end, { line } ;
+else_branch     = "ELSE", line_end, { line } ;
+loop_block      = "LOOP", expression, line_end, { line }, "END LOOP" ;
+while_block     = "WHILE", expression, line_end, { line }, "END WHILE" ;
+
+expression      = logical_or ;
+logical_or      = logical_and, { "||", logical_and } ;
+logical_and     = equality, { "&&", equality } ;
+equality        = comparison, { ( "==" | "!=" ), comparison } ;
+comparison      = sum, { ( "<" | "<=" | ">" | ">=" ), sum } ;
+sum             = product, { ( "+" | "-" ), product } ;
+product         = primary, { ( "*" | "/" | "%" ), primary } ;
+primary         = number | string | boolean | identifier | function_call |
+                  array | "(", expression, ")" ;
+function_call   = qualified_name, "(", [ argument_list ], ")" ;
+argument_list   = expression, { ",", expression } ;
+array           = "[", [ argument_list ], "]" ;
+
+qualified_name  = identifier, { ".", identifier } ;
+identifier      = ( letter | "_" ), { letter | digit | "_" } ;
+number          = [ "-" ], digit, { digit }, [ ".", digit, { digit } ] ;
+string          = '"', { escaped_character | ? any character except quote ? }, '"' ;
+boolean         = "true" | "false" ;
+comment         = "//", ? characters to line end ? |
+                  "REM", ? characters to line end ? ;
+line_end        = ? newline ? ;
+letter          = ? A-Z or a-z ? ;
+digit           = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+escaped_character = "\\", ( "\\" | '"' | "n" | "r" | "t" ) ;
+
+(* The CommandCatalog defines command names, argument types and capabilities. *)
+(* Legacy statements and brace control flow may be accepted by the parser, but *)
+(* generators emit the canonical line-oriented form above. *)

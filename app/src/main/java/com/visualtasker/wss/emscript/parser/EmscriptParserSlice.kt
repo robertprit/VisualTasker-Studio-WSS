@@ -24,44 +24,69 @@ data class EmscriptIrScript(
     val statements: List<EmscriptIrStatement>,
 )
 
+data class EmscriptSourceSpan(
+    val startLine: Int,
+    val startColumn: Int,
+    val endLine: Int = startLine,
+    val endColumn: Int = startColumn,
+)
+
 sealed interface EmscriptIrStatement {
     data class CommandCall(
         val command: String,
         val arguments: String,
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
     data class Let(
         val variable: String,
         val value: EmscriptIrExpression,
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
     data class Set(
         val variable: String,
         val value: EmscriptIrExpression,
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
-    data class Wait(val milliseconds: EmscriptIrExpression) : EmscriptIrStatement
+    data class Wait(
+        val milliseconds: EmscriptIrExpression,
+        val source: EmscriptSourceSpan? = null,
+    ) : EmscriptIrStatement
 
-    data class ClickText(val text: String) : EmscriptIrStatement
+    data class ClickText(
+        val text: String,
+        val source: EmscriptSourceSpan? = null,
+    ) : EmscriptIrStatement
 
-    data class Output(val value: EmscriptIrExpression) : EmscriptIrStatement
+    data class Output(
+        val value: EmscriptIrExpression,
+        val source: EmscriptSourceSpan? = null,
+    ) : EmscriptIrStatement
 
     data class Beep(
         val frequency: Int? = null,
         val durationMs: Int? = null,
         val volume: Int? = null,
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
-    data class Vibrate(val pattern: List<Long>) : EmscriptIrStatement
+    data class Vibrate(
+        val pattern: List<Long>,
+        val source: EmscriptSourceSpan? = null,
+    ) : EmscriptIrStatement
 
     data class Loop(
         val times: EmscriptIrExpression,
         val body: List<EmscriptIrStatement>,
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
     data class While(
         val condition: EmscriptIrExpression,
         val body: List<EmscriptIrStatement>,
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
     data class If(
@@ -69,12 +94,14 @@ sealed interface EmscriptIrStatement {
         val thenBranch: List<EmscriptIrStatement>,
         val elseIfBranches: List<EmscriptElseIfBranch> = emptyList(),
         val elseBranch: List<EmscriptIrStatement> = emptyList(),
+        val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 }
 
 data class EmscriptElseIfBranch(
     val condition: EmscriptIrExpression,
     val body: List<EmscriptIrStatement>,
+    val source: EmscriptSourceSpan? = null,
 )
 
 sealed interface EmscriptIrExpression {
@@ -110,12 +137,14 @@ enum class EmscriptBinaryOp {
     GTE,
 }
 
-class EmscriptParserSlice {
+class EmscriptParserSlice(
+    private val includeSourceSpans: Boolean = false,
+) {
     fun parse(script: String): EmscriptParseResult {
         return runCatching {
             val lexer = Lexer(script)
             val tokens = lexer.lex()
-            val parser = Parser(tokens)
+            val parser = Parser(tokens, includeSourceSpans)
             EmscriptParseResult(
                 ir = EmscriptIrScript(parser.parseStatements(untilBoundary = false)),
                 issues = emptyList(),
@@ -450,7 +479,10 @@ private class Lexer(private val source: String) {
     }
 }
 
-private class Parser(private val tokens: List<Token>) {
+private class Parser(
+    private val tokens: List<Token>,
+    private val includeSourceSpans: Boolean,
+) {
     private var current: Int = 0
 
     fun parseStatements(untilBoundary: Boolean): List<EmscriptIrStatement> {
@@ -466,12 +498,15 @@ private class Parser(private val tokens: List<Token>) {
 
     private fun parseStatement(): EmscriptIrStatement {
         return when {
-            match(TokenType.LET) -> parseLet()
-            match(TokenType.SET) -> parseSet()
-            match(TokenType.IF) -> parseIf()
-            match(TokenType.LOOP) -> parseLoop()
-            match(TokenType.WHILE) -> parseWhile()
-            match(TokenType.IDENT) -> parseCommandStatement(parseQualifiedIdentifier(previous()))
+            match(TokenType.LET) -> parseLet(previous())
+            match(TokenType.SET) -> parseSet(previous())
+            match(TokenType.IF) -> parseIf(previous())
+            match(TokenType.LOOP) -> parseLoop(previous())
+            match(TokenType.WHILE) -> parseWhile(previous())
+            match(TokenType.IDENT) -> {
+                val start = previous()
+                parseCommandStatement(parseQualifiedIdentifier(start)).withSource(start.sourceSpanOrNull())
+            }
             else -> {
                 val token = peek()
                 throw ParseException(token.line, token.column, "Unerwartetes Token '${token.lexeme}'.")
@@ -479,21 +514,21 @@ private class Parser(private val tokens: List<Token>) {
         }
     }
 
-    private fun parseLet(): EmscriptIrStatement.Let {
+    private fun parseLet(start: Token): EmscriptIrStatement.Let {
         val variable = consume(TokenType.IDENT, "Variablenname nach LET erwartet.")
         consume(TokenType.ASSIGN, "'=' nach Variablenname erwartet.")
         val value = parseExpression()
-        return EmscriptIrStatement.Let(variable.lexeme, value)
+        return EmscriptIrStatement.Let(variable.lexeme, value, source = start.sourceSpanOrNull())
     }
 
-    private fun parseSet(): EmscriptIrStatement.Set {
+    private fun parseSet(start: Token): EmscriptIrStatement.Set {
         val variable = consume(TokenType.IDENT, "Variablenname nach SET erwartet.")
         consume(TokenType.ASSIGN, "'=' nach Variablenname erwartet.")
         val value = parseExpression()
-        return EmscriptIrStatement.Set(variable.lexeme, value)
+        return EmscriptIrStatement.Set(variable.lexeme, value, source = start.sourceSpanOrNull())
     }
 
-    private fun parseIf(): EmscriptIrStatement.If {
+    private fun parseIf(start: Token): EmscriptIrStatement.If {
         val condition = parseExpression()
         val braceBlock = match(TokenType.LBRACE)
         skipSeparators()
@@ -504,12 +539,14 @@ private class Parser(private val tokens: List<Token>) {
         val elseIfBranches = mutableListOf<EmscriptElseIfBranch>()
         var elseBranch = emptyList<EmscriptIrStatement>()
         while (matchElseIf()) {
+            val elseIfStart = previous()
             val elseIfCondition = parseExpression()
             val elseIfBraceBlock = match(TokenType.LBRACE)
             skipSeparators()
             elseIfBranches += EmscriptElseIfBranch(
                 condition = elseIfCondition,
                 body = parseStatements(untilBoundary = true),
+                source = elseIfStart.sourceSpanOrNull(),
             )
             if (elseIfBraceBlock) {
                 consume(TokenType.RBRACE, "'}' zum Schließen von else-if-Zweig erwartet.")
@@ -532,10 +569,11 @@ private class Parser(private val tokens: List<Token>) {
             thenBranch = thenBranch,
             elseIfBranches = elseIfBranches,
             elseBranch = elseBranch,
+            source = start.sourceSpanOrNull(),
         )
     }
 
-    private fun parseLoop(): EmscriptIrStatement.Loop {
+    private fun parseLoop(start: Token): EmscriptIrStatement.Loop {
         val times = parseExpression()
         val braceBlock = match(TokenType.LBRACE)
         skipSeparators()
@@ -546,10 +584,10 @@ private class Parser(private val tokens: List<Token>) {
             consume(TokenType.END, "END zum Schließen von LOOP erwartet.")
             consume(TokenType.LOOP, "LOOP nach END erwartet.")
         }
-        return EmscriptIrStatement.Loop(times = times, body = body)
+        return EmscriptIrStatement.Loop(times = times, body = body, source = start.sourceSpanOrNull())
     }
 
-    private fun parseWhile(): EmscriptIrStatement.While {
+    private fun parseWhile(start: Token): EmscriptIrStatement.While {
         val condition = parseExpression()
         val braceBlock = match(TokenType.LBRACE)
         skipSeparators()
@@ -560,7 +598,7 @@ private class Parser(private val tokens: List<Token>) {
             consume(TokenType.END, "END zum Schließen von WHILE erwartet.")
             consume(TokenType.WHILE, "WHILE nach END erwartet.")
         }
-        return EmscriptIrStatement.While(condition = condition, body = body)
+        return EmscriptIrStatement.While(condition = condition, body = body, source = start.sourceSpanOrNull())
     }
 
     private fun parseQualifiedIdentifier(first: Token): Token {
@@ -990,6 +1028,9 @@ private class Parser(private val tokens: List<Token>) {
 
     private fun previous(): Token = tokens[current - 1]
 
+    private fun Token.sourceSpanOrNull(): EmscriptSourceSpan? =
+        if (includeSourceSpans) sourceSpan() else null
+
     private val identifierPartKeywords = setOf(
         TokenType.LET,
         TokenType.SET,
@@ -1003,6 +1044,32 @@ private class Parser(private val tokens: List<Token>) {
         TokenType.FALSE,
     )
 }
+
+private fun Token.sourceSpan(): EmscriptSourceSpan =
+    EmscriptSourceSpan(
+        startLine = line,
+        startColumn = column,
+        endLine = line,
+        endColumn = column + lexeme.length.coerceAtLeast(1),
+    )
+
+private fun EmscriptIrStatement.withSource(source: EmscriptSourceSpan?): EmscriptIrStatement =
+    source?.let { copyWithSource(it) } ?: this
+
+private fun EmscriptIrStatement.copyWithSource(source: EmscriptSourceSpan): EmscriptIrStatement =
+    when (this) {
+        is EmscriptIrStatement.CommandCall -> copy(source = source)
+        is EmscriptIrStatement.Let -> copy(source = source)
+        is EmscriptIrStatement.Set -> copy(source = source)
+        is EmscriptIrStatement.Wait -> copy(source = source)
+        is EmscriptIrStatement.ClickText -> copy(source = source)
+        is EmscriptIrStatement.Output -> copy(source = source)
+        is EmscriptIrStatement.Beep -> copy(source = source)
+        is EmscriptIrStatement.Vibrate -> copy(source = source)
+        is EmscriptIrStatement.Loop -> copy(source = source)
+        is EmscriptIrStatement.While -> copy(source = source)
+        is EmscriptIrStatement.If -> copy(source = source)
+    }
 
 private data class RawFunctionArguments(
     val rendered: String,

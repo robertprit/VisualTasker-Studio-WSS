@@ -1,5 +1,6 @@
 package com.visualtasker.wss.emscript.runtime
 
+import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -8,6 +9,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WorkspaceBasicRuntimeTest {
+    @Test
+    fun stableV1BasicSuiteExecutesThroughBasicRun() = runBlocking {
+        val imported = EmscriptWorkspaceImporter().import(
+            EditorDefaults.basicTestScript,
+            workspaceId = "stable-v1-basic-runtime",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val calls = mutableListOf<String>()
+        val runtime = WorkspaceBasicRuntime(
+            environment = WorkspaceBasicRuntimeEnvironment(
+                delayMs = { calls += "wait:$it" },
+                playBeep = { hz, duration, volume -> calls += "beep:$hz:$duration:$volume" },
+                vibrate = { pattern -> calls += "vibrate:${pattern.joinToString(",")}" },
+                log = { calls += "log:$it" },
+            ),
+        )
+
+        val result = runtime.run(imported.document!!)
+
+        assertTrue(result is EmscriptDryRunResult.Success)
+        val success = result as EmscriptDryRunResult.Success
+        assertEquals(EmscriptValue.NumberValue(4.0), success.variables["counter"])
+        assertEquals(EmscriptValue.NumberValue(6.0), success.variables["total"])
+        assertTrue(calls.contains("log:basic-start"))
+        assertTrue(calls.contains("beep:660:40:35"))
+        assertTrue(calls.contains("vibrate:20"))
+        assertTrue(calls.contains("wait:10"))
+        assertTrue(calls.contains("log:basic-end"))
+        assertTrue(success.events.any { it.kind == "done" && it.message.contains("Basic-Run") })
+    }
+
     @Test
     fun basicRuntimeExecutesLocalSideEffectsFromWorkspaceOrder() = runBlocking {
         val imported = EmscriptWorkspaceImporter().import(

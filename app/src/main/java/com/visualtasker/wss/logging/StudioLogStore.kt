@@ -23,7 +23,36 @@ data class StudioLogEntry(
     val documentRevision: Long? = null,
     val groupKey: String? = null,
     val repeatCount: Int = 1,
+    val sourceTarget: StudioLogSourceTarget? = null,
 )
+
+data class StudioLogSourceTarget(
+    val railStepId: String? = null,
+    val railSurface: StudioLogRailSurface? = null,
+    val sourceLine: Int? = null,
+    val blockId: String? = null,
+    val flowNodeId: String? = null,
+    val flowEdgeId: String? = null,
+    val preferredSurface: StudioLogSourceSurface? = null,
+) {
+    val isEmpty: Boolean
+        get() = railStepId == null && railSurface == null && sourceLine == null && blockId == null && flowNodeId == null &&
+            flowEdgeId == null && preferredSurface == null
+}
+
+enum class StudioLogRailSurface {
+    RECORDS,
+    RUN,
+    WATCHDOG,
+}
+
+enum class StudioLogSourceSurface {
+    RAILTRACE,
+    TEXT_EDITOR,
+    BLOCK_EDITOR,
+    FLOW_EDITOR,
+    PLUGIN_SETTINGS,
+}
 
 data class StudioLogFilters(
     val levels: Set<StudioLogLevel> = StudioLogLevel.entries.toSet(),
@@ -52,9 +81,10 @@ class StudioLogStore(
         details: String? = null,
         documentRevision: Long? = null,
         groupKey: String? = null,
+        sourceTarget: StudioLogSourceTarget? = null,
         timestamp: Long = System.currentTimeMillis(),
     ) {
-        val pending = PendingLogEntry(level, source, message, details, documentRevision, groupKey, timestamp)
+        val pending = PendingLogEntry(level, source, message, details, documentRevision, groupKey, sourceTarget, timestamp)
         synchronized(lock) {
             if (isPaused) {
                 pausedBuffer += pending
@@ -111,6 +141,7 @@ class StudioLogStore(
                 documentRevision = pending.documentRevision,
                 groupKey = key,
                 repeatCount = 1,
+                sourceTarget = pending.sourceTarget?.takeUnless { it.isEmpty },
             )
             if (entries.size > maxEntries) {
                 val overflow = entries.size - maxEntries
@@ -148,6 +179,8 @@ class StudioLogStore(
         append(entry.documentRevision ?: "no-rev")
         append('|')
         append(entry.details ?: "no-details")
+        append('|')
+        append(entry.sourceTarget ?: "no-target")
     }
 
     private fun bumpToken() {
@@ -161,6 +194,7 @@ class StudioLogStore(
         val details: String?,
         val documentRevision: Long?,
         val groupKey: String?,
+        val sourceTarget: StudioLogSourceTarget?,
         val timestamp: Long,
     )
 }

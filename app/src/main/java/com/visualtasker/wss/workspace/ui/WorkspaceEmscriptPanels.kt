@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextDecrease
@@ -54,17 +55,13 @@ import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
 import com.visualtasker.wss.emscript.editor.EmscriptTextDropMetrics
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
-import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
-import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
-import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
-import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.logging.StudioLogLevel
+import com.visualtasker.wss.logging.StudioLogEntry
 import com.visualtasker.wss.logging.StudioLogStore
+import com.visualtasker.wss.logging.StudioLogSourceTarget
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
-import de.visualtasker.flowchart.domain.FlowGraphDocument
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 
 internal const val EMSCRIPT_STATUS_READ_ONLY_PROJECTION = "READ_ONLY_PROJECTION"
@@ -84,12 +81,7 @@ internal fun EmscriptTextEditorPanel(
     onSessionChange: (EmscriptEditorSession) -> Unit,
     logStore: StudioLogStore,
     workspaceJson: String,
-    currentFlowGraph: FlowGraphDocument,
     onWorkspaceJsonChange: (String) -> Unit,
-    onDryRunRuntimeSnapshot: (FlowRuntimeSnapshot) -> Unit = {},
-    onWorkspaceDryRun: (() -> Unit)? = null,
-    onLiveRun: () -> Unit = {},
-    canLiveRun: Boolean = false,
     liveRunStatus: String = "",
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
     activeSourceLine: Int? = null,
@@ -97,12 +89,9 @@ internal fun EmscriptTextEditorPanel(
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
     val parser = remember { EmscriptParserSlice() }
-    val dryRunRuntime = remember { EmscriptDryRunRuntime() }
-    val workspaceDryRunRuntime = remember { WorkspaceDryRunRuntime() }
     var pendingApplyJson by remember { mutableStateOf<String?>(null) }
     var applyDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var dryRunDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
-    var dryRunSequence by remember { mutableStateOf(0L) }
 
     fun manualScript(): String =
         session.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }?.content.orEmpty()
@@ -154,63 +143,6 @@ internal fun EmscriptTextEditorPanel(
                 documentRevision = workspaceJson.hashCode().toLong(),
                 groupKey = "emscript:compile-check:failure"
             )
-        }
-    }
-
-    fun dryRun() {
-        onWorkspaceDryRun?.let { runWorkspaceDry ->
-            runWorkspaceDry()
-            dryRunDiagnostics = listOf(
-                "Dry-Run nutzt das gemeinsame WorkspaceDocument.",
-                "Stepper, Flowchart und BlockEditor werden ueber denselben Runtime-Trace synchronisiert."
-            )
-            return
-        }
-        val workspaceDocument = runCatching { WorkspaceSerializer.deserialize(workspaceJson) }.getOrNull()
-        val irGraph = workspaceDocument?.let { IrGraphGenerator().generate(it) }
-        val result = workspaceDocument
-            ?.let(workspaceDryRunRuntime::run)
-            ?: dryRunRuntime.run(manualScript())
-        dryRunSequence += 1
-        if (irGraph != null) {
-            onDryRunRuntimeSnapshot(
-                EmscriptDryRunFlowRuntimeMapper.map(
-                    irGraph = irGraph,
-                    graph = currentFlowGraph,
-                    result = result,
-                    sequence = dryRunSequence,
-                )
-            )
-        }
-        when (result) {
-            is EmscriptDryRunResult.Success -> {
-                val preview = result.events.takeLast(8).joinToString(separator = "\n") {
-                    "#${it.index} ${it.kind.uppercase()}: ${it.message}"
-                }
-                dryRunDiagnostics = listOf("Dry-Run OK: ${result.events.size} Events.", preview)
-                logStore.append(
-                    level = StudioLogLevel.INFO,
-                    source = "EMSCRIPT",
-                    message = "Dry-Run erfolgreich",
-                    details = preview,
-                    documentRevision = workspaceJson.hashCode().toLong(),
-                    groupKey = "emscript:dry-run:success"
-                )
-            }
-            is EmscriptDryRunResult.Failure -> {
-                val preview = result.events.takeLast(8).joinToString(separator = "\n") {
-                    "#${it.index} ${it.kind.uppercase()}: ${it.message}"
-                }
-                dryRunDiagnostics = listOf("Dry-Run fehlgeschlagen: ${result.message}", preview)
-                logStore.append(
-                    level = StudioLogLevel.ERROR,
-                    source = "EMSCRIPT",
-                    message = "Dry-Run fehlgeschlagen",
-                    details = listOf(result.message, preview).filter { it.isNotBlank() }.joinToString(separator = "\n"),
-                    documentRevision = workspaceJson.hashCode().toLong(),
-                    groupKey = "emscript:dry-run:failure"
-                )
-            }
         }
     }
 
@@ -441,6 +373,8 @@ internal fun DebugInfoPanel(
     projectedScript: String,
     draft: String,
     flowRuntimeSnapshot: FlowRuntimeSnapshot? = null,
+    traceEntries: List<StudioLogEntry> = emptyList(),
+    onSourceTargetSelected: (StudioLogSourceTarget) -> Unit = {},
     onSaveDraft: () -> Unit,
     onUseProjection: () -> Unit,
     diagnostics: List<String>
@@ -474,6 +408,57 @@ internal fun DebugInfoPanel(
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.labelSmall
             )
+        }
+        Text(
+            text = "TRACE",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (traceEntries.isEmpty()) {
+            Text(
+                text = "Keine Trace-Einträge vorhanden.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            traceEntries.forEach { entry ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${entry.level.name} | ${entry.source}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = M3EColors.Amber,
+                            )
+                            Text(entry.message, style = MaterialTheme.typography.bodySmall)
+                            entry.details?.let { details ->
+                                Text(
+                                    text = details,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                )
+                            }
+                        }
+                        entry.sourceTarget?.let { target ->
+                            TooltipIconButton(
+                                tooltip = "Quelle öffnen",
+                                onClick = { onSourceTargetSelected(target) },
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = "Quelle öffnen")
+                            }
+                        }
+                    }
+                }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(

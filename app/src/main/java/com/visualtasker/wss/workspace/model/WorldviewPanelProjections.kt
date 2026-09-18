@@ -137,6 +137,103 @@ data class VisualUiMemoryProjection(
         get() = providerStates.count { it.active }
 }
 
+enum class VisualUiMemorySurface {
+    Inspector,
+    Datastore,
+    Marker,
+    Vision,
+    Junktor,
+}
+
+data class VisualUiMemorySurfaceProjection(
+    val surface: VisualUiMemorySurface,
+    val worldviewRevision: Long,
+    val providerStates: List<VisualUiMemoryProviderState>,
+    val facetCounts: List<VisualUiMemoryFacetCount>,
+    val suggestions: List<VisualUiMemorySuggestion>,
+    val selectedSourceId: String? = null,
+) {
+    val activeProviderCount: Int
+        get() = providerStates.count { it.active }
+
+    val itemCount: Int
+        get() = providerStates.sumOf(VisualUiMemoryProviderState::itemCount)
+}
+
+object VisualUiMemorySurfaceProjector {
+    fun project(
+        memory: VisualUiMemoryProjection,
+        surface: VisualUiMemorySurface,
+        selectedSourceId: String? = null,
+    ): VisualUiMemorySurfaceProjection {
+        val providerFilter = when (surface) {
+            VisualUiMemorySurface.Inspector -> VisualUiMemoryProvider.entries.toSet()
+            VisualUiMemorySurface.Datastore -> VisualUiMemoryProvider.entries.toSet()
+            VisualUiMemorySurface.Marker -> setOf(
+                VisualUiMemoryProvider.A11Y,
+                VisualUiMemoryProvider.Marker,
+                VisualUiMemoryProvider.Template,
+            )
+            VisualUiMemorySurface.Vision -> setOf(
+                VisualUiMemoryProvider.A11Y,
+                VisualUiMemoryProvider.OCR,
+                VisualUiMemoryProvider.OCV,
+                VisualUiMemoryProvider.YOLO,
+                VisualUiMemoryProvider.Template,
+            )
+            VisualUiMemorySurface.Junktor -> setOf(
+                VisualUiMemoryProvider.Marker,
+                VisualUiMemoryProvider.Template,
+                VisualUiMemoryProvider.Runtime,
+                VisualUiMemoryProvider.RAG,
+                VisualUiMemoryProvider.AI,
+                VisualUiMemoryProvider.ML,
+            )
+        }
+        val facetFilter = when (surface) {
+            VisualUiMemorySurface.Inspector -> setOf(
+                VisualUiMemoryFacet.Entity,
+                VisualUiMemoryFacet.Observation,
+                VisualUiMemoryFacet.Memory,
+                VisualUiMemoryFacet.Suggestion,
+            )
+            VisualUiMemorySurface.Datastore -> VisualUiMemoryFacet.entries.toSet()
+            VisualUiMemorySurface.Marker -> setOf(
+                VisualUiMemoryFacet.Scene,
+                VisualUiMemoryFacet.Entity,
+                VisualUiMemoryFacet.Observation,
+                VisualUiMemoryFacet.Suggestion,
+            )
+            VisualUiMemorySurface.Vision -> setOf(
+                VisualUiMemoryFacet.Scene,
+                VisualUiMemoryFacet.Entity,
+                VisualUiMemoryFacet.Observation,
+                VisualUiMemoryFacet.Dataset,
+            )
+            VisualUiMemorySurface.Junktor -> setOf(
+                VisualUiMemoryFacet.Observation,
+                VisualUiMemoryFacet.Memory,
+                VisualUiMemoryFacet.Dataset,
+                VisualUiMemoryFacet.Usage,
+                VisualUiMemoryFacet.Suggestion,
+            )
+        }
+        val suggestions = memory.suggestions.filter { suggestion ->
+            selectedSourceId == null ||
+                suggestion.sourceId == selectedSourceId ||
+                selectedSourceId in suggestion.evidenceRefs
+        }
+        return VisualUiMemorySurfaceProjection(
+            surface = surface,
+            worldviewRevision = memory.worldviewRevision,
+            providerStates = memory.providerStates.filter { it.provider in providerFilter },
+            facetCounts = memory.facetCounts.filter { it.facet in facetFilter },
+            suggestions = suggestions,
+            selectedSourceId = selectedSourceId,
+        )
+    }
+}
+
 object WorldviewInspectorProjector {
     fun project(
         document: WorldviewDocument,

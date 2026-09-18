@@ -11,6 +11,7 @@ import java.net.ServerSocket
 import java.net.Socket
 
 private const val VT2VT_DEFAULT_TIMEOUT_MS = 5_000
+internal const val VT2VT_MAX_FRAME_BYTES = 8 * 1024 * 1024
 
 data class Vt2VtLanEndpoint(
     val host: String,
@@ -98,13 +99,14 @@ fun detectVt2VtLanAddresses(): List<String> =
 
 private fun writeFrame(output: DataOutputStream, payload: String) {
     val bytes = payload.encodeToByteArray()
+    require(bytes.size in 1..VT2VT_MAX_FRAME_BYTES) { "Invalid VT2VT frame size: ${bytes.size}." }
     output.writeInt(bytes.size)
     output.write(bytes)
 }
 
 private fun readFrame(input: DataInputStream): String {
     val size = input.readInt()
-    require(size in 1..262_144) { "Invalid VT2VT frame size: $size." }
+    require(size in 1..VT2VT_MAX_FRAME_BYTES) { "Invalid VT2VT frame size: $size." }
     val bytes = ByteArray(size)
     input.readFully(bytes)
     return bytes.decodeToString()

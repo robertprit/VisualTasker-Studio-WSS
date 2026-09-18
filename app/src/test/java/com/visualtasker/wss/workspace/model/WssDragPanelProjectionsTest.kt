@@ -88,16 +88,24 @@ class WssDragPanelProjectionsTest {
                 actionType = "click",
                 status = StepStatus.Executed,
                 detail = "Button text Login",
+                point = WorldviewPoint(
+                    540f,
+                    1100f,
+                    CoordinateSpace(CoordinateSpaceKind.Screen),
+                ),
+                properties = mapOf("text" to "Login"),
             ),
         )
 
         val projection = WssPanelDragProjector.forJunctionPlan("junction", plan)
 
         assertEquals(listOf("Evidence", "Candidates"), projection.tree.items.map { it.payload.label })
-        val candidatePayload = projection.tree.find("item:candidate:step-1:direct")!!.payload
-        assertEquals(WssDragPayloadKind.Marker, candidatePayload.kind)
+        val candidatePayload = projection.tree.find("item:candidate:step-1:block")!!.payload
+        val markerPayload = projection.tree.find("item:candidate:step-1:marker")!!.payload
+        assertEquals(WssDragPayloadKind.Block, candidatePayload.kind)
+        assertEquals(WssDragPayloadKind.Marker, markerPayload.kind)
         assertTrue(candidatePayload.tags.contains("block"))
-        assertTrue(candidatePayload.tags.contains("flownode"))
+        assertEquals("clickPoint(540, 1100, 1)", candidatePayload.data["emscript"])
         assertEquals("Verified", candidatePayload.data["confidence"])
     }
 }

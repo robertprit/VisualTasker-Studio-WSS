@@ -33,6 +33,7 @@ data class EmscriptDryRunEvent(
     val capability: String? = null,
     val pluginOwner: String? = null,
     val diagnosticCode: String? = null,
+    val sourceLine: Int? = null,
 )
 
 sealed interface EmscriptDryRunResult {
@@ -55,7 +56,7 @@ sealed interface EmscriptValue {
 }
 
 class EmscriptDryRunRuntime(
-    private val parser: EmscriptParserSlice = EmscriptParserSlice(),
+    private val parser: EmscriptParserSlice = EmscriptParserSlice(includeSourceSpans = true),
     private val config: EmscriptDryRunConfig = EmscriptDryRunConfig(),
 ) {
     fun run(script: String): EmscriptDryRunResult {
@@ -96,40 +97,40 @@ private class Interpreter(
         guardStep()
         when (statement) {
             is EmscriptIrStatement.CommandCall -> {
-                emitCommand(statement.command, statement.arguments)
+                emitCommand(statement.command, statement.arguments, statement.source?.startLine)
             }
             is EmscriptIrStatement.Let -> {
                 val value = evaluate(statement.value)
                 variables[statement.variable] = value
-                emit("let", "${statement.variable} = ${value.render()}")
+                emit("let", "${statement.variable} = ${value.render()}", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Set -> {
                 val value = evaluate(statement.value)
                 variables[statement.variable] = value
-                emit("set", "${statement.variable} = ${value.render()}")
+                emit("set", "${statement.variable} = ${value.render()}", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Wait -> {
                 val ms = evaluate(statement.milliseconds).asLong("wait")
-                emit("wait", "würde ${ms.coerceAtLeast(0L)} ms warten")
+                emit("wait", "würde ${ms.coerceAtLeast(0L)} ms warten", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.ClickText -> {
-                emit("click", "würde Text \"${statement.text}\" anklicken")
+                emit("click", "würde Text \"${statement.text}\" anklicken", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Output -> {
-                emit("log", evaluate(statement.value).render())
+                emit("log", evaluate(statement.value).render(), sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Beep -> {
                 val hz = statement.frequency ?: 1_000
                 val duration = statement.durationMs ?: 200
                 val volume = statement.volume ?: 100
-                emit("beep", "würde Beep ${hz}Hz/${duration}ms/${volume}% abspielen")
+                emit("beep", "würde Beep ${hz}Hz/${duration}ms/${volume}% abspielen", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Vibrate -> {
-                emit("vibrate", "würde Vibrationsmuster ${statement.pattern.joinToString(",")} ms starten")
+                emit("vibrate", "würde Vibrationsmuster ${statement.pattern.joinToString(",")} ms starten", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Loop -> {
                 val count = evaluate(statement.times).asLong("loop").coerceAtLeast(0L)
-                repeatLoop(count, statement.body)
+                repeatLoop(count, statement.body, statement.source?.startLine)
             }
             is EmscriptIrStatement.While -> {
                 var iterations = 0
@@ -138,14 +139,14 @@ private class Interpreter(
                     if (iterations > config.maxLoopIterations) {
                         error("WHILE nach ${config.maxLoopIterations} Iterationen abgebrochen.")
                     }
-                    emit("while", "Iteration $iterations")
+                    emit("while", "Iteration $iterations", sourceLine = statement.source?.startLine)
                     execute(statement.body)
                 }
             }
             is EmscriptIrStatement.If -> {
                 when {
                     evaluate(statement.condition).asBoolean("if") -> {
-                        emit("if", "THEN")
+                        emit("if", "THEN", sourceLine = statement.source?.startLine)
                         execute(statement.thenBranch)
                     }
                     else -> {
@@ -153,10 +154,10 @@ private class Interpreter(
                             evaluate(it.condition).asBoolean("elseif")
                         }
                         if (elseIf != null) {
-                            emit("elseif", "ELSEIF")
+                            emit("elseif", "ELSEIF", sourceLine = elseIf.source?.startLine ?: statement.source?.startLine)
                             execute(elseIf.body)
                         } else {
-                            emit("else", "ELSE")
+                            emit("else", "ELSE", sourceLine = statement.source?.startLine)
                             execute(statement.elseBranch)
                         }
                     }
@@ -165,12 +166,12 @@ private class Interpreter(
         }
     }
 
-    private fun repeatLoop(count: Long, body: List<EmscriptIrStatement>) {
+    private fun repeatLoop(count: Long, body: List<EmscriptIrStatement>, sourceLine: Int?) {
         if (count > config.maxLoopIterations) {
             error("LOOP $count überschreitet Limit ${config.maxLoopIterations}.")
         }
         repeat(count.toInt()) { index ->
-            emit("loop", "Iteration ${index + 1}/$count")
+            emit("loop", "Iteration ${index + 1}/$count", sourceLine = sourceLine)
             execute(body)
         }
     }
@@ -238,11 +239,16 @@ private class Interpreter(
         }
     }
 
-    private fun emit(kind: String, message: String) {
-        events += EmscriptDryRunEvent(events.size + 1, kind, message)
+    private fun emit(kind: String, message: String, sourceLine: Int? = null) {
+        events += EmscriptDryRunEvent(
+            index = events.size + 1,
+            kind = kind,
+            message = message,
+            sourceLine = sourceLine,
+        )
     }
 
-    private fun emitCommand(command: String, arguments: String) {
+    private fun emitCommand(command: String, arguments: String, sourceLine: Int?) {
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(command)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(command)
         val gate = entry?.runtime?.liveCapabilityGate
@@ -270,6 +276,7 @@ private class Interpreter(
             command = entry?.canonicalName ?: command,
             capability = gate?.name,
             pluginOwner = pluginOwner,
+            sourceLine = sourceLine,
             diagnosticCode = when {
                 entry == null -> "CAPABILITY_CATALOG_MISSING"
                 severity == EmscriptDryRunEventSeverity.WARNING -> descriptor?.diagnosticCode ?: "CAPABILITY_BLOCKED"

@@ -26,6 +26,31 @@ enum class RailSurfaceMode(
     )
 }
 
+enum class RailSourceKind(
+    val label: String,
+    val description: String,
+) {
+    WorkflowRun(
+        label = "Workflow Run",
+        description = "Dry/Wet Run aus dem gemeinsamen Workflow-Graph",
+    ),
+    Recording(
+        label = "Recording",
+        description = "Recorder-Events, Screenshots, Activities und Gesten",
+    ),
+    WatchDog(
+        label = "WatchDog",
+        description = "Langlaufende Plugin-, Tasker-, VT2VT- und Provider-Ereignisse",
+    ),
+}
+
+fun RailSurfaceMode.toSourceKind(): RailSourceKind =
+    when (this) {
+        RailSurfaceMode.Run -> RailSourceKind.WorkflowRun
+        RailSurfaceMode.Records -> RailSourceKind.Recording
+        RailSurfaceMode.WatchDog -> RailSourceKind.WatchDog
+    }
+
 fun RailMode.toSurfaceMode(): RailSurfaceMode =
     when (this) {
         RailMode.Program,
@@ -233,11 +258,12 @@ data class RailItem(
 data class RailProjection(
     val mode: RailMode,
     val surfaceMode: RailSurfaceMode = mode.toSurfaceMode(),
+    val sourceKind: RailSourceKind = surfaceMode.toSourceKind(),
     val contract: RailModeContract = RailModeContract.forMode(mode),
     val scaleMode: RailScaleMode,
     val tracks: List<RailTrack>,
-    val title: String = surfaceMode.label,
-    val description: String = surfaceMode.description,
+    val title: String = sourceKind.label,
+    val description: String = sourceKind.description,
 )
 
 fun List<RecorderStepUi>.toRailProjection(
@@ -294,14 +320,23 @@ fun List<RecorderStepUi>.toRailProjection(
                 ?.let { items -> add(RailTrack("variables", RailTrackKind.Data, "Variables", items)) }
         }
 
-        RailMode.Live -> listOf(
-            RailTrack(
-                id = "live-runtime",
-                kind = RailTrackKind.Runtime,
-                label = "Runtime",
-                items = stepsWithItems.map { it.second.copy(kind = RailItemKind.RuntimeEvent) },
-            )
-        )
+        RailMode.Live -> buildList {
+            stepsWithItems
+                .filter { (step, _) -> step.isWatchDogSystemEvent() }
+                .map { it.second.copy(kind = RailItemKind.RuntimeEvent) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { items -> add(RailTrack("watchdog-system", RailTrackKind.Events, "System", items)) }
+            stepsWithItems
+                .filter { (step, _) -> step.isWatchDogProviderEvent() }
+                .map { it.second.copy(kind = RailItemKind.RuntimeEvent) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { items -> add(RailTrack("watchdog-provider", RailTrackKind.Provider, "Provider", items)) }
+            stepsWithItems
+                .filterNot { (step, _) -> step.isWatchDogSystemEvent() || step.isWatchDogProviderEvent() }
+                .map { it.second.copy(kind = RailItemKind.RuntimeEvent) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { items -> add(RailTrack("live-runtime", RailTrackKind.Runtime, "Runtime", items)) }
+        }
 
         RailMode.Replay -> buildList {
             add(
@@ -362,6 +397,8 @@ private fun RecorderStepUi.isRecordingOnlyEvent(): Boolean =
     status == StepStatus.Recorded ||
         actionType in setOf(
             "activity.change",
+            "window.baseline",
+            "window.transition",
             "click",
             "longClick",
             "text.change",
@@ -375,6 +412,29 @@ private fun RecorderStepUi.isDataStep(): Boolean {
     val haystack = "$actionType $label $detail".lowercase()
     return listOf("let", "set", "variable", "data", "result", "clipboard", "file").any { it in haystack }
 }
+
+private fun RecorderStepUi.isWatchDogSystemEvent(): Boolean =
+    actionType in setOf(
+        "activity.change",
+        "window.baseline",
+        "window.transition",
+        "app.foreground",
+        "app.start",
+        "screen.lock",
+        "screen.on",
+        "screen.unlock",
+        "button.click",
+    ) ||
+        properties["category"] in setOf("activity", "app", "screen", "button") ||
+        properties["role"].equals("button", ignoreCase = true)
+
+private fun RecorderStepUi.isWatchDogProviderEvent(): Boolean =
+    actionType.startsWith("tasker", ignoreCase = true) ||
+        actionType.startsWith("watchdog", ignoreCase = true) ||
+        actionType.contains("vt2vt", ignoreCase = true) ||
+        properties["pluginOwner"] != null ||
+        properties["source"] != null ||
+        properties["sourceKind"].equals("Provider", ignoreCase = true)
 
 private fun StepStatus.toRailItemStatus(): RailItemStatus =
     when (this) {

@@ -18,6 +18,7 @@ import android.widget.PopupWindow
 import android.widget.TextView
 import com.visualtasker.wss.MainActivity
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
+import com.visualtasker.wss.accessibility.toInspectorText
 import com.visualtasker.wss.workspace.model.RecordingEventStore
 import java.io.File
 import java.text.SimpleDateFormat
@@ -46,24 +47,33 @@ class StudioOverlayService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
+    private lateinit var stateStore: OverlayStateStore
     private val overlays = linkedMapOf<String, OverlayHandle>()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var statusView: TextView? = null
     private var recordingStatusView: TextView? = null
     private var recordingButton: TextView? = null
     private var recordingTickerJob: Job? = null
+    private var inspectorTickerJob: Job? = null
+    private var inspectorContentView: TextView? = null
     private var watchdogRunning = false
     private var toolbarMinimized = false
     private var overlayStatusMessage: String? = null
+    private var liveMarkerMultiGroupId: String? = null
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        stateStore = OverlayStateStore(this)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent == null) {
+            restoreVisibleOverlays()
+            return START_STICKY
+        }
         when (intent?.action) {
             ACTION_SHOW_FLOATING_PANEL -> showFloatingPanel()
             ACTION_SHOW_FLOATING_TOOLBAR -> showFloatingToolbar()
@@ -72,6 +82,17 @@ class StudioOverlayService : Service() {
             ACTION_TOGGLE_RECORDING -> toggleRecording()
         }
         return START_STICKY
+    }
+
+    private fun restoreVisibleOverlays() {
+        stateStore.visibleKeys().forEach { key ->
+            when (key) {
+                "panel" -> showFloatingPanel()
+                "toolbar" -> showFloatingToolbar()
+                "toolbar-mini" -> showMinimizedToolbarHandle()
+                "inspector" -> showFloatingInspector()
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -209,6 +230,10 @@ class StudioOverlayService : Service() {
                 menuItems = listOf(
                     "Point markieren" to { startMarkerMode("Point") },
                     "Region markieren" to { startMarkerMode("Region") },
+                    "Swipe markieren" to { startMarkerMode("Swipe") },
+                    "Spline freihand" to { startMarkerMode("Spline") },
+                    "Path zeichnen" to { startMarkerMode("Path") },
+                    "Multi umschalten" to { toggleLiveMarkerMulti() },
                 )
             )
         )
@@ -236,18 +261,18 @@ class StudioOverlayService : Service() {
     private fun showFloatingInspector() {
         if (overlays.containsKey("inspector")) return
         recordOverlayEvent("overlay.show", "inspector")
-        var enabled = true
         val shell = createOverlayShell(
             key = "inspector",
             title = "Floating Inspector",
             showResizeHandle = false,
         )
         val content = TextView(this).apply {
-            text = overlayStatusText()
+            text = overlayInspectorText()
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, 0, 0, dp(8))
         }
+        inspectorContentView = content
         statusView = content
         val capture = Button(this).apply {
             text = "Screenshot"
@@ -275,6 +300,7 @@ class StudioOverlayService : Service() {
             minWidth = dp(220),
             minHeight = dp(100),
         )
+        startInspectorTicker()
     }
 
     private fun toolButton(label: String, onClick: (() -> Unit)? = null): Button =
@@ -418,7 +444,11 @@ class StudioOverlayService : Service() {
         val target = File(filesDir, "emscript-runtime/screenshots/overlay-${timestamp()}.png")
         target.parentFile?.mkdirs()
         setStatus("Screenshot laeuft...")
-        recordOverlayEvent("screenshot.requested", "target=${target.name}")
+        val screenshotAttributes = mapOf(
+            "screenshotPath" to target.absolutePath,
+            "screenshotFile" to target.name,
+        )
+        recordOverlayEvent("screenshot.requested", "target=${target.name}", screenshotAttributes)
         serviceScope.launch {
             setOverlaysVisible(false)
             delay(180)
@@ -428,13 +458,17 @@ class StudioOverlayService : Service() {
                 setOverlaysVisible(true)
             }
             setStatus(if (ok) "Gespeichert: ${target.name}" else "Screenshot fehlgeschlagen")
-            recordOverlayEvent(kind = if (ok) "screenshot.saved" else "screenshot.failed", message = "target=${target.name}")
+            recordOverlayEvent(
+                kind = if (ok) "screenshot.saved" else "screenshot.failed",
+                message = "target=${target.name}",
+                attributes = screenshotAttributes,
+            )
         }
     }
 
     private fun captureScreenshotWithScan(scanMode: String) {
         setStatus("Screenshot + $scanMode Scan angefragt")
-        recordOverlayEvent("screenshot.scan.requested", "mode=$scanMode")
+        recordOverlayEvent("screenshot.scan.requested", "mode=$scanMode", mapOf("scanMode" to scanMode))
         captureScreenshot()
     }
 
@@ -482,9 +516,65 @@ class StudioOverlayService : Service() {
     }
 
     private fun startMarkerMode(mode: String) {
-        setStatus("$mode markieren")
-        recordOverlayEvent("marker.mode", "mode=$mode")
+        val markerMode = runCatching { LiveMarkerMode.valueOf(mode) }.getOrNull() ?: return
+        removeOverlay("live-marker", stopWhenEmpty = false)
+        val view = LiveMarkerOverlayView(
+            context = this,
+            mode = markerMode,
+            multiGroupId = liveMarkerMultiGroupId,
+            onMarker = { marker -> completeLiveMarker(marker) },
+            onCancel = {
+                removeOverlay("live-marker", stopWhenEmpty = false)
+                setStatus("Marker abgebrochen")
+            },
+        )
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+        }
+        windowManager.addView(view, params)
+        overlays["live-marker"] = OverlayHandle(view, params, null)
+        setStatus("$mode markieren${if (liveMarkerMultiGroupId != null) " · Multi" else ""}")
+        recordOverlayEvent("marker.mode", "mode=$mode", mapOf("multi" to (liveMarkerMultiGroupId != null).toString()))
         showFloatingInspector()
+    }
+
+    private fun toggleLiveMarkerMulti() {
+        liveMarkerMultiGroupId = if (liveMarkerMultiGroupId == null) {
+            "multi:${System.currentTimeMillis()}"
+        } else {
+            null
+        }
+        setStatus(if (liveMarkerMultiGroupId == null) "Marker Multi aus" else "Marker Multi aktiv")
+    }
+
+    private fun completeLiveMarker(marker: LiveMarkerResult) {
+        val target = LiveMarkerStore.append(this, marker)
+        val points = marker.points.joinToString(";") { "${it.x.roundToInt()},${it.y.roundToInt()}" }
+        val summary = "${marker.mode.name} ${marker.left.roundToInt()},${marker.top.roundToInt()} ${
+            (marker.right - marker.left).roundToInt()
+        }x${(marker.bottom - marker.top).roundToInt()}"
+        recordOverlayEvent(
+            kind = "marker.saved",
+            message = summary,
+            attributes = mapOf(
+                "markerId" to marker.id,
+                "markerMode" to marker.mode.name,
+                "points" to points,
+                "multiGroupId" to marker.multiGroupId.orEmpty(),
+                "markerStore" to target.absolutePath,
+            ),
+        )
+        setStatus("Marker gespeichert: $summary")
+        showFloatingInspector()
+        if (marker.multiGroupId == null) {
+            removeOverlay("live-marker", stopWhenEmpty = false)
+        }
     }
 
     private fun minimizeToolbar() {
@@ -538,7 +628,7 @@ class StudioOverlayService : Service() {
 
     private fun setStatus(message: String) {
         overlayStatusMessage = message
-        statusView?.text = message
+        statusView?.text = if (statusView === inspectorContentView) overlayInspectorText() else message
         statusView?.visibility = View.VISIBLE
     }
 
@@ -551,7 +641,8 @@ class StudioOverlayService : Service() {
     }
 
     private fun startOverlayRecording() {
-        val target = RecordingEventStore.start(this)
+        val baseline = VisualTaskerAccessibilityService.current()?.currentWindowContext()
+        val target = RecordingEventStore.start(this, baselineWindowContext = baseline)
         setStatus("Aufnahme laeuft: ${target.name}")
         startRecordingTicker()
         updateRecordingUi()
@@ -565,8 +656,12 @@ class StudioOverlayService : Service() {
         updateRecordingUi()
     }
 
-    private fun recordOverlayEvent(kind: String, message: String) {
-        RecordingEventStore.recordOverlayEvent(kind, message, mapOf("message" to message))
+    private fun recordOverlayEvent(
+        kind: String,
+        message: String,
+        attributes: Map<String, String> = emptyMap(),
+    ) {
+        RecordingEventStore.recordOverlayEvent(kind, message, mapOf("message" to message) + attributes)
     }
 
     private fun updateRecordingUi() {
@@ -601,8 +696,29 @@ class StudioOverlayService : Service() {
         }
     }
 
+    private fun startInspectorTicker() {
+        inspectorTickerJob?.cancel()
+        inspectorTickerJob = serviceScope.launch {
+            while (isActive && overlays.containsKey("inspector")) {
+                inspectorContentView?.text = overlayInspectorText()
+                delay(500)
+            }
+        }
+    }
+
+    private fun overlayInspectorText(): String {
+        val snapshotText = VisualTaskerAccessibilityService.current()
+            ?.currentInspectorSnapshot()
+            ?.toInspectorText()
+            ?: "Accessibility: nicht aktiv\nUI-Element: nicht verfügbar"
+        return overlayStatusMessage
+            ?.takeIf(String::isNotBlank)
+            ?.let { "$it\n\n$snapshotText" }
+            ?: snapshotText
+    }
+
     private fun overlayStatusText(): String =
-        if (VisualTaskerAccessibilityService.current() == null) {
+        overlayStatusMessage ?: if (VisualTaskerAccessibilityService.current() == null) {
             "Accessibility: nicht aktiv\nScreenshot: blockiert"
         } else {
             "Accessibility: aktiv\nScreenshot: bereit"
@@ -719,21 +835,23 @@ class StudioOverlayService : Service() {
         minWidth: Int,
         minHeight: Int,
     ) {
+        val saved = stateStore.load(key)
         val params = WindowManager.LayoutParams(
-            width,
-            height,
+            saved?.width?.takeIf { it > 0 } ?: width,
+            saved?.height?.takeIf { it > 0 } ?: height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            this.x = x
-            this.y = y
+            this.x = saved?.x ?: x
+            this.y = saved?.y ?: y
         }
 
-        installDragHandler(dragHandle, root, params)
+        installDragHandler(key, dragHandle, root, params)
         if (resizeHandle != null) {
             installResizeHandler(
+                key = key,
                 resizeHandle = resizeHandle,
                 root = root,
                 params = params,
@@ -743,11 +861,19 @@ class StudioOverlayService : Service() {
         }
         windowManager.addView(root, params)
         overlays[key] = OverlayHandle(root, params, recordingStatus)
+        savePlacement(key, params, visible = true)
         updateRecordingUi()
     }
 
     private fun removeOverlay(key: String, stopWhenEmpty: Boolean = true) {
         val handle = overlays.remove(key) ?: return
+        if (key == "inspector") {
+            inspectorTickerJob?.cancel()
+            inspectorTickerJob = null
+            inspectorContentView = null
+            statusView = overlays["toolbar"]?.recordingStatus
+        }
+        savePlacement(key, handle.params, visible = false)
         runCatching { windowManager.removeView(handle.root) }
         if (stopWhenEmpty && overlays.isEmpty()) {
             stopSelf()
@@ -761,6 +887,7 @@ class StudioOverlayService : Service() {
     }
 
     private fun installDragHandler(
+        key: String,
         dragHandle: View,
         root: View,
         params: WindowManager.LayoutParams,
@@ -792,6 +919,13 @@ class StudioOverlayService : Service() {
                             return true
                         }
                     }
+
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL,
+                    -> {
+                        if (dragging) savePlacement(key, params, visible = true)
+                        return dragging
+                    }
                 }
                 return dragging
             }
@@ -799,6 +933,7 @@ class StudioOverlayService : Service() {
     }
 
     private fun installResizeHandler(
+        key: String,
         resizeHandle: View,
         root: View,
         params: WindowManager.LayoutParams,
@@ -837,12 +972,30 @@ class StudioOverlayService : Service() {
                     MotionEvent.ACTION_CANCEL,
                     -> {
                         resizing = false
+                        savePlacement(key, params, visible = true)
                         return true
                     }
                 }
                 return false
             }
         })
+    }
+
+    private fun savePlacement(
+        key: String,
+        params: WindowManager.LayoutParams,
+        visible: Boolean,
+    ) {
+        stateStore.save(
+            key,
+            OverlayPlacement(
+                x = params.x,
+                y = params.y,
+                width = params.width,
+                height = params.height,
+                visible = visible,
+            ),
+        )
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()

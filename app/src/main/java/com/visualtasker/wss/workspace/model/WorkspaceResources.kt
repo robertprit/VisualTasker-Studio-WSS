@@ -1,6 +1,7 @@
 package com.visualtasker.wss.workspace.model
 
-const val WORKSPACE_RESOURCE_SCHEMA_VERSION = 1
+const val WORKSPACE_RESOURCE_SCHEMA_VERSION = 3
+const val WORKSPACE_RESOURCE_ITEM_VERSION = 1
 
 enum class WorkspaceResourceKind {
     Marker,
@@ -9,6 +10,7 @@ enum class WorkspaceResourceKind {
     Screenshot,
     Dataset,
     Overlay,
+    VisualAsset,
     Unknown,
 }
 
@@ -51,6 +53,7 @@ data class WorkspaceResource(
     val id: String,
     val kind: WorkspaceResourceKind,
     val label: String,
+    val resourceVersion: Int = WORKSPACE_RESOURCE_ITEM_VERSION,
     val pluginOwner: String = "visualtasker.core",
     val uri: String? = null,
     val mimeType: String? = null,
@@ -74,6 +77,9 @@ data class WorkspaceResource(
         }
         require(label.isNotBlank() && label == label.trim()) {
             "Resource label must be nonblank and trimmed."
+        }
+        require(resourceVersion > 0) {
+            "Resource version must be positive."
         }
         require(pluginOwner.isNotBlank() && pluginOwner == pluginOwner.trim()) {
             "Plugin owner must be nonblank and trimmed."
@@ -133,6 +139,22 @@ object WorkspaceResourceReducer {
             bundle
         } else {
             bundle.copy(revision = bundle.revision + 1, resources = nextResources)
+        }
+    }
+
+    fun upsertAll(
+        bundle: WorkspaceResourceBundle,
+        resources: Iterable<WorkspaceResource>,
+    ): WorkspaceResourceBundle {
+        val incoming = resources.toList()
+        if (incoming.isEmpty()) return bundle
+        val merged = (bundle.resources + incoming)
+            .preferNewestById()
+            .sortedWith(compareBy<WorkspaceResource> { it.kind.name }.thenBy { it.label })
+        return if (merged == bundle.resources) {
+            bundle
+        } else {
+            bundle.copy(revision = bundle.revision + 1, resources = merged)
         }
     }
 }

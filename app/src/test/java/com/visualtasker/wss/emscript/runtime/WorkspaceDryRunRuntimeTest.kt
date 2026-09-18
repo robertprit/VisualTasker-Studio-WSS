@@ -2,6 +2,7 @@ package com.visualtasker.wss.emscript.runtime
 
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +31,68 @@ class WorkspaceDryRunRuntimeTest {
         assertTrue(events.any { it.edgeSourceBlockId != null && it.edgeTargetBlockId != null && it.edgeKind == "TRUE_BRANCH" })
         assertTrue(events.any { it.blockId != null && it.kind == "log" && it.message == "then" })
         assertTrue(events.none { it.kind == "log" && it.message == "else" })
+    }
+
+    @Test
+    fun dryRunCanBePromotedToStableExecutionTrace() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            LET value = 1
+            log("trace")
+            """.trimIndent(),
+            workspaceId = "workspace-execution-trace",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val result = WorkspaceDryRunRuntime().run(imported.document!!)
+        assertTrue(result is EmscriptDryRunResult.Success)
+
+        val trace = result.toExecutionTrace(
+            runId = ExecutionRunId("run:test"),
+            mode = ExecutionMode.DryRun,
+            sourceSessionId = "session:test",
+            startedAtEpochMs = 100,
+            completedAtEpochMs = 120,
+        )
+
+        assertEquals("run:test", trace.runId.value)
+        assertEquals(ExecutionMode.DryRun, trace.mode)
+        assertEquals("session:test", trace.sourceSessionId)
+        assertTrue(trace.completed)
+        assertEquals(trace.operations.size, trace.eventCount)
+        assertTrue(trace.operations.all { it.runId == trace.runId })
+        assertTrue(trace.operations.any {
+            it.sourceRef?.kind == ExecutionSourceKind.Block &&
+                it.kind == "log" &&
+                it.command == "log"
+        })
+        assertTrue(trace.operations.any {
+            it.sourceRef?.kind == ExecutionSourceKind.Edge &&
+                it.sourceRef.edgeKind == "SEQUENCE"
+        })
+    }
+
+    @Test
+    fun workspaceDryRunCarriesImportedSourceLinesToRailTraceSteps() {
+        val imported = EmscriptWorkspaceImporter().import(
+            """
+            LET value = 1
+            log("source-line")
+            """.trimIndent(),
+            workspaceId = "workspace-source-line-trace",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+
+        val result = WorkspaceDryRunRuntime().run(imported.document!!)
+        assertTrue(result is EmscriptDryRunResult.Success)
+
+        val logEvent = (result as EmscriptDryRunResult.Success).events.first { it.kind == "log" }
+        assertEquals(2, logEvent.sourceLine)
+
+        val railStep = result
+            .toRailTraceSteps(runId = "workspace-source-line-trace", mode = ExecutionMode.DryRun)
+            .first { it.actionType == "log" }
+        assertEquals("2", railStep.properties["sourceLine"])
     }
 
     @Test

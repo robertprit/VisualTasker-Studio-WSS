@@ -440,6 +440,7 @@ private fun WorkspaceResource.toWorldEntity(sceneId: String?): WorldEntity =
             WorkspaceResourceKind.Marker -> WorldEntityKind.UiElement
             WorkspaceResourceKind.Region -> WorldEntityKind.Region
             WorkspaceResourceKind.Template -> WorldEntityKind.VisualObject
+            WorkspaceResourceKind.VisualAsset -> WorldEntityKind.VisualObject
             WorkspaceResourceKind.Screenshot -> WorldEntityKind.Screen
             WorkspaceResourceKind.Dataset,
             WorkspaceResourceKind.Overlay -> WorldEntityKind.Resource
@@ -461,8 +462,8 @@ private fun WorkspaceResource.toWorldEntity(sceneId: String?): WorldEntity =
 private fun WorkspaceResource.toResourceObservation(sceneId: String?): WorldObservation =
     WorldObservation(
         id = "observation:$id:import",
-        provider = ObservationProvider.Import,
-        kind = ObservationKind.ResourceImport,
+        provider = observationProvider(),
+        kind = observationKind(),
         sceneId = sceneId,
         entityId = "entity:$id",
         observedAtEpochMs = updatedAtEpochMs,
@@ -476,6 +477,35 @@ private fun WorkspaceResource.toResourceObservation(sceneId: String?): WorldObse
             "locked" to locked.toString(),
         ) + metadata,
     )
+
+private fun WorkspaceResource.observationProvider(): ObservationProvider {
+    val source = metadata["source"].orEmpty().lowercase()
+    val owner = pluginOwner.lowercase()
+    val matchKind = metadata["matchKind"].orEmpty().uppercase()
+    return when {
+        source.contains("live-overlay") || owner.contains("marker") || owner.contains("canvas") -> ObservationProvider.User
+        matchKind == "OCR" || owner.contains("ocr") -> ObservationProvider.Ocr
+        matchKind == "OCV" || owner.contains("opencv") || owner.contains("vision.template") -> ObservationProvider.OpenCv
+        matchKind == "YOLO" || owner.contains("yolo") -> ObservationProvider.Yolo
+        matchKind == "A11Y" || owner.contains("accessibility") -> ObservationProvider.Accessibility
+        matchKind == "DOM" || owner.contains("dom") -> ObservationProvider.Dom
+        owner.contains("runtime") || owner.contains("recorder") -> ObservationProvider.Runtime
+        else -> ObservationProvider.Import
+    }
+}
+
+private fun WorkspaceResource.observationKind(): ObservationKind =
+    when (observationProvider()) {
+        ObservationProvider.User -> if (markerMode == WorkspaceMarkerMode.Point) ObservationKind.Touch else ObservationKind.Bounds
+        ObservationProvider.Ocr -> ObservationKind.Text
+        ObservationProvider.OpenCv -> ObservationKind.TemplateMatch
+        ObservationProvider.Yolo -> ObservationKind.ObjectDetection
+        ObservationProvider.Accessibility -> ObservationKind.Bounds
+        ObservationProvider.Dom -> ObservationKind.DomElement
+        ObservationProvider.Runtime -> ObservationKind.RuntimeEvent
+        ObservationProvider.Import -> ObservationKind.ResourceImport
+        ObservationProvider.Unknown -> ObservationKind.Unknown
+    }
 
 private fun <T> upsertSorted(
     list: List<T>,

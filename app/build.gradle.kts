@@ -76,6 +76,7 @@ dependencies {
     implementation("de.visualtasker.flowchart:flowchart-validation:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.flowchart:flowchart-test-support:0.1.0-SNAPSHOT")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.04.01"))

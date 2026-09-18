@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.visualtasker.wss.logging.StudioLogFilters
 import com.visualtasker.wss.logging.StudioLogLevel
 import com.visualtasker.wss.logging.StudioLogStore
+import com.visualtasker.wss.logging.StudioLogSourceTarget
 import com.visualtasker.wss.ui.theme.M3EColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -61,7 +63,8 @@ internal class LogConsoleUiState {
 @Composable
 internal fun LogConsolePanel(
     store: StudioLogStore,
-    uiState: LogConsoleUiState
+    uiState: LogConsoleUiState,
+    onSourceTargetSelected: (StudioLogSourceTarget) -> Unit = {},
 ) {
     val token = store.changeToken
     val clipboard = LocalClipboardManager.current
@@ -146,6 +149,14 @@ internal fun LogConsolePanel(
                             modifier = Modifier.weight(1f)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            entry.sourceTarget?.let { target ->
+                                TooltipIconButton(
+                                    tooltip = "Quelle öffnen",
+                                    onClick = { onSourceTargetSelected(target) },
+                                ) {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = "Quelle öffnen")
+                                }
+                            }
                             TooltipIconButton(
                                 tooltip = "Details umschalten",
                                 onClick = { expandedIds[entry.id] = !isExpanded }
@@ -231,6 +242,11 @@ internal fun ColumnScope.LogConsoleExpandedRail(
 ) {
     val token = store.changeToken
     val sources = remember(token) { store.availableSources() }
+    val traceSources = remember(sources) {
+        listOf("RAILTRACE", "FLOWCHART", "EMSCRIPT", "WATCHDOG", "RUNTIME")
+            .filter { it in sources }
+            .toSet()
+    }
     Text(
         text = "Filter",
         style = MaterialTheme.typography.labelMedium
@@ -281,6 +297,14 @@ internal fun ColumnScope.LogConsoleExpandedRail(
             label = { Text("Alle") },
             leadingIcon = { Text(if (uiState.selectedSources.isEmpty()) "✓" else "•") }
         )
+        if (traceSources.isNotEmpty()) {
+            val selected = uiState.selectedSources == traceSources
+            AssistChip(
+                onClick = { uiState.selectedSources = traceSources },
+                label = { Text("Trace") },
+                leadingIcon = { Text(if (selected) "✓" else "•") }
+            )
+        }
         sources.forEach { source ->
             val selected = source in uiState.selectedSources
             AssistChip(

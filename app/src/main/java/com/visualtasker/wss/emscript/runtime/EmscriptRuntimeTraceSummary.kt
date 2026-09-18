@@ -13,33 +13,36 @@ data class EmscriptRuntimeTraceSummary(
 }
 
 fun EmscriptDryRunResult.traceSummary(): EmscriptRuntimeTraceSummary =
-    when (this) {
-        is EmscriptDryRunResult.Success -> {
-            val warnings = events.count { it.severity == EmscriptDryRunEventSeverity.WARNING }
-            val errors = events.count { it.severity == EmscriptDryRunEventSeverity.ERROR }
-            EmscriptRuntimeTraceSummary(
-                completed = true,
-                eventCount = events.size,
-                warningCount = warnings,
-                errorCount = errors,
-                lastCommand = events.lastOrNull { it.command != null }?.command,
-                message = if (warnings > 0 || errors > 0) {
-                    "Runtime abgeschlossen: ${events.size} Events, $warnings Warnungen, $errors Fehler."
-                } else {
-                    "Runtime abgeschlossen: ${events.size} Events."
-                },
-            )
-        }
-        is EmscriptDryRunResult.Failure -> {
-            val warnings = events.count { it.severity == EmscriptDryRunEventSeverity.WARNING }
-            val errors = events.count { it.severity == EmscriptDryRunEventSeverity.ERROR }.coerceAtLeast(1)
-            EmscriptRuntimeTraceSummary(
-                completed = false,
-                eventCount = events.size,
-                warningCount = warnings,
-                errorCount = errors,
-                lastCommand = events.lastOrNull { it.command != null }?.command,
-                message = message,
-            )
+    toExecutionTrace(
+        runId = ExecutionRunId("summary"),
+        mode = ExecutionMode.DryRun,
+        sourceSessionId = "summary",
+    ).let { trace ->
+        when (this) {
+            is EmscriptDryRunResult.Success -> {
+                EmscriptRuntimeTraceSummary(
+                    completed = true,
+                    eventCount = trace.eventCount,
+                    warningCount = trace.warningCount,
+                    errorCount = trace.errorCount,
+                    lastCommand = trace.operations.lastOrNull { it.command != null }?.command,
+                    message = if (trace.warningCount > 0 || trace.errorCount > 0) {
+                        "Runtime abgeschlossen: ${trace.eventCount} Events, ${trace.warningCount} Warnungen, ${trace.errorCount} Fehler."
+                    } else {
+                        "Runtime abgeschlossen: ${trace.eventCount} Events."
+                    },
+                )
+            }
+
+            is EmscriptDryRunResult.Failure -> {
+                EmscriptRuntimeTraceSummary(
+                    completed = false,
+                    eventCount = trace.eventCount,
+                    warningCount = trace.warningCount,
+                    errorCount = trace.errorCount.coerceAtLeast(1),
+                    lastCommand = trace.operations.lastOrNull { it.command != null }?.command,
+                    message = message,
+                )
+            }
         }
     }

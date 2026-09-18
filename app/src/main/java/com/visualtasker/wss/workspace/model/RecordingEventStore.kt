@@ -2,6 +2,7 @@ package com.visualtasker.wss.workspace.model
 
 import android.content.Context
 import android.graphics.Rect
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.io.File
@@ -16,7 +17,11 @@ object RecordingEventStore {
     private val activeSession = AtomicReference<RecordingSessionWriter?>(null)
     private val activeStatus = AtomicReference(RecordingStatusSnapshot())
 
-    fun start(context: Context, source: String = "floatingOverlay"): File {
+    fun start(
+        context: Context,
+        source: String = "floatingOverlay",
+        baselineWindowContext: WindowContext? = null,
+    ): File {
         val target = File(context.filesDir, "$RECORDS_DIR/overlay-${timestamp()}.jsonl")
         target.parentFile?.mkdirs()
         val writer = RecordingSessionWriter(
@@ -27,6 +32,7 @@ object RecordingEventStore {
         activeSession.set(writer)
         activeStatus.set(RecordingStatusSnapshot(fileName = target.name))
         writer.record("recording.started", "Aufnahme gestartet", mapOf("file" to target.name))
+        baselineWindowContext?.let(writer::recordWindowEvidence)
         return target
     }
 
@@ -83,23 +89,56 @@ object RecordingEventStore {
         return target
     }
 
-    fun recordAccessibilityEvent(event: AccessibilityEvent) {
+    fun recordAccessibilityEvent(
+        event: AccessibilityEvent,
+        windowContext: WindowContext? = null,
+    ) {
         val writer = activeSession.get() ?: return
         val kind = event.recordingKind() ?: return
+        val windowEvidenceAttributes = if (event.isWindowContextEvent()) {
+            val context = windowContext ?: event.toWindowContext(System.currentTimeMillis())
+            writer.windowEvidenceAttributes(context) ?: return
+        } else {
+            emptyMap()
+        }
         val bounds = event.source?.screenBoundsOrNull()
+        val sourceNode = event.source
+        val className = event.className?.toString().orEmpty()
+        val packageName = event.packageName?.toString().orEmpty()
         val attributes = buildMap {
             put("eventType", event.eventType.toString())
-            event.packageName?.toString()?.takeIf { it.isNotBlank() }?.let { put("package", it) }
-            event.className?.toString()?.takeIf { it.isNotBlank() }?.let { put("activity", it) }
+            packageName.takeIf { it.isNotBlank() }?.let { put("package", it) }
+            className.takeIf { it.isNotBlank() }?.let { put("className", it) }
+            event.trustedActivityName()?.let { put("activity", it) }
             event.text?.joinToString(separator = " ")?.takeIf { it.isNotBlank() }?.let { put("text", it) }
             event.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { put("description", it) }
+            if (kind == "activity.change") {
+                put("category", "activity")
+            }
+            if (kind == "app.foreground") {
+                put("category", "app")
+            }
+            if (kind == "button.click" || className.contains("button", ignoreCase = true)) {
+                put("role", "button")
+            }
+            sourceNode?.let { node ->
+                put("clickable", node.isClickable.toString())
+                put("focusable", node.isFocusable.toString())
+                put("enabled", node.isEnabled.toString())
+                put("visible", node.isVisibleToUser.toString())
+            }
             bounds?.let {
                 put("bounds", "${it.left},${it.top},${it.right},${it.bottom}")
                 put("x", it.centerX().toString())
                 put("y", it.centerY().toString())
             }
+            putAll(windowEvidenceAttributes)
         }
         writer.record(kind, event.recordingLabel(kind), attributes)
+    }
+
+    fun recordWindowContext(context: WindowContext) {
+        activeSession.get()?.recordWindowEvidence(context)
     }
 
     fun latestRecordingFile(context: Context): File? =
@@ -254,7 +293,8 @@ object RecordingEventStore {
     private fun AccessibilityEvent.recordingKind(): String? =
         when (eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "activity.change"
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> "click"
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> "app.foreground"
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> if (isButtonLike()) "button.click" else "click"
             AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> "longClick"
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> "text.change"
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> "scroll"
@@ -264,9 +304,46 @@ object RecordingEventStore {
             else -> null
         }
 
+    private fun AccessibilityEvent.isWindowContextEvent(): Boolean =
+        eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED
+
+    private fun AccessibilityEvent.toWindowContext(timestampMs: Long): WindowContext {
+        val packageName = packageName?.toString()?.takeIf { it.isNotBlank() }
+        val activityName = trustedActivityName()
+        val bounds = source?.screenBoundsOrNull()?.toWorldviewRect()
+        val rawWindowId = runCatching { windowId }.getOrNull()?.takeIf { it >= 0 }
+        val id = rawWindowId?.let { "android-window-$it" }
+            ?: "android-window-${packageName.orEmpty()}-${activityName.orEmpty()}".ifBlank { "android-window-unknown" }
+        val snapshot = WindowSnapshot(
+            id = id,
+            packageName = packageName,
+            activityName = activityName,
+            title = textLabel().takeIf { it.isNotBlank() },
+            bounds = bounds,
+            focused = eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            active = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+            timestampMs = timestampMs,
+            properties = buildMap {
+                put("eventType", eventType.toString())
+                rawWindowId?.let { put("androidWindowId", it.toString()) }
+            },
+        )
+        return WindowContext(
+            packageName = packageName,
+            activityName = activityName,
+            windows = listOf(snapshot),
+            timestampMs = timestampMs,
+        )
+    }
+
     private fun AccessibilityEvent.recordingLabel(kind: String): String =
         when (kind) {
-            "activity.change" -> "Activity: ${className?.toString().orEmpty().ifBlank { packageName?.toString().orEmpty() }}"
+            "activity.change" -> "Activity: ${trustedActivityName() ?: packageName?.toString().orEmpty()}"
+            "app.foreground" -> "App im Vordergrund: ${packageName?.toString().orEmpty().ifBlank { className?.toString().orEmpty() }}"
+            "button.click" -> "Button ${textLabel()}"
             "click" -> "Click ${textLabel()}"
             "longClick" -> "Long Click ${textLabel()}"
             "text.change" -> "Text geaendert ${textLabel()}"
@@ -277,6 +354,25 @@ object RecordingEventStore {
             else -> kind
         }.trim()
 
+    private fun AccessibilityEvent.isButtonLike(): Boolean =
+        className?.toString()?.contains("button", ignoreCase = true) == true ||
+            source?.className?.toString()?.contains("button", ignoreCase = true) == true
+
+    private fun AccessibilityEvent.trustedActivityName(): String? {
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return null
+        val eventPackageName = packageName?.toString().orEmpty()
+        return className
+            ?.toString()
+            ?.takeIf { candidate ->
+                candidate.isNotBlank() &&
+                    !candidate.startsWith("android.") &&
+                    (
+                        candidate.endsWith("Activity") ||
+                            eventPackageName.isNotBlank() && candidate.startsWith(eventPackageName)
+                        )
+            }
+    }
+
     private fun AccessibilityEvent.textLabel(): String =
         text?.joinToString(separator = " ")
             ?.takeIf { it.isNotBlank() }
@@ -285,6 +381,17 @@ object RecordingEventStore {
 
     private fun AccessibilityNodeInfo.screenBoundsOrNull(): Rect? =
         Rect().also(::getBoundsInScreen).takeUnless { it.isEmpty }
+
+    private fun Rect.toWorldviewRect(): WorldviewRect? =
+        runCatching {
+            WorldviewRect(
+                left = left.toFloat(),
+                top = top.toFloat(),
+                right = right.toFloat(),
+                bottom = bottom.toFloat(),
+                coordinateSpace = CoordinateSpace(CoordinateSpaceKind.Screen),
+            )
+        }.getOrNull()
 
     private fun RecordingEventLine.durationMs(): Long? =
         attributes["durationMs"]?.toLongOrNull()
@@ -331,6 +438,20 @@ object RecordingEventStore {
         val startedAtMs: Long,
         var index: Int = 0,
     ) {
+        private val windowEvidenceReducer = WindowRecordingEvidenceReducer()
+
+        fun recordWindowEvidence(current: WindowContext) {
+            val evidence = windowEvidenceReducer.accept(current) ?: return
+            Log.i("RECORDER/WINDOW", "${evidence.kind} ${evidence.label}")
+            record(evidence.kind, evidence.label, evidence.attributes)
+        }
+
+        fun windowEvidenceAttributes(current: WindowContext): Map<String, String>? {
+            val evidence = windowEvidenceReducer.accept(current) ?: return null
+            Log.i("RECORDER/WINDOW", "${evidence.kind} ${evidence.label}")
+            return evidence.attributes
+        }
+
         fun record(kind: String, label: String, attributes: Map<String, String>) {
             val now = System.currentTimeMillis()
             val currentIndex = index++
@@ -358,6 +479,7 @@ object RecordingEventStore {
                 )
             )
         }
+
     }
 
     private data class RecordingEventLine(

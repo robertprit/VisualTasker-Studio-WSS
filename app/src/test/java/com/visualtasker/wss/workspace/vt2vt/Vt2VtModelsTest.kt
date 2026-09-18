@@ -79,6 +79,36 @@ class Vt2VtModelsTest {
     }
 
     @Test
+    fun lanTransportCarriesCompressedWorkspaceSizedFrames() = runBlocking {
+        val port = ServerSocket(0).use { it.localPort }
+        val server = async {
+            Vt2VtLanTransport.receiveOnce(
+                port = port,
+                localPeerId = "observer-large",
+                timeoutMs = 2_000,
+            )
+        }
+        delay(100)
+        val workspaceData = "x".repeat(350_000)
+
+        val ack = Vt2VtLanTransport.send(
+            endpoint = Vt2VtLanEndpoint("127.0.0.1", port),
+            message = Vt2VtMessage(
+                id = "msg-large",
+                type = Vt2VtMessageType.WorkspaceState,
+                sourcePeerId = "primary-large",
+                timestampMs = 2_000L,
+                payload = mapOf("workspaceData" to workspaceData),
+            ),
+            timeoutMs = 2_000,
+        )
+        val exchange = server.await()
+
+        assertEquals(workspaceData.length, exchange.inbound.payload.getValue("workspaceData").length)
+        assertEquals("msg-large", ack.payload["ack"])
+    }
+
+    @Test
     fun usbBridgeConfigUsesLocalhostAdbReverseConvention() {
         val config = Vt2VtUsbBridgeConfig()
 

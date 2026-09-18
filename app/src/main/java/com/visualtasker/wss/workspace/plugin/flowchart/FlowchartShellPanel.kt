@@ -87,6 +87,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.visualtasker.wss.R
 import com.visualtasker.wss.workspace.model.FlowchartConnectionOption
+import com.visualtasker.wss.workspace.model.ToolboxSetMode
+import com.visualtasker.wss.workspace.model.accepts
+import com.visualtasker.wss.emscript.runtime.CommandToolboxAvailability
+import com.visualtasker.wss.emscript.runtime.CommandToolboxCapability
+import com.visualtasker.wss.emscript.runtime.toToolboxCapability
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
 import de.visualtasker.flowchart.compose.FlowchartHost
 import de.visualtasker.flowchart.compose.FlowchartHostCallbacks
@@ -122,6 +127,7 @@ import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 import kotlin.math.roundToInt
 
 @Composable
@@ -168,13 +174,12 @@ fun FlowchartShellPanel(
     var pendingConnectionStart by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var localSelectionEcho by remember(session.sessionId) { mutableStateOf<FlowchartSelectionEcho?>(null) }
     var connectionMenu by remember(session.sessionId) { mutableStateOf<PendingConnectionMenu?>(null) }
-    var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.Wrapped) }
+    var arrangeMode by remember(session.sessionId) { mutableStateOf(FlowchartArrangeMode.Semantic) }
     var panelSize by remember(session.sessionId) { mutableStateOf(IntSize.Zero) }
     var draggedNodeId by remember(session.sessionId) { mutableStateOf<FlowNodeId?>(null) }
     var draggedNodePoint by remember(session.sessionId) { mutableStateOf<FlowPoint?>(null) }
     var miniMapOffset by remember(session.sessionId) { mutableStateOf(Offset.Zero) }
     var previousViewOrientation by remember(session.sessionId) { mutableStateOf(viewOrientation) }
-    var lastCenteredExternalFocus by remember(session.sessionId) { mutableStateOf(FlowchartSelectionEcho(null, null)) }
     var externalFocusInitialized by remember(session.sessionId) { mutableStateOf(false) }
     var runtimeFocusInitialized by remember(session.sessionId) { mutableStateOf(false) }
     var renderViewDocument by remember(session.sessionId) {
@@ -240,6 +245,20 @@ fun FlowchartShellPanel(
     fun baseViewDocument(): FlowViewDocument? =
         renderViewDocument ?: controller.snapshot().view ?: session.viewDocument
 
+    fun replaceVisibleLayout(config: FlowLayoutConfig): FlowViewDocument? {
+        val attachedGraph = controller.snapshot().graph ?: return null
+        val projectionGraph = attachedGraph.filteredForFlowchart(
+            reporterNodesVisible = reporterNodesVisible,
+            variableNodesVisible = variableNodesVisible,
+            operatorNodesVisible = operatorNodesVisible,
+        )
+        return controller.replaceLayout(config, projectionGraph = projectionGraph)?.also { view ->
+            renderViewDocument = view
+            session.onViewDocumentChanged(view)
+            onViewChanged?.invoke(view)
+        }
+    }
+
     fun centerViewport() {
         val current = visibleViewDocument ?: baseViewDocument() ?: return
         val viewport = fitFlowchartViewport(current, visibleGraphDocument, panelSize, visibleGraphDocument.entryNodeId)
@@ -259,10 +278,7 @@ fun FlowchartShellPanel(
             }
             return
         }
-        controller.replaceLayout(arrangeMode.layoutConfig(viewOrientation))?.let { layoutView ->
-            renderViewDocument = layoutView
-            session.onViewDocumentChanged(layoutView)
-            onViewChanged?.invoke(layoutView)
+        replaceVisibleLayout(arrangeMode.layoutConfig(viewOrientation))?.let { layoutView ->
             applyViewport(fitFlowchartViewport(layoutView, visibleGraphDocument, panelSize, visibleGraphDocument.entryNodeId))
         }
     }
@@ -464,11 +480,7 @@ fun FlowchartShellPanel(
     LaunchedEffect(viewOrientation) {
         if (previousViewOrientation == viewOrientation) return@LaunchedEffect
         previousViewOrientation = viewOrientation
-        controller.replaceLayout(arrangeMode.layoutConfig(viewOrientation))?.let { view ->
-            renderViewDocument = view
-            session.onViewDocumentChanged(view)
-            onViewChanged?.invoke(view)
-        }
+        replaceVisibleLayout(arrangeMode.layoutConfig(viewOrientation))
     }
     LaunchedEffect(runtimeSnapshot?.activeNodeId, panelSize) {
         val activeNodeId = runtimeSnapshot?.activeNodeId ?: return@LaunchedEffect
@@ -494,18 +506,7 @@ fun FlowchartShellPanel(
         }
         if (!externalFocusInitialized) {
             externalFocusInitialized = true
-            lastCenteredExternalFocus = focus
             return@LaunchedEffect
-        }
-        if (
-            focusedNodeId != null &&
-            lastCenteredExternalFocus != focus &&
-            controller.snapshot().interaction.dragState == null &&
-            draggedNodeId == null &&
-            pendingConnectionStart == null
-        ) {
-            lastCenteredExternalFocus = focus
-            centerFocusedElement()
         }
     }
 
@@ -600,12 +601,12 @@ fun FlowchartShellPanel(
             onZoomIn = { zoomFocused(1.2) },
             onCenter = ::centerViewport,
             onArrange = {
-                controller.replaceLayout(arrangeMode.layoutConfig(viewOrientation))
+                replaceVisibleLayout(arrangeMode.layoutConfig(viewOrientation))
             },
             arrangeMode = arrangeMode,
             onArrangeModeSelected = { mode ->
                 arrangeMode = mode
-                controller.replaceLayout(mode.layoutConfig(viewOrientation))
+                replaceVisibleLayout(mode.layoutConfig(viewOrientation))
             },
             onGridToggle = { gridVisible = !gridVisible },
             onDataFlowToggle = { onDataFlowVisibleChange(!dataFlowVisible) },
@@ -858,15 +859,16 @@ private data class FlowchartSelectionEcho(
     val edgeId: FlowEdgeId?,
 )
 
-private fun fitFlowchartViewport(
+internal fun fitFlowchartViewport(
     view: FlowViewDocument,
     graph: FlowGraphDocument,
     panelSize: IntSize,
     anchorNodeId: FlowNodeId? = null,
 ): FlowViewport {
     if (panelSize.width <= 0 || panelSize.height <= 0 || view.nodeViews.isEmpty()) return view.viewport
+    val collapsedMemberIds = view.collapsedFacetMemberIds(graph)
     val fitNodeIds = graph.nodes
-        .filterNot { it.isViewportBackgroundFacet() }
+        .filterNot { it.isViewportBackgroundFacet() || it.id in collapsedMemberIds }
         .mapTo(mutableSetOf()) { it.id }
     val fitNodes = view.nodeViews
         .filter { it.nodeId in fitNodeIds }
@@ -955,53 +957,44 @@ private fun FlowViewDocument.edgeCenter(sourceNodeId: FlowNodeId, targetNodeId: 
     return FlowPoint((source.x + target.x) / 2.0, (source.y + target.y) / 2.0)
 }
 
-private enum class FlowchartArrangeMode(
+internal enum class FlowchartArrangeMode(
     val displayLabel: String,
     val description: String,
 ) {
-    CodeFlow("Code Flow", "Vertikaler Hauptstamm, Branches treppenfoermig"),
+    Semantic("Semantik", "Hauptfluss mit nahen, treppenfoermigen Branches"),
+    Analysis("Analyse", "Mehr Raum fuer Ports, Kanten und technische Detail-Layer"),
     Compact("Kompakt", "Engere Abstaende fuer kleine Screens"),
-    Wrapped("Wrapped", "Lange Hauptketten in Spalten umbrechen"),
-    Wide("Weit", "Mehr Abstand fuer Kanten-Lanes"),
-    PreserveManual("Manuell", "Vorhandene Node-Positionen respektieren");
+    Manual("Manuell", "Vorhandene Node-Positionen respektieren");
 
     fun layoutConfig(orientation: FlowchartViewOrientation): FlowLayoutConfig =
         when (this) {
-            CodeFlow -> FlowLayoutConfig(
+            Semantic -> FlowLayoutConfig(
                 orientation = orientation.layoutOrientation,
-                layerSpacing = 156.0,
-                nodeSpacing = 112.0,
-                componentSpacing = 192.0,
-                routingClearance = 40.0,
-                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
-            )
-            Compact -> FlowLayoutConfig(
-                orientation = orientation.layoutOrientation,
-                layerSpacing = 104.0,
-                nodeSpacing = 56.0,
-                componentSpacing = 112.0,
-                routingClearance = 22.0,
-                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
-            )
-            Wrapped -> FlowLayoutConfig(
-                orientation = orientation.layoutOrientation,
-                layerSpacing = 104.0,
-                nodeSpacing = 64.0,
+                layerSpacing = 96.0,
+                nodeSpacing = 96.0,
                 componentSpacing = 128.0,
                 routingClearance = 28.0,
                 wrapAfterNodes = 11,
                 semanticWrapEnabled = true,
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
-            Wide -> FlowLayoutConfig(
+            Analysis -> FlowLayoutConfig(
                 orientation = orientation.layoutOrientation,
-                layerSpacing = 176.0,
-                nodeSpacing = 136.0,
+                layerSpacing = 96.0,
+                nodeSpacing = 96.0,
                 componentSpacing = 220.0,
                 routingClearance = 48.0,
                 pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
             )
-            PreserveManual -> FlowLayoutConfig(
+            Compact -> FlowLayoutConfig(
+                orientation = orientation.layoutOrientation,
+                layerSpacing = 96.0,
+                nodeSpacing = 96.0,
+                componentSpacing = 112.0,
+                routingClearance = 22.0,
+                pinnedNodePolicy = FlowPinnedNodePolicy.IGNORE,
+            )
+            Manual -> FlowLayoutConfig(
                 orientation = orientation.layoutOrientation,
                 pinnedNodePolicy = FlowPinnedNodePolicy.HONOR_VIEW,
             )
@@ -1458,9 +1451,10 @@ fun ColumnScope.FlowchartCompactNodeRail(
 	@OptIn(ExperimentalMaterial3Api::class)
 	@Composable
 	fun ColumnScope.FlowchartNodeToolboxRail(
+	    toolboxSetMode: ToolboxSetMode = ToolboxSetMode.Mixed,
 	    onAddNode: (String) -> Unit = {},
 	) {
-	    val entries = remember { flowchartNodePaletteEntries() }
+	    val entries = remember(toolboxSetMode) { flowchartNodePaletteEntries(toolboxSetMode) }
 	    val categories = remember(entries) {
 	        entries
 	            .map { BlockCategories.metaFor(it.categoryId) }
@@ -1550,10 +1544,26 @@ fun ColumnScope.FlowchartCompactNodeRail(
 	                        FlowchartNodeGlyph(entry = entry, modifier = Modifier.size(24.dp))
 	                        Text(
 	                            text = entry.label,
+	                            modifier = Modifier.weight(1f),
 	                            style = MaterialTheme.typography.bodySmall,
 	                            color = MaterialTheme.colorScheme.onSurface,
 	                            maxLines = 1,
 	                        )
+	                        entry.capability
+	                            ?.takeIf { it.availability != CommandToolboxAvailability.NONE }
+	                            ?.let { capability ->
+	                                Text(
+	                                    text = capability.shortLabel,
+	                                    style = MaterialTheme.typography.labelSmall,
+	                                    color = when (capability.availability) {
+	                                        CommandToolboxAvailability.LOCAL -> Color(0xFF63D69A)
+	                                        CommandToolboxAvailability.ADAPTER -> Color(0xFFFFC857)
+	                                        CommandToolboxAvailability.PLANNED -> Color(0xFFFF7A8A)
+	                                        CommandToolboxAvailability.NONE -> MaterialTheme.colorScheme.onSurfaceVariant
+	                                    },
+	                                    maxLines = 1,
+	                                )
+	                            }
 	                    }
 	                }
 	            }
@@ -1796,11 +1806,15 @@ internal data class FlowchartNodePaletteEntry(
     val label: String,
     val definitionId: String,
     val fillColor: Color,
+    val capability: CommandToolboxCapability?,
 )
 
-internal fun flowchartNodePaletteEntries(): List<FlowchartNodePaletteEntry> =
+internal fun flowchartNodePaletteEntries(
+    toolboxSetMode: ToolboxSetMode = ToolboxSetMode.Mixed,
+): List<FlowchartNodePaletteEntry> =
     DefaultBlockRegistry.allDefinitions()
         .filter { it.paletteVisible }
+        .filter(toolboxSetMode::accepts)
         .filterNot { it.id == BlockTypes.VARIABLE_REPORTER }
         .sortedWith(
             compareBy(
@@ -1822,6 +1836,9 @@ internal fun flowchartNodePaletteEntries(): List<FlowchartNodePaletteEntry> =
                 label = displayLabel,
                 definitionId = definition.id,
                 fillColor = Color(BlockCategories.metaFor(definition.category).accentArgb),
+                capability = VisualTaskerCommandCatalog.findByBlockType(definition.id)
+                    ?.toCapabilityDescriptor()
+                    ?.toToolboxCapability(),
             )
         }
 
@@ -2082,6 +2099,30 @@ private fun FlowGraphNode.isReporterNode(): Boolean {
 private fun FlowGraphNode.isViewportBackgroundFacet(): Boolean =
     properties["visualFacet"] == FlowSemanticValue.BooleanValue(true) &&
         properties["syntheticJoin"] != FlowSemanticValue.BooleanValue(true)
+
+private fun FlowViewDocument.collapsedFacetMemberIds(graph: FlowGraphDocument): Set<FlowNodeId> {
+    val collapsedFacetIds = extensions
+        .firstOrNull { it.key == "visualtasker.collapsed-facets" }
+        ?.value
+        ?.let { it as? FlowSemanticValue.ListValue }
+        ?.values
+        .orEmpty()
+        .mapNotNull { (it as? FlowSemanticValue.StringValue)?.value }
+        .mapTo(linkedSetOf(), ::FlowNodeId)
+    if (collapsedFacetIds.isEmpty()) return emptySet()
+    return graph.nodes
+        .asSequence()
+        .filter { it.id in collapsedFacetIds }
+        .flatMap { facet ->
+            (facet.properties["nodeIds"] as? FlowSemanticValue.ListValue)
+                ?.values
+                .orEmpty()
+                .asSequence()
+                .mapNotNull { (it as? FlowSemanticValue.StringValue)?.value }
+                .map(::FlowNodeId)
+        }
+        .toSet()
+}
 
 private fun FlowGraphNode.isVariableNode(): Boolean {
     val blockType = properties.textFor("blockType").orEmpty().lowercase()

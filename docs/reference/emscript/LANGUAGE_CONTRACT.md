@@ -12,6 +12,13 @@ EMScript ist eine Projektion derselben Workflow-Semantik, die auch Blockeditor u
 
 ## Kanonische WSS-Syntax
 
+Die normative Stable-V1-Grammatik liegt in
+[`STABLE_V1_GRAMMAR.ebnf`](STABLE_V1_GRAMMAR.ebnf). Der `CommandCatalog`
+ergaenzt diese Syntax um die gueltigen Command-Namen, Argumenttypen, Defaults
+und Capability-Vertraege. Parser-Akzeptanz und Live-Verfuegbarkeit sind getrennt:
+ein korrektes Plugin-Kommando kann syntaktisch gueltig und dennoch durch einen
+fehlenden Adapter blockiert sein.
+
 WSS verwendet EMScript als lesbare Script-Projektion des kanonischen
 WorkflowDocuments. Generatoren emittieren nur die folgende kanonische Form:
 
@@ -108,11 +115,10 @@ Die alte Aussage, dass die Workflow Domain die alleinige semantische Authority i
 
 Legacy-Syntax darf akzeptiert und normalisiert werden, ohne dass sie neue kanonische API wird. Kompatibilität ist ein Parser-/Normalizer-Thema; Generatoren sollen keine historischen Schreibweisen neu verbreiten.
 
-## Offene Prüfpunkte vor einer neuen normativen EMScript-Version
+## Erweiterungen Nach Stable V1
 
-Diese Referenz beschreibt den aktuellen WSS-Stand, ist aber noch kein
-vollstaendiger Stable-V1-Sprachstandard. Vor einer normativen WSS-Version
-muessen insbesondere gegen Code und Tests geprueft werden:
+Folgende Konstrukte gehoeren ausdruecklich nicht zum Stable-V1-Kern und werden
+erst ueber einen neuen Sprachvertrag aufgenommen:
 
 - vollstaendiger Typvertrag (`String`, `Number`, `Bool`, `Any`, `Region`,
   `Image`, `Path`, `Scene`, `DatasetRef` usw.);
@@ -120,4 +126,4 @@ muessen insbesondere gegen Code und Tests geprueft werden:
 - strukturierte Werte;
 - Await/Event-Semantik;
 - Browser-, Tasker-, Shizuku-, Termux- und weitere Capabilities;
-- Round-Trip EMScript ↔ WorkflowDocument ↔ Block/Flow.
+- benutzerdefinierte Funktionen und Subroutines.

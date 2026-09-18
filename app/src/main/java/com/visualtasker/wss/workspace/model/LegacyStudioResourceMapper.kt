@@ -118,7 +118,11 @@ object LegacyStudioResourceMapper {
             updatedAtEpochMs = asset.timestamp,
         )
 
-    fun template(asset: LegacyStudioTemplateAsset): WorkspaceResource {
+    fun template(
+        asset: LegacyStudioTemplateAsset,
+        referenceWidthPx: Int = asset.width,
+        referenceHeightPx: Int = asset.height,
+    ): WorkspaceResource {
         val searchRight = asset.searchRegion.x + asset.searchRegion.width
         val searchBottom = asset.searchRegion.y + asset.searchRegion.height
         return WorkspaceResource(
@@ -130,9 +134,9 @@ object LegacyStudioResourceMapper {
             mimeType = imageMimeType(asset.imagePath),
             packageName = asset.sourceApp.ifBlank { null },
             markerMode = asset.markerMode.toWorkspaceMarkerMode(),
-            region = asset.region.toWorkspaceRegion(asset.width, asset.height),
-            referenceWidthPx = asset.width,
-            referenceHeightPx = asset.height,
+            region = asset.region.toWorkspaceRegion(referenceWidthPx, referenceHeightPx),
+            referenceWidthPx = referenceWidthPx,
+            referenceHeightPx = referenceHeightPx,
             tags = setOf("legacy-studio", "template"),
             metadata = mapOfNonBlank(
                 "legacyType" to "TemplateAsset",
@@ -142,10 +146,12 @@ object LegacyStudioResourceMapper {
                 "screenshotPath" to asset.screenshotPath,
                 "matchThreshold" to asset.matchThreshold.toString(),
                 "searchRegionName" to asset.searchRegionName,
-                "searchRegion.left" to normalizedX(asset.searchRegion.x, asset.width).toString(),
-                "searchRegion.top" to normalizedY(asset.searchRegion.y, asset.height).toString(),
-                "searchRegion.right" to normalizedX(searchRight, asset.width).toString(),
-                "searchRegion.bottom" to normalizedY(searchBottom, asset.height).toString(),
+                "searchRegion.left" to normalizedX(asset.searchRegion.x, referenceWidthPx).toString(),
+                "searchRegion.top" to normalizedY(asset.searchRegion.y, referenceHeightPx).toString(),
+                "searchRegion.right" to normalizedX(searchRight, referenceWidthPx).toString(),
+                "searchRegion.bottom" to normalizedY(searchBottom, referenceHeightPx).toString(),
+                "templateWidth" to asset.width.toString(),
+                "templateHeight" to asset.height.toString(),
                 "processingMode" to asset.processingMode.name,
                 "version" to asset.version.toString(),
                 "colourHex" to asset.colourHex.orEmpty(),
@@ -271,8 +277,24 @@ object LegacyStudioResourceMapper {
             pointMarkers.mapTo(this) { pointMarker(it) }
             regionMarkers.mapTo(this) { regionMarker(it) }
         }
-        return WorkspaceResourceBundle(resources = resources.distinctBy { it.id })
+        return WorkspaceResourceBundle(resources = resources.preferNewestById())
     }
+}
+
+internal fun Iterable<WorkspaceResource>.preferNewestById(): List<WorkspaceResource> {
+    val resourcesById = linkedMapOf<String, WorkspaceResource>()
+    forEach { candidate ->
+        val existing = resourcesById[candidate.id]
+        if (
+            existing == null ||
+            candidate.updatedAtEpochMs > existing.updatedAtEpochMs ||
+            candidate.updatedAtEpochMs == existing.updatedAtEpochMs &&
+            candidate.createdAtEpochMs > existing.createdAtEpochMs
+        ) {
+            resourcesById[candidate.id] = candidate
+        }
+    }
+    return resourcesById.values.toList()
 }
 
 private fun LegacyStudioTemplateRegion.toWorkspaceRegion(

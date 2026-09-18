@@ -180,4 +180,26 @@ class LegacyStudioResourceMapperTest {
         assertEquals(1, bundle.resources.size)
         assertNotNull(bundle.find("screenshot:same"))
     }
+
+    @Test
+    fun duplicateLegacyIdsPreferNewestResource() {
+        val old = LegacyStudioScreenshotAsset(
+            screenshotId = "Same",
+            fileName = "old.jpg",
+            path = "/a/old.jpg",
+            width = 10,
+            height = 20,
+            timestamp = 1L,
+        )
+        val newest = old.copy(fileName = "new.jpg", path = "/a/new.jpg", timestamp = 2L)
+
+        val bundle = LegacyStudioResourceMapper.bundle(
+            screenshots = listOf(old, newest),
+            savedMarkerReferenceWidthPx = 10,
+            savedMarkerReferenceHeightPx = 20,
+        )
+
+        assertEquals("new.jpg", bundle.find("screenshot:same")?.label)
+        assertEquals(2L, bundle.find("screenshot:same")?.updatedAtEpochMs)
+    }
 }

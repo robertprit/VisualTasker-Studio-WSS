@@ -36,6 +36,32 @@ import org.junit.Test
 
 class EmscriptParserSliceTest {
     @Test
+    fun stableV1TestSuite_survivesParserWorkspaceImportAndDryRuns() {
+        EditorDefaults.stableV1TestSuite.forEach { (name, source) ->
+            val parsed = EmscriptParserSlice().parse(source)
+            assertTrue(
+                "$name parser: ${parsed.issues.joinToString { "${it.line}:${it.column} ${it.message}" }}",
+                parsed.isSuccess,
+            )
+
+            val imported = EmscriptWorkspaceImporter().import(
+                script = source,
+                workspaceId = "stable-v1-${name.substringAfter(": ").lowercase()}",
+            )
+            assertTrue(
+                "$name import: ${imported.issues.joinToString { "${it.line}:${it.column} ${it.message}" }}",
+                imported.isSuccess,
+            )
+
+            assertTrue("$name EMScript DryRun", EmscriptDryRunRuntime().run(source) is EmscriptDryRunResult.Success)
+            assertTrue(
+                "$name Workspace DryRun",
+                WorkspaceDryRunRuntime().run(imported.document!!) is EmscriptDryRunResult.Success,
+            )
+        }
+    }
+
+    @Test
     fun parse_validLetSetIfSlice_buildsIr() {
         val source = """
             LET score = 1
