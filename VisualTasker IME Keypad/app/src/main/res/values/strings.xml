@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">IME Keypad</string>
+    <string name="ime_name">IME QWERTZ Keypad</string>
+    <string name="enable_ime_hint">Aktiviere die IME unter Einstellungen - Sprachen &amp; Eingabe - Bildschirmtastatur.</string>
+    <string name="open_input_settings">Eingabemethoden öffnen</string>
+    <string name="tasker_config_title">Tasker IME Aktion</string>
+</resources>

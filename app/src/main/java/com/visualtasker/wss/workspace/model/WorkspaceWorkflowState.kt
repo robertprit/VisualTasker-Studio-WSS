@@ -54,3 +54,4 @@ data class WorkspaceWorkflowState(
 const val WORKFLOW_SOURCE_INITIAL = "initial"
 const val WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX = "blockeditor:"
 const val WORKFLOW_SOURCE_EMSCRIPT_APPLY = "emscript:apply"
+const val WORKFLOW_SOURCE_VT2VT_PREFIX = "vt2vt:"

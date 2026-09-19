@@ -19,6 +19,7 @@ data class PanelState(
 
 enum class PanelType {
     RecorderSteps,
+    SceneInspector,
     BlockEditor,
     Flowchart,
     Screenshot,
@@ -31,6 +32,7 @@ enum class PanelType {
     LogConsole,
     DebugInfo,
     M3Director,
+    ChartGraph,
     Vt2Vt
 }
 

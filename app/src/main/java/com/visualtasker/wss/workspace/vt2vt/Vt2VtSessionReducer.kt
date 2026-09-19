@@ -39,8 +39,8 @@ object Vt2VtSessionReducer {
                 Vt2VtInboundIgnoreReason.WrongTarget
             !expectedPairingCode.isNullOrBlank() && message.payload["pairingCode"] != expectedPairingCode ->
                 Vt2VtInboundIgnoreReason.PairingMismatch
-            isStaleRevision(state, message) -> Vt2VtInboundIgnoreReason.StaleRevision
             isStaleRuntimeSequence(state, message) -> Vt2VtInboundIgnoreReason.StaleRuntimeSequence
+            isStaleRevision(state, message) -> Vt2VtInboundIgnoreReason.StaleRevision
             else -> null
         }
         if (ignoredReason != null) {
@@ -70,13 +70,14 @@ object Vt2VtSessionReducer {
     }
 
     private fun isStaleRevision(state: Vt2VtSessionState, message: Vt2VtMessage): Boolean {
-        val revision = message.revision ?: return false
+        message.revision ?: return false
         return state.inbound
             .asSequence()
             .filter { it.sourcePeerId == message.sourcePeerId && it.type == message.type }
-            .mapNotNull(Vt2VtMessage::revision)
+            .filter { it.revision != null }
+            .map(Vt2VtMessage::timestampMs)
             .maxOrNull()
-            ?.let { revision < it }
+            ?.let { message.timestampMs < it }
             ?: false
     }
 

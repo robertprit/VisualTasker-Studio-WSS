@@ -1,0 +1,146 @@
+svg_content = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg viewBox="0 0 1000 800" width="1000" height="800" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- Material 3 Colors -->
+        <style>
+            .surface { fill: #FEF7FF; }
+            .primary { fill: #6750A4; }
+            .primary-container { fill: #EADDFF; }
+            .on-primary-container { fill: #21005D; }
+            .outline { fill: none; stroke: #79747E; stroke-width: 2; }
+            .text-primary { fill: #1D1B20; font-family: Roboto, sans-serif; font-size: 14px; }
+            .text-label { fill: #49454F; font-family: Roboto, sans-serif; font-size: 12px; }
+            .shadow { filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.25)); }
+        </style>
+    </defs>
+
+    <rect width="1000" height="800" fill="#F4EFF4" />
+    <text x="50" y="50" font-family="Roboto, sans-serif" font-size="24" font-weight="bold" fill="#1D1B20">Material 3 Expressive - UI Kit (Kartoffel-Edition)</text>
+    <text x="50" y="75" font-family="Roboto, sans-serif" font-size="14" fill="#49454F">Gruppierte SVG-Elemente zum Drag &amp; Drop. IDs sind gesetzt.</text>
+
+    <!-- Smartphone Frame -->
+    <g id="Smartphone_Frame" transform="translate(50, 100)">
+        <rect width="360" height="640" rx="32" class="surface outline" stroke-width="4" />
+        <rect width="120" height="24" x="120" y="0" rx="12" fill="#1D1B20" /> <!-- Camera Notch / Pill -->
+        <text x="180" y="320" text-anchor="middle" class="text-label" opacity="0.5">Arbeitsbereich (360x640)</text>
+    </g>
+
+    <!-- UI Elements Palette -->
+    <g id="Palette" transform="translate(450, 100)">
+
+        <!-- FABs -->
+        <g id="FAB_Group" transform="translate(0, 0)">
+            <text x="0" y="0" class="text-label">Floating Action Buttons (FAB)</text>
+            <!-- Standard FAB -->
+            <g id="FAB_Standard" transform="translate(0, 15)" class="shadow">
+                <rect width="56" height="56" rx="16" class="primary-container" />
+                <path d="M27 21v6h-6v2h6v6h2v-6h6v-2h-6v-6h-2z" class="on-primary-container" />
+            </g>
+            <!-- Extended FAB -->
+            <g id="FAB_Extended" transform="translate(70, 15)" class="shadow">
+                <rect width="120" height="56" rx="16" class="primary-container" />
+                <path d="M22 21v6h-6v2h6v6h2v-6h6v-2h-6v-6h-2z" class="on-primary-container" />
+                <text x="44" y="33" class="text-primary on-primary-container" font-weight="500">Create</text>
+            </g>
+        </g>
+
+        <!-- Switches -->
+        <g id="Switch_Group" transform="translate(0, 100)">
+            <text x="0" y="0" class="text-label">Switches</text>
+            <g id="Switch_On" transform="translate(0, 15)">
+                <rect width="52" height="32" rx="16" class="primary" />
+                <circle cx="36" cy="16" r="12" class="surface" />
+            </g>
+            <g id="Switch_Off" transform="translate(70, 15)">
+                <rect width="52" height="32" rx="16" fill="#E7E0EC" stroke="#79747E" stroke-width="2" />
+                <circle cx="16" cy="16" r="8" fill="#79747E" />
+            </g>
+        </g>
+
+        <!-- Checkboxes -->
+        <g id="Checkbox_Group" transform="translate(200, 100)">
+            <text x="0" y="0" class="text-label">Checkboxes</text>
+            <g id="Checkbox_Checked" transform="translate(0, 15)">
+                <rect width="18" height="18" rx="2" class="primary" />
+                <path d="M7 13.4L3.6 10l1.4-1.4L7 10.6l7-7L15.4 5z" fill="#FEF7FF" />
+            </g>
+            <g id="Checkbox_Unchecked" transform="translate(40, 15)">
+                <rect width="18" height="18" rx="2" fill="none" stroke="#49454F" stroke-width="2" />
+            </g>
+        </g>
+
+        <!-- Radio Buttons -->
+        <g id="RadioButton_Group" transform="translate(350, 100)">
+            <text x="0" y="0" class="text-label">Radio Buttons</text>
+            <g id="Radio_Selected" transform="translate(0, 15)">
+                <circle cx="10" cy="10" r="10" class="primary" />
+                <circle cx="10" cy="10" r="5" fill="#FEF7FF" />
+            </g>
+            <g id="Radio_Unselected" transform="translate(40, 15)">
+                <circle cx="10" cy="10" r="9" fill="none" stroke="#49454F" stroke-width="2" />
+            </g>
+        </g>
+
+        <!-- Sliders -->
+        <g id="Slider_Group" transform="translate(0, 180)">
+            <text x="0" y="0" class="text-label">Sliders (Standard &amp; Range)</text>
+            <g id="Slider_Standard" transform="translate(0, 20)">
+                <rect width="300" height="4" rx="2" fill="#EADDFF" />
+                <rect width="150" height="4" rx="2" class="primary" />
+                <circle cx="150" cy="2" r="10" class="primary shadow" />
+            </g>
+            <g id="Slider_Range" transform="translate(0, 50)">
+                <rect width="300" height="4" rx="2" fill="#EADDFF" />
+                <rect width="120" height="4" x="80" rx="2" class="primary" />
+                <circle cx="80" cy="2" r="10" class="primary shadow" />
+                <circle cx="200" cy="2" r="10" class="primary shadow" />
+            </g>
+        </g>
+
+        <!-- Toolbars -->
+        <g id="Toolbar_Group" transform="translate(0, 280)">
+            <text x="0" y="0" class="text-label">Toolbars (Horizontal &amp; Vertical)</text>
+
+            <!-- Bottom App Bar / Horizontal -->
+            <g id="Toolbar_Horizontal" transform="translate(0, 15)" class="shadow">
+                <rect width="360" height="80" fill="#F3EDF7" />
+                <rect width="64" height="32" x="20" y="16" rx="16" class="primary-container" />
+                <circle cx="52" cy="32" r="4" fill="#1D1B20" /> <!-- Dummy Icon -->
+                <circle cx="132" cy="32" r="4" fill="#49454F" /> <!-- Dummy Icon -->
+                <circle cx="212" cy="32" r="4" fill="#49454F" /> <!-- Dummy Icon -->
+                <circle cx="292" cy="32" r="4" fill="#49454F" /> <!-- Dummy Icon -->
+                <text x="52" y="64" text-anchor="middle" font-size="12" fill="#1D1B20" font-family="sans-serif">Tab 1</text>
+            </g>
+
+            <!-- Navigation Rail / Vertical -->
+            <g id="Toolbar_Vertical" transform="translate(400, 15)" class="shadow">
+                <rect width="80" height="300" fill="#F3EDF7" />
+                <rect width="56" height="56" x="12" y="12" rx="16" class="primary-container" /> <!-- FAB in rail -->
+                <rect width="56" height="32" x="12" y="80" rx="16" class="primary-container" />
+                <text x="40" y="126" text-anchor="middle" font-size="12" fill="#1D1B20" font-family="sans-serif">Item</text>
+            </g>
+        </g>
+
+        <!-- Timeline (Simple representation) -->
+        <g id="Timeline_Group" transform="translate(0, 420)">
+            <text x="0" y="0" class="text-label">Timeline Component</text>
+            <g id="Timeline" transform="translate(0, 20)">
+                <line x1="20" y1="10" x2="20" y2="120" stroke="#79747E" stroke-width="2" />
+                <!-- Node 1 -->
+                <circle cx="20" cy="20" r="8" class="primary" />
+                <text x="40" y="24" class="text-primary">Step 1: Start</text>
+                <!-- Node 2 -->
+                <circle cx="20" cy="65" r="8" fill="#F4EFF4" stroke="#6750A4" stroke-width="2" />
+                <text x="40" y="69" class="text-primary">Step 2: Processing</text>
+                <!-- Node 3 -->
+                <circle cx="20" cy="110" r="8" fill="#F4EFF4" stroke="#79747E" stroke-width="2" />
+                <text x="40" y="114" fill="#79747E" font-family="Roboto, sans-serif" font-size="14">Step 3: Finish</text>
+            </g>
+        </g>
+
+    </g>
+</svg>
+"""
+
+with open("/mnt/data/material3_ui_kit.svg", "w") as f:
+    f.write(svg_content)

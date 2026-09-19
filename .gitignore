@@ -8,5 +8,12 @@
 /.idea/workspace.xml
 .DS_Store
 /build
+**/build/
+**/.gradle/
+**/.kotlin/
+**/local.properties
 /captures
 .externalNativeBuild
+
+# Flattened backup fragments from the imported ShapeMaker repository.
+/VisualTasker M3ShapeMaker Plugin/m3shapemake.git-*

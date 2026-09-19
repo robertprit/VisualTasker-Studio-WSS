@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pt
+models/
+android/app/src/main/assets/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+.idea/
+*.iml
+.DS_Store

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
+    android:horizontalGap="1%p"
+    android:keyHeight="42dp"
+    android:keyWidth="9%p"
+    android:verticalGap="6dp">
+
+    <Row>
+        <Key android:codes="-300" android:keyLabel="F1" android:keyEdgeFlags="left" />
+        <Key android:codes="-301" android:keyLabel="F2" />
+        <Key android:codes="-302" android:keyLabel="F3" />
+        <Key android:codes="-303" android:keyLabel="F4" />
+        <Key android:codes="-304" android:keyLabel="F5" />
+        <Key android:codes="-305" android:keyLabel="F6" />
+        <Key android:codes="-306" android:keyLabel="F7" />
+        <Key android:codes="-307" android:keyLabel="F8" />
+        <Key android:codes="-308" android:keyLabel="F9" />
+        <Key android:codes="-309" android:keyLabel="F10" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="123" android:keyLabel="{" android:keyEdgeFlags="left" />
+        <Key android:codes="125" android:keyLabel="}" />
+        <Key android:codes="91" android:keyLabel="[" />
+        <Key android:codes="93" android:keyLabel="]" />
+        <Key android:codes="40" android:keyLabel="(" />
+        <Key android:codes="41" android:keyLabel=")" />
+        <Key android:codes="60" android:keyLabel="&lt;" />
+        <Key android:codes="62" android:keyLabel="&gt;" />
+        <Key android:codes="61" android:keyLabel="=" />
+        <Key android:codes="-400" android:keyLabel="==" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="-401" android:keyLabel="!=" android:keyEdgeFlags="left" />
+        <Key android:codes="-402" android:keyLabel="&amp;&amp;" />
+        <Key android:codes="-403" android:keyLabel="||" />
+        <Key android:codes="-404" android:keyLabel="-&gt;" />
+        <Key android:codes="-405" android:keyLabel="Q:" />
+        <Key android:codes="-406" android:keyLabel="Q." />
+        <Key android:codes="-407" android:keyLabel="::" />
+        <Key android:codes="47" android:keyLabel="/" />
+        <Key android:codes="92" android:keyLabel="&#92;" />
+        <Key android:codes="124" android:keyLabel="|" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="9" android:keyLabel="Tab" android:keyEdgeFlags="left" />
+        <Key android:codes="-28" android:keyLabel="⇤Tab" />
+        <Key android:codes="-26" android:keyLabel="Home" />
+        <Key android:codes="-27" android:keyLabel="End" />
+        <Key android:codes="-24" android:keyLabel="W←" />
+        <Key android:codes="-25" android:keyLabel="W→" />
+        <Key android:codes="-22" android:keyLabel="←" />
+        <Key android:codes="-23" android:keyLabel="→" />
+        <Key android:codes="-5" android:keyLabel="⌫" />
+        <Key android:codes="10" android:keyLabel="⏎" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="-1" android:keyLabel="ABC" android:keyWidth="16%p" android:keyEdgeFlags="left" />
+        <Key android:codes="-2" android:keyLabel="123#" android:keyWidth="16%p" />
+        <Key android:codes="-214" android:keyLabel="Cmd" android:keyWidth="16%p" />
+        <Key android:codes="-420" android:keyLabel="IF" android:keyWidth="12%p" />
+        <Key android:codes="-421" android:keyLabel="click" android:keyWidth="12%p" />
+        <Key android:codes="-422" android:keyLabel="swipe" android:keyWidth="12%p" />
+        <Key android:codes="-423" android:keyLabel="wait" android:keyWidth="12%p" />
+        <Key android:codes="32" android:keyLabel="Space" android:keyWidth="18%p" android:keyEdgeFlags="right" />
+    </Row>
+</Keyboard>

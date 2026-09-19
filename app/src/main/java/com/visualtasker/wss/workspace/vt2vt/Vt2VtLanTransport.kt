@@ -1,6 +1,8 @@
 package com.visualtasker.wss.workspace.vt2vt
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -53,34 +55,68 @@ object Vt2VtLanTransport {
         responsePayload: Map<String, String> = emptyMap()
     ): Vt2VtLanExchange = withContext(Dispatchers.IO) {
         require(port in 1..65535) { "VT2VT port must be between 1 and 65535." }
-        ServerSocket(port).use { server ->
+        reusableServerSocket(port).use { server ->
             server.soTimeout = timeoutMs
-            server.accept().use { socket ->
-                socket.soTimeout = timeoutMs
-                val input = DataInputStream(socket.getInputStream().buffered())
-                val inbound = Vt2VtMessageCodec.decode(readFrame(input))
-                val outbound = Vt2VtMessage(
-                    id = "${inbound.id}-ack",
-                    type = Vt2VtMessageType.Heartbeat,
-                    sourcePeerId = localPeerId,
-                    targetPeerId = inbound.sourcePeerId,
-                    timestampMs = System.currentTimeMillis(),
-                    revision = inbound.revision,
-                    payload = mapOf(
-                        "ack" to inbound.id,
-                        "receivedType" to inbound.type.name
-                    ) + responsePayload
-                )
-                val output = DataOutputStream(socket.getOutputStream().buffered())
-                writeFrame(output, Vt2VtMessageCodec.encode(outbound))
-                output.flush()
-                Vt2VtLanExchange(
-                    remoteAddress = socket.inetAddress.hostAddress ?: "-",
-                    inbound = inbound,
-                    outbound = outbound
-                )
+            server.accept().use { socket -> exchange(socket, localPeerId, timeoutMs, responsePayload) }
+        }
+    }
+
+    suspend fun listen(
+        port: Int,
+        localPeerId: String,
+        responsePayload: () -> Map<String, String> = { emptyMap() },
+        onExchange: suspend (Vt2VtLanExchange) -> Unit,
+    ): Unit = withContext(Dispatchers.IO) {
+        require(port in 1..65535) { "VT2VT port must be between 1 and 65535." }
+        reusableServerSocket(port).use { server ->
+            server.soTimeout = LISTENER_POLL_TIMEOUT_MS
+            while (currentCoroutineContext().isActive) {
+                val socket = try {
+                    server.accept()
+                } catch (_: java.net.SocketTimeoutException) {
+                    continue
+                }
+                socket.use {
+                    onExchange(exchange(it, localPeerId, VT2VT_DEFAULT_TIMEOUT_MS, responsePayload()))
+                }
             }
         }
+    }
+
+    private fun reusableServerSocket(port: Int): ServerSocket = ServerSocket().apply {
+        reuseAddress = true
+        bind(InetSocketAddress(port))
+    }
+
+    private fun exchange(
+        socket: Socket,
+        localPeerId: String,
+        timeoutMs: Int,
+        responsePayload: Map<String, String>,
+    ): Vt2VtLanExchange {
+        socket.soTimeout = timeoutMs
+        val input = DataInputStream(socket.getInputStream().buffered())
+        val inbound = Vt2VtMessageCodec.decode(readFrame(input))
+        val outbound = Vt2VtMessage(
+            id = "${inbound.id}-ack",
+            type = Vt2VtMessageType.Heartbeat,
+            sourcePeerId = localPeerId,
+            targetPeerId = inbound.sourcePeerId,
+            timestampMs = System.currentTimeMillis(),
+            revision = inbound.revision,
+            payload = mapOf(
+                "ack" to inbound.id,
+                "receivedType" to inbound.type.name,
+            ) + responsePayload,
+        )
+        val output = DataOutputStream(socket.getOutputStream().buffered())
+        writeFrame(output, Vt2VtMessageCodec.encode(outbound))
+        output.flush()
+        return Vt2VtLanExchange(
+            remoteAddress = socket.inetAddress.hostAddress ?: "-",
+            inbound = inbound,
+            outbound = outbound,
+        )
     }
 }
 
@@ -111,3 +147,5 @@ private fun readFrame(input: DataInputStream): String {
     input.readFully(bytes)
     return bytes.decodeToString()
 }
+
+private const val LISTENER_POLL_TIMEOUT_MS = 1_000

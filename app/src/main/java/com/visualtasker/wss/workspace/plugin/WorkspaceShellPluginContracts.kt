@@ -11,6 +11,57 @@ enum class WorkspaceShellHostKind {
     WORKSPACE_SHELL
 }
 
+const val SHELL_PLUGIN_API_VERSION = 1
+
+enum class ShellPluginKind {
+    EDITOR,
+    VISUAL_TOOL,
+    RUNTIME_ADAPTER,
+    PERCEPTION_PROVIDER,
+    COMPANION_APP,
+    CONNECTIVITY
+}
+
+data class ShellPluginCapability(
+    val id: String,
+    val version: Int = 1,
+    val optional: Boolean = false,
+) {
+    init {
+        require(id.isNotBlank() && id == id.trim()) {
+            "ShellPluginCapability id must be nonblank and trimmed."
+        }
+        require(version > 0) { "ShellPluginCapability version must be positive." }
+    }
+}
+
+data class ShellPluginDescriptor(
+    val pluginId: ShellPluginId,
+    val displayName: String,
+    val kind: ShellPluginKind,
+    val apiVersion: Int = SHELL_PLUGIN_API_VERSION,
+    val implementationVersion: String,
+    val capabilities: Set<ShellPluginCapability>,
+    val supportedFormatIds: Set<String> = emptySet(),
+    val companionPackageName: String? = null,
+) {
+    init {
+        require(displayName.isNotBlank() && displayName == displayName.trim()) {
+            "ShellPluginDescriptor displayName must be nonblank and trimmed."
+        }
+        require(apiVersion > 0) { "ShellPluginDescriptor apiVersion must be positive." }
+        require(implementationVersion.isNotBlank()) {
+            "ShellPluginDescriptor implementationVersion must be nonblank."
+        }
+        require(supportedFormatIds.all { it.isNotBlank() && it == it.trim() }) {
+            "ShellPluginDescriptor format ids must be nonblank and trimmed."
+        }
+        require(companionPackageName == null || companionPackageName.isNotBlank()) {
+            "ShellPluginDescriptor companionPackageName must be null or nonblank."
+        }
+    }
+}
+
 enum class WorkflowViewSurface {
     EMSCRIPT,
     BLOCK_EDITOR,

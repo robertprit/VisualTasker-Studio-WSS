@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">YOLO26n</string>
+    <string name="camera_permission_required">Kamerazugriff wird für die Erkennung benötigt.</string>
+    <string name="loading_model">Modell wird geladen…</string>
+</resources>

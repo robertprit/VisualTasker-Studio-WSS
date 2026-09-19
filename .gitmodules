@@ -6,3 +6,7 @@
 	path = visualtasker-flowchart
 	url = https://github.com/robertprit/visualtasker-flowchart.git
 	branch = codex/flowchart-visual-semantics
+[submodule "VisualTasker M3ShapeMaker Plugin/m3shapemake"]
+	path = VisualTasker M3ShapeMaker Plugin/m3shapemake
+	url = https://github.com/robertprit/M3ShapeMake.git
+	branch = main

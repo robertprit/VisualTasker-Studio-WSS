@@ -19,6 +19,8 @@ import android.widget.TextView
 import com.visualtasker.wss.MainActivity
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
 import com.visualtasker.wss.accessibility.toInspectorText
+import com.visualtasker.wss.recording.RecordingOperationResult
+import com.visualtasker.wss.recording.RecordingSessionRuntime
 import com.visualtasker.wss.workspace.model.RecordingEventStore
 import java.io.File
 import java.text.SimpleDateFormat
@@ -633,7 +635,7 @@ class StudioOverlayService : Service() {
     }
 
     private fun toggleRecording() {
-        if (!RecordingEventStore.isRecording()) {
+        if (!RecordingEventStore.isRecording() && !RecordingSessionRuntime.isRecording()) {
             startOverlayRecording()
         } else {
             stopOverlayRecording()
@@ -642,18 +644,41 @@ class StudioOverlayService : Service() {
 
     private fun startOverlayRecording() {
         val baseline = VisualTaskerAccessibilityService.current()?.currentWindowContext()
-        val target = RecordingEventStore.start(this, baselineWindowContext = baseline)
-        setStatus("Aufnahme laeuft: ${target.name}")
-        startRecordingTicker()
-        updateRecordingUi()
+        setStatus("Initiale Scene wird erfasst...")
+        serviceScope.launch {
+            setOverlaysVisible(false)
+            delay(180)
+            val result = try {
+                RecordingSessionRuntime.start(this@StudioOverlayService)
+            } finally {
+                setOverlaysVisible(true)
+            }
+            when (result) {
+                is RecordingOperationResult.Success -> {
+                    val target = RecordingEventStore.start(this@StudioOverlayService, baselineWindowContext = baseline)
+                    setStatus("Aufnahme laeuft: ${target.name}")
+                    startRecordingTicker()
+                }
+                is RecordingOperationResult.Failure -> setStatus("Aufnahme fehlgeschlagen: ${result.code}")
+            }
+            updateRecordingUi()
+        }
     }
 
     private fun stopOverlayRecording() {
-        val target = RecordingEventStore.stop() ?: return
-        setStatus("Aufnahme gespeichert: ${target.name}")
-        recordingTickerJob?.cancel()
-        recordingTickerJob = null
-        updateRecordingUi()
+        serviceScope.launch {
+            val canonical = RecordingSessionRuntime.stop()
+            val target = RecordingEventStore.stop()
+            setStatus(
+                when (canonical) {
+                    is RecordingOperationResult.Success -> "Aufnahme gespeichert: ${target?.name ?: canonical.value.sessionId}"
+                    is RecordingOperationResult.Failure -> "Aufnahme nur teilweise gespeichert: ${canonical.code}"
+                }
+            )
+            recordingTickerJob?.cancel()
+            recordingTickerJob = null
+            updateRecordingUi()
+        }
     }
 
     private fun recordOverlayEvent(
@@ -665,7 +690,7 @@ class StudioOverlayService : Service() {
     }
 
     private fun updateRecordingUi() {
-        val running = RecordingEventStore.isRecording()
+        val running = RecordingEventStore.isRecording() || RecordingSessionRuntime.isRecording()
         recordingButton?.text = if (running) "■" else "●"
         val status = RecordingEventStore.activeStatus()
         val text = if (running) {

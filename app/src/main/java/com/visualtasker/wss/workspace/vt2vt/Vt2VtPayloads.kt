@@ -25,7 +25,17 @@ data class Vt2VtWorkspaceMirror(
     val workspaceJson: String,
     val emscript: String?,
     val checksum: String,
+    val sourcePeerId: String = "",
+    val sourceRole: Vt2VtRole = Vt2VtRole.Secondary,
+    val sentAtEpochMs: Long = 0L,
 )
+
+fun Vt2VtRole.acceptsWorkspaceFrom(remoteRole: Vt2VtRole): Boolean = when (this) {
+    Vt2VtRole.Primary -> remoteRole == Vt2VtRole.Secondary || remoteRole == Vt2VtRole.CoEditor
+    Vt2VtRole.Secondary -> remoteRole == Vt2VtRole.Primary || remoteRole == Vt2VtRole.CoEditor
+    Vt2VtRole.Observer -> remoteRole != Vt2VtRole.Observer
+    Vt2VtRole.CoEditor -> remoteRole != Vt2VtRole.Observer
+}
 
 data class Vt2VtRuntimeMirror(
     val runId: String?,

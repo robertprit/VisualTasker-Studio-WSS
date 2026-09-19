@@ -47,15 +47,9 @@ class WorkspaceShellPluginHostCoordinatorTest {
     }
 
     @Test
-    fun vt2vtMapsToRemoteSyncPluginSurface() {
-        val binding = WorkspaceShellPluginCatalog.bindingForWorkspacePanelType(
-            com.visualtasker.wss.workspace.model.PanelType.Vt2Vt
-        )
-
-        assertNotNull(binding)
-        assertEquals(ShellPluginId("vt2vt"), binding?.pluginId)
-        assertEquals("VT2VT", binding?.studioPanelTypeName)
-        assertEquals(WorkflowViewSurface.REMOTE_SYNC, binding?.viewSurface)
+    fun vt2vtIsHostedBySettingsRuntimeInsteadOfPanelCatalog() {
+        assertEquals(null, WorkspaceShellPluginCatalog.bindingForShellPanelType("Vt2Vt"))
+        assertEquals(null, WorkspaceShellPluginCatalog.bindingForShellPanelType("VT2VT"))
     }
 
     @Test

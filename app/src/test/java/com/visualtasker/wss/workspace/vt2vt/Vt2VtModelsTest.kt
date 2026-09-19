@@ -1,7 +1,10 @@
 package com.visualtasker.wss.workspace.vt2vt
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -106,6 +109,42 @@ class Vt2VtModelsTest {
 
         assertEquals(workspaceData.length, exchange.inbound.payload.getValue("workspaceData").length)
         assertEquals("msg-large", ack.payload["ack"])
+    }
+
+    @Test
+    fun persistentLanListenerAcceptsConsecutivePacketsWithoutRebindGap() = runBlocking {
+        val port = ServerSocket(0).use { it.localPort }
+        val received = mutableListOf<Vt2VtMessageType>()
+        val twoPackets = CompletableDeferred<Unit>()
+        val listener = launch {
+            Vt2VtLanTransport.listen(
+                port = port,
+                localPeerId = "observer-persistent",
+                responsePayload = { mapOf("pairingCode" to "ABC123") },
+            ) { exchange ->
+                received += exchange.inbound.type
+                if (received.size == 2) twoPackets.complete(Unit)
+            }
+        }
+        delay(100)
+
+        listOf(Vt2VtMessageType.Hello, Vt2VtMessageType.Heartbeat).forEachIndexed { index, type ->
+            val ack = Vt2VtLanTransport.send(
+                endpoint = Vt2VtLanEndpoint("127.0.0.1", port),
+                message = Vt2VtMessage(
+                    id = "msg-persistent-$index",
+                    type = type,
+                    sourcePeerId = "primary-persistent",
+                    timestampMs = 3_000L + index,
+                ),
+                timeoutMs = 2_000,
+            )
+            assertEquals(type.name, ack.payload["receivedType"])
+        }
+        twoPackets.await()
+        listener.cancelAndJoin()
+
+        assertEquals(listOf(Vt2VtMessageType.Hello, Vt2VtMessageType.Heartbeat), received)
     }
 
     @Test

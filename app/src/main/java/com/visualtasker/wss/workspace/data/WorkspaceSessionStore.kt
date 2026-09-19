@@ -80,6 +80,7 @@ private fun restorePanelType(raw: String): PanelType? =
 
 internal val supportedWorkspacePanelTypes: Set<PanelType> = setOf(
     PanelType.RecorderSteps,
+    PanelType.SceneInspector,
     PanelType.BlockEditor,
     PanelType.Flowchart,
     PanelType.Screenshot,
@@ -87,7 +88,7 @@ internal val supportedWorkspacePanelTypes: Set<PanelType> = setOf(
     PanelType.Vision,
     PanelType.Datastore,
     PanelType.M3Director,
-    PanelType.Vt2Vt,
+    PanelType.ChartGraph,
     PanelType.RuntimeLog,
     PanelType.TextEditor,
     PanelType.LogConsole,
@@ -96,6 +97,7 @@ internal val supportedWorkspacePanelTypes: Set<PanelType> = setOf(
 
 internal fun defaultAccentForPanelType(type: PanelType): androidx.compose.ui.graphics.Color = when (type) {
     PanelType.RecorderSteps -> androidx.compose.ui.graphics.Color(0xFF00D4AA)
+    PanelType.SceneInspector -> androidx.compose.ui.graphics.Color(0xFF26C6DA)
     PanelType.BlockEditor -> androidx.compose.ui.graphics.Color(0xFF6C5CE7)
     PanelType.Flowchart -> androidx.compose.ui.graphics.Color(0xFF00B8FF)
     PanelType.RuntimeLog -> androidx.compose.ui.graphics.Color(0xFFFFC857)
@@ -108,6 +110,7 @@ internal fun defaultAccentForPanelType(type: PanelType): androidx.compose.ui.gra
     PanelType.Datastore -> androidx.compose.ui.graphics.Color(0xFF8BC34A)
     PanelType.Emscript -> androidx.compose.ui.graphics.Color(0xFFFFB74D)
     PanelType.M3Director -> androidx.compose.ui.graphics.Color(0xFF6C5CE7)
+    PanelType.ChartGraph -> androidx.compose.ui.graphics.Color(0xFF26A69A)
     PanelType.Vt2Vt -> androidx.compose.ui.graphics.Color(0xFF00BCD4)
 }
 

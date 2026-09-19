@@ -13,9 +13,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
+import com.visualtasker.wss.recording.RecordingSessionRuntime
 import com.visualtasker.wss.ui.theme.MultiPanelTheme
 import com.visualtasker.wss.workspace.model.RecordingEventStore
 import com.visualtasker.wss.workspace.ui.WorkspaceScreen
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val watchDogScreenReceiver = object : BroadcastReceiver() {
@@ -49,6 +52,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycleScope.launch {
+            RecordingSessionRuntime.recover(applicationContext)
+        }
         RecordingEventStore.recordExternalEvent(
             context = applicationContext,
             source = "watchdog",

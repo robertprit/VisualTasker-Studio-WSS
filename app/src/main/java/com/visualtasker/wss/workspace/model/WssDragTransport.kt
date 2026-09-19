@@ -263,6 +263,18 @@ object WssDragRules {
                 acceptedKinds = WssDragPayloadKind.entries.toSet(),
                 acceptedModes = setOf(WssDragTransferMode.Copy, WssDragTransferMode.Move, WssDragTransferMode.Link),
             )
+            PanelType.SceneInspector -> WssDropTarget(
+                id = "drop:$panelId:scene-inspector",
+                kind = WssDragTargetKind.Inspector,
+                panelId = panelId,
+                acceptedKinds = setOf(
+                    WssDragPayloadKind.InspectorField,
+                    WssDragPayloadKind.RailTraceStep,
+                    WssDragPayloadKind.Resource,
+                    WssDragPayloadKind.DatasetEntry,
+                ),
+                acceptedModes = setOf(WssDragTransferMode.Copy, WssDragTransferMode.Link),
+            )
             PanelType.DebugInfo -> WssDropTarget(
                 id = "drop:$panelId:inspector",
                 kind = WssDragTargetKind.Inspector,

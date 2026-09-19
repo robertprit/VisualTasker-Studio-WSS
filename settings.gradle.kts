@@ -32,3 +32,28 @@ includeBuild("visualtasker-flowchart") {
         substitute(module("de.visualtasker.flowchart:flowchart-serialization")).using(project(":flowchart-serialization"))
     }
 }
+includeBuild("VisualTasker M3ShapeMaker Plugin/m3shapemake") {
+    dependencySubstitution {
+        substitute(module("com.visualtasker.shapemaker:design-editor")).using(project(":design-editor"))
+    }
+}
+
+includeBuild("VisualTasker ChartGraph Plugin") {
+    dependencySubstitution {
+        substitute(module("com.visualtasker.chartgraph:chartgraph-domain")).using(project(":chartgraph-domain"))
+        substitute(module("com.visualtasker.chartgraph:chartgraph-compose")).using(project(":chartgraph-compose"))
+    }
+}
+
+includeBuild("VisualTasker Vision AI Plugin/android") {
+    dependencySubstitution {
+        substitute(module("com.visualtasker.vision:vision-contracts")).using(project(":vision-contracts"))
+        substitute(module("com.visualtasker.vision:vision-yolo")).using(project(":vision-yolo"))
+    }
+}
+
+includeBuild("VisualTasker Integrations Plugin") {
+    dependencySubstitution {
+        substitute(module("com.visualtasker.integrations:integration-contracts")).using(project(":integration-contracts"))
+    }
+}

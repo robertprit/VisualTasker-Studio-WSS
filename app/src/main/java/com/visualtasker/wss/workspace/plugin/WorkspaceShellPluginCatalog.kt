@@ -72,11 +72,11 @@ object WorkspaceShellPluginCatalog {
             viewSurface = WorkflowViewSurface.STEP_EDITOR
         ),
         WorkspaceShellPanelBinding(
-            pluginId = ShellPluginId("vt2vt"),
-            panelId = ShellPanelId("vt2vt-panel"),
-            studioPanelTypeName = "VT2VT",
-            shellPanelTypeNames = setOf("Vt2Vt", "VT2VT", "RemoteWorkspace"),
-            viewSurface = WorkflowViewSurface.REMOTE_SYNC
+            pluginId = ShellPluginId("chartgraph"),
+            panelId = ShellPanelId("chartgraph-panel"),
+            studioPanelTypeName = "CHART_GRAPH",
+            shellPanelTypeNames = setOf("ChartGraph", "Charts"),
+            viewSurface = WorkflowViewSurface.STEP_EDITOR
         )
     )
 

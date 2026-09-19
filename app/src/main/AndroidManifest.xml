@@ -17,6 +17,8 @@
         <package android:name="net.dinglisch.android.tasker" />
         <package android:name="net.dinglisch.android.taskerm" />
         <package android:name="com.m3shapes.editor" />
+        <package android:name="com.visualtasker.ime" />
+        <package android:name="com.yolo26n.android" />
     </queries>
 
     <application
@@ -55,18 +57,6 @@
                 <category android:name="com.twofortyfouram.locale.intent.category.SETTING" />
             </intent-filter>
         </activity>
-
-        <service
-            android:name=".VisualTaskerWssIme"
-            android:exported="true"
-            android:permission="android.permission.BIND_INPUT_METHOD">
-            <intent-filter>
-                <action android:name="android.view.InputMethod" />
-            </intent-filter>
-            <meta-data
-                android:name="android.view.im"
-                android:resource="@xml/method" />
-        </service>
 
         <service
             android:name=".overlay.StudioOverlayService"

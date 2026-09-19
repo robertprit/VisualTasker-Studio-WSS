@@ -73,11 +73,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesomeMosaic
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CenterFocusStrong
@@ -111,6 +113,12 @@ import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import com.compose.canvas.VectorShapeEditorApp
+import com.visualtasker.chartgraph.compose.ChartGraph
+import com.visualtasker.chartgraph.domain.ChartDocument
+import com.visualtasker.chartgraph.domain.ChartKind
+import com.visualtasker.chartgraph.domain.ChartPoint
+import com.visualtasker.chartgraph.domain.ChartSeries
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -155,6 +163,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -222,6 +231,10 @@ import com.visualtasker.wss.overlay.StudioOverlayService
 import com.visualtasker.wss.overlay.LiveMarkerMode
 import com.visualtasker.wss.overlay.LiveMarkerResult
 import com.visualtasker.wss.overlay.LiveMarkerStore
+import com.visualtasker.wss.recording.RecordingPlaybackRuntime
+import com.visualtasker.wss.recording.RecordingPlaybackRuntimeState
+import com.visualtasker.wss.recording.RecordingPlaybackState
+import com.visualtasker.wss.recording.RecordingPlaybackStatus
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
@@ -260,6 +273,7 @@ import com.visualtasker.wss.logging.toWatchDogLogProjections
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_APPLY
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_VT2VT_PREFIX
 import com.visualtasker.wss.workspace.model.FlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.ToolboxSetMode
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
@@ -357,6 +371,9 @@ import com.visualtasker.wss.workspace.model.defaultRailMode
 import com.visualtasker.wss.workspace.model.toRecorderWorldObservations
 import com.visualtasker.wss.workspace.model.toRecorderCanvasProjection
 import com.visualtasker.wss.workspace.model.toRecordingRailTraceSteps
+import com.visualtasker.wss.workspace.model.recordingPlaybackSessionIdOrNull
+import com.visualtasker.wss.workspace.model.toRecorderSteps
+import com.visualtasker.wss.workspace.model.toRecordingSessionUi
 import com.visualtasker.wss.workspace.model.toRailProjection
 import com.visualtasker.wss.workspace.model.toSurfaceMode
 import com.visualtasker.wss.workspace.model.toWatchDogRailTraceSteps
@@ -381,6 +398,8 @@ import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartNodeToolboxRail
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPanel
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartShellPlugin
 import com.visualtasker.wss.workspace.plugin.flowchart.FlowchartViewOrientation
+import com.visualtasker.wss.workspace.plugin.vision.VisionAiPluginCatalog
+import com.visualtasker.wss.workspace.plugin.vision.VisionAiProviderState
 import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabSettings
 import com.visualtasker.wss.workspace.plugin.runtime.PluginReadinessEntry
@@ -394,6 +413,7 @@ import com.visualtasker.wss.workspace.plugin.runtime.TaskerRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.TermuxRegistration
 import com.visualtasker.wss.workspace.vt2vt.VT2VT_MESSAGE_FORMAT
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionState
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionManager
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtLanEndpoint
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtLanTransport
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtMessage
@@ -401,6 +421,7 @@ import com.visualtasker.wss.workspace.vt2vt.Vt2VtMessageCodec
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtMessageType
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtInboundResult
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtRole
+import com.visualtasker.wss.workspace.vt2vt.Vt2VtRuntime
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtRuntimeMirror
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtSessionReducer
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtTransport
@@ -416,6 +437,7 @@ import com.visualtasker.wss.workspace.vt2vt.runtimePayload
 import com.visualtasker.wss.workspace.vt2vt.selectionPayload
 import com.visualtasker.wss.workspace.vt2vt.withLoopbackHello
 import com.visualtasker.wss.workspace.vt2vt.workspacePayload
+import com.visualtasker.wss.workspace.vt2vt.acceptsWorkspaceFrom
 import com.visualtasker.wss.ui.theme.M3EColors
 import com.visualtasker.wss.visual.debug.VisualSemanticsReporter
 import com.visualtasker.wss.visual.interaction.DefaultEditorInteractionPolicy
@@ -950,6 +972,12 @@ fun WorkspaceScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val recordingPlaybackRuntimeState by RecordingPlaybackRuntime.state.collectAsState()
+    LaunchedEffect(context) {
+        RecordingPlaybackRuntime.initialize(context)
+    }
+    val vt2vtManager = remember(context) { Vt2VtRuntime.manager(context) }
+    val vt2vtSnapshot by vt2vtManager.state.collectAsState()
     val uiPrefs = remember(context) { context.getSharedPreferences("panel_ui_options", Context.MODE_PRIVATE) }
     LaunchedEffect(uiPrefs) {
         if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
@@ -1653,6 +1681,86 @@ fun WorkspaceScreen(
     var workspaceSelectionState by remember { mutableStateOf(WorkspaceSelectionState()) }
     var selectedFlowchartNodeId by remember { mutableStateOf<FlowNodeId?>(null) }
     var selectedFlowchartEdgeId by remember { mutableStateOf<FlowEdgeId?>(null) }
+    LaunchedEffect(
+        vt2vtSnapshot.settings.liveMirrorEnabled,
+        vt2vtSnapshot.settings.connectionEnabled,
+        workflowState.revision,
+    ) {
+        if (
+            vt2vtSnapshot.settings.liveMirrorEnabled &&
+            vt2vtSnapshot.settings.connectionEnabled &&
+            vt2vtSnapshot.settings.role != Vt2VtRole.Observer &&
+            !workflowState.mutationSource.startsWith(WORKFLOW_SOURCE_VT2VT_PREFIX)
+        ) {
+            vt2vtManager.send(
+                vt2vtManager.newMessage(
+                    type = Vt2VtMessageType.WorkspaceState,
+                    revision = workflowState.revision.toLong(),
+                    payload = workspacePayload(workflowState),
+                ),
+            )
+        }
+    }
+    LaunchedEffect(
+        vt2vtSnapshot.settings.liveMirrorEnabled,
+        vt2vtSnapshot.settings.connectionEnabled,
+        workspaceSelectionState.flowNodeId,
+        workspaceSelectionState.flowEdgeId,
+        selectedFlowchartNodeId,
+        selectedFlowchartEdgeId,
+    ) {
+        if (vt2vtSnapshot.settings.liveMirrorEnabled && vt2vtSnapshot.settings.connectionEnabled) {
+            vt2vtManager.send(
+                vt2vtManager.newMessage(
+                    type = Vt2VtMessageType.SelectionChanged,
+                    revision = workflowState.revision.toLong(),
+                    payload = selectionPayload(
+                        workspaceSelectionState.flowNodeId ?: selectedFlowchartNodeId,
+                        workspaceSelectionState.flowEdgeId ?: selectedFlowchartEdgeId,
+                    ),
+                ),
+            )
+        }
+    }
+    LaunchedEffect(
+        vt2vtSnapshot.settings.liveMirrorEnabled,
+        vt2vtSnapshot.settings.connectionEnabled,
+        flowRuntimeSnapshot?.sequence,
+        workspaceDryRunStepIndex,
+    ) {
+        if (vt2vtSnapshot.settings.liveMirrorEnabled && vt2vtSnapshot.settings.connectionEnabled) {
+            vt2vtManager.send(
+                vt2vtManager.newMessage(
+                    type = Vt2VtMessageType.RuntimeStepChanged,
+                    revision = workflowState.revision.toLong(),
+                    payload = runtimePayload(
+                        workflowState = workflowState,
+                        snapshot = flowRuntimeSnapshot,
+                        activeRuntimeStepIndex = workspaceDryRunStepIndex.takeIf { it > 0 }?.minus(1),
+                        focusedNodeId = workspaceSelectionState.flowNodeId ?: selectedFlowchartNodeId,
+                        focusedEdgeId = workspaceSelectionState.flowEdgeId ?: selectedFlowchartEdgeId,
+                    ),
+                ),
+            )
+        }
+    }
+    LaunchedEffect(
+        vt2vtSnapshot.settings.liveMirrorEnabled,
+        vt2vtSnapshot.settings.connectionEnabled,
+        studioLogStore.changeToken,
+    ) {
+        if (vt2vtSnapshot.settings.liveMirrorEnabled && vt2vtSnapshot.settings.connectionEnabled) {
+            studioLogStore.allEntries().lastOrNull()?.let { latest ->
+                vt2vtManager.send(
+                    vt2vtManager.newMessage(
+                        type = Vt2VtMessageType.LogEntryAdded,
+                        revision = workflowState.revision.toLong(),
+                        payload = logPayload(latest),
+                    ),
+                )
+            }
+        }
+    }
     val emscriptFileManager = remember {
         EmscriptFileManagerUiState().apply {
             scripts["draft"] = initialTextEditorDraft
@@ -1699,6 +1807,23 @@ fun WorkspaceScreen(
                 details = "JSON=${normalized.length} Zeichen, Quelle=$source",
                 documentRevision = workflowState.revision.toLong(),
                 groupKey = "workspace:workflow-updated:$source"
+            )
+        }
+    }
+    LaunchedEffect(
+        vt2vtSnapshot.remoteWorkspaceMirror?.checksum,
+        vt2vtSnapshot.settings.liveMirrorEnabled,
+        vt2vtSnapshot.settings.role,
+    ) {
+        val mirror = vt2vtSnapshot.remoteWorkspaceMirror ?: return@LaunchedEffect
+        if (
+            vt2vtSnapshot.settings.liveMirrorEnabled &&
+            vt2vtSnapshot.settings.role.acceptsWorkspaceFrom(mirror.sourceRole) &&
+            mirror.workspaceJson != workflowState.serializedJson
+        ) {
+            applyWorkspaceJsonChange(
+                mirror.workspaceJson,
+                "$WORKFLOW_SOURCE_VT2VT_PREFIX${mirror.sourcePeerId}",
             )
         }
     }
@@ -2346,6 +2471,19 @@ fun WorkspaceScreen(
     var recordingSteps by remember(context) {
         mutableStateOf(RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath))
     }
+    val persistedRecordingSessions = remember(recordingPlaybackRuntimeState.sessions) {
+        recordingPlaybackRuntimeState.sessions.map { it.toRecordingSessionUi() }
+    }
+    val availableRecordingSessions = remember(persistedRecordingSessions, recordingSessions) {
+        persistedRecordingSessions + recordingSessions
+    }
+    var canonicalSessionSelectionInitialized by remember { mutableStateOf(false) }
+    LaunchedEffect(persistedRecordingSessions) {
+        if (!canonicalSessionSelectionInitialized && persistedRecordingSessions.isNotEmpty()) {
+            selectedRecordingSessionPath = persistedRecordingSessions.first().path
+            canonicalSessionSelectionInitialized = true
+        }
+    }
     LaunchedEffect(context) {
         var lastRecordingSignature = RecordingEventStore.latestRecordingFile(context)?.recordingSignature().orEmpty()
         while (true) {
@@ -2355,15 +2493,26 @@ fun WorkspaceScreen(
             if (currentSignature != lastRecordingSignature) {
                 lastRecordingSignature = currentSignature
                 recordingSessions = RecordingEventStore.recordingSessions(context)
-                if (selectedRecordingSessionPath == null || recordingSessions.none { it.path == selectedRecordingSessionPath }) {
+                if (
+                    selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() == null &&
+                    (selectedRecordingSessionPath == null || recordingSessions.none { it.path == selectedRecordingSessionPath })
+                ) {
                     selectedRecordingSessionPath = recordingSessions.firstOrNull()?.path
                 }
-                recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
+                if (selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() == null) {
+                    recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
+                }
             }
         }
     }
     LaunchedEffect(selectedRecordingSessionPath) {
-        recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
+        val canonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
+        if (canonicalSessionId != null) {
+            recordingSteps = emptyList()
+            RecordingPlaybackRuntime.loadSession(context, canonicalSessionId)
+        } else {
+            recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
+        }
     }
     // Workspace shell stays truth-neutral: runtime projection wins over external projection, then demo data.
     val dryRunRecorderSteps = remember(workspaceDryRunResult, workspaceDryRunRevision, workflowState.revision) {
@@ -2376,8 +2525,30 @@ fun WorkspaceScreen(
             emptyList()
         }
     }
-    val recordingTraceSteps = remember(recordingSteps, selectedRecordingSessionPath) {
-        if (recordingSteps.isEmpty()) {
+    val canonicalRecordingSteps = remember(
+        recordingPlaybackRuntimeState.playback.document,
+        recordingPlaybackRuntimeState.candidateDocument,
+        recordingPlaybackRuntimeState.reviewDecisions,
+    ) {
+        recordingPlaybackRuntimeState.playback.document?.toRecorderSteps(
+            candidateDocument = recordingPlaybackRuntimeState.candidateDocument,
+            reviewDecisions = recordingPlaybackRuntimeState.reviewDecisions,
+        ).orEmpty()
+    }
+    val selectedCanonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
+    val recordingTraceSteps = remember(
+        recordingSteps,
+        canonicalRecordingSteps,
+        selectedRecordingSessionPath,
+        selectedCanonicalSessionId,
+        recordingPlaybackRuntimeState.playback.document?.sessionId,
+    ) {
+        if (
+            selectedCanonicalSessionId != null &&
+            recordingPlaybackRuntimeState.playback.document?.sessionId == selectedCanonicalSessionId
+        ) {
+            canonicalRecordingSteps
+        } else if (recordingSteps.isEmpty()) {
             emptyList()
         } else {
             recordingSteps.toRecordingRailTraceSteps(
@@ -2499,6 +2670,14 @@ fun WorkspaceScreen(
     fun selectRailTraceStep(stepId: String, source: String = "railtrace") {
         selectedRailTraceStepId = stepId
         val index = projectedSteps.indexOfFirst { it.id == stepId }
+        if (
+            stepperPanelState.railMode.toSurfaceMode() == RailSurfaceMode.Records &&
+            selectedCanonicalSessionId != null &&
+            index >= 0 &&
+            recordingPlaybackRuntimeState.playback.selectedEntryIndex != index
+        ) {
+            RecordingPlaybackRuntime.seekToEntry(index)
+        }
         val selectedStep = projectedSteps.getOrNull(index)
         val focusTarget = selectedStep?.toRailTraceFocusTarget()
         val updatedStepperState = if (index >= 0) {
@@ -2543,6 +2722,24 @@ fun WorkspaceScreen(
                     flowEdgeId = focusTarget?.flowEdgeId?.value,
                 ),
             )
+        }
+    }
+    LaunchedEffect(
+        selectedCanonicalSessionId,
+        recordingPlaybackRuntimeState.playback.document?.sessionId,
+        recordingPlaybackRuntimeState.playback.selectedEntryIndex,
+        stepperPanelState.railMode,
+    ) {
+        if (
+            selectedCanonicalSessionId != null &&
+            stepperPanelState.railMode.toSurfaceMode() == RailSurfaceMode.Records &&
+            recordingPlaybackRuntimeState.playback.document?.sessionId == selectedCanonicalSessionId
+        ) {
+            recordingPlaybackRuntimeState.playback.selectedEntry?.entryId?.let { entryId ->
+                if (entryId != selectedRailTraceStepId) {
+                    selectRailTraceStep(entryId, source = "recording-playback")
+                }
+            }
         }
     }
     var dropHoverPanelId by remember { mutableStateOf<String?>(null) }
@@ -3179,6 +3376,7 @@ fun WorkspaceScreen(
                     bottomGuardPx = workspaceBottomGuardPx,
                 )
                 val isRailTracePanel = panel.type == PanelType.RecorderSteps
+                val isSceneInspectorPanel = panel.type == PanelType.SceneInspector
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
                 val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore || panel.type == PanelType.M3Director || panel.type == PanelType.Vt2Vt
@@ -3207,14 +3405,14 @@ fun WorkspaceScreen(
                     maxPositionYPx = panelMaxYPx,
                     snapTargetXPx = snapTargets.x,
                     snapTargetYPx = snapTargets.y,
-                    showRail = true,
+                    showRail = !isSceneInspectorPanel,
                     railExpandedOverride = railExpanded,
                     onRailExpandedChange = { expanded ->
                         railExpanded = expanded
                         persistPanelRailExpanded(uiPrefs, panel.id, expanded)
                     },
-                    showDefaultRailIcons = !(isRailTracePanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
-                    showRailColorPicker = !(isRailTracePanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
+                    showDefaultRailIcons = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
+                    showRailColorPicker = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
 	                    railExpandedWidth = when {
                         isRailTracePanel -> 240.dp
 	                        isBlockEditorPanel -> 300.dp
@@ -3602,8 +3800,9 @@ fun WorkspaceScreen(
                         selectedRailTraceStep = selectedRailTraceStep,
                         selectedRailTraceStepId = workspaceSelectionState.railStepId ?: selectedRailTraceStepId,
                         recorderObservations = recorderObservations,
-                        recordingSessions = recordingSessions,
+                        recordingSessions = availableRecordingSessions,
                         selectedRecordingSessionPath = selectedRecordingSessionPath,
+                        recordingPlaybackRuntimeState = recordingPlaybackRuntimeState,
                         onFlowchartDataFlowVisibleChange = { flowchartDataFlowVisible = it },
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
@@ -3694,9 +3893,13 @@ fun WorkspaceScreen(
                                 renderWorkspaceDryRunStep(workspaceDryRunStepIndex + 1)
                             }
                         },
-                        activeRuntimeStepIndex = workspaceDryRunResult?.let {
-                            (workspaceDryRunStepIndex - 1).coerceIn(0, (dryRunEventCount(it) - 1).coerceAtLeast(0))
-                        },
+                        activeRuntimeStepIndex = activeRuntimeRailIndex(
+                            surfaceMode = stepperPanelState.railMode.toSurfaceMode(),
+                            activeIndex = workspaceDryRunResult?.let {
+                                (workspaceDryRunStepIndex - 1).coerceIn(0, (dryRunEventCount(it) - 1).coerceAtLeast(0))
+                            },
+                            stepCount = projectedSteps.size,
+                        ),
                         canDryRunStepBack = workspaceDryRunResult != null && workspaceDryRunStepIndex > 0,
                         canDryRunStepForward = workspaceDryRunStepIndex < dryRunEventCount(workspaceDryRunResult),
                         dryRunStepLabel = workspaceDryRunResult?.let { "${workspaceDryRunStepIndex}/${dryRunEventCount(it)}" },
@@ -3935,6 +4138,19 @@ fun WorkspaceScreen(
                 stepperPanelState = state
                 persistStepperState(uiPrefs, state)
             },
+            vt2vtManager = vt2vtManager,
+            workflowState = workflowState,
+            logStore = studioLogStore,
+            flowRuntimeSnapshot = flowRuntimeSnapshot,
+            focusedFlowchartNodeId = workspaceSelectionState.flowNodeId ?: selectedFlowchartNodeId,
+            focusedFlowchartEdgeId = workspaceSelectionState.flowEdgeId ?: selectedFlowchartEdgeId,
+            activeRuntimeStepIndex = activeRuntimeRailIndex(
+                surfaceMode = stepperPanelState.railMode.toSurfaceMode(),
+                activeIndex = workspaceDryRunResult?.let {
+                    (workspaceDryRunStepIndex - 1).coerceIn(0, (dryRunEventCount(it) - 1).coerceAtLeast(0))
+                },
+                stepCount = projectedSteps.size,
+            ),
             onResetPanels = {
                 panels.clear()
                 panels.addAll(defaultPanels())
@@ -4163,6 +4379,7 @@ private fun WorkspacePanelContent(
     recorderObservations: List<WorldObservation> = emptyList(),
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
+    recordingPlaybackRuntimeState: RecordingPlaybackRuntimeState = RecordingPlaybackRuntimeState(),
     onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
     onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
     onFlowchartDiagnosticsVisibleChange: (Boolean) -> Unit = {},
@@ -4228,6 +4445,59 @@ private fun WorkspacePanelContent(
             recordingSessions = recordingSessions,
             selectedRecordingSessionPath = selectedRecordingSessionPath,
             onRecordingSessionSelected = onRecordingSessionSelected,
+            recordingPlaybackState = recordingPlaybackRuntimeState.playback,
+            onRecordingPlaybackPlayPause = {
+                if (recordingPlaybackRuntimeState.playback.status == RecordingPlaybackStatus.PLAYING) {
+                    RecordingPlaybackRuntime.pause()
+                } else {
+                    RecordingPlaybackRuntime.play()
+                }
+            },
+            onRecordingPlaybackPrevious = RecordingPlaybackRuntime::previous,
+            onRecordingPlaybackNext = RecordingPlaybackRuntime::next,
+            onRecordingPlaybackRestart = RecordingPlaybackRuntime::restart,
+            onRecordingPlaybackSpeedChange = RecordingPlaybackRuntime::setPlaybackSpeed,
+        )
+        PanelType.SceneInspector -> SceneInspectorPanel(
+            panelId = panel.id,
+            step = selectedRailTraceStep ?: steps.lastOrNull(),
+            recorderObservations = recorderObservations,
+            playbackState = recordingPlaybackRuntimeState.playback.takeIf {
+                selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() != null
+            },
+            playbackSessions = recordingPlaybackRuntimeState.sessions,
+            candidateDocument = recordingPlaybackRuntimeState.candidateDocument,
+            reviewDecisions = recordingPlaybackRuntimeState.reviewDecisions,
+            reviewedDocument = recordingPlaybackRuntimeState.reviewedDocument,
+            reviewError = recordingPlaybackRuntimeState.reviewError,
+            onPlaybackSessionSelected = { sessionId ->
+                onRecordingSessionSelected("room:$sessionId")
+            },
+            onPlaybackPlayPause = {
+                if (recordingPlaybackRuntimeState.playback.status == RecordingPlaybackStatus.PLAYING) {
+                    RecordingPlaybackRuntime.pause()
+                } else {
+                    RecordingPlaybackRuntime.play()
+                }
+            },
+            onPlaybackPrevious = RecordingPlaybackRuntime::previous,
+            onPlaybackNext = RecordingPlaybackRuntime::next,
+            onPlaybackRestart = RecordingPlaybackRuntime::restart,
+            onPlaybackSpeedChange = RecordingPlaybackRuntime::setPlaybackSpeed,
+            onPlaybackNodeSelected = RecordingPlaybackRuntime::selectA11yNode,
+            onReviewStatus = { candidateId, status, label ->
+                RecordingPlaybackRuntime.setReviewStatus(context, candidateId, status, label)
+            },
+            onCorrectTarget = { candidateId, nodeId, label ->
+                RecordingPlaybackRuntime.correctTarget(context, candidateId, nodeId, label)
+            },
+            onUseCoordinateTarget = { candidateId, label ->
+                RecordingPlaybackRuntime.useCoordinateTarget(context, candidateId, label)
+            },
+            onNextUnreviewed = RecordingPlaybackRuntime::nextUnreviewed,
+            onBeginTargetCorrection = RecordingPlaybackRuntime::showBeforePhase,
+            onPayloadDropped = onPayloadDropped,
+            onPayloadDragPositionChange = onPayloadDragPositionChange,
         )
         PanelType.BlockEditor -> BlockEditorPanel(
             panelId = panel.id,
@@ -4427,6 +4697,7 @@ private fun WorkspacePanelContent(
             onResourceImported = onWorkspaceResourceUpsert,
             onResourceRemoved = onWorkspaceResourceRemove,
         )
+        PanelType.ChartGraph -> ChartGraphPanel()
         PanelType.Vt2Vt -> Vt2VtPanel(
             workflowState = workflowState,
             logStore = logStore,
@@ -5469,6 +5740,59 @@ private fun DatastorePanel(
 }
 
 @Composable
+private fun ChartGraphPanel() {
+    var kind by remember { mutableStateOf(ChartKind.LINE) }
+    val samples = remember {
+        listOf(
+            ChartSeries(
+                id = "runtime",
+                label = "Runtime",
+                colorArgb = 0xFF5BE7C4,
+                points = listOf(18.0, 26.0, 22.0, 38.0, 34.0, 51.0, 47.0, 63.0)
+                    .mapIndexed { index, value -> ChartPoint(index.toDouble(), value) },
+            ),
+            ChartSeries(
+                id = "confidence",
+                label = "Confidence",
+                colorArgb = 0xFFFFC857,
+                points = listOf(32.0, 29.0, 41.0, 44.0, 57.0, 54.0, 69.0, 74.0)
+                    .mapIndexed { index, value -> ChartPoint(index.toDouble(), value) },
+            ),
+        )
+    }
+    val document = remember(kind) {
+        ChartDocument(
+            id = "workspace-preview",
+            title = "Workspace Telemetrie",
+            kind = kind,
+            series = samples,
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(ChartKind.entries.filter { it != ChartKind.CANDLE }) { candidate ->
+                FilterChip(
+                    selected = kind == candidate,
+                    onClick = { kind = candidate },
+                    label = { Text(candidate.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                )
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            ChartGraph(document = document, modifier = Modifier.fillMaxSize())
+        }
+    }
+}
+
+@Composable
 private fun VisualAssetManagerPanel(
     workflowState: WorkspaceWorkflowState,
     screenshotState: ScreenshotCanvasUiState,
@@ -5489,6 +5813,7 @@ private fun VisualAssetManagerPanel(
     var importStatus by remember { mutableStateOf<String?>(null) }
     var requestedAssetType by rememberSaveable { mutableStateOf(EmaVisualAssetType.BLOCK_SHAPE) }
     var assetTypeMenuOpen by remember { mutableStateOf(false) }
+    var showEmbeddedDesigner by rememberSaveable { mutableStateOf(true) }
     val assetDirectory = remember(context) { visualAssetStoreDirectory(context) }
     val storedAssets = remember(assetDirectory, assetRevision) { EmaVisualAssetStore.list(assetDirectory) }
     val bindingCounts = remember(storedAssets) {
@@ -5562,6 +5887,16 @@ private fun VisualAssetManagerPanel(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(
+                    selected = showEmbeddedDesigner,
+                    onClick = { showEmbeddedDesigner = true },
+                    label = { Text("Design") },
+                )
+                FilterChip(
+                    selected = !showEmbeddedDesigner,
+                    onClick = { showEmbeddedDesigner = false },
+                    label = { Text("Assets") },
+                )
                 Box {
                     OutlinedButton(onClick = { assetTypeMenuOpen = true }) {
                         Text(requestedAssetType.name)
@@ -5597,6 +5932,15 @@ private fun VisualAssetManagerPanel(
                     Text(if (launchIntent != null) "Neu in ShapeMaker" else "ShapeMaker fehlt")
                 }
             }
+        }
+
+        if (showEmbeddedDesigner) {
+            VectorShapeEditorApp(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(8.dp)),
+            )
+            return@Column
         }
 
         Row(
@@ -9869,6 +10213,7 @@ private fun WorkspaceRail(
             Spacer(modifier = Modifier.height(4.dp))
             listOf(
                 PanelType.RecorderSteps,
+                PanelType.SceneInspector,
                 PanelType.BlockEditor,
                 PanelType.Flowchart,
                 PanelType.Screenshot,
@@ -9876,7 +10221,7 @@ private fun WorkspaceRail(
                 PanelType.Vision,
                 PanelType.Datastore,
                 PanelType.M3Director,
-                PanelType.Vt2Vt,
+                PanelType.ChartGraph,
                 PanelType.TextEditor,
                 PanelType.LogConsole,
                 PanelType.DebugInfo
@@ -10191,6 +10536,12 @@ private fun RecorderStepsPanel(
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
     onRecordingSessionSelected: (String) -> Unit = {},
+    recordingPlaybackState: RecordingPlaybackState = RecordingPlaybackState(),
+    onRecordingPlaybackPlayPause: () -> Unit = {},
+    onRecordingPlaybackPrevious: () -> Unit = {},
+    onRecordingPlaybackNext: () -> Unit = {},
+    onRecordingPlaybackRestart: () -> Unit = {},
+    onRecordingPlaybackSpeedChange: (Float) -> Unit = {},
 ) {
     var selectedStepId by remember { mutableStateOf(initialState.selectedStepId) }
     var replayIndex by remember { mutableIntStateOf(initialState.replayIndex) }
@@ -10199,11 +10550,19 @@ private fun RecorderStepsPanel(
     var railScaleMode by remember { mutableStateOf(initialState.scaleMode) }
     var localTimelineZoom by remember { mutableFloatStateOf(timelineZoom.coerceIn(0.5f, 4f)) }
     var playing by remember { mutableStateOf(false) }
-    val speedSteps = remember { listOf(0.2f, 0.5f, 1f, 2f, 4f) }
-    var speedStepIndex by remember {
+    val canonicalPlaybackActive = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() != null
+    val speedSteps = remember(canonicalPlaybackActive) {
+        if (canonicalPlaybackActive) listOf(0.5f, 1f, 2f) else listOf(0.2f, 0.5f, 1f, 2f, 4f)
+    }
+    var speedStepIndex by remember(canonicalPlaybackActive) {
         mutableIntStateOf(speedSteps.indexOfClosest(initialState.speed).coerceAtLeast(0))
     }
     val speed = speedSteps[speedStepIndex]
+    val playbackRunning = if (canonicalPlaybackActive) {
+        recordingPlaybackState.status == RecordingPlaybackStatus.PLAYING
+    } else {
+        playing
+    }
     val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
     val timelineStartTimesMs = remember(timelinePoints) { timelinePoints.map(RecorderTimelinePoint::startMs) }
     val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
@@ -10219,6 +10578,14 @@ private fun RecorderStepsPanel(
         steps.toRailProjection(mode = railMode, scaleMode = railScaleMode)
     }
     val surfaceAccent = railProjection.surfaceMode.railTraceAccentColor()
+    val reviewProgress = remember(steps) {
+        val statuses = steps.mapNotNull { it.properties["review.status"] }
+        Triple(
+            statuses.count { it == "CONFIRMED" || it == "CORRECTED" },
+            statuses.count { it == "PROPOSED" || it == "NEEDS_REVIEW" || it == "STALE" || it == "UNSUPPORTED" },
+            statuses.count { it == "REJECTED" },
+        )
+    }
     val progressFraction = remember(steps.size, safeIndex, replayPositionMs, timelineStartMs, timelineEndMs, railScaleMode) {
         if (steps.isEmpty()) {
             0f
@@ -10234,6 +10601,11 @@ private fun RecorderStepsPanel(
     LaunchedEffect(initialState.railMode, initialState.scaleMode) {
         railMode = initialState.railMode
         railScaleMode = initialState.scaleMode
+    }
+    LaunchedEffect(canonicalPlaybackActive, recordingPlaybackState.speed, speedSteps) {
+        if (canonicalPlaybackActive) {
+            speedStepIndex = speedSteps.indexOfClosest(recordingPlaybackState.speed).coerceAtLeast(0)
+        }
     }
     fun publishStepperState(
         stepId: String? = selectedStepId,
@@ -10289,7 +10661,8 @@ private fun RecorderStepsPanel(
         replayPositionMs = replayPositionMs.coerceIn(timelineStartMs, timelineEndMs)
         if (steps.isEmpty()) playing = false
     }
-    LaunchedEffect(activeRuntimeStepIndex, steps.size) {
+    val activeRuntimeStepId = activeRuntimeStepIndex?.let { steps.getOrNull(it)?.id }
+    LaunchedEffect(activeRuntimeStepIndex, activeRuntimeStepId) {
         val index = activeRuntimeStepIndex ?: return@LaunchedEffect
         if (index !in steps.indices) return@LaunchedEffect
         replayIndex = index
@@ -10300,7 +10673,10 @@ private fun RecorderStepsPanel(
     }
     LaunchedEffect(playing, speed, steps.size, timelineStartMs, timelineEndMs) {
         if (!playing || steps.isEmpty()) return@LaunchedEffect
-        if (replayPositionMs >= timelineEndMs) replayPositionMs = timelineStartMs
+        if (replayPositionMs >= timelineEndMs) {
+            playing = false
+            return@LaunchedEffect
+        }
         while (playing && replayPositionMs < timelineEndMs) {
             delay(50)
             replayPositionMs = (replayPositionMs + (50f * speed.coerceIn(0.25f, 4f)).toLong())
@@ -10467,6 +10843,13 @@ private fun RecorderStepsPanel(
                         }
                     }
                 }
+                if (railProjection.surfaceMode == RailSurfaceMode.Records && steps.any { "review.status" in it.properties }) {
+                    Text(
+                        text = "Review: ${reviewProgress.first} geprueft | ${reviewProgress.second} offen | ${reviewProgress.third} verworfen",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 RailTraceTimeline(
                     projection = railProjection,
                     steps = steps,
@@ -10493,8 +10876,12 @@ private fun RecorderStepsPanel(
                     TooltipIconButton(
                         tooltip = "Zum Anfang",
                         onClick = {
-                            playing = false
-                            selectReplayIndex(index = 0, positionMs = timelineStartMs)
+                            if (canonicalPlaybackActive) {
+                                onRecordingPlaybackRestart()
+                            } else {
+                                playing = false
+                                selectReplayIndex(index = 0, positionMs = timelineStartMs)
+                            }
                         },
                         modifier = Modifier.size(34.dp),
                         enabled = steps.isNotEmpty(),
@@ -10504,11 +10891,15 @@ private fun RecorderStepsPanel(
                     TooltipIconButton(
                         tooltip = "Schritt zurueck",
                         onClick = {
-                            val nextIndex = (safeIndex - 1).coerceAtLeast(0)
-                            selectReplayIndex(
-                                index = nextIndex,
-                                positionMs = timelinePoints.getOrNull(nextIndex)?.startMs ?: timelineStartMs,
-                            )
+                            if (canonicalPlaybackActive) {
+                                onRecordingPlaybackPrevious()
+                            } else {
+                                val nextIndex = (safeIndex - 1).coerceAtLeast(0)
+                                selectReplayIndex(
+                                    index = nextIndex,
+                                    positionMs = timelinePoints.getOrNull(nextIndex)?.startMs ?: timelineStartMs,
+                                )
+                            }
                         },
                         modifier = Modifier.size(34.dp),
                         enabled = steps.isNotEmpty() && safeIndex > 0,
@@ -10516,21 +10907,28 @@ private fun RecorderStepsPanel(
                         Icon(Icons.Default.ArrowBack, contentDescription = "Schritt zurueck", modifier = Modifier.size(18.dp))
                     }
                     TooltipIconButton(
-                        tooltip = if (playing) "Pause" else "Replay",
-                        onClick = { playing = !playing },
+                        tooltip = if (playbackRunning) "Pause" else "Replay",
+                        onClick = {
+                            if (canonicalPlaybackActive) onRecordingPlaybackPlayPause()
+                            else playing = !playing
+                        },
                         modifier = Modifier.size(38.dp),
                         enabled = steps.isNotEmpty(),
                     ) {
-                        Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Icon(if (playbackRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
                     }
                     TooltipIconButton(
                         tooltip = "Schritt vor",
                         onClick = {
-                            val nextIndex = (safeIndex + 1).coerceAtMost(steps.lastIndex)
-                            selectReplayIndex(
-                                index = nextIndex,
-                                positionMs = timelinePoints.getOrNull(nextIndex)?.startMs ?: timelineEndMs,
-                            )
+                            if (canonicalPlaybackActive) {
+                                onRecordingPlaybackNext()
+                            } else {
+                                val nextIndex = (safeIndex + 1).coerceAtMost(steps.lastIndex)
+                                selectReplayIndex(
+                                    index = nextIndex,
+                                    positionMs = timelinePoints.getOrNull(nextIndex)?.startMs ?: timelineEndMs,
+                                )
+                            }
                         },
                         modifier = Modifier.size(34.dp),
                         enabled = steps.isNotEmpty() && safeIndex < steps.lastIndex,
@@ -10540,11 +10938,15 @@ private fun RecorderStepsPanel(
                     TooltipIconButton(
                         tooltip = "Stop",
                         onClick = {
-                            playing = false
-                            selectReplayIndex(index = 0, positionMs = timelineStartMs, emitPanelAction = false)
+                            if (canonicalPlaybackActive) {
+                                onRecordingPlaybackRestart()
+                            } else {
+                                playing = false
+                                selectReplayIndex(index = 0, positionMs = timelineStartMs, emitPanelAction = false)
+                            }
                         },
                         modifier = Modifier.size(34.dp),
-                        enabled = playing,
+                        enabled = playbackRunning,
                     ) {
                         Icon(Icons.Default.Stop, contentDescription = "Stop", modifier = Modifier.size(18.dp))
                     }
@@ -10575,6 +10977,9 @@ private fun RecorderStepsPanel(
                         value = speedStepIndex.toFloat(),
                         onValueChange = {
                             speedStepIndex = it.roundToInt().coerceIn(0, speedSteps.lastIndex)
+                            if (canonicalPlaybackActive) {
+                                onRecordingPlaybackSpeedChange(speedSteps[speedStepIndex])
+                            }
                             publishStepperState(speedValue = speedSteps[speedStepIndex])
                         },
                         valueRange = 0f..speedSteps.lastIndex.toFloat(),
@@ -10589,7 +10994,7 @@ private fun RecorderStepsPanel(
                 }
                 Text(
                     text = activeStep?.let { step ->
-                        "${step.label}  |  ${step.actionType}  |  ${step.status.name}"
+                        "${step.label}  |  ${step.actionType}  |  ${step.properties["review.status"] ?: step.status.name}"
                     } ?: railTraceEmptyMessage(railProjection.surfaceMode),
                     style = MaterialTheme.typography.bodySmall,
                     color = activeStep?.status?.let { statusColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
@@ -11537,6 +11942,13 @@ internal fun nearestTimelineIndexByStartTimes(startTimesMs: List<Long>, position
     val nextDistance = kotlin.math.abs(startTimesMs[nextIndex] - positionMs)
     return if (previousDistance <= nextDistance) previousIndex else nextIndex
 }
+
+internal fun activeRuntimeRailIndex(
+    surfaceMode: RailSurfaceMode,
+    activeIndex: Int?,
+    stepCount: Int,
+): Int? = activeIndex
+    ?.takeIf { surfaceMode == RailSurfaceMode.Run && it in 0 until stepCount }
 
 private fun List<Float>.indexOfClosest(value: Float): Int =
     mapIndexed { index, candidate -> index to abs(candidate - value) }
@@ -12728,6 +13140,7 @@ private fun persistStepperState(
 
 private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.RecorderSteps -> Icons.AutoMirrored.Filled.Subject
+    PanelType.SceneInspector -> Icons.Default.AccountTree
     PanelType.BlockEditor -> Icons.Default.ViewKanban
     PanelType.Flowchart -> Icons.Default.Polyline
     PanelType.Screenshot -> Icons.Default.Photo
@@ -12740,6 +13153,7 @@ private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.LogConsole -> Icons.Default.BugReport
     PanelType.DebugInfo -> Icons.Default.Terminal
     PanelType.M3Director -> Icons.Default.AutoAwesomeMosaic
+    PanelType.ChartGraph -> Icons.Default.BarChart
     PanelType.Vt2Vt -> Icons.Default.SyncAlt
 }
 
@@ -12752,6 +13166,7 @@ private fun AddPanelDialog(
 ) {
     val panelTypes = listOf(
         PanelType.RecorderSteps,
+        PanelType.SceneInspector,
         PanelType.BlockEditor,
         PanelType.Flowchart,
         PanelType.Screenshot,
@@ -12759,7 +13174,7 @@ private fun AddPanelDialog(
         PanelType.Vision,
         PanelType.Datastore,
         PanelType.M3Director,
-        PanelType.Vt2Vt,
+        PanelType.ChartGraph,
         PanelType.TextEditor,
         PanelType.LogConsole,
         PanelType.DebugInfo
@@ -12836,6 +13251,7 @@ private fun AddPanelDialog(
 
 private fun displayNameForPanelType(type: PanelType): String = when (type) {
     PanelType.RecorderSteps -> "RailTrace"
+    PanelType.SceneInspector -> "Scene Inspector"
     PanelType.BlockEditor -> "BlockEditor"
     PanelType.Flowchart -> "Flowchart"
     PanelType.Screenshot -> "Canvas"
@@ -12848,6 +13264,7 @@ private fun displayNameForPanelType(type: PanelType): String = when (type) {
     PanelType.LogConsole -> "LogConsole"
     PanelType.DebugInfo -> "Debug"
     PanelType.M3Director -> "VisualAssets"
+    PanelType.ChartGraph -> "ChartGraph"
     PanelType.Vt2Vt -> "VT2VT"
 }
 
@@ -12877,6 +13294,7 @@ private fun PanelState.toMainPanelState(): MainPanelState =
 
 private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
     PanelType.RecorderSteps -> MainPanelType.LIST_TEST
+    PanelType.SceneInspector -> MainPanelType.LIST_TEST
     PanelType.BlockEditor -> MainPanelType.BLOCKEDITOR
     PanelType.Flowchart -> MainPanelType.FLOWCHART
     PanelType.RuntimeLog -> MainPanelType.LOG_CONSOLE
@@ -12888,7 +13306,8 @@ private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
     PanelType.Marker,
     PanelType.Vision,
     PanelType.Datastore,
-    PanelType.M3Director -> MainPanelType.LIST_TEST
+    PanelType.M3Director,
+    PanelType.ChartGraph -> MainPanelType.LIST_TEST
     PanelType.Vt2Vt -> MainPanelType.LIST_TEST
 }
 
@@ -13066,6 +13485,13 @@ private fun WorkspaceSettingsBottomSheet(
     onChromeTabSettingsChange: (CustomChromeTabSettings) -> Unit,
     stepperPanelState: StepperPanelState,
     onStepperPanelStateChange: (StepperPanelState) -> Unit,
+    vt2vtManager: Vt2VtConnectionManager,
+    workflowState: WorkspaceWorkflowState,
+    logStore: StudioLogStore,
+    flowRuntimeSnapshot: FlowRuntimeSnapshot?,
+    focusedFlowchartNodeId: FlowNodeId?,
+    focusedFlowchartEdgeId: FlowEdgeId?,
+    activeRuntimeStepIndex: Int?,
     onResetPanels: () -> Unit,
     onSaveLayout: () -> Unit,
     onDeleteLayout: () -> Unit,
@@ -13087,6 +13513,7 @@ private fun WorkspaceSettingsBottomSheet(
             Tab(selected = tabIndex == 8, onClick = { onTabChange(8) }, text = { Text("Keypad") })
             Tab(selected = tabIndex == 9, onClick = { onTabChange(9) }, text = { Text("AppInfo") })
             Tab(selected = tabIndex == 10, onClick = { onTabChange(10) }, text = { Text("RailTrace") })
+            Tab(selected = tabIndex == 11, onClick = { onTabChange(11) }, text = { Text("VT2VT") })
         }
 
         when (tabIndex) {
@@ -13263,18 +13690,263 @@ private fun WorkspaceSettingsBottomSheet(
             )
             5 -> PluginSettingsTab()
             6 -> TaskerSettingsTab()
-            8 -> WorkspaceSettingsInfoTab(
-                title = "Keypad",
-                messages = listOf("Keypad-Mapping wird als eigenes Workspace-Panel/Plugin migriert. Icon-Engine kann hier bereits umgeschaltet werden."),
-                actionLabel = "Icon-Engine: ${IconMotionConfig.engine.name}",
-                onAction = onToggleIconEngine
+            8 -> KeypadCompanionSettingsTab(
+                onToggleIconEngine = onToggleIconEngine,
             )
             9 -> AppInfoSettingsTab()
             10 -> RailTraceSettingsTab(
                 state = stepperPanelState,
                 onStateChange = onStepperPanelStateChange,
             )
+            11 -> Vt2VtSettingsTab(
+                manager = vt2vtManager,
+                workflowState = workflowState,
+                logStore = logStore,
+                flowRuntimeSnapshot = flowRuntimeSnapshot,
+                focusedFlowchartNodeId = focusedFlowchartNodeId,
+                focusedFlowchartEdgeId = focusedFlowchartEdgeId,
+                activeRuntimeStepIndex = activeRuntimeStepIndex,
+            )
             else -> WorkspaceSettingsInfoTab("Farben", listOf("Farboptionen sind im Tab Farben erreichbar."))
+        }
+    }
+}
+
+@Composable
+private fun Vt2VtSettingsTab(
+    manager: Vt2VtConnectionManager,
+    workflowState: WorkspaceWorkflowState,
+    logStore: StudioLogStore,
+    flowRuntimeSnapshot: FlowRuntimeSnapshot?,
+    focusedFlowchartNodeId: FlowNodeId?,
+    focusedFlowchartEdgeId: FlowEdgeId?,
+    activeRuntimeStepIndex: Int?,
+) {
+    val snapshot by manager.state.collectAsState()
+    val settings = snapshot.settings
+    var roleMenuExpanded by remember { mutableStateOf(false) }
+    var portText by remember(settings.port) { mutableStateOf(settings.port.toString()) }
+    val latestLogEntry = remember(logStore.changeToken) { logStore.allEntries().lastOrNull() }
+    val connected = snapshot.session.connectionState in setOf(
+        Vt2VtConnectionState.Connected,
+        Vt2VtConnectionState.Observing,
+        Vt2VtConnectionState.Syncing,
+    )
+    fun send(type: Vt2VtMessageType, payload: Map<String, String>) {
+        manager.send(
+            manager.newMessage(
+                type = type,
+                revision = workflowState.revision.toLong(),
+                payload = payload,
+            ),
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("VT2VT Verbindung", style = MaterialTheme.typography.titleSmall)
+                Text(snapshot.status, style = MaterialTheme.typography.bodySmall)
+            }
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(
+                        when {
+                            connected -> Color(0xFF4CAF50)
+                            snapshot.session.connectionState == Vt2VtConnectionState.Error -> Color(0xFFE15B64)
+                            snapshot.listenerActive -> Color(0xFFFFC857)
+                            else -> MaterialTheme.colorScheme.outline
+                        },
+                        CircleShape,
+                    ),
+            )
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TaskerSettingLine("Lokaler Peer", snapshot.session.localPeer.id)
+                TaskerSettingLine("Pairing-Code", snapshot.session.pairingCode)
+                TaskerSettingLine("LAN", snapshot.localAddresses.joinToString().ifBlank { "nicht erkannt" })
+                TaskerSettingLine("USB/ADB", snapshot.usbBridgeStatus.summary)
+                TaskerSettingLine("Status", snapshot.session.connectionState.name)
+                TaskerSettingLine("Pakete angenommen", snapshot.session.inbound.size.toString())
+                TaskerSettingLine("Pakete gesendet", snapshot.session.outbound.size.toString())
+                TaskerSettingLine("Letzter Eingang", snapshot.lastInboundType?.name ?: "-")
+                TaskerSettingLine("Letzter Ausgang", snapshot.lastOutboundType?.name ?: "-")
+                TaskerSettingLine("Zuletzt bestätigt", snapshot.lastAcknowledgedType?.name ?: "-")
+                TaskerSettingLine(
+                    "Letzter Kontakt",
+                    snapshot.lastSuccessfulExchangeAtMs?.let { timestamp ->
+                        "vor ${((System.currentTimeMillis() - timestamp).coerceAtLeast(0L) / 1_000L)} s"
+                    } ?: "-",
+                )
+                TaskerSettingLine("Fehlerfolge", snapshot.consecutiveFailures.toString())
+            }
+        }
+
+        OutlinedTextField(
+            value = settings.remoteHost,
+            onValueChange = { value -> manager.updateSettings { it.copy(remoteHost = value) } },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Remote-IP / Host") },
+            singleLine = true,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = portText,
+                onValueChange = { value ->
+                    portText = value.filter(Char::isDigit).take(5)
+                    portText.toIntOrNull()?.takeIf { it in 1..65535 }?.let { port ->
+                        manager.updateSettings { it.copy(port = port) }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                label = { Text("Port") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = settings.remotePairingCode,
+                onValueChange = { value -> manager.updateSettings { it.copy(remotePairingCode = value) } },
+                modifier = Modifier.weight(1f),
+                label = { Text("Remote-Code") },
+                singleLine = true,
+            )
+        }
+
+        Box {
+            OutlinedButton(onClick = { roleMenuExpanded = true }) {
+                Text("Rolle: ${settings.role.name}")
+            }
+            DropdownMenu(expanded = roleMenuExpanded, onDismissRequest = { roleMenuExpanded = false }) {
+                Vt2VtRole.entries.forEach { role ->
+                    DropdownMenuItem(
+                        text = { Text(role.name) },
+                        onClick = {
+                            manager.updateSettings { it.copy(role = role) }
+                            roleMenuExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+
+        SettingSwitchRow("Listener beim App-Start", settings.listenOnLaunch) { enabled ->
+            manager.updateSettings { it.copy(listenOnLaunch = enabled) }
+        }
+        SettingSwitchRow("Automatisch wiederverbinden", settings.autoReconnect) { enabled ->
+            manager.updateSettings { it.copy(autoReconnect = enabled) }
+        }
+        SettingSwitchRow("Workspace live spiegeln", settings.liveMirrorEnabled) { enabled ->
+            manager.updateSettings { it.copy(liveMirrorEnabled = enabled) }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { if (settings.connectionEnabled) manager.disconnect() else manager.connect() },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (settings.connectionEnabled) "Trennen" else "Verbinden")
+            }
+            OutlinedButton(onClick = manager::useUsbBridge, modifier = Modifier.weight(1f)) {
+                Text("USB/ADB")
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    manager.updateSettings { it.copy(listenOnLaunch = !snapshot.listenerActive) }
+                },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (snapshot.listenerActive) "Listener stoppen" else "Listener starten")
+            }
+            OutlinedButton(onClick = manager::refreshEnvironment, modifier = Modifier.weight(1f)) {
+                Text("Status prüfen")
+            }
+        }
+
+        Text("Manuelle Synchronisierung", style = MaterialTheme.typography.labelLarge)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                AssistChip(
+                    onClick = { send(Vt2VtMessageType.WorkspaceState, workspacePayload(workflowState)) },
+                    label = { Text("Workspace") },
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = {
+                        send(
+                            Vt2VtMessageType.SelectionChanged,
+                            selectionPayload(focusedFlowchartNodeId, focusedFlowchartEdgeId),
+                        )
+                    },
+                    label = { Text("Auswahl") },
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = {
+                        send(
+                            Vt2VtMessageType.RuntimeStepChanged,
+                            runtimePayload(
+                                workflowState,
+                                flowRuntimeSnapshot,
+                                activeRuntimeStepIndex,
+                                focusedFlowchartNodeId,
+                                focusedFlowchartEdgeId,
+                            ),
+                        )
+                    },
+                    label = { Text("Runtime") },
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = { send(Vt2VtMessageType.LogEntryAdded, logPayload(latestLogEntry)) },
+                    label = { Text("Log") },
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = {
+                        manager.loopback(
+                            manager.newMessage(
+                                Vt2VtMessageType.WorkspaceState,
+                                workflowState.revision.toLong(),
+                                workspacePayload(workflowState),
+                            ),
+                        )
+                    },
+                    label = { Text("Loopback") },
+                )
+            }
+        }
+
+        snapshot.session.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        snapshot.lastFailure?.takeIf { snapshot.consecutiveFailures > 0 }?.let {
+            Text("Letzter Übertragungsfehler: $it", color = MaterialTheme.colorScheme.error)
+        }
+        snapshot.ignoredInbound?.let { Text("Ignoriert: $it", color = MaterialTheme.colorScheme.error) }
+        snapshot.remoteWorkspaceMirror?.let { mirror ->
+            Text("Remote Workspace: Revision ${mirror.revision}, Quelle ${mirror.mutationSource}")
+        }
+        snapshot.remoteRuntimeMirror?.let { mirror ->
+            Text("Remote Runtime: ${mirror.runId ?: "-"}, Step ${mirror.activeStep ?: "-"}")
         }
     }
 }
@@ -13361,10 +14033,64 @@ private fun AppInfoSettingsTab() {
         TaskerSettingLine("VersionCode", versionCode)
         TaskerSettingLine("Paket", context.packageName)
         TaskerSettingLine("Git", "https://github.com/robertprit/VisualTasker-Studio-WSS")
+        TaskerSettingLine("Lizenz", "Apache-2.0 / Open Source")
+        TaskerSettingLine("Plugin API", "1")
+        TaskerSettingLine("Module", "Block, Flow, ShapeMaker, ChartGraph, Vision AI, IME Companion")
+        TaskerSettingLine("DnD", "Compose DND 0.5.0 (Apache-2.0), WSS-Vertraege bleiben kanonisch")
         TaskerSettingLine("Runtime", "Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
         TaskerSettingLine("Geraet", "${Build.MANUFACTURER} ${Build.MODEL}")
         TaskerSettingLine("Architektur", "Workspace Shell, Workflow/Record/Worldview getrennt")
         TaskerSettingLine("Junktor", "Record, Trace, Scan und User Intent werden zu pruefbaren Vorschlaegen verdichtet.")
+    }
+}
+
+@Composable
+private fun KeypadCompanionSettingsTab(
+    onToggleIconEngine: () -> Unit,
+) {
+    val context = LocalContext.current
+    val packageName = "com.visualtasker.ime"
+    val installed = remember(context) {
+        runCatching { context.packageManager.getApplicationInfo(packageName, 0) }.isSuccess
+    }
+    val activeIme = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.DEFAULT_INPUT_METHOD,
+    ).orEmpty()
+    val selected = activeIme.startsWith("$packageName/")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("VisualTasker IME Keypad", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Eigenstaendige Companion-App. WSS stellt keine zweite System-IME bereit.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TaskerSettingLine("Paket", packageName)
+        TaskerSettingLine("Installiert", installed.toString())
+        TaskerSettingLine("Aktive Tastatur", selected.toString())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = installed,
+                onClick = {
+                    context.packageManager.getLaunchIntentForPackage(packageName)?.let(context::safeStartActivity)
+                },
+            ) {
+                Text("Keypad oeffnen")
+            }
+            OutlinedButton(
+                onClick = { context.safeStartActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+            ) {
+                Text("IME waehlen")
+            }
+        }
+        OutlinedButton(onClick = onToggleIconEngine) {
+            Text("Icon-Engine: ${IconMotionConfig.engine.name}")
+        }
     }
 }
 
@@ -13490,6 +14216,14 @@ private fun PluginSettingsTab() {
         }
         PluginReadinessRow(readiness.entry(PluginRuntimeReadiness.VT2VT_USB)) {}
         PluginReadinessRow(readiness.entry(PluginRuntimeReadiness.VISION_PROVIDERS)) {}
+        Text("Vision AI Provider", style = MaterialTheme.typography.labelLarge)
+        VisionAiPluginCatalog.providers.forEach { provider ->
+            CapabilityDescriptorRow(
+                label = provider.displayName,
+                detail = provider.capabilities.joinToString { it.name },
+                ready = provider.state == VisionAiProviderState.AVAILABLE,
+            )
+        }
         CapabilityDescriptorSummarySection(
             descriptors = descriptors,
             availableCapabilities = availableCapabilities,

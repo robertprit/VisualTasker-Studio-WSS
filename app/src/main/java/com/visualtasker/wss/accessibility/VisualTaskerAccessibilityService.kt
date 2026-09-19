@@ -16,6 +16,8 @@ import com.visualtasker.wss.workspace.model.RecordingEventStore
 import com.visualtasker.wss.workspace.model.WindowContext
 import com.visualtasker.wss.workspace.model.WindowSnapshot
 import com.visualtasker.wss.workspace.model.WorldviewRect
+import com.visualtasker.wss.recording.A11yNodeSnapshot
+import com.visualtasker.wss.recording.RecordingSessionRuntime
 import java.io.File
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -45,6 +47,12 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
                 event = accessibilityEvent,
                 windowContext = currentWindowContext(accessibilityEvent),
             )
+            if (accessibilityEvent.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                val bounds = accessibilityEvent.source?.let { Rect().also(it::getBoundsInScreen) }
+                if (bounds != null && !bounds.isEmpty) {
+                    RecordingSessionRuntime.recordTap(bounds.centerX(), bounds.centerY())
+                }
+            }
         }
     }
 
@@ -88,6 +96,13 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
             )
             ?: lastInspectorSnapshot
     }
+
+    fun currentRecordingA11yTree(): A11yNodeSnapshot? =
+        rootInActiveWindow?.toRecordingNode(
+            nodeId = "node-0",
+            parentNodeId = null,
+            childOrder = 0,
+        )
 
     suspend fun clickText(text: String): Boolean {
         val target = rootInActiveWindow?.findFirstTextMatch(text) ?: return false
@@ -171,6 +186,44 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
 
         fun isConnected(): Boolean = instance != null
     }
+}
+
+private fun AccessibilityNodeInfo.toRecordingNode(
+    nodeId: String,
+    parentNodeId: String?,
+    childOrder: Int,
+): A11yNodeSnapshot {
+    val bounds = Rect().also(::getBoundsInScreen)
+    val children = buildList {
+        for (index in 0 until childCount) {
+            getChild(index)?.let { child ->
+                add(child.toRecordingNode("$nodeId.$index", nodeId, index))
+            }
+        }
+    }
+    return A11yNodeSnapshot(
+        stableSnapshotNodeId = nodeId,
+        parentNodeId = parentNodeId,
+        childOrder = childOrder,
+        className = className?.toString().orEmpty(),
+        viewIdResourceName = viewIdResourceName,
+        text = text?.toString(),
+        contentDescription = contentDescription?.toString(),
+        left = bounds.left,
+        top = bounds.top,
+        right = bounds.right,
+        bottom = bounds.bottom,
+        clickable = isClickable,
+        longClickable = isLongClickable,
+        scrollable = isScrollable,
+        editable = isEditable,
+        enabled = isEnabled,
+        selected = isSelected,
+        checked = isChecked,
+        visibleToUser = isVisibleToUser,
+        actions = actionList.map { action -> action.label?.toString() ?: action.id.toString() },
+        children = children,
+    )
 }
 
 data class RuntimePoint(

@@ -89,6 +89,72 @@ class Vt2VtMirrorContractsTest {
         assertTrue(base.inbound.isEmpty())
     }
 
+    @Test
+    fun observerReducerAcceptsPacketWhenPairingIsNotConfigured() {
+        val base = defaultVt2VtSession("Observer", timestampMs = 3L)
+        val accepted = Vt2VtSessionReducer.receive(
+            state = base,
+            message = message(id = "runtime-open", target = base.localPeer.id, sequence = 1L),
+            expectedPairingCode = null,
+        )
+
+        assertTrue(accepted is Vt2VtInboundResult.Accepted)
+    }
+
+    @Test
+    fun observerReducerTreatsWorkspaceRevisionAsOpaqueFingerprint() {
+        val base = defaultVt2VtSession("Observer", timestampMs = 4L)
+        val previous = Vt2VtMessage(
+            id = "workspace-high-hash",
+            type = Vt2VtMessageType.WorkspaceState,
+            sourcePeerId = "primary-1",
+            timestampMs = 100L,
+            revision = 2_000_000_000L,
+        )
+        val acceptedPrevious = Vt2VtSessionReducer.receive(base, previous) as Vt2VtInboundResult.Accepted
+        val newerWithLowerHash = previous.copy(
+            id = "workspace-low-hash",
+            timestampMs = 200L,
+            revision = -2_000_000_000L,
+        )
+
+        assertTrue(
+            Vt2VtSessionReducer.receive(acceptedPrevious.state, newerWithLowerHash) is
+                Vt2VtInboundResult.Accepted,
+        )
+    }
+
+    @Test
+    fun observerReducerStillRejectsDelayedRevisionedPacket() {
+        val base = defaultVt2VtSession("Observer", timestampMs = 5L)
+        val current = Vt2VtMessage(
+            id = "workspace-current",
+            type = Vt2VtMessageType.WorkspaceState,
+            sourcePeerId = "primary-1",
+            timestampMs = 200L,
+            revision = 10L,
+        )
+        val acceptedCurrent = Vt2VtSessionReducer.receive(base, current) as Vt2VtInboundResult.Accepted
+        val delayed = current.copy(
+            id = "workspace-delayed",
+            timestampMs = 100L,
+            revision = 20L,
+        )
+        val result = Vt2VtSessionReducer.receive(acceptedCurrent.state, delayed) as Vt2VtInboundResult.Ignored
+
+        assertEquals(Vt2VtInboundIgnoreReason.StaleRevision, result.reason)
+    }
+
+    @Test
+    fun workspaceRoleMatrixSeparatesAuthorityAndObservation() {
+        assertTrue(Vt2VtRole.Primary.acceptsWorkspaceFrom(Vt2VtRole.Secondary))
+        assertTrue(Vt2VtRole.Secondary.acceptsWorkspaceFrom(Vt2VtRole.Primary))
+        assertTrue(Vt2VtRole.CoEditor.acceptsWorkspaceFrom(Vt2VtRole.Primary))
+        assertTrue(Vt2VtRole.Observer.acceptsWorkspaceFrom(Vt2VtRole.Primary))
+        assertTrue(!Vt2VtRole.Primary.acceptsWorkspaceFrom(Vt2VtRole.Primary))
+        assertTrue(!Vt2VtRole.CoEditor.acceptsWorkspaceFrom(Vt2VtRole.Observer))
+    }
+
     private fun message(id: String, target: String, sequence: Long): Vt2VtMessage =
         Vt2VtMessage(
             id = id,

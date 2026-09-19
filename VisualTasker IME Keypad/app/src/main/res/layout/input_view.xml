@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#111111">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="2dp">
+
+        <ImageButton
+            android:id="@+id/iconBandToggle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="Modusleiste ausrollen"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="@android:color/white" />
+
+        <HorizontalScrollView
+            android:id="@+id/iconBandPanel"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/modeLettersButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="QWERTZ"
+                    android:src="@android:drawable/ic_menu_edit"
+                    android:tint="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/modeSymbolsButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Sonderzeichen"
+                    android:src="@android:drawable/ic_menu_sort_alphabetically"
+                    android:tint="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/modeDeveloperButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Developer Mode"
+                    android:src="@android:drawable/ic_menu_manage"
+                    android:tint="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/modeEmscriptButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="EMScript Mode"
+                    android:src="@android:drawable/ic_menu_edit"
+                    android:tint="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/modeVisionTaskerButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="VisionTasker Mode"
+                    android:src="@android:drawable/ic_menu_compass"
+                    android:tint="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/colorButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="ColourPicker"
+                    android:src="@android:drawable/ic_menu_gallery"
+                    android:tint="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/calculatorButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Taschenrechner"
+                    android:src="@android:drawable/ic_menu_week"
+                    android:tint="@android:color/white" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/selectButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Markieren"
+                android:src="@android:drawable/ic_menu_agenda"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/cutButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Cut"
+                android:src="@android:drawable/ic_menu_crop"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/copyButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Copy"
+                android:src="@android:drawable/ic_menu_save"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/pasteButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Paste"
+                android:src="@android:drawable/ic_menu_set_as"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/undoButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Undo"
+                android:src="@android:drawable/ic_menu_revert"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/redoButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Redo"
+                android:src="@android:drawable/ic_menu_rotate"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/commandPaletteButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Command Palette"
+                android:src="@android:drawable/ic_menu_search"
+                android:tint="@android:color/white" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <android.inputmethodservice.KeyboardView
+            android:id="@+id/keyboardView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="3"
+            android:keyBackground="@drawable/key_bg_dark"
+            android:keyTextColor="@android:color/white"
+            android:keyTextSize="18sp"
+            android:padding="2dp" />
+
+        <LinearLayout
+            android:id="@+id/rightNumpadPanel"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:padding="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/numpad7" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="7" />
+                <Button android:id="@+id/numpad8" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="8" />
+                <Button android:id="@+id/numpad9" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="9" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/numpad4" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="4" />
+                <Button android:id="@+id/numpad5" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="5" />
+                <Button android:id="@+id/numpad6" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="6" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/numpad1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="1" />
+                <Button android:id="@+id/numpad2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="2" />
+                <Button android:id="@+id/numpad3" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="3" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/numpadMinus" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="-" />
+                <Button android:id="@+id/numpad0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="0" />
+                <Button android:id="@+id/numpadPlus" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="+" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/inlineToolSheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:visibility="gone"
+        android:background="#1C1C1C">
+
+        <View
+            android:layout_width="42dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:background="@android:color/darker_gray" />
+
+        <TextView
+            android:id="@+id/inlineSheetTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Tools"
+            android:textColor="@android:color/white"
+            android:textStyle="bold" />
+
+        <FrameLayout
+            android:id="@+id/inlineSheetContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+</LinearLayout>
