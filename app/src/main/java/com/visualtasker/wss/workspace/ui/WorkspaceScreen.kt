@@ -3478,6 +3478,18 @@ fun WorkspaceScreen(
                 var railExpanded by remember(panel.id) {
                     mutableStateOf(loadPanelRailExpanded(uiPrefs, panel.id))
                 }
+                val selectedSceneCandidate = recordingPlaybackRuntimeState.candidateDocument
+                    ?.candidates
+                    ?.getOrNull(recordingPlaybackRuntimeState.playback.selectedEntryIndex)
+                val selectedSceneDecision = selectedSceneCandidate?.let { candidate ->
+                    recordingPlaybackRuntimeState.reviewDecisions.firstOrNull {
+                        it.candidateId == candidate.candidateId
+                    }
+                }
+                val sceneInspectorReviewUiState = rememberSceneInspectorReviewUiState(
+                    candidate = selectedSceneCandidate,
+                    decision = selectedSceneDecision,
+                )
                 DarkPanel(
                     panel = panel.toMainPanelState(),
                     snapEnabled = snapEnabled,
@@ -3490,7 +3502,7 @@ fun WorkspaceScreen(
                     maxPositionYPx = panelMaxYPx,
                     snapTargetXPx = snapTargets.x,
                     snapTargetYPx = snapTargets.y,
-                    showRail = !isSceneInspectorPanel,
+                    showRail = true,
                     railExpandedOverride = railExpanded,
                     onRailExpandedChange = { expanded ->
                         railExpanded = expanded
@@ -3500,6 +3512,7 @@ fun WorkspaceScreen(
                     showRailColorPicker = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
 	                    railExpandedWidth = when {
                         isRailTracePanel -> 240.dp
+	                        isSceneInspectorPanel -> 300.dp
 	                        isBlockEditorPanel -> 300.dp
 	                        isFlowchartPanel -> 300.dp
                         isLogConsolePanel -> 220.dp
@@ -3507,7 +3520,7 @@ fun WorkspaceScreen(
                         isScreenshotPanel -> 220.dp
                         else -> 186.dp
                     },
-                    railExpandedFillHeight = isRailTracePanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
+                    railExpandedFillHeight = isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
                     headerLeadingContent = {
                         PanelTypeSwitchButton(
                             currentType = panel.type,
@@ -3526,6 +3539,7 @@ fun WorkspaceScreen(
                     },
                     compactRailContent = { onExpandRequested ->
                         when {
+                            isSceneInspectorPanel -> SceneInspectorCompactRail(onExpandRequested)
                             isScreenshotPanel -> ScreenshotCanvasCompactRail(
                                 state = screenshotCanvasState,
                                 panelType = panel.type,
@@ -3682,6 +3696,27 @@ fun WorkspaceScreen(
                     },
                     railContent = {
                         when {
+                            isSceneInspectorPanel -> SceneInspectorReviewRail(
+                                playbackState = recordingPlaybackRuntimeState.playback.takeIf {
+                                    selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() != null
+                                },
+                                candidateDocument = recordingPlaybackRuntimeState.candidateDocument,
+                                reviewDecisions = recordingPlaybackRuntimeState.reviewDecisions,
+                                reviewedDocument = recordingPlaybackRuntimeState.reviewedDocument,
+                                reviewError = recordingPlaybackRuntimeState.reviewError,
+                                reviewUiState = sceneInspectorReviewUiState,
+                                onReviewStatus = { candidateId, status, label ->
+                                    RecordingPlaybackRuntime.setReviewStatus(context, candidateId, status, label)
+                                },
+                                onCorrectTarget = { candidateId, nodeId, label ->
+                                    RecordingPlaybackRuntime.correctTarget(context, candidateId, nodeId, label)
+                                },
+                                onUseCoordinateTarget = { candidateId, label ->
+                                    RecordingPlaybackRuntime.useCoordinateTarget(context, candidateId, label)
+                                },
+                                onNextUnreviewed = RecordingPlaybackRuntime::nextUnreviewed,
+                                onBeginTargetCorrection = RecordingPlaybackRuntime::showBeforePhase,
+                            )
                             isScreenshotPanel -> ScreenshotCanvasRail(
                                 state = screenshotCanvasState,
                                 panelType = panel.type,
@@ -3897,6 +3932,7 @@ fun WorkspaceScreen(
                         recordingSessions = availableRecordingSessions,
                         selectedRecordingSessionPath = selectedRecordingSessionPath,
                         recordingPlaybackRuntimeState = recordingPlaybackRuntimeState,
+                        sceneInspectorReviewUiState = sceneInspectorReviewUiState,
                         onFlowchartDataFlowVisibleChange = { flowchartDataFlowVisible = it },
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
@@ -4508,6 +4544,7 @@ private fun WorkspacePanelContent(
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
     recordingPlaybackRuntimeState: RecordingPlaybackRuntimeState = RecordingPlaybackRuntimeState(),
+    sceneInspectorReviewUiState: SceneInspectorReviewUiState = SceneInspectorReviewUiState(),
     recordingRecoveryMessage: String? = null,
     onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
     onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
@@ -4608,8 +4645,7 @@ private fun WorkspacePanelContent(
             playbackSessions = recordingPlaybackRuntimeState.sessions,
             candidateDocument = recordingPlaybackRuntimeState.candidateDocument,
             reviewDecisions = recordingPlaybackRuntimeState.reviewDecisions,
-            reviewedDocument = recordingPlaybackRuntimeState.reviewedDocument,
-            reviewError = recordingPlaybackRuntimeState.reviewError,
+            reviewUiState = sceneInspectorReviewUiState,
             onPlaybackSessionSelected = { sessionId ->
                 onRecordingSessionSelected("room:$sessionId")
             },
@@ -4625,17 +4661,6 @@ private fun WorkspacePanelContent(
             onPlaybackRestart = RecordingPlaybackRuntime::restart,
             onPlaybackSpeedChange = RecordingPlaybackRuntime::setPlaybackSpeed,
             onPlaybackNodeSelected = RecordingPlaybackRuntime::selectA11yNode,
-            onReviewStatus = { candidateId, status, label ->
-                RecordingPlaybackRuntime.setReviewStatus(context, candidateId, status, label)
-            },
-            onCorrectTarget = { candidateId, nodeId, label ->
-                RecordingPlaybackRuntime.correctTarget(context, candidateId, nodeId, label)
-            },
-            onUseCoordinateTarget = { candidateId, label ->
-                RecordingPlaybackRuntime.useCoordinateTarget(context, candidateId, label)
-            },
-            onNextUnreviewed = RecordingPlaybackRuntime::nextUnreviewed,
-            onBeginTargetCorrection = RecordingPlaybackRuntime::showBeforePhase,
             onPayloadDropped = onPayloadDropped,
             onPayloadDragPositionChange = onPayloadDragPositionChange,
         )

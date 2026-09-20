@@ -530,7 +530,7 @@ private fun List<WssDragTreeItem>.removeDeep(itemId: String): List<WssDragTreeIt
     filterNot { it.id == itemId }
         .map { it.copy(children = it.children.removeDeep(itemId)) }
 
-private fun String.toWssDragIdSegment(fallback: String): String =
+internal fun String.toWssDragIdSegment(fallback: String): String =
     lowercase()
         .replace(Regex("[^a-z0-9._:-]+"), "-")
         .trim('-', '.', ':', '_')

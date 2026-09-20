@@ -153,12 +153,15 @@ class RecordingPlaybackTest {
 
         val document = RecordingPlaybackProjector.project(damaged, fixture.assetStore::resolve)
         val codes = document.diagnostics.map(RecordingPlaybackDiagnostic::code).toSet()
+        val controller = RecordingPlaybackController().apply { load(document) }
+        val tree = RecordingPlaybackSceneTreeProjector.project("panel-scene", controller.state.value)!!
 
         assertTrue("UNSUPPORTED_SCHEMA" in codes)
         assertTrue("SESSION_TIME_INVALID" in codes)
         assertTrue("SCENE_SEQUENCE_DUPLICATE" in codes)
         assertTrue("SCENE_MONOTONIC_TIME_INVALID" in codes)
         assertTrue("INTERACTION_BEFORE_SCENE_TIME_INVALID" in codes)
+        assertTrue(tree.root.flatten().all { it.payload.id.matches(Regex("[a-z0-9][a-z0-9._:-]*")) })
     }
 
     @Test
@@ -240,6 +243,9 @@ class RecordingPlaybackTest {
         assertEquals(restoredBookmark.positionMs, restored.state.value.phaseElapsedMs)
         assertEquals(2f, restored.state.value.speed)
     }
+
+    private fun com.visualtasker.wss.workspace.model.SceneInspectorNode.flatten(): List<com.visualtasker.wss.workspace.model.SceneInspectorNode> =
+        listOf(this) + children.flatMap { it.flatten() }
 
     private fun fixture(changed: Boolean): PlaybackFixture {
         val root = Files.createTempDirectory("recording-playback").toFile()

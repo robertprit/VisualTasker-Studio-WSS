@@ -179,7 +179,7 @@ private fun playbackNode(
     provider = provider,
     properties = properties,
     payload = WssDragPayload(
-        id = "record-playback:$id",
+        id = "record-playback:${id.toWssDragIdSegment("node")}",
         kind = WssDragPayloadKind.InspectorField,
         label = label,
         sourcePanelId = panelId,

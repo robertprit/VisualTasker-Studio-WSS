@@ -40,12 +40,14 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.WebAsset
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -53,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +96,110 @@ import com.visualtasker.wss.workspace.model.RecordingPlaybackSceneTreeProjector
 import com.visualtasker.wss.workspace.model.WorldObservation
 import com.visualtasker.wss.workspace.model.WssDragPayload
 
+@Stable
+internal class SceneInspectorReviewUiState {
+    var label by mutableStateOf("")
+    var correctionMode by mutableStateOf(false)
+    var pendingTargetNodeId by mutableStateOf<String?>(null)
+
+    internal fun reset(label: String) {
+        this.label = label
+        correctionMode = false
+        pendingTargetNodeId = null
+    }
+}
+
+@Composable
+internal fun rememberSceneInspectorReviewUiState(
+    candidate: StepCandidate?,
+    decision: StepReviewDecision?,
+): SceneInspectorReviewUiState {
+    val state = remember { SceneInspectorReviewUiState() }
+    LaunchedEffect(candidate?.candidateId, decision?.decisionId, decision?.decidedAtEpochMs) {
+        state.reset(decision?.correctedProposal?.displayLabel ?: candidate?.displayLabel.orEmpty())
+    }
+    return state
+}
+
+@Composable
+internal fun SceneInspectorCompactRail(onExpandRequested: () -> Unit) {
+    IconButton(onClick = onExpandRequested, modifier = Modifier.size(32.dp)) {
+        Icon(
+            imageVector = Icons.Default.RateReview,
+            contentDescription = "Step Review oeffnen",
+            tint = SceneAccent,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+internal fun SceneInspectorReviewRail(
+    playbackState: RecordingPlaybackState?,
+    candidateDocument: StepCandidateDocument?,
+    reviewDecisions: List<StepReviewDecision>,
+    reviewedDocument: ReviewedStepDocument?,
+    reviewError: String?,
+    reviewUiState: SceneInspectorReviewUiState,
+    onReviewStatus: (String, StepReviewStatus, String) -> Unit,
+    onCorrectTarget: (String, String, String) -> Unit,
+    onUseCoordinateTarget: (String, String) -> Unit,
+    onNextUnreviewed: () -> Unit,
+    onBeginTargetCorrection: () -> Unit,
+) {
+    val candidate = candidateDocument?.candidates?.getOrNull(playbackState?.selectedEntryIndex ?: -1)
+    val decision = candidate?.let { selected ->
+        reviewDecisions.firstOrNull { it.candidateId == selected.candidateId }
+    }
+    val status = when {
+        decision != null && decision.sourceRecordVersion != candidateDocument.sourceRecordVersion -> StepReviewStatus.STALE
+        decision != null -> decision.status
+        else -> candidate?.reviewStatus
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (candidate == null || status == null) {
+            Text(
+                text = "Kein pruefbarer Recording-Step ausgewaehlt.",
+                modifier = Modifier.padding(8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            StepCandidateReviewCard(
+                candidate = candidate,
+                decision = decision,
+                status = status,
+                reviewedDocument = reviewedDocument,
+                reviewError = reviewError,
+                label = reviewUiState.label,
+                correctionMode = reviewUiState.correctionMode,
+                pendingTargetNodeId = reviewUiState.pendingTargetNodeId,
+                onLabelChange = { reviewUiState.label = it },
+                onConfirm = { onReviewStatus(candidate.candidateId, StepReviewStatus.CONFIRMED, reviewUiState.label) },
+                onCorrectionModeChange = { enabled ->
+                    if (enabled) onBeginTargetCorrection()
+                    reviewUiState.correctionMode = enabled
+                    if (!enabled) reviewUiState.pendingTargetNodeId = null
+                },
+                onApplyCorrection = {
+                    reviewUiState.pendingTargetNodeId?.let { nodeId ->
+                        onCorrectTarget(candidate.candidateId, nodeId, reviewUiState.label)
+                        reviewUiState.correctionMode = false
+                        reviewUiState.pendingTargetNodeId = null
+                    }
+                },
+                onUseCoordinate = { onUseCoordinateTarget(candidate.candidateId, reviewUiState.label) },
+                onReject = { onReviewStatus(candidate.candidateId, StepReviewStatus.REJECTED, reviewUiState.label) },
+                onLater = { onReviewStatus(candidate.candidateId, StepReviewStatus.DEFERRED, reviewUiState.label) },
+                onNextUnreviewed = onNextUnreviewed,
+            )
+        }
+    }
+}
+
 @Composable
 internal fun SceneInspectorPanel(
     panelId: String,
@@ -102,8 +209,7 @@ internal fun SceneInspectorPanel(
     playbackSessions: List<RecordingPlaybackSessionSummary> = emptyList(),
     candidateDocument: StepCandidateDocument? = null,
     reviewDecisions: List<StepReviewDecision> = emptyList(),
-    reviewedDocument: ReviewedStepDocument? = null,
-    reviewError: String? = null,
+    reviewUiState: SceneInspectorReviewUiState = SceneInspectorReviewUiState(),
     onPlaybackSessionSelected: (String) -> Unit = {},
     onPlaybackPlayPause: () -> Unit = {},
     onPlaybackPrevious: () -> Unit = {},
@@ -111,11 +217,6 @@ internal fun SceneInspectorPanel(
     onPlaybackRestart: () -> Unit = {},
     onPlaybackSpeedChange: (Float) -> Unit = {},
     onPlaybackNodeSelected: (String?) -> Unit = {},
-    onReviewStatus: (String, StepReviewStatus, String) -> Unit = { _, _, _ -> },
-    onCorrectTarget: (String, String, String) -> Unit = { _, _, _ -> },
-    onUseCoordinateTarget: (String, String) -> Unit = { _, _ -> },
-    onNextUnreviewed: () -> Unit = {},
-    onBeginTargetCorrection: () -> Unit = {},
     onPayloadDropped: (WssDragPayload, Offset) -> Unit,
     onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit,
 ) {
@@ -126,8 +227,7 @@ internal fun SceneInspectorPanel(
             sessions = playbackSessions,
             candidateDocument = candidateDocument,
             reviewDecisions = reviewDecisions,
-            reviewedDocument = reviewedDocument,
-            reviewError = reviewError,
+            reviewUiState = reviewUiState,
             onSessionSelected = onPlaybackSessionSelected,
             onPlayPause = onPlaybackPlayPause,
             onPrevious = onPlaybackPrevious,
@@ -135,11 +235,6 @@ internal fun SceneInspectorPanel(
             onRestart = onPlaybackRestart,
             onSpeedChange = onPlaybackSpeedChange,
             onNodeSelected = onPlaybackNodeSelected,
-            onReviewStatus = onReviewStatus,
-            onCorrectTarget = onCorrectTarget,
-            onUseCoordinateTarget = onUseCoordinateTarget,
-            onNextUnreviewed = onNextUnreviewed,
-            onBeginTargetCorrection = onBeginTargetCorrection,
             onPayloadDropped = onPayloadDropped,
             onPayloadDragPositionChange = onPayloadDragPositionChange,
         )
@@ -232,8 +327,7 @@ private fun RecordingPlaybackInspector(
     sessions: List<RecordingPlaybackSessionSummary>,
     candidateDocument: StepCandidateDocument?,
     reviewDecisions: List<StepReviewDecision>,
-    reviewedDocument: ReviewedStepDocument?,
-    reviewError: String?,
+    reviewUiState: SceneInspectorReviewUiState,
     onSessionSelected: (String) -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
@@ -241,11 +335,6 @@ private fun RecordingPlaybackInspector(
     onRestart: () -> Unit,
     onSpeedChange: (Float) -> Unit,
     onNodeSelected: (String?) -> Unit,
-    onReviewStatus: (String, StepReviewStatus, String) -> Unit,
-    onCorrectTarget: (String, String, String) -> Unit,
-    onUseCoordinateTarget: (String, String) -> Unit,
-    onNextUnreviewed: () -> Unit,
-    onBeginTargetCorrection: () -> Unit,
     onPayloadDropped: (WssDragPayload, Offset) -> Unit,
     onPayloadDragPositionChange: (WssDragPayload?, Offset?) -> Unit,
 ) {
@@ -254,11 +343,6 @@ private fun RecordingPlaybackInspector(
     val entry = state.selectedEntry
     val candidate = candidateDocument?.candidates?.getOrNull(state.selectedEntryIndex)
     val decision = candidate?.let { selected -> reviewDecisions.firstOrNull { it.candidateId == selected.candidateId } }
-    val effectiveReviewStatus = when {
-        decision != null && decision.sourceRecordVersion != candidateDocument?.sourceRecordVersion -> StepReviewStatus.STALE
-        decision != null -> decision.status
-        else -> candidate?.reviewStatus
-    }
     val tree = remember(panelId, state.selectedEntryIndex, state.phase, scene?.scene?.sceneId) {
         RecordingPlaybackSceneTreeProjector.project(panelId, state)
     }
@@ -268,13 +352,8 @@ private fun RecordingPlaybackInspector(
             expandedIds = expandedIds + next.root.id + next.root.children.filter { it.children.isNotEmpty() }.map { it.id }
         }
     }
-    var correctionMode by remember(candidate?.candidateId) { mutableStateOf(false) }
-    var pendingTargetNodeId by remember(candidate?.candidateId) { mutableStateOf<String?>(null) }
-    var reviewLabel by remember(candidate?.candidateId, decision?.decisionId, decision?.decidedAtEpochMs) {
-        mutableStateOf(decision?.correctedProposal?.displayLabel ?: candidate?.displayLabel.orEmpty())
-    }
     val highlightedNodeId = when {
-        pendingTargetNodeId != null -> pendingTargetNodeId
+        reviewUiState.pendingTargetNodeId != null -> reviewUiState.pendingTargetNodeId
         decision?.status == StepReviewStatus.CORRECTED -> decision.selectedTargetNodeId
         else -> state.selectedA11yNodeId
     }
@@ -341,36 +420,6 @@ private fun RecordingPlaybackInspector(
             modifier = Modifier.fillMaxWidth().height(220.dp).padding(horizontal = 8.dp),
         )
         HorizontalDivider(color = SceneAccent.copy(alpha = 0.24f))
-        candidate?.let { selectedCandidate ->
-            StepCandidateReviewCard(
-                candidate = selectedCandidate,
-                decision = decision,
-                status = effectiveReviewStatus ?: selectedCandidate.reviewStatus,
-                reviewedDocument = reviewedDocument,
-                reviewError = reviewError,
-                label = reviewLabel,
-                correctionMode = correctionMode,
-                pendingTargetNodeId = pendingTargetNodeId,
-                onLabelChange = { reviewLabel = it },
-                onConfirm = { onReviewStatus(selectedCandidate.candidateId, StepReviewStatus.CONFIRMED, reviewLabel) },
-                onCorrectionModeChange = { enabled ->
-                    if (enabled) onBeginTargetCorrection()
-                    correctionMode = enabled
-                    if (!enabled) pendingTargetNodeId = null
-                },
-                onApplyCorrection = {
-                    pendingTargetNodeId?.let { nodeId ->
-                        onCorrectTarget(selectedCandidate.candidateId, nodeId, reviewLabel)
-                        correctionMode = false
-                        pendingTargetNodeId = null
-                    }
-                },
-                onUseCoordinate = { onUseCoordinateTarget(selectedCandidate.candidateId, reviewLabel) },
-                onReject = { onReviewStatus(selectedCandidate.candidateId, StepReviewStatus.REJECTED, reviewLabel) },
-                onLater = { onReviewStatus(selectedCandidate.candidateId, StepReviewStatus.DEFERRED, reviewLabel) },
-                onNextUnreviewed = onNextUnreviewed,
-            )
-        }
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -384,7 +433,11 @@ private fun RecordingPlaybackInspector(
                     selected = visible.node.id == selectedNode?.id,
                     onClick = {
                         visible.node.properties["a11yNodeId"]?.let { nodeId ->
-                            if (correctionMode) pendingTargetNodeId = nodeId else onNodeSelected(nodeId)
+                            if (reviewUiState.correctionMode) {
+                                reviewUiState.pendingTargetNodeId = nodeId
+                            } else {
+                                onNodeSelected(nodeId)
+                            }
                         }
                         if (visible.node.children.isNotEmpty()) {
                             expandedIds = if (visible.node.id in expandedIds) expandedIds - visible.node.id else expandedIds + visible.node.id
@@ -431,12 +484,20 @@ private fun StepCandidateReviewCard(
             modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Icon(Icons.Default.RateReview, contentDescription = null, tint = SceneAccent, modifier = Modifier.size(18.dp))
                 Text("Step Review", style = MaterialTheme.typography.titleSmall, color = SceneAccent)
-                Text(status.name, style = MaterialTheme.typography.labelSmall, color = reviewStatusColor(status))
-                Spacer(Modifier.weight(1f))
-                Text("Geprueft $reviewed | Offen $open | Verworfen $rejected", style = MaterialTheme.typography.labelSmall)
             }
+            Text(status.name, style = MaterialTheme.typography.labelSmall, color = reviewStatusColor(status))
+            Text(
+                "Geprueft $reviewed | Offen $open | Verworfen $rejected",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedTextField(
                 value = label,
                 onValueChange = onLabelChange,
@@ -470,35 +531,24 @@ private fun StepCandidateReviewCard(
                 Text("${diagnostic.code}: ${diagnostic.message}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
             reviewError?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
-            Row(
+            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Bestaetigen") }
+            TextButton(
+                onClick = { onCorrectionModeChange(!correctionMode) },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Button(onClick = onConfirm) { Text("Bestaetigen") }
-                TextButton(onClick = { onCorrectionModeChange(!correctionMode) }) {
-                    Text(if (correctionMode) "Abbrechen" else "Ziel korrigieren")
-                }
-                if (correctionMode) {
-                    Button(onClick = onApplyCorrection, enabled = pendingTargetNodeId != null) { Text("Uebernehmen") }
-                }
+                Text(if (correctionMode) "Abbrechen" else "Ziel korrigieren")
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onUseCoordinate) { Text("Koordinate") }
-                TextButton(onClick = onReject) { Text("Verwerfen") }
-                TextButton(onClick = onLater) { Text("Spaeter pruefen") }
+            if (correctionMode) {
+                Button(
+                    onClick = onApplyCorrection,
+                    enabled = pendingTargetNodeId != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Ausgewaehltes Ziel uebernehmen") }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onNextUnreviewed) { Text("Naechster offener") }
-            }
+            TextButton(onClick = onUseCoordinate, modifier = Modifier.fillMaxWidth()) { Text("Koordinate verwenden") }
+            TextButton(onClick = onReject, modifier = Modifier.fillMaxWidth()) { Text("Verwerfen") }
+            TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("Spaeter pruefen") }
+            TextButton(onClick = onNextUnreviewed, modifier = Modifier.fillMaxWidth()) { Text("Naechster offener Step") }
         }
     }
 }

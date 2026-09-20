@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.zIndex
 import com.visualtasker.wss.data.PanelState
 import com.visualtasker.wss.grid.GridSystem
 import kotlin.math.roundToInt
@@ -209,7 +210,8 @@ fun DarkPanel(
                     expandedWidth = railExpandedWidth,
                     expandedFillHeight = railExpandedFillHeight,
                     compactRailContent = compactRailContent,
-                    railContent = railContent
+                    railContent = railContent,
+                    modifier = Modifier.zIndex(if (railExpanded) 4f else 0f)
                 )
             }
 
