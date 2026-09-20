@@ -108,3 +108,30 @@ Erwartet: alle Projektionen folgen dem kanonischen Zustand; kein Editor besitzt 
 `START -> LET/SET -> IF (a + b) > c -> nested action`
 
 Diese drei kleinen Workflows sollten als wiederkehrende Regression-Fixtures benutzt werden, bevor grosse Demo-Workflows getestet werden.
+
+## Automatisierte Vertragsabdeckung
+
+`WorkspaceEditorSyncContractTest` prueft den kleinen Branch-Workflow als
+Text -> Workflow -> Block -> Flow -> Text-Roundtrip. Abgedeckt sind stabile
+Block-/Node-Identitaeten, Source-Line-Mapping, Selection-Reconciliation fuer
+Undo/Redo, Feldwertaenderungen bei stabilen IDs, alle drei Selektionsrichtungen,
+das Verwerfen entfernter IDs und die Isolation eines invaliden Drafts.
+
+`WorkspaceSelectionEchoGuardTest` belegt, dass eine extern angewandte Auswahl
+genau einmal als Echo unterdrueckt wird, waehrend eine abweichende echte
+Benutzerauswahl weitergeleitet wird. Fokuswechsel erzeugen dadurch keine
+Rueckkopplung zwischen BlockEditor und Host.
+
+`WorkspaceMutationSourcePolicyTest` trennt Auto-Sync, bestaetigtes Text-Apply,
+Datei-Laden, Block-Mutationen und Flow-Layoutbewegungen in nachvollziehbare
+Undo-Grenzen. Nur fortlaufendes EMScript-Auto-Sync und identische Flow-Moves
+werden zusammengefasst.
+
+`EmscriptApplyGuardTest` und `FlowLayoutEngineTest` pruefen zusaetzlich
+Connection-Identitaeten sowie deterministisches Layout und Routing. Die oben
+aufgefuehrten `NOT_TESTED`-Eintraege bleiben die manuelle Geraete-Abnahme und
+werden durch diese Unit-Tests nicht automatisch auf `PASS` gesetzt.
+
+Hinweis: Der aktuelle ausfuehrbare Parserpfad verwendet einen impliziten
+Startblock und `click(...)`. Die dokumentierten Aliase `ON_START` und
+`clickText(...)` sind noch nicht in jedem Importpfad kanonisch aufgeloest.

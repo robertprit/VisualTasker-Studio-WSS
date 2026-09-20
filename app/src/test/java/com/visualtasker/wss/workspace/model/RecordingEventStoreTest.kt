@@ -6,8 +6,34 @@ import com.visualtasker.wss.emscript.runtime.ExecutionSourceKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.visualtasker.wss.recording.RecordingInteractionPayload
+import com.visualtasker.wss.recording.RecordingInteractionType
 
 class RecordingEventStoreTest {
+    @Test
+    fun canonicalImportKeepsStableJsonlProvenance() {
+        val file = kotlin.io.path.createTempFile(prefix = "canonical-recording", suffix = ".jsonl").toFile()
+        file.writeText(
+            """
+            {"index":"0","timestampMs":"1000","elapsedMs":"0","source":"floatingOverlay","kind":"recording.started","label":"Start"}
+            {"index":"1","timestampMs":"1100","elapsedMs":"100","source":"floatingOverlay","kind":"click","label":"Login","x":"120","y":"240","resourceId":"login"}
+            {"index":"2","timestampMs":"1200","elapsedMs":"200","source":"floatingOverlay","kind":"activity.change","label":"Home","package":"com.example","activity":"HomeActivity"}
+            """.trimIndent(),
+        )
+
+        val imported = RecordingEventStore.canonicalImport(file.absolutePath, "session-import")
+
+        assertEquals(3, imported.rawEvents.size)
+        assertEquals(2, imported.interactions.size)
+        assertEquals(listOf(RecordingInteractionType.TAP, RecordingInteractionType.WINDOW), imported.interactions.map { it.type })
+        assertEquals("jsonl:${file.nameWithoutExtension}:1", imported.interactions.first().rawEventIds.single())
+        assertEquals(1L, imported.interactions.first().sequence)
+        assertEquals(1_100L, imported.interactions.first().occurredAtEpochMs)
+        assertEquals(100_000_000L, imported.interactions.first().occurredAtElapsedRealtimeNanos)
+        val tap = imported.interactions.first().payload as RecordingInteractionPayload.Tap
+        assertEquals("login", tap.targetReference)
+    }
+
     @Test
     fun mapsJsonlRecordingToStepperSteps() {
         val file = kotlin.io.path.createTempFile(prefix = "recording", suffix = ".jsonl").toFile()
@@ -68,6 +94,16 @@ class RecordingEventStoreTest {
 
         assertEquals(2, steps.size)
         assertEquals(1120L, steps.maxOf { (it.timestampMs ?: 0L) + (it.durationMs ?: 0L) })
+    }
+
+    @Test
+    fun readsCanonicalSessionLinkFromRawEvidenceHeader() {
+        val file = kotlin.io.path.createTempFile(prefix = "recording-linked", suffix = ".jsonl").toFile()
+        file.writeText(
+            """{"index":"0","timestampMs":"1000","elapsedMs":"0","source":"floatingOverlay","kind":"recording.started","label":"Aufnahme gestartet","canonicalSessionId":"session-42"}"""
+        )
+
+        assertEquals("session-42", RecordingEventStore.run { file.linkedCanonicalSessionId() })
     }
 
     @Test

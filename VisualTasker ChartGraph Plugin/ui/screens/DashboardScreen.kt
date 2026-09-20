@@ -1,14 +1,21 @@
 package com.visualtasker.chartgraph.demo.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -18,12 +25,12 @@ import com.visualtasker.chartgraph.demo.data.MarketInterval
 import com.visualtasker.chartgraph.demo.data.MarketRangePreset
 import com.visualtasker.chartgraph.demo.ui.components.AggrChart
 import com.visualtasker.chartgraph.demo.ui.components.AlertPanel
+import com.visualtasker.chartgraph.demo.ui.components.label
 import com.visualtasker.chartgraph.demo.viewmodel.DashboardViewModel
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
-    val chartType by viewModel.chartType.collectAsState()
     val marketInterval by viewModel.marketInterval.collectAsState()
     val rangePreset by viewModel.rangePreset.collectAsState()
     val fromInput by viewModel.customFromInput.collectAsState()
@@ -35,6 +42,8 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
     val datasets by viewModel.datasets.collectAsState()
     val candleData by viewModel.candleData.collectAsState()
     val pointCount = datasets.firstOrNull()?.points?.size ?: 0
+    val chartOrder = remember { mutableStateListOf<ChartType>().apply { addAll(ChartType.entries) } }
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
 
     Scaffold(
         containerColor = Color(0xFF121212), // Aggr Dark Background
@@ -56,40 +65,6 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Chart Type Selector (Segmented Button Style)
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF1E1E1E)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    ChartType.entries.forEach { type ->
-                        FilterChip(
-                            selected = chartType == type,
-                            onClick = { viewModel.setChartType(type) },
-                            label = {
-                                Text(
-                                    when(type) {
-                                        ChartType.LINE -> "Kurve"
-                                        ChartType.COLUMN -> "Balken"
-                                        ChartType.PIE -> "Torte"
-                                        ChartType.DONUT -> "Donut"
-                                        ChartType.CANDLE -> "Kerzen"
-                                    }
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = Color.White
-                            )
-                        )
-                    }
-                }
-            }
-
             // BTC Market Controls
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -190,53 +165,56 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
                 }
             }
 
-            // Chart Container
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF1A1A1A),
-                tonalElevation = 4.dp
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
+                items(chartOrder, key = ChartType::name) { type ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().height(250.dp).animateItem(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(42.dp).padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.DragHandle,
+                                contentDescription = "Diagramm verschieben",
+                                modifier = Modifier.size(32.dp).pointerInput(type, chartOrder.toList()) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { dragAccumulator = 0f },
+                                        onDragCancel = { dragAccumulator = 0f },
+                                        onDragEnd = { dragAccumulator = 0f },
+                                        onDrag = { change, amount ->
+                                            change.consume()
+                                            dragAccumulator += amount.y
+                                            val current = chartOrder.indexOf(type)
+                                            val direction = when {
+                                                dragAccumulator > 72f -> 1
+                                                dragAccumulator < -72f -> -1
+                                                else -> 0
+                                            }
+                                            val target = (current + direction).coerceIn(chartOrder.indices)
+                                            if (direction != 0 && target != current) {
+                                                chartOrder.removeAt(current)
+                                                chartOrder.add(target, type)
+                                                dragAccumulator = 0f
+                                            }
+                                        },
+                                    )
+                                },
+                            )
+                            Text(type.label, modifier = Modifier.weight(1f), color = Color.White, style = MaterialTheme.typography.titleSmall)
+                            Text(if (marketDataMode == MarketDataMode.LIVE) "LIVE" else "DEMO", color = if (marketDataMode == MarketDataMode.LIVE) Color(0xFF00E5FF) else Color(0xFFFFB300), style = MaterialTheme.typography.labelSmall)
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     AggrChart(
-                        type = chartType,
+                        type = type,
                         datasets = datasets,
                         candleData = candleData,
                         modifier = Modifier.fillMaxSize()
                     )
-
-                    // Live Indicator
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(12.dp)
-                            .background(
-                                if (marketDataMode == MarketDataMode.LIVE) Color(0xFF00E5FF).copy(alpha = 0.2f)
-                                else Color(0xFFFFB300).copy(alpha = 0.2f),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(
-                                        if (marketDataMode == MarketDataMode.LIVE) Color(0xFF00E5FF) else Color(0xFFFFB300),
-                                        shape = RoundedCornerShape(4.dp)
-                                    )
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                if (marketDataMode == MarketDataMode.LIVE) "LIVE" else "DEMO",
-                                color = if (marketDataMode == MarketDataMode.LIVE) Color(0xFF00E5FF) else Color(0xFFFFB300),
-                                style = MaterialTheme.typography.labelSmall
-                            )
                         }
                     }
                 }

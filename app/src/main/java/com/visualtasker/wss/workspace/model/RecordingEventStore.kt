@@ -10,6 +10,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
+import com.visualtasker.wss.recording.RawRecordingEvent
+import com.visualtasker.wss.recording.RecordingInteraction
+import com.visualtasker.wss.recording.RecordingInteractionCanonicalizer
 
 object RecordingEventStore {
     const val RECORDS_DIR = "emscript-runtime/records"
@@ -21,6 +24,7 @@ object RecordingEventStore {
         context: Context,
         source: String = "floatingOverlay",
         baselineWindowContext: WindowContext? = null,
+        canonicalSessionId: String? = null,
     ): File {
         val target = File(context.filesDir, "$RECORDS_DIR/overlay-${timestamp()}.jsonl")
         target.parentFile?.mkdirs()
@@ -31,7 +35,14 @@ object RecordingEventStore {
         )
         activeSession.set(writer)
         activeStatus.set(RecordingStatusSnapshot(fileName = target.name))
-        writer.record("recording.started", "Aufnahme gestartet", mapOf("file" to target.name))
+        writer.record(
+            "recording.started",
+            "Aufnahme gestartet",
+            buildMap {
+                put("file", target.name)
+                canonicalSessionId?.let { put("canonicalSessionId", it) }
+            },
+        )
         baselineWindowContext?.let(writer::recordWindowEvidence)
         return target
     }
@@ -163,6 +174,7 @@ object RecordingEventStore {
                     lastModifiedMs = file.lastModified(),
                     stepCount = steps.size,
                     durationMs = steps.maxOfOrNull { (it.timestampMs ?: 0L) + (it.durationMs ?: 0L) } ?: 0L,
+                    linkedCanonicalSessionId = file.linkedCanonicalSessionId(),
                 )
             }
 
@@ -172,6 +184,27 @@ object RecordingEventStore {
             ?.let(::File)
             ?.toRecorderSteps()
             .orEmpty()
+
+    fun canonicalImport(path: String?, sessionId: String): CanonicalRecordingImport {
+        val source = path?.takeIf(String::isNotBlank)?.let(::File)
+        if (source?.isFile != true) return CanonicalRecordingImport(emptyList(), emptyList())
+        val events = source.readLines().mapNotNull(::parseRecordingEventLine).map { event ->
+            RawRecordingEvent(
+                rawEventId = "jsonl:${source.nameWithoutExtension}:${event.index}",
+                sessionId = sessionId,
+                sequence = event.index.toLong(),
+                occurredAtEpochMs = event.timestampMs,
+                occurredAtElapsedRealtimeNanos = event.elapsedMs * 1_000_000L,
+                kind = event.kind,
+                payload = event.attributes + mapOf(
+                    "source" to event.source,
+                    "jsonlFile" to source.name,
+                    "jsonlIndex" to event.index.toString(),
+                ),
+            )
+        }
+        return CanonicalRecordingImport(events, RecordingInteractionCanonicalizer.canonicalize(events))
+    }
 
     fun File.toRecorderSteps(): List<RecorderStepUi> {
         if (!isFile) return emptyList()
@@ -202,9 +235,18 @@ object RecordingEventStore {
             }
     }
 
+    fun File.linkedCanonicalSessionId(): String? =
+        takeIf(File::isFile)
+            ?.useLines { lines -> lines.firstOrNull() }
+            ?.let(::parseRecordingEventLine)
+            ?.attributes
+            ?.get("canonicalSessionId")
+            ?.takeIf(String::isNotBlank)
+
     private fun parseRecordingEventLine(line: String): RecordingEventLine? {
         val fields = parseFlatJsonObject(line)
         val index = fields["index"]?.toIntOrNull() ?: return null
+        val timestampMs = fields["timestampMs"]?.toLongOrNull() ?: return null
         val elapsedMs = fields["elapsedMs"]?.toLongOrNull() ?: return null
         val kind = fields["kind"] ?: return null
         val source = fields["source"] ?: "recording"
@@ -213,6 +255,7 @@ object RecordingEventStore {
             .filterKeys { it !in setOf("index", "timestampMs", "elapsedMs", "source", "kind", "label", "message") }
         return RecordingEventLine(
             index = index,
+            timestampMs = timestampMs,
             elapsedMs = elapsedMs,
             kind = kind,
             source = source,
@@ -484,6 +527,7 @@ object RecordingEventStore {
 
     private data class RecordingEventLine(
         val index: Int,
+        val timestampMs: Long,
         val elapsedMs: Long,
         val kind: String,
         val source: String,
@@ -491,6 +535,11 @@ object RecordingEventStore {
         val attributes: Map<String, String>,
     )
 }
+
+data class CanonicalRecordingImport(
+    val rawEvents: List<RawRecordingEvent>,
+    val interactions: List<RecordingInteraction>,
+)
 
 data class RecordingStatusSnapshot(
     val running: Boolean = false,
@@ -522,4 +571,5 @@ data class RecordingSessionUi(
     val lastModifiedMs: Long,
     val stepCount: Int,
     val durationMs: Long,
+    val linkedCanonicalSessionId: String? = null,
 )

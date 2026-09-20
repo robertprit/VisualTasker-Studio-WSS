@@ -54,4 +54,15 @@ data class WorkspaceWorkflowState(
 const val WORKFLOW_SOURCE_INITIAL = "initial"
 const val WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX = "blockeditor:"
 const val WORKFLOW_SOURCE_EMSCRIPT_APPLY = "emscript:apply"
+const val WORKFLOW_SOURCE_EMSCRIPT_AUTO = "$WORKFLOW_SOURCE_EMSCRIPT_APPLY:auto"
+const val WORKFLOW_SOURCE_EMSCRIPT_CONFIRM = "$WORKFLOW_SOURCE_EMSCRIPT_APPLY:confirm"
+const val WORKFLOW_SOURCE_EMSCRIPT_FILE_PREFIX = "$WORKFLOW_SOURCE_EMSCRIPT_APPLY:file:"
 const val WORKFLOW_SOURCE_VT2VT_PREFIX = "vt2vt:"
+
+object WorkspaceMutationSourcePolicy {
+    fun coalesces(current: String, previous: String?): Boolean =
+        current == previous && (
+            (current.startsWith(WORKFLOW_SOURCE_FLOWCHART_PREFIX) && current.endsWith(":move")) ||
+                current == WORKFLOW_SOURCE_EMSCRIPT_AUTO
+            )
+}

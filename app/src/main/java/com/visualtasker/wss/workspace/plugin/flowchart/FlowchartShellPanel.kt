@@ -166,6 +166,7 @@ fun FlowchartShellPanel(
     reporterNodesVisible: Boolean = true,
     variableNodesVisible: Boolean = true,
     operatorNodesVisible: Boolean = true,
+    visualNodeShapeProvider: FlowchartNodeShapeProvider? = null,
 ) {
     val controller = session.controller
     var gridVisible by remember(session.sessionId) { mutableStateOf(true) }
@@ -300,6 +301,21 @@ fun FlowchartShellPanel(
         } ?: return
         applyViewport(base.centeredOn(focus, panelSize, zoomOverride ?: base.viewport.zoom))
     }
+    fun revealFocusedElement(interactionActive: Boolean) {
+        if (panelSize.width <= 0 || panelSize.height <= 0) return
+        val base = baseViewDocument() ?: return
+        val focus = selectedNodeId?.let { nodeId ->
+            base.nodeViews.firstOrNull { it.nodeId == nodeId }?.centerPoint()
+        } ?: selectedEdgeId?.let { edgeId ->
+            session.graphDocument.edges.firstOrNull { it.id == edgeId }?.let { edge ->
+                base.edgeCenter(edge.sourceNodeId, edge.targetNodeId)
+            }
+        } ?: return
+        val screenX = focus.x * base.viewport.zoom + base.viewport.pan.x
+        val screenY = focus.y * base.viewport.zoom + base.viewport.pan.y
+        if (!shouldRevealFlowchartFocus(screenX, screenY, panelSize.width, panelSize.height, interactionActive)) return
+        applyViewport(base.centeredOn(focus, panelSize, base.viewport.zoom))
+    }
     fun zoomFocused(factor: Double) {
         val current = baseViewDocument() ?: return
         val nextZoom = (current.viewport.zoom * factor).coerceIn(0.1, 8.0)
@@ -406,9 +422,10 @@ fun FlowchartShellPanel(
             },
         )
     }
-    val nodeShapeProvider = remember {
+    val nodeShapeProvider = remember(visualNodeShapeProvider) {
         FlowchartNodeShapeProvider { node, width, height ->
-            flowchartMaterialNodePath(node = node, width = width, height = height)
+            visualNodeShapeProvider?.pathFor(node, width, height)
+                ?: flowchartMaterialNodePath(node = node, width = width, height = height)
         }
     }
     val uiConfig = remember(dataFlowVisible, runtimeLayerVisible, diagnosticsVisible) {
@@ -492,7 +509,12 @@ fun FlowchartShellPanel(
         }
         centerFocusedElement()
     }
-    LaunchedEffect(focusedNodeId, focusedEdgeId, panelSize) {
+    LaunchedEffect(
+        focusedNodeId,
+        focusedEdgeId,
+        panelSize,
+        session.graphDocument.documentRevision,
+    ) {
         val focus = FlowchartSelectionEcho(focusedNodeId, focusedEdgeId)
         if (localSelectionEcho == focus) {
             localSelectionEcho = null
@@ -508,6 +530,7 @@ fun FlowchartShellPanel(
             externalFocusInitialized = true
             return@LaunchedEffect
         }
+        revealFocusedElement(interactionActive = pendingConnectionStart != null || draggedNodeId != null)
     }
 
     Box(
@@ -641,7 +664,7 @@ fun FlowchartShellPanel(
             session = session,
             runtimeSnapshot = runtimeSnapshot,
         )
-        FlowchartRuntimeInspectorBottomSheet(
+        FlowchartInspectorBottomSheet(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
@@ -649,7 +672,6 @@ fun FlowchartShellPanel(
             session = session,
             selectedNodeId = selectedNodeId,
             selectedEdgeId = selectedEdgeId,
-            runtimeSnapshot = runtimeSnapshot,
             onUpdateNodeField = onUpdateNodeField,
             onReplaceNodeType = onReplaceNodeType,
             onAddIfBranch = onAddIfBranch,
@@ -667,6 +689,19 @@ fun FlowchartShellPanel(
             },
         )
     }
+}
+
+internal fun shouldRevealFlowchartFocus(
+    screenX: Double,
+    screenY: Double,
+    viewportWidth: Int,
+    viewportHeight: Int,
+    interactionActive: Boolean,
+    margin: Double = 64.0,
+): Boolean {
+    if (interactionActive || viewportWidth <= 0 || viewportHeight <= 0) return false
+    return screenX !in margin..(viewportWidth - margin) ||
+        screenY !in margin..(viewportHeight - margin)
 }
 
 private fun FlowGraphDocument.withExecutionPresentation(kind: FlowExecutionKind?): FlowGraphDocument {
@@ -798,8 +833,9 @@ private fun FlowchartViewportScrollbars(
         val thumbColor = Color(0xFF63C7FF).copy(alpha = 0.64f)
         if (contentHeight > visibleHeight * 1.01f) {
             val trackTop = inset
-            val trackHeight = size.height - inset * 2f
-            val thumbHeight = (trackHeight * visibleHeight / contentHeight).coerceIn(minThumb, trackHeight)
+            val trackHeight = (size.height - inset * 2f).coerceAtLeast(0f)
+            val thumbHeight = scrollbarThumbLength(trackHeight, visibleHeight, contentHeight, minThumb)
+            if (trackHeight <= 0f || thumbHeight <= 0f) return@Canvas
             val thumbTop = trackTop + ((visibleTop - contentTop) / contentHeight).coerceIn(0f, 1f) * (trackHeight - thumbHeight)
             val x = size.width - inset - thickness
             drawRoundRect(trackColor, Offset(x, trackTop), Size(thickness, trackHeight), CornerRadius(thickness, thickness))
@@ -807,14 +843,26 @@ private fun FlowchartViewportScrollbars(
         }
         if (contentWidth > visibleWidth * 1.01f) {
             val trackLeft = inset
-            val trackWidth = size.width - inset * 2f
-            val thumbWidth = (trackWidth * visibleWidth / contentWidth).coerceIn(minThumb, trackWidth)
+            val trackWidth = (size.width - inset * 2f).coerceAtLeast(0f)
+            val thumbWidth = scrollbarThumbLength(trackWidth, visibleWidth, contentWidth, minThumb)
+            if (trackWidth <= 0f || thumbWidth <= 0f) return@Canvas
             val thumbLeft = trackLeft + ((visibleLeft - contentLeft) / contentWidth).coerceIn(0f, 1f) * (trackWidth - thumbWidth)
             val y = size.height - inset - thickness
             drawRoundRect(trackColor, Offset(trackLeft, y), Size(trackWidth, thickness), CornerRadius(thickness, thickness))
             drawRoundRect(thumbColor, Offset(thumbLeft, y), Size(thumbWidth, thickness), CornerRadius(thickness, thickness))
         }
     }
+}
+
+internal fun scrollbarThumbLength(
+    trackLength: Float,
+    visibleLength: Float,
+    contentLength: Float,
+    minimumThumbLength: Float,
+): Float {
+    if (trackLength <= 0f || visibleLength <= 0f || contentLength <= 0f) return 0f
+    val lowerBound = minimumThumbLength.coerceIn(0f, trackLength)
+    return (trackLength * visibleLength / contentLength).coerceIn(lowerBound, trackLength)
 }
 
 private fun playFlowchartDeleteFeedback(
@@ -1053,12 +1101,11 @@ private fun FlowchartTrashDropTarget(
 }
 
 @Composable
-private fun FlowchartRuntimeInspectorBottomSheet(
+private fun FlowchartInspectorBottomSheet(
     modifier: Modifier,
     session: FlowchartShellEditorSession,
     selectedNodeId: FlowNodeId?,
     selectedEdgeId: FlowEdgeId?,
-    runtimeSnapshot: FlowRuntimeSnapshot?,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
     onReplaceNodeType: ((FlowNodeId, String) -> Unit)?,
     onAddIfBranch: ((FlowNodeId) -> Unit)?,
@@ -1097,7 +1144,7 @@ private fun FlowchartRuntimeInspectorBottomSheet(
             )
             Text(
                 text = when {
-                    node != null -> "Runtime Inspector"
+                    node != null -> "Node Inspector"
                     edge != null -> "Edge Inspector"
                     else -> "Inspector"
                 },
@@ -1114,10 +1161,6 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                 if (node != null) {
                     FlowchartNodeInspectorRows(
                         node = node,
-                        graphDocument = session.graphDocument,
-                        selectedNodeId = selectedNodeId,
-                        edges = session.graphDocument.edges,
-                        runtimeSnapshot = runtimeSnapshot,
                         onUpdateNodeField = onUpdateNodeField,
                         onReplaceNodeType = onReplaceNodeType,
                         onAddIfBranch = onAddIfBranch,
@@ -1126,7 +1169,6 @@ private fun FlowchartRuntimeInspectorBottomSheet(
                 } else if (edge != null) {
                     FlowchartEdgeInspectorRows(
                         edge = edge,
-                        runtimeSnapshot = runtimeSnapshot,
                         onDisconnectEdge = onDisconnectEdge,
                     )
                 } else {
@@ -1144,30 +1186,17 @@ private fun FlowchartRuntimeInspectorBottomSheet(
 @Composable
 private fun FlowchartNodeInspectorRows(
     node: FlowGraphNode,
-    graphDocument: de.visualtasker.flowchart.domain.FlowGraphDocument,
-    selectedNodeId: FlowNodeId?,
-    edges: List<FlowGraphEdge>,
-    runtimeSnapshot: FlowRuntimeSnapshot?,
     onUpdateNodeField: ((FlowNodeId, String, String) -> Unit)?,
     onReplaceNodeType: ((FlowNodeId, String) -> Unit)?,
     onAddIfBranch: ((FlowNodeId) -> Unit)?,
     onRemoveIfBranch: ((FlowNodeId) -> Unit)?,
 ) {
-    val status = runtimeSnapshot?.nodeStates?.get(node.id)?.name ?: "NO TRACE"
     val blockType = node.properties.stringValue("blockType") ?: "?"
-    val nodeEvents = runtimeSnapshot?.runtimeEventsFor(node.id).orEmpty()
-    val lastNotice = nodeEvents.lastOrNull { it.severity != "INFO" }
-    val branchEvent = nodeEvents.lastOrNull { it.kind in setOf("if", "elseif", "else", "while", "loop") }
-    val commandName = node.properties.stringValue("commandName") ?: nodeEvents.lastOrNull()?.command
     FlowchartNodeInspectorHeader(
         node = node,
         blockType = blockType,
         onReplaceNodeType = onReplaceNodeType,
     )
-    InspectorLine("Status", status)
-    commandName?.let { InspectorLine("Command", it) }
-    lastNotice?.let { InspectorLine("Runtime", "${it.severity}: ${it.message}") }
-    branchEvent?.let { InspectorLine("Entscheidung", "#${it.index} ${it.kind}: ${it.message}") }
     editableNodeFields(node).forEach { field ->
         OutlinedTextField(
             value = field.value,
@@ -1332,17 +1361,10 @@ private fun editableCommandArgumentFields(node: FlowGraphNode): List<EditableFlo
 @Composable
 private fun FlowchartEdgeInspectorRows(
     edge: FlowGraphEdge,
-    runtimeSnapshot: FlowRuntimeSnapshot?,
     onDisconnectEdge: ((FlowEdgeId) -> Unit)?,
 ) {
-    val status = if (edge.id in runtimeSnapshot?.traversedEdgeIds.orEmpty()) "TRAVERSED" else "NOT TRAVERSED"
-    InspectorLine("Status", status)
     InspectorLine("Typ", edge.kind.name)
     edge.label?.let { InspectorLine("Label", it) }
-    val diagnostics = runtimeSnapshot?.diagnostics.orEmpty().filter { it.edgeId == edge.id }
-    if (diagnostics.isNotEmpty()) {
-        InspectorLine("Diagnose", diagnostics.joinToString { it.message })
-    }
     TextButton(
         onClick = { onDisconnectEdge?.invoke(edge.id) },
         enabled = onDisconnectEdge != null,
@@ -2010,39 +2032,6 @@ private fun legacyFlowchartLegendShapePath(
     }
     return path
 }
-
-private data class FlowRuntimeEventSummary(
-    val index: Int,
-    val kind: String,
-    val message: String,
-    val severity: String,
-    val command: String?,
-    val capability: String?,
-    val pluginOwner: String?,
-)
-
-private fun FlowRuntimeSnapshot.runtimeEventsFor(nodeId: FlowNodeId): List<FlowRuntimeEventSummary> =
-    extensions
-        .firstOrNull { it.key == "visualtasker.runtime-events" }
-        ?.value
-        ?.let { it as? FlowSemanticValue.ListValue }
-        ?.values
-        .orEmpty()
-        .mapNotNull { it as? FlowSemanticValue.ObjectValue }
-        .mapNotNull { event ->
-            val values = event.values
-            if (values.stringValue("nodeId") != nodeId.value) return@mapNotNull null
-            FlowRuntimeEventSummary(
-                index = values.numberValue("index")?.toIntOrNull() ?: 0,
-                kind = values.stringValue("kind") ?: "?",
-                message = values.stringValue("message") ?: "",
-                severity = values.stringValue("severity") ?: "INFO",
-                command = values.stringValue("command"),
-                capability = values.stringValue("capability"),
-                pluginOwner = values.stringValue("pluginOwner"),
-            )
-        }
-        .sortedBy { it.index }
 
 private fun FlowRuntimeSnapshot.runtimeVariables(): Map<String, String> =
     extensions

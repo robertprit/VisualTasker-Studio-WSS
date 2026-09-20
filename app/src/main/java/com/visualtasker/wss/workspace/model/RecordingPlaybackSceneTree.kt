@@ -60,19 +60,24 @@ object RecordingPlaybackSceneTreeProjector {
         },
     )
 
-    private fun interactionNode(panelId: String, entry: RecordingPlaybackEntry, phase: RecordingPlaybackPhase) = playbackNode(
-        panelId, "interaction:${entry.interaction.tap.interactionId}",
-        "Tap ${entry.interaction.tap.xPx}, ${entry.interaction.tap.yPx}",
+    private fun interactionNode(panelId: String, entry: RecordingPlaybackEntry, phase: RecordingPlaybackPhase): SceneInspectorNode {
+        val interaction = entry.interaction.interaction
+        val tap = interaction.payload as? com.visualtasker.wss.recording.RecordingInteractionPayload.Tap
+        return playbackNode(
+        panelId, "interaction:${interaction.interactionId}",
+        tap?.let { "Tap ${it.position.xPx}, ${it.position.yPx}" } ?: interaction.type.name,
         "${entry.transitionStatus.name} - ${phase.name}",
         SceneInspectorNodeKind.Interaction,
         properties = buildMap {
-            put("interactionId", entry.interaction.tap.interactionId)
+            put("interactionId", interaction.interactionId)
             put("sequence", entry.sequence.toString())
             put("transitionStatus", entry.transitionStatus.name)
-            put("point", "${entry.interaction.tap.xPx},${entry.interaction.tap.yPx}")
-            entry.interaction.tap.targetA11yNodeId?.let { put("targetA11yNodeId", it) }
+            tap?.let { put("point", "${it.position.xPx},${it.position.yPx}") }
+            tap?.targetReference?.let { put("targetA11yNodeId", it) }
+            put("rawEventIds", interaction.rawEventIds.joinToString(","))
         },
     )
+    }
 
     private fun frameNode(panelId: String, scene: RecordingPlaybackScene): SceneInspectorNode {
         val frame = scene.primaryFrame

@@ -63,13 +63,13 @@ interface RecorderDao {
     suspend fun rawEvents(sessionId: String): List<RawRecordingEventEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insertInteraction(entity: TapInteractionEntity)
+    suspend fun insertInteraction(entity: RecordingInteractionEntity)
 
     @Update
-    suspend fun updateInteraction(entity: TapInteractionEntity)
+    suspend fun updateInteraction(entity: RecordingInteractionEntity)
 
-    @Query("SELECT * FROM recording_tap_interactions WHERE sessionId = :sessionId ORDER BY sequence")
-    suspend fun interactions(sessionId: String): List<TapInteractionEntity>
+    @Query("SELECT * FROM recording_interactions WHERE sessionId = :sessionId ORDER BY sequence")
+    suspend fun interactions(sessionId: String): List<RecordingInteractionEntity>
 
     @Query("SELECT COALESCE(MAX(sequence), 0) FROM recording_raw_events WHERE sessionId = :sessionId")
     suspend fun maxRawSequence(sessionId: String): Long

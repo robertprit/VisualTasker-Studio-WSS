@@ -22,8 +22,20 @@ class RecordingSessionCoordinator(
     suspend fun start(
         createdBy: String,
         policy: RecordingPolicySnapshot = RecordingPolicySnapshot(),
+        resumedFromSessionId: String? = null,
     ): RecordingOperationResult<RecordingSession> = ioLocked {
         if (activeSessionId != null) return@ioLocked failure("ALREADY_RECORDING", "A recording session is already active.")
+        val resumedFrom = resumedFromSessionId?.let { sourceSessionId ->
+            val source = store.load(sourceSessionId)
+                ?: return@ioLocked failure("INTERRUPTED_SESSION_MISSING", "Interrupted source session was not found.")
+            if (source.session.status != RecordingSessionStatus.INTERRUPTED) {
+                return@ioLocked failure(
+                    "SESSION_NOT_INTERRUPTED",
+                    "Only an interrupted session can be continued as a new session.",
+                )
+            }
+            source.session
+        }
         val startedEpoch = clock.epochMillis()
         val startedElapsed = clock.elapsedRealtimeNanos()
         val preparing = RecordingSession(
@@ -32,7 +44,8 @@ class RecordingSessionCoordinator(
             startedAtEpochMs = startedEpoch,
             startedAtElapsedRealtimeNanos = startedElapsed,
             createdBy = createdBy,
-            recordingPolicySnapshot = policy,
+            recordingPolicySnapshot = resumedFrom?.recordingPolicySnapshot ?: policy,
+            resumedFromSessionId = resumedFrom?.sessionId,
         )
         try {
             store.createSession(preparing)
@@ -83,11 +96,19 @@ class RecordingSessionCoordinator(
         RecordingOperationResult.Success(recording)
     }
 
+    suspend fun continueInterruptedSession(
+        interruptedSessionId: String,
+        createdBy: String,
+    ): RecordingOperationResult<RecordingSession> = start(
+        createdBy = createdBy,
+        resumedFromSessionId = interruptedSessionId,
+    )
+
     suspend fun recordTap(
         xPx: Int,
         yPx: Int,
         targetA11yNodeId: String? = null,
-    ): RecordingOperationResult<TapInteraction> = ioLocked {
+    ): RecordingOperationResult<RecordingInteraction> = ioLocked {
         val sessionId = activeSessionId ?: return@ioLocked failure("NOT_RECORDING", "No recording session is active.")
         val record = store.load(sessionId) ?: return@ioLocked failure("SESSION_MISSING", "Active recording session is missing.")
         val beforeScene = record.scenes.firstOrNull { it.sceneId == record.session.latestSceneId }
@@ -104,21 +125,23 @@ class RecordingSessionCoordinator(
             kind = "tap",
             payload = mapOf("xPx" to xPx.toString(), "yPx" to yPx.toString()),
         )
-        val pending = TapInteraction(
+        val pending = RecordingInteraction(
             interactionId = idGenerator.nextId("tap"),
-            rawEventId = raw.rawEventId,
             sessionId = sessionId,
             sequence = sequence,
             occurredAtEpochMs = occurredEpoch,
             occurredAtElapsedRealtimeNanos = occurredElapsed,
-            xPx = xPx,
-            yPx = yPx,
+            source = RecordingInteractionSource.RECORDER,
+            rawEventIds = listOf(raw.rawEventId),
             beforeSceneId = beforeScene.sceneId,
-            targetA11yNodeId = targetA11yNodeId,
             status = RecordingInteractionStatus.CAPTURING_AFTER,
+            payload = RecordingInteractionPayload.Tap(
+                position = RecordingPoint(xPx, yPx),
+                targetReference = targetA11yNodeId,
+            ),
         )
         try {
-            store.persistTap(raw, pending)
+            store.persistInteraction(listOf(raw), pending)
         } catch (error: Throwable) {
             return@ioLocked failure("TAP_PERSIST_FAILED", "Tap event could not be persisted.", error)
         }
@@ -226,7 +249,7 @@ class RecordingSessionCoordinator(
 
     private suspend fun markTapPersistenceFailure(
         session: RecordingSession,
-        interaction: TapInteraction,
+        interaction: RecordingInteraction,
         message: String,
     ) {
         runCatching {

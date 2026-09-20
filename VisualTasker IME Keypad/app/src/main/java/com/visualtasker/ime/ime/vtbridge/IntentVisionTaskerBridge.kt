@@ -42,7 +42,7 @@ class IntentVisionTaskerBridge(private val context: Context) : VisionTaskerBridg
 
     private fun mapActionToPluginCommand(action: String): String {
         return when (action) {
-            "start_workflow" -> COMMAND_RUN_SCRIPT_DRAFT
+            "start_workflow", "run_script" -> COMMAND_RUN_SCRIPT_DRAFT
             else -> COMMAND_RECORD_EVENT
         }
     }
@@ -52,9 +52,12 @@ class IntentVisionTaskerBridge(private val context: Context) : VisionTaskerBridg
             "ocr" -> "readText()"
             "screenshot" -> "screenshot()"
             "toggle_recorder" -> "recorder.toggle()"
+            "toggle_watchdog" -> "watchdog.toggle()"
             "select_point" -> "point.select()"
             "select_region" -> "region.select()"
             "start_workflow" -> "workflow.start(\"${payload["name"] ?: "default"}\")"
+            "stop_workflow" -> "workflow.stop()"
+            "run_script_slot" -> "workflow.startSlot(\"${payload["eventSlot"] ?: "slot_1"}\")"
             else -> action
         }
     }

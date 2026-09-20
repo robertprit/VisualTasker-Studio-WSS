@@ -85,6 +85,7 @@ internal fun EmscriptTextEditorPanel(
     liveRunStatus: String = "",
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
     activeSourceLine: Int? = null,
+    onSourceLineSelected: (Int) -> Unit = {},
     onTextDropMetricsChange: (EmscriptTextDropMetrics) -> Unit = {},
 ) {
     val applyGuard = remember { EmscriptApplyGuard() }
@@ -99,7 +100,12 @@ internal fun EmscriptTextEditorPanel(
     fun buildApplyPreview(): String? {
         val manual = session.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
             ?: return null
-        return when (val preview = applyGuard.preview(manual.content, workspaceId = "workflow-main")) {
+        val currentDocument = runCatching { WorkspaceSerializer.deserialize(workspaceJson) }.getOrNull()
+        return when (val preview = applyGuard.preview(
+            manual.content,
+            workspaceId = "workflow-main",
+            previousDocument = currentDocument,
+        )) {
             is EmscriptApplyGuardResult.Failure -> {
                 applyDiagnostics = listOf(preview.message)
                 logStore.append(
@@ -210,6 +216,7 @@ internal fun EmscriptTextEditorPanel(
             plain = MaterialTheme.colorScheme.onSurface
         ),
         activeSourceLine = activeSourceLine,
+        onSourceLineSelected = onSourceLineSelected,
         onTextDropMetricsChange = onTextDropMetricsChange,
         modifier = Modifier.fillMaxSize()
     )

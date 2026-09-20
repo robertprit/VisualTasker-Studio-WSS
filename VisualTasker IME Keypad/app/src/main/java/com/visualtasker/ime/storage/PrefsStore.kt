@@ -2,6 +2,11 @@ package com.visualtasker.ime.storage
 
 import android.content.Context
 
+data class VtKeySlot(
+    val label: String,
+    val script: String
+)
+
 class PrefsStore(context: Context) {
     private val prefs = context.getSharedPreferences("ime_keypad_prefs", Context.MODE_PRIVATE)
 
@@ -95,6 +100,25 @@ class PrefsStore(context: Context) {
         return prefs.getBoolean(KEY_VISION_TASKER_CONTEXT_ENABLED, false)
     }
 
+    fun getVtKeySlot(index: Int): VtKeySlot {
+        require(index in 1..2)
+        return VtKeySlot(
+            label = prefs.getString("${KEY_VT_SLOT_LABEL}$index", "VT$index")
+                .orEmpty()
+                .ifBlank { "VT$index" }
+                .take(6),
+            script = prefs.getString("${KEY_VT_SLOT_SCRIPT}$index", "").orEmpty()
+        )
+    }
+
+    fun setVtKeySlot(index: Int, label: String, script: String) {
+        require(index in 1..2)
+        prefs.edit()
+            .putString("${KEY_VT_SLOT_LABEL}$index", label.trim().ifBlank { "VT$index" }.take(6))
+            .putString("${KEY_VT_SLOT_SCRIPT}$index", script.trim())
+            .apply()
+    }
+
     companion object {
         private const val KEY_CLIPBOARD = "clipboard_history"
         private const val KEY_MACROS = "macros"
@@ -105,6 +129,8 @@ class PrefsStore(context: Context) {
         private const val KEY_EMSCRIPT_CONTEXT_ENABLED = "emscript_context_enabled"
         private const val KEY_VISION_TASKER_CONTEXT_ENABLED = "vision_tasker_context_enabled"
         private const val KEY_CLIPBOARD_ENABLED = "clipboard_enabled"
+        private const val KEY_VT_SLOT_LABEL = "vt_slot_label_"
+        private const val KEY_VT_SLOT_SCRIPT = "vt_slot_script_"
         private const val SEP = "\u001F"
     }
 }

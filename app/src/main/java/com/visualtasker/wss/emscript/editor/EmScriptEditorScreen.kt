@@ -2,6 +2,8 @@ package com.visualtasker.wss.emscript.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +57,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -106,6 +109,7 @@ fun EmScriptEditorScreen(
     diagnostics: List<String>,
     syntaxPaletteOverride: SyntaxHighlighter.Palette? = null,
     activeSourceLine: Int? = null,
+    onSourceLineSelected: (Int) -> Unit = {},
     onTextDropMetricsChange: (EmscriptTextDropMetrics) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -127,6 +131,7 @@ fun EmScriptEditorScreen(
         mutableStateOf(TextFieldValue(activeTab.content, TextRange(start, end)))
     }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var editorInteractionArmed by remember(activeTab.id) { mutableStateOf(false) }
     val undoStack = uiState.undoStacks[activeTab.id].orEmpty()
     val redoStack = uiState.redoStacks[activeTab.id].orEmpty()
     val clipboardManager = LocalClipboardManager.current
@@ -426,6 +431,15 @@ fun EmScriptEditorScreen(
                         if (activeTab.readOnly) return@BasicTextField
                         val newText = value.text
                         val oldText = editorValue.text
+                        val displayLine = newText
+                            .take(value.selection.end.coerceIn(0, newText.length))
+                            .count { it == '\n' }
+                        val selectedSourceLine = lineMapping.getOrNull(displayLine)?.originalLine ?: (displayLine + 1)
+                        if (newText == displayText) {
+                            editorValue = editorValue.copy(selection = value.selection)
+                            if (editorInteractionArmed) onSourceLineSelected(selectedSourceLine)
+                            return@BasicTextField
+                        }
                         val newlineAdded = newText.length == oldText.length + 1 &&
                             newText.count { it == '\n' } == oldText.count { it == '\n' } + 1 &&
                             value.selection.start == value.selection.end
@@ -437,11 +451,18 @@ fun EmScriptEditorScreen(
                         uiState.pushUndo(activeTab.id, oldText)
                         editorValue = TextFieldValue(finalText, TextRange(value.selection.end.coerceAtMost(finalText.length)))
                         onSessionChange(session.updateManualContent(finalText))
+                        if (editorInteractionArmed) onSourceLineSelected(selectedSourceLine)
                     },
                     readOnly = activeTab.readOnly,
                     modifier = Modifier
                         .weight(1f)
                         .horizontalScroll(editorHorizontalScrollState)
+                        .pointerInput(activeTab.id) {
+                            awaitEachGesture {
+                                awaitFirstDown(pass = PointerEventPass.Initial)
+                                editorInteractionArmed = true
+                            }
+                        }
                         .onGloballyPositioned { coordinates ->
                             val topLeft = coordinates.positionInWindow()
                             textFieldBoundsInWindow = Rect(

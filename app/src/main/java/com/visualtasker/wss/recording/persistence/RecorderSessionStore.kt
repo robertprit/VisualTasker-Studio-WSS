@@ -6,10 +6,11 @@ import com.visualtasker.wss.recording.CaptureFrame
 import com.visualtasker.wss.recording.PersistedRecordingSession
 import com.visualtasker.wss.recording.RawRecordingEvent
 import com.visualtasker.wss.recording.RecordingScene
+import com.visualtasker.wss.recording.RecordingInteraction
 import com.visualtasker.wss.recording.RecordingSession
 import com.visualtasker.wss.recording.RecordingSessionStatus
 import com.visualtasker.wss.recording.ScreenshotAsset
-import com.visualtasker.wss.recording.TapInteraction
+import com.visualtasker.wss.recording.canonicalOrder
 
 interface RecorderSessionStore {
     suspend fun createSession(session: RecordingSession)
@@ -20,13 +21,22 @@ interface RecorderSessionStore {
         frame: CaptureFrame,
         snapshot: A11ySnapshot,
     )
-    suspend fun persistTap(rawEvent: RawRecordingEvent, interaction: TapInteraction)
+    suspend fun persistInteraction(rawEvents: List<RawRecordingEvent>, interaction: RecordingInteraction)
+    suspend fun persistCanonicalImport(rawEvents: List<RawRecordingEvent>, interactions: List<RecordingInteraction>) {
+        val eventsById = rawEvents.associateBy(RawRecordingEvent::rawEventId)
+        interactions.forEach { interaction ->
+            val sources = interaction.rawEventIds.map { rawId ->
+                requireNotNull(eventsById[rawId]) { "Interaction ${interaction.interactionId} references missing raw event $rawId." }
+            }
+            persistInteraction(sources, interaction)
+        }
+    }
     suspend fun persistUnchangedCapture(
         session: RecordingSession,
         asset: ScreenshotAsset,
         frame: CaptureFrame,
         snapshot: A11ySnapshot,
-        interaction: TapInteraction,
+        interaction: RecordingInteraction,
     )
     suspend fun persistChangedCapture(
         session: RecordingSession,
@@ -35,9 +45,9 @@ interface RecorderSessionStore {
         asset: ScreenshotAsset,
         frame: CaptureFrame,
         snapshot: A11ySnapshot,
-        interaction: TapInteraction,
+        interaction: RecordingInteraction,
     )
-    suspend fun persistFailedInteraction(session: RecordingSession, interaction: TapInteraction)
+    suspend fun persistFailedInteraction(session: RecordingSession, interaction: RecordingInteraction)
     suspend fun updateSession(session: RecordingSession)
     suspend fun finalizeSession(session: RecordingSession, closedScene: RecordingScene)
     suspend fun load(sessionId: String): PersistedRecordingSession?
@@ -67,18 +77,28 @@ class RoomRecorderSessionStore(
         dao.updateSession(session.toEntity())
     }
 
-    override suspend fun persistTap(rawEvent: RawRecordingEvent, interaction: TapInteraction) =
+    override suspend fun persistInteraction(rawEvents: List<RawRecordingEvent>, interaction: RecordingInteraction) =
         database.withTransaction {
-            dao.insertRawEvent(rawEvent.toEntity())
+            validateImport(listOf(interaction), rawEvents)
+            rawEvents.forEach { dao.insertRawEvent(it.toEntity()) }
             dao.insertInteraction(interaction.toEntity())
         }
+
+    override suspend fun persistCanonicalImport(
+        rawEvents: List<RawRecordingEvent>,
+        interactions: List<RecordingInteraction>,
+    ) = database.withTransaction {
+        validateImport(interactions, rawEvents)
+        rawEvents.forEach { dao.insertRawEvent(it.toEntity()) }
+        interactions.forEach { dao.insertInteraction(it.toEntity()) }
+    }
 
     override suspend fun persistUnchangedCapture(
         session: RecordingSession,
         asset: ScreenshotAsset,
         frame: CaptureFrame,
         snapshot: A11ySnapshot,
-        interaction: TapInteraction,
+        interaction: RecordingInteraction,
     ) = database.withTransaction {
         dao.insertAsset(asset.toEntity())
         dao.insertFrame(frame.toEntity())
@@ -94,7 +114,7 @@ class RoomRecorderSessionStore(
         asset: ScreenshotAsset,
         frame: CaptureFrame,
         snapshot: A11ySnapshot,
-        interaction: TapInteraction,
+        interaction: RecordingInteraction,
     ) = database.withTransaction {
         dao.insertAsset(asset.toEntity())
         dao.updateScene(closedScene.toEntity())
@@ -105,7 +125,7 @@ class RoomRecorderSessionStore(
         dao.updateSession(session.toEntity())
     }
 
-    override suspend fun persistFailedInteraction(session: RecordingSession, interaction: TapInteraction) =
+    override suspend fun persistFailedInteraction(session: RecordingSession, interaction: RecordingInteraction) =
         database.withTransaction {
             dao.updateInteraction(interaction.toEntity())
             dao.updateSession(session.toEntity())
@@ -129,7 +149,7 @@ class RoomRecorderSessionStore(
             snapshots = dao.snapshots(sessionId).map { it.toDomain() },
             rawEvents = dao.rawEvents(sessionId).map { it.toDomain() },
             interactions = dao.interactions(sessionId).map { it.toDomain() },
-        )
+        ).canonicalOrder()
     }
 
     override suspend fun listSessions(): List<RecordingSession> = dao.sessions().map { it.toDomain() }
@@ -140,11 +160,22 @@ class RoomRecorderSessionStore(
         dao.interruptedSessions().map { entity ->
             dao.updateSession(
                 entity.copy(
-                    status = RecordingSessionStatus.PARTIAL.name,
+                    status = RecordingSessionStatus.INTERRUPTED.name,
                     failure = failure,
                 )
             )
             entity.sessionId
+        }
+    }
+}
+
+private fun validateImport(interactions: List<RecordingInteraction>, rawEvents: List<RawRecordingEvent>) {
+    val eventIds = rawEvents.mapTo(mutableSetOf(), RawRecordingEvent::rawEventId)
+    val sessionIds = (rawEvents.map(RawRecordingEvent::sessionId) + interactions.map(RecordingInteraction::sessionId)).toSet()
+    require(sessionIds.size <= 1) { "Canonical import must belong to exactly one recording session." }
+    interactions.forEach { interaction ->
+        require(interaction.rawEventIds.all(eventIds::contains)) {
+            "Interaction ${interaction.interactionId} has incomplete raw provenance."
         }
     }
 }

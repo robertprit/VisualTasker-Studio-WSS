@@ -18,6 +18,7 @@ data class RecordingSessionEntity(
     val initialSceneId: String?,
     val latestSceneId: String?,
     val failure: String?,
+    val resumedFromSessionId: String?,
 )
 
 @Entity(
@@ -147,7 +148,7 @@ data class RawRecordingEventEntity(
 )
 
 @Entity(
-    tableName = "recording_tap_interactions",
+    tableName = "recording_interactions",
     foreignKeys = [
         ForeignKey(
             entity = RecordingSessionEntity::class,
@@ -155,28 +156,23 @@ data class RawRecordingEventEntity(
             childColumns = ["sessionId"],
             onDelete = ForeignKey.CASCADE,
         ),
-        ForeignKey(
-            entity = RawRecordingEventEntity::class,
-            parentColumns = ["rawEventId"],
-            childColumns = ["rawEventId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
     ],
-    indices = [Index("sessionId"), Index("rawEventId"), Index(value = ["sessionId", "sequence"], unique = true)],
+    indices = [Index("sessionId"), Index(value = ["sessionId", "sequence"], unique = true)],
 )
-data class TapInteractionEntity(
+data class RecordingInteractionEntity(
     @PrimaryKey val interactionId: String,
-    val rawEventId: String,
     val sessionId: String,
     val sequence: Long,
     val occurredAtEpochMs: Long,
     val occurredAtElapsedRealtimeNanos: Long,
-    val xPx: Int,
-    val yPx: Int,
-    val beforeSceneId: String,
+    val type: String,
+    val source: String,
+    val rawEventIdsJson: String,
+    val evidenceRefsJson: String,
+    val beforeSceneId: String?,
     val afterSceneId: String?,
-    val targetA11yNodeId: String?,
     val status: String,
+    val payloadJson: String,
 )
 
 @Entity(

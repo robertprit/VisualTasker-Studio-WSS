@@ -38,7 +38,7 @@ data class RecordingPlaybackScene(
 )
 
 data class RecordingPlaybackInteraction(
-    val tap: TapInteraction,
+    val interaction: RecordingInteraction,
     val targetNode: A11yNodeSnapshot?,
     val diagnostics: List<RecordingPlaybackDiagnostic> = emptyList(),
 )
@@ -52,11 +52,13 @@ data class RecordingPlaybackEntry(
     val transitionStatus: RecordingPlaybackTransitionStatus,
     val occurredAtEpochMs: Long,
     val occurredAtElapsedRealtimeNanos: Long,
+    val evidence: List<RecordingEvidenceRef> = emptyList(),
     val diagnostics: List<RecordingPlaybackDiagnostic> = emptyList(),
 )
 
 data class RecordingPlaybackDocument(
     val sessionId: String,
+    val resumedFromSessionId: String? = null,
     val schemaVersion: Int,
     val sessionStatus: RecordingSessionStatus,
     val startedAtEpochMs: Long,
@@ -66,10 +68,12 @@ data class RecordingPlaybackDocument(
     val scenes: List<RecordingPlaybackScene>,
     val entries: List<RecordingPlaybackEntry>,
     val diagnostics: List<RecordingPlaybackDiagnostic>,
+    val integrityReport: RecordingIntegrityReport? = null,
 )
 
 data class RecordingPlaybackSessionSummary(
     val sessionId: String,
+    val resumedFromSessionId: String? = null,
     val status: RecordingSessionStatus,
     val startedAtEpochMs: Long,
     val stoppedAtEpochMs: Long?,
@@ -84,6 +88,7 @@ class RecordingPlaybackRepository(
         store.listSessions().map { session ->
             RecordingPlaybackSessionSummary(
                 sessionId = session.sessionId,
+                resumedFromSessionId = session.resumedFromSessionId,
                 status = session.status,
                 startedAtEpochMs = session.startedAtEpochMs,
                 stoppedAtEpochMs = session.stoppedAtEpochMs,
@@ -117,6 +122,14 @@ object RecordingPlaybackProjector {
                 record.session.sessionId,
             )
         }
+        if (record.session.status == RecordingSessionStatus.INTERRUPTED) {
+            documentDiagnostics += diagnostic(
+                "INTERRUPTED_SESSION",
+                record.session.failure ?: "Die Session wurde durch einen Prozessabbruch unterbrochen.",
+                RecordingPlaybackDiagnosticSeverity.WARNING,
+                record.session.sessionId,
+            )
+        }
         if (record.session.stoppedAtEpochMs != null && record.session.stoppedAtEpochMs < record.session.startedAtEpochMs) {
             documentDiagnostics += diagnostic(
                 "SESSION_TIME_INVALID",
@@ -126,13 +139,13 @@ object RecordingPlaybackProjector {
             )
         }
         validateSequences(record.scenes.map(RecordingScene::sequence), "SCENE", documentDiagnostics)
-        validateSequences(record.interactions.map(TapInteraction::sequence), "INTERACTION", documentDiagnostics)
+        validateSequences(record.interactions.map(RecordingInteraction::sequence), "INTERACTION", documentDiagnostics)
         validateMonotonicTimes(record, documentDiagnostics)
 
         val framesById = record.frames.associateBy(CaptureFrame::frameId)
         val assetsByHash = record.assets.associateBy(ScreenshotAsset::assetHash)
         val snapshotsByScene = record.snapshots.groupBy(A11ySnapshot::sceneId)
-        val scenes = record.scenes.sortedBy(RecordingScene::sequence).map { scene ->
+        val scenes = record.scenes.sortedWith(RecordingCanonicalOrder.scenes).map { scene ->
             val diagnostics = mutableListOf<RecordingPlaybackDiagnostic>()
             val frame = framesById[scene.primaryFrameId]
             val playbackFrame = frame?.let { source ->
@@ -162,38 +175,49 @@ object RecordingPlaybackProjector {
             RecordingPlaybackScene(scene, playbackFrame, snapshot, diagnostics + playbackFrame.orEmptyDiagnostics())
         }
         val scenesById = scenes.associateBy { it.scene.sceneId }
-        val entries = record.interactions.sortedBy(TapInteraction::sequence).map { tap ->
+        val rawEventsById = record.rawEvents.associateBy(RawRecordingEvent::rawEventId)
+        val entries = record.interactions.sortedWith(RecordingCanonicalOrder.interactions).map { interaction ->
             val diagnostics = mutableListOf<RecordingPlaybackDiagnostic>()
-            val before = scenesById[tap.beforeSceneId]
-            val after = tap.afterSceneId?.let(scenesById::get)
-            if (before == null) diagnostics += diagnostic("BEFORE_SCENE_MISSING", "Vorher-Szene fehlt.", RecordingPlaybackDiagnosticSeverity.ERROR, tap.beforeSceneId)
-            if (tap.afterSceneId == null) diagnostics += diagnostic("AFTER_SCENE_UNSET", "Nachher-Szene wurde nicht erfasst.", RecordingPlaybackDiagnosticSeverity.WARNING, tap.interactionId)
-            if (tap.afterSceneId != null && after == null) diagnostics += diagnostic("AFTER_SCENE_MISSING", "Nachher-Szene fehlt.", RecordingPlaybackDiagnosticSeverity.ERROR, tap.afterSceneId)
-            val target = tap.targetA11yNodeId?.let { nodeId -> before?.a11ySnapshot?.rootNode?.findNode(nodeId) }
-            if (tap.targetA11yNodeId != null && target == null) {
-                diagnostics += diagnostic("TARGET_NODE_MISSING", "Gespeicherter A11Y-Zielknoten ist nicht vorhanden.", RecordingPlaybackDiagnosticSeverity.WARNING, tap.targetA11yNodeId)
+            val before = interaction.beforeSceneId?.let(scenesById::get)
+            val after = interaction.afterSceneId?.let(scenesById::get)
+            if (interaction.beforeSceneId != null && before == null) diagnostics += diagnostic("BEFORE_SCENE_MISSING", "Vorher-Szene fehlt.", RecordingPlaybackDiagnosticSeverity.ERROR, interaction.beforeSceneId)
+            if (interaction.afterSceneId == null && interaction.beforeSceneId != null) diagnostics += diagnostic("AFTER_SCENE_UNSET", "Nachher-Szene wurde nicht erfasst.", RecordingPlaybackDiagnosticSeverity.WARNING, interaction.interactionId)
+            if (interaction.afterSceneId != null && after == null) diagnostics += diagnostic("AFTER_SCENE_MISSING", "Nachher-Szene fehlt.", RecordingPlaybackDiagnosticSeverity.ERROR, interaction.afterSceneId)
+            val tap = interaction.payload as? RecordingInteractionPayload.Tap
+            val targetReference = tap?.targetReference
+            val target = targetReference?.let { nodeId -> before?.a11ySnapshot?.rootNode?.findNode(nodeId) }
+            if (targetReference != null && target == null) {
+                diagnostics += diagnostic("TARGET_NODE_MISSING", "Gespeicherter A11Y-Zielknoten ist nicht vorhanden.", RecordingPlaybackDiagnosticSeverity.WARNING, targetReference)
             }
-            if (tap.targetA11yNodeId == null) {
-                diagnostics += diagnostic("UNGROUNDED_TAP", "Tap besitzt keinen zugeordneten A11Y-Zielknoten.", RecordingPlaybackDiagnosticSeverity.INFO, tap.interactionId)
+            if (tap != null && targetReference == null) {
+                diagnostics += diagnostic("UNGROUNDED_TAP", "Tap besitzt keinen zugeordneten A11Y-Zielknoten.", RecordingPlaybackDiagnosticSeverity.INFO, interaction.interactionId)
             }
             val status = when {
+                interaction.status == RecordingInteractionStatus.CAPTURE_FAILED -> RecordingPlaybackTransitionStatus.FAILED
+                interaction.beforeSceneId == null && interaction.afterSceneId == null -> RecordingPlaybackTransitionStatus.UNCHANGED
                 before == null -> RecordingPlaybackTransitionStatus.MISSING_BEFORE
-                tap.status == RecordingInteractionStatus.CAPTURE_FAILED -> RecordingPlaybackTransitionStatus.FAILED
-                tap.afterSceneId == null -> RecordingPlaybackTransitionStatus.MISSING_AFTER
+                interaction.afterSceneId == null -> RecordingPlaybackTransitionStatus.MISSING_AFTER
                 after == null -> RecordingPlaybackTransitionStatus.MISSING_AFTER
-                tap.status == RecordingInteractionStatus.UNCHANGED || tap.beforeSceneId == tap.afterSceneId -> RecordingPlaybackTransitionStatus.UNCHANGED
-                tap.status == RecordingInteractionStatus.CHANGED -> RecordingPlaybackTransitionStatus.CHANGED
+                interaction.status == RecordingInteractionStatus.UNCHANGED || interaction.beforeSceneId == interaction.afterSceneId -> RecordingPlaybackTransitionStatus.UNCHANGED
+                interaction.status == RecordingInteractionStatus.CHANGED -> RecordingPlaybackTransitionStatus.CHANGED
                 else -> RecordingPlaybackTransitionStatus.PARTIAL
             }
             RecordingPlaybackEntry(
-                entryId = "entry:${tap.interactionId}",
-                sequence = tap.sequence,
+                entryId = "entry:${interaction.interactionId}",
+                sequence = interaction.sequence,
                 beforeScene = before,
-                interaction = RecordingPlaybackInteraction(tap, target, diagnostics),
+                interaction = RecordingPlaybackInteraction(interaction, target, diagnostics),
                 afterScene = after,
                 transitionStatus = status,
-                occurredAtEpochMs = tap.occurredAtEpochMs,
-                occurredAtElapsedRealtimeNanos = tap.occurredAtElapsedRealtimeNanos,
+                occurredAtEpochMs = interaction.occurredAtEpochMs,
+                occurredAtElapsedRealtimeNanos = interaction.occurredAtElapsedRealtimeNanos,
+                evidence = evidenceFor(
+                    sessionId = record.session.sessionId,
+                    interaction = interaction,
+                    rawEvents = interaction.rawEventIds.mapNotNull(rawEventsById::get),
+                    before = before,
+                    after = after,
+                ),
                 diagnostics = diagnostics,
             )
         }
@@ -203,8 +227,9 @@ object RecordingPlaybackProjector {
         }
         documentDiagnostics += scenes.flatMap(RecordingPlaybackScene::diagnostics)
         documentDiagnostics += entries.flatMap(RecordingPlaybackEntry::diagnostics)
-        return RecordingPlaybackDocument(
+        val document = RecordingPlaybackDocument(
             sessionId = record.session.sessionId,
+            resumedFromSessionId = record.session.resumedFromSessionId,
             schemaVersion = record.session.schemaVersion,
             sessionStatus = record.session.status,
             startedAtEpochMs = record.session.startedAtEpochMs,
@@ -214,6 +239,9 @@ object RecordingPlaybackProjector {
             scenes = scenes,
             entries = entries,
             diagnostics = documentDiagnostics.distinctBy { listOf(it.code, it.referenceId, it.message) },
+        )
+        return document.copy(
+            integrityReport = RecordingIntegrityValidator.validate(record, document.toIntegritySnapshot()),
         )
     }
 
@@ -234,7 +262,10 @@ object RecordingPlaybackProjector {
         record: PersistedRecordingSession,
         diagnostics: MutableList<RecordingPlaybackDiagnostic>,
     ) {
-        record.scenes.sortedBy(RecordingScene::sequence).zipWithNext().forEach { (first, second) ->
+        record.scenes
+            .sortedWith(compareBy<RecordingScene> { it.sequence }.thenBy { it.sceneId })
+            .zipWithNext()
+            .forEach { (first, second) ->
             if (second.openedAtElapsedRealtimeNanos < first.openedAtElapsedRealtimeNanos) {
                 diagnostics += diagnostic(
                     "SCENE_MONOTONIC_TIME_INVALID",
@@ -244,7 +275,10 @@ object RecordingPlaybackProjector {
                 )
             }
         }
-        record.interactions.sortedBy(TapInteraction::sequence).zipWithNext().forEach { (first, second) ->
+        record.interactions
+            .sortedWith(compareBy<RecordingInteraction> { it.sequence }.thenBy { it.interactionId })
+            .zipWithNext()
+            .forEach { (first, second) ->
             if (second.occurredAtElapsedRealtimeNanos < first.occurredAtElapsedRealtimeNanos) {
                 diagnostics += diagnostic(
                     "INTERACTION_MONOTONIC_TIME_INVALID",
@@ -255,7 +289,7 @@ object RecordingPlaybackProjector {
             }
         }
         record.interactions.forEach { interaction ->
-            val before = record.scenes.firstOrNull { it.sceneId == interaction.beforeSceneId }
+            val before = interaction.beforeSceneId?.let { beforeId -> record.scenes.firstOrNull { it.sceneId == beforeId } }
             if (before != null && interaction.occurredAtElapsedRealtimeNanos < before.openedAtElapsedRealtimeNanos) {
                 diagnostics += diagnostic(
                     "INTERACTION_BEFORE_SCENE_TIME_INVALID",
@@ -269,6 +303,77 @@ object RecordingPlaybackProjector {
 
     private fun diagnostic(code: String, message: String, severity: RecordingPlaybackDiagnosticSeverity, reference: String? = null) =
         RecordingPlaybackDiagnostic(code, message, severity, reference)
+
+    private fun evidenceFor(
+        sessionId: String,
+        interaction: RecordingInteraction,
+        rawEvents: List<RawRecordingEvent>,
+        before: RecordingPlaybackScene?,
+        after: RecordingPlaybackScene?,
+    ): List<RecordingEvidenceRef> {
+        val stepId = "entry:${interaction.interactionId}"
+        fun evidence(
+            suffix: String,
+            kind: RecordingEvidenceKind,
+            resources: List<RecordingResourceRef>,
+            properties: Map<String, String> = emptyMap(),
+        ) = RecordingEvidenceRef(
+            evidenceId = "evidence:${interaction.interactionId}:$suffix",
+            sessionId = sessionId,
+            stepId = stepId,
+            sequence = interaction.sequence,
+            occurredAtEpochMs = interaction.occurredAtEpochMs,
+            occurredAtElapsedRealtimeNanos = interaction.occurredAtElapsedRealtimeNanos,
+            kind = kind,
+            resources = resources.distinct(),
+            properties = properties,
+        )
+
+        val result = mutableListOf<RecordingEvidenceRef>()
+        result += evidence(
+            suffix = "input",
+            kind = RecordingEvidenceKind.INPUT,
+            resources = listOfNotNull(
+                *rawEvents.map { RecordingResourceRef(RecordingResourceKind.RAW_EVENT, it.rawEventId) }.toTypedArray(),
+            ),
+            properties = rawEvents.flatMap { it.payload.entries }.associate { it.toPair() } +
+                mapOf("interactionId" to interaction.interactionId, "interactionType" to interaction.type.name),
+        )
+        val scenes = listOfNotNull(before, after).distinctBy { it.scene.sceneId }
+        if (scenes.isNotEmpty()) {
+            result += evidence(
+                suffix = "window",
+                kind = RecordingEvidenceKind.WINDOW,
+                resources = scenes.map { RecordingResourceRef(RecordingResourceKind.SCENE, it.scene.sceneId) },
+            )
+        }
+        val snapshots = scenes.mapNotNull(RecordingPlaybackScene::a11ySnapshot)
+            .distinctBy(A11ySnapshot::snapshotId)
+        if (snapshots.isNotEmpty()) {
+            result += evidence(
+                suffix = "accessibility",
+                kind = RecordingEvidenceKind.ACCESSIBILITY,
+                resources = snapshots.map { RecordingResourceRef(RecordingResourceKind.A11Y_SNAPSHOT, it.snapshotId) },
+            )
+        }
+        val frames = scenes.mapNotNull(RecordingPlaybackScene::primaryFrame)
+            .distinctBy { it.frame.frameId }
+        val payloadResource = (interaction.payload as? RecordingInteractionPayload.Screenshot)?.resource
+        val visualResources = frames.flatMap { frame ->
+            listOf(
+                RecordingResourceRef(RecordingResourceKind.CAPTURE_FRAME, frame.frame.frameId),
+                RecordingResourceRef(RecordingResourceKind.SCREENSHOT_ASSET, frame.frame.assetHash),
+            )
+        } + listOfNotNull(payloadResource)
+        if (visualResources.isNotEmpty()) {
+            result += evidence(
+                suffix = "visual",
+                kind = RecordingEvidenceKind.VISUAL,
+                resources = visualResources,
+            )
+        }
+        return result
+    }
 }
 
 private fun RecordingPlaybackFrame?.orEmptyDiagnostics(): List<RecordingPlaybackDiagnostic> = this?.diagnostics.orEmpty()

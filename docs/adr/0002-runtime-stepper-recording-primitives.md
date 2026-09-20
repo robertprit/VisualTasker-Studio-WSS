@@ -157,13 +157,13 @@ EMScriptDraft                 PARTIAL - text draft save/load exists
 Stepper UI                    PARTIAL - dry-run events can feed timeline
 ExecutionTrace                PARTIAL - dry-run/runtime events exist
 WorldviewDocument             ARCHITECTURE_READY
-Record                        PLANNED
-StepViewDocument              PLANNED
+Record                        IMPLEMENTED - PersistedRecordingSession / RecordingPlaybackDocument
+StepViewDocument              PARTIAL - RailTrace projection and persisted StepperPanelState
 ActiveWorkflowId              PLANNED
 AwaitCondition                PLANNED
-OperationResult               PLANNED
-CaptureFrame                  PLANNED
-GroundingCandidate            PLANNED
+OperationResult               PARTIAL - typed recording and runtime operation results
+CaptureFrame                  IMPLEMENTED - recording frame plus content-addressed screenshot asset
+GroundingCandidate            PARTIAL - StepCandidate with A11y or coordinate target
 ```
 
 ## Minimal Implementation Slices

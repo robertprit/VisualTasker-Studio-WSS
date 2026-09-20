@@ -11,6 +11,10 @@ window/activity transitions between VisualTasker WSS and Android Settings, and
 strict session termination: subsequent window events did not append evidence
 after `RecordingEventStore.stop()`.
 
+Canonical ownership, identity, evidence references, replay bookmarks and
+interrupted-session semantics are specified in
+[`RECORDER_OWNERSHIP.md`](RECORDER_OWNERSHIP.md).
+
 ## Architecture Rules
 
 ```text
@@ -41,6 +45,9 @@ projection boundaries stay authoritative.
 | Type / File | Responsibility | Module | Current Consumers |
 | --- | --- | --- | --- |
 | `RecordingEventStore` | JSONL recording sessions, active recording status, raw overlay/external/accessibility events, conversion to `RecorderStepUi` | `workspace.model` | Floating overlay, Accessibility service, RailTrace, Recorder tests |
+| `RecordingSessionCoordinator` / `RecorderSessionStore` | Kanonische Room-Session mit Scenes, Frames, A11y-Snapshots, RawEvents und typisierten Canonical Interactions | `recording` | Floating overlay, Playback, Review, Recovery |
+| `RecordingPlaybackDocument` | Validierte read-only Record-Projektion einer persistierten kanonischen Session | `recording` | RailTrace, Scene Inspector, StepCandidateAssembler |
+| `StepCandidateDocument` / `ReviewedStepDocument` | Von der Historie getrennte Vorschlags- und Review-Ebene | `recording` | Scene Inspector, Junktor-Vorbereitung |
 | `RecordingSessionWriter` | Timestamped line writer for active recording sessions | `workspace.model` | `RecordingEventStore` only |
 | `RecorderStepUi` | UI-facing step/event projection with timestamp, bounds, point, activity and properties | `workspace.model` | RailTrace, Canvas, Flow recording projection, Junktor, tests |
 | `RecordingTraceProjection` | Converts record steps to `ExecutionTrace` and RailTrace-compatible steps | `workspace.model` | RailTrace/record replay path |
@@ -77,7 +84,9 @@ Canvas projection:
   CanvasObservationProjection
 
 Record:
-  Not yet first-class; current JSONL recording session is a record precursor.
+  PersistedRecordingSession / RecordingPlaybackDocument sind der kanonische
+  Record. Die korrelierte JSONL-Datei bleibt append-only Raw-Evidence fuer
+  Activity-, Accessibility-, Overlay- und Provider-Ereignisse.
 
 Workflow proposal:
   JunktorSeed.fromRailTraceStep exists as an early proposal seed.
@@ -164,16 +173,16 @@ candidate source should be Accessibility bounds/text, not OCR/YOLO.
 
 ### 5. Record Contract
 
-Problem: `RecordingEventStore` JSONL is a record precursor, not a first-class
-Record document with scenes and steps.
+Implemented: `PersistedRecordingSession` stores sessions, scenes, frames,
+assets, A11y snapshots, raw events and tap interactions transactionally.
+`RecordingPlaybackDocument` validates and projects this immutable history;
+`StepCandidateDocument` and `ReviewedStepDocument` keep interpretation and
+human review separate from raw history.
 
-Existing reusable component: `WorldEvent`, `WorldStep`, `WorldScene`,
-`ExecutionTrace`, `RecorderStepUi`.
-
-Missing contract: `RecordDocument` or `RecordingRecord`.
-
-Smallest required change: defer first-class record persistence until transition
-evidence and segmentation hints are stable.
+Current gap: only taps are first-class canonical interactions. Activity/window,
+text, scroll, swipe and other gestures are retained as correlated JSONL evidence
+and must be promoted through explicit schema migrations instead of ad-hoc UI
+conversion.
 
 ## Proposed Data Flow
 
@@ -181,8 +190,9 @@ Recording path:
 
 ```text
 AccessibilityEvent / OverlayEvent / RuntimeEvent
-  -> timestamped recording JSONL evidence
-  -> RecorderStepUi
+  -> canonical Room record plus correlated timestamped JSONL evidence
+  -> RecordingPlaybackDocument plus evidence projection
+  -> RecorderStepUi / RailTrace
   -> RecordingExecutionTrace / RailTrace
   -> optional WorldObservation evidence
   -> future RecordDocument

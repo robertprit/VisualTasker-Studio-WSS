@@ -3,7 +3,17 @@ package com.visualtasker.wss.recording
 const val STEP_CANDIDATE_SCHEMA_VERSION = 1
 
 enum class CandidateAction { TAP }
-enum class StepReviewStatus { PROPOSED, NEEDS_REVIEW, CONFIRMED, CORRECTED, REJECTED, STALE, UNSUPPORTED }
+enum class StepReviewStatus {
+    UNREVIEWED,
+    CONFIRMED,
+    CORRECTED,
+    REJECTED,
+    DEFERRED,
+    STALE,
+    UNSUPPORTED,
+    PROPOSED,
+    NEEDS_REVIEW,
+}
 enum class ConfidenceLevel { HIGH, MEDIUM, LOW, UNKNOWN }
 enum class ConfidenceReason {
     EXPLICIT_RECORDED_TARGET,
@@ -93,6 +103,7 @@ data class CandidateEvidence(
     val tapXpx: Int,
     val tapYpx: Int,
     val targetBounds: List<Int>?,
+    val evidenceRefs: List<String> = emptyList(),
 )
 
 data class StepCandidate(

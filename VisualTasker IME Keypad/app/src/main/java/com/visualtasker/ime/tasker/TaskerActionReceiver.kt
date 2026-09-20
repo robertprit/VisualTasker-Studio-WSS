@@ -20,6 +20,7 @@ class TaskerActionReceiver : BroadcastReceiver() {
         clipboard.setPrimaryClip(ClipData.newPlainText("Tasker IME", text))
 
         context.sendBroadcast(Intent(ACTION_TASKER_INSERT_TEXT).apply {
+            setPackage(context.packageName)
             putExtra(EXTRA_TEXT, text)
         })
     }

@@ -35,14 +35,22 @@ class RecordingPlaybackController(
         _state.value = RecordingPlaybackState(status = RecordingPlaybackStatus.LOADING)
     }
 
-    fun load(document: RecordingPlaybackDocument) {
+    fun load(document: RecordingPlaybackDocument, bookmark: RecordingReplayBookmark? = null) {
+        val restoredIndex = bookmark
+            ?.takeIf { it.recordId == document.sessionId }
+            ?.entryId
+            ?.let { entryId -> document.entries.indexOfFirst { it.entryId == entryId }.takeIf { it >= 0 } }
+            ?: bookmark?.takeIf { it.recordId == document.sessionId }?.entryIndex
+            ?: 0
         _state.value = RecordingPlaybackState(
-            status = RecordingPlaybackStatus.READY,
+            status = if (bookmark == null) RecordingPlaybackStatus.READY else RecordingPlaybackStatus.PAUSED,
             document = document,
-            selectedEntryIndex = 0,
-            phase = RecordingPlaybackPhase.BEFORE,
-            selectedA11yNodeId = document.entries.firstOrNull()?.interaction?.tap?.targetA11yNodeId,
-        )
+            selectedEntryIndex = restoredIndex.coerceIn(0, (document.entries.size - 1).coerceAtLeast(0)),
+            phase = bookmark?.phase ?: RecordingPlaybackPhase.BEFORE,
+            selectedA11yNodeId = bookmark?.selectedA11yNodeId,
+            speed = bookmark?.speed?.takeIf { it in SupportedPlaybackSpeeds } ?: 1f,
+            phaseElapsedMs = bookmark?.positionMs ?: 0L,
+        ).withValidRestoredSelection()
     }
 
     fun fail(message: String) {
@@ -137,6 +145,21 @@ class RecordingPlaybackController(
         _state.value = RecordingPlaybackState()
     }
 
+    fun bookmark(): RecordingReplayBookmark? {
+        val current = _state.value
+        val document = current.document ?: return null
+        return RecordingReplayBookmark(
+            recordId = document.sessionId,
+            entryId = current.selectedEntry?.entryId,
+            entryIndex = current.selectedEntryIndex,
+            phase = current.phase,
+            positionMs = current.phaseElapsedMs,
+            speed = current.speed,
+            selectedA11yNodeId = current.selectedA11yNodeId,
+            wasPlaying = current.status == RecordingPlaybackStatus.PLAYING,
+        )
+    }
+
     private fun advancePosition(manual: Boolean, carryMs: Long = 0L) {
         val current = _state.value
         val entries = current.document?.entries.orEmpty()
@@ -161,9 +184,15 @@ class RecordingPlaybackController(
     }
 
     private fun RecordingPlaybackState.withTargetSelection(): RecordingPlaybackState {
-        val targetId = selectedEntry?.interaction?.tap?.targetA11yNodeId
+        val targetId = (selectedEntry?.interaction?.interaction?.payload as? RecordingInteractionPayload.Tap)?.targetReference
         val targetExistsInScene = targetId != null && selectedScene?.a11ySnapshot?.rootNode?.containsNode(targetId) == true
         return copy(selectedA11yNodeId = targetId.takeIf { targetExistsInScene })
+    }
+
+    private fun RecordingPlaybackState.withValidRestoredSelection(): RecordingPlaybackState {
+        val selectedExists = selectedA11yNodeId != null &&
+            selectedScene?.a11ySnapshot?.rootNode?.containsNode(selectedA11yNodeId) == true
+        return if (selectedExists) this else withTargetSelection()
     }
 
     companion object {

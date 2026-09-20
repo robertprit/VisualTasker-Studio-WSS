@@ -39,8 +39,11 @@ fun defaultShellPluginDescriptors(): List<ShellPluginDescriptor> = listOf(
         kind = ShellPluginKind.VISUAL_TOOL,
         implementationVersion = "1.0.0",
         capabilities = setOf(
-            ShellPluginCapability("visual-asset.design"),
-            ShellPluginCapability("visual-asset.ema"),
+            ShellPluginCapability("visual-asset.design.embedded"),
+            ShellPluginCapability("visual-asset.editor.external", optional = true),
+            ShellPluginCapability("visual-asset.ema.import"),
+            ShellPluginCapability("visual-asset.ema.export"),
+            ShellPluginCapability("visual-asset.runtime", optional = true),
         ),
         supportedFormatIds = setOf("application/vnd.emscript.motion+json"),
         companionPackageName = "com.m3shapes.editor",

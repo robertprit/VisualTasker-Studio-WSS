@@ -110,6 +110,50 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="VisualTasker-Tasten"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/vtSlot1Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Kurzes Label für VT1"
+            android:inputType="text"
+            android:maxLength="6"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/vtSlot1Script"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="top|start"
+            android:hint="EMScript für VT1"
+            android:inputType="textMultiLine|textNoSuggestions"
+            android:minLines="2" />
+
+        <EditText
+            android:id="@+id/vtSlot2Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Kurzes Label für VT2"
+            android:inputType="text"
+            android:maxLength="6"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/vtSlot2Script"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="top|start"
+            android:hint="EMScript für VT2"
+            android:inputType="textMultiLine|textNoSuggestions"
+            android:minLines="2" />
+
         <Button
             android:id="@+id/saveSettingsButton"
             android:layout_width="match_parent"

@@ -4,6 +4,7 @@ import com.visualtasker.wss.recording.ScreenshotAssetStoreTest.Companion.PNG_A
 import com.visualtasker.wss.recording.ScreenshotAssetStoreTest.Companion.PNG_B
 import com.visualtasker.wss.recording.persistence.ScreenshotAssetStore
 import com.visualtasker.wss.workspace.model.RecordingPlaybackSceneTreeProjector
+import com.visualtasker.wss.workspace.model.toRecorderSteps
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -25,6 +26,23 @@ class RecordingPlaybackTest {
         assertEquals("target", entry.interaction.targetNode?.stableSnapshotNodeId)
         assertTrue(entry.beforeScene?.primaryFrame?.file?.isFile == true)
         assertTrue(document.diagnostics.none { it.severity == RecordingPlaybackDiagnosticSeverity.ERROR })
+        assertEquals(
+            setOf(
+                RecordingEvidenceKind.INPUT,
+                RecordingEvidenceKind.WINDOW,
+                RecordingEvidenceKind.ACCESSIBILITY,
+                RecordingEvidenceKind.VISUAL,
+            ),
+            entry.evidence.map(RecordingEvidenceRef::kind).toSet(),
+        )
+        assertTrue(entry.evidence.all { it.stepId == entry.entryId })
+        assertTrue(
+            entry.evidence
+                .flatMap(RecordingEvidenceRef::resources)
+                .any { it.kind == RecordingResourceKind.SCREENSHOT_ASSET },
+        )
+        assertTrue(document.integrityReport?.isValid == true)
+        assertEquals(entry.entryId, document.toRecorderSteps().single().integrityReport?.stepId)
     }
 
     @Test
@@ -150,7 +168,13 @@ class RecordingPlaybackTest {
         fixture.assetStore.resolve(firstFrame.assetReference)!!.writeBytes(PNG_B)
         val damaged = fixture.record.copy(
             snapshots = fixture.record.snapshots.drop(1),
-            interactions = fixture.record.interactions.map { it.copy(targetA11yNodeId = "missing-target") },
+            interactions = fixture.record.interactions.map { interaction ->
+                interaction.copy(
+                    payload = (interaction.payload as RecordingInteractionPayload.Tap).copy(
+                        targetReference = "missing-target",
+                    ),
+                )
+            },
         )
 
         val document = RecordingPlaybackProjector.project(damaged, fixture.assetStore::resolve)
@@ -181,6 +205,42 @@ class RecordingPlaybackTest {
         assertEquals("session-1", controller.state.value.document?.sessionId)
     }
 
+    @Test
+    fun interruptedRecordingHasDistinctDiagnostic() {
+        val fixture = fixture(changed = true)
+        val interrupted = fixture.record.copy(
+            session = fixture.record.session.copy(
+                status = RecordingSessionStatus.INTERRUPTED,
+                failure = "PROCESS_INTERRUPTED",
+            ),
+        )
+
+        val document = RecordingPlaybackProjector.project(interrupted, fixture.assetStore::resolve)
+
+        assertTrue(document.diagnostics.any { it.code == "INTERRUPTED_SESSION" })
+        assertTrue(document.diagnostics.none { it.code == "PARTIAL_SESSION" })
+    }
+
+    @Test
+    fun replayBookmarkRestoresPositionButNeverAutoResumes() {
+        val fixture = fixture(changed = true)
+        val document = RecordingPlaybackProjector.project(fixture.record, fixture.assetStore::resolve)
+        val source = RecordingPlaybackController().apply {
+            load(document)
+            play()
+            advanceBy(100L)
+            setPlaybackSpeed(2f)
+        }
+        val encoded = RecordingReplayBookmarkCodec.encode(source.bookmark()!!)
+        val restoredBookmark = RecordingReplayBookmarkCodec.decode(encoded)!!
+        val restored = RecordingPlaybackController().apply { load(document, restoredBookmark) }
+
+        assertEquals(RecordingPlaybackStatus.PAUSED, restored.state.value.status)
+        assertEquals(restoredBookmark.entryId, restored.state.value.selectedEntry?.entryId)
+        assertEquals(restoredBookmark.positionMs, restored.state.value.phaseElapsedMs)
+        assertEquals(2f, restored.state.value.speed)
+    }
+
     private fun fixture(changed: Boolean): PlaybackFixture {
         val root = Files.createTempDirectory("recording-playback").toFile()
         val assetStore = ScreenshotAssetStore(root) { 1_000L }
@@ -192,7 +252,7 @@ class RecordingPlaybackTest {
         val frame2 = frame("frame-2", if (changed) scene2.sceneId else scene1.sceneId, secondAsset, 1_200_000_000L)
         val snapshot1 = snapshot("a11y-1", scene1.sceneId, frame1.frameId)
         val snapshot2 = snapshot("a11y-2", if (changed) scene2.sceneId else scene1.sceneId, frame2.frameId)
-        val interaction = TapInteraction(
+        val interaction = recordingTapInteraction(
             interactionId = "tap-1",
             rawEventId = "raw-1",
             sessionId = "session-1",
@@ -224,7 +284,17 @@ class RecordingPlaybackTest {
                 frames = listOf(frame1, frame2),
                 assets = listOf(firstAsset, secondAsset).distinctBy(ScreenshotAsset::assetHash),
                 snapshots = listOf(snapshot1, snapshot2),
-                rawEvents = emptyList(),
+                rawEvents = listOf(
+                    RawRecordingEvent(
+                        rawEventId = "raw-1",
+                        sessionId = session.sessionId,
+                        sequence = 1L,
+                        occurredAtEpochMs = interaction.occurredAtEpochMs,
+                        occurredAtElapsedRealtimeNanos = interaction.occurredAtElapsedRealtimeNanos,
+                        kind = "tap",
+                        payload = mapOf("x" to "30", "y" to "50"),
+                    ),
+                ),
                 interactions = listOf(interaction),
             ),
             assetStore,

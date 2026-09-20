@@ -63,17 +63,72 @@ class RecordingSessionCoordinatorTest {
     }
 
     @Test
-    fun recoveryMarksInterruptedSessionPartialWithoutDroppingData() = runBlocking {
+    fun recoveryMarksInterruptedSessionWithoutDroppingData() = runBlocking {
         val fixture = fixture(capture(PNG_A))
         val session = (fixture.coordinator.start("test") as RecordingOperationResult.Success).value
         val recovered = fixture.coordinator.recoverInterruptedSessions() as RecordingOperationResult.Success
         val record = fixture.store.load(session.sessionId)!!
 
         assertEquals(listOf(session.sessionId), recovered.value)
-        assertEquals(RecordingSessionStatus.PARTIAL, record.session.status)
+        assertEquals(RecordingSessionStatus.INTERRUPTED, record.session.status)
         assertEquals("PROCESS_INTERRUPTED", record.session.failure)
         assertEquals(1, record.scenes.size)
         assertEquals(1, record.frames.size)
+    }
+
+    @Test
+    fun recoveryIsIdempotentAndNeverReactivatesInterruptedSession() = runBlocking {
+        val fixture = fixture(capture(PNG_A))
+        val session = (fixture.coordinator.start("test") as RecordingOperationResult.Success).value
+
+        val first = fixture.coordinator.recoverInterruptedSessions() as RecordingOperationResult.Success
+        val second = fixture.coordinator.recoverInterruptedSessions() as RecordingOperationResult.Success
+
+        assertEquals(listOf(session.sessionId), first.value)
+        assertTrue(second.value.isEmpty())
+        assertEquals(RecordingSessionStatus.INTERRUPTED, fixture.store.load(session.sessionId)!!.session.status)
+    }
+
+    @Test
+    fun continuingInterruptedSessionCreatesLinkedSessionWithoutReactivatingSource() = runBlocking {
+        val fixture = fixture(capture(PNG_A))
+        val source = (fixture.coordinator.start("test") as RecordingOperationResult.Success).value
+        fixture.coordinator.recoverInterruptedSessions()
+        val resumedCoordinator = RecordingSessionCoordinator(
+            store = fixture.store,
+            assetStore = ScreenshotAssetStore(fixture.assetRoot),
+            captureSource = QueueCaptureSource(ArrayDeque(listOf(capture(PNG_B)))),
+            clock = FakeClock(epoch = 2_000L, elapsed = 200L),
+            idGenerator = RecorderIdGenerator { prefix -> "$prefix-resumed" },
+        )
+
+        val result = resumedCoordinator.continueInterruptedSession(source.sessionId, "recovery-test")
+        val resumed = (result as RecordingOperationResult.Success).value
+
+        assertNotEquals(source.sessionId, resumed.sessionId)
+        assertEquals(source.sessionId, resumed.resumedFromSessionId)
+        assertEquals(RecordingSessionStatus.RECORDING, resumed.status)
+        assertEquals(RecordingSessionStatus.INTERRUPTED, fixture.store.load(source.sessionId)!!.session.status)
+    }
+
+    @Test
+    fun continuingCompletedSessionIsRejectedWithoutCreatingSession() = runBlocking {
+        val fixture = fixture(capture(PNG_A))
+        val source = (fixture.coordinator.start("test") as RecordingOperationResult.Success).value
+        fixture.coordinator.stop()
+        val resumedCoordinator = RecordingSessionCoordinator(
+            store = fixture.store,
+            assetStore = ScreenshotAssetStore(fixture.assetRoot),
+            captureSource = QueueCaptureSource(ArrayDeque(listOf(capture(PNG_B)))),
+            idGenerator = RecorderIdGenerator { prefix -> "$prefix-rejected" },
+        )
+
+        val result = resumedCoordinator.continueInterruptedSession(source.sessionId, "recovery-test")
+
+        assertTrue(result is RecordingOperationResult.Failure)
+        assertEquals("SESSION_NOT_INTERRUPTED", (result as RecordingOperationResult.Failure).code)
+        assertEquals(1, fixture.store.sessions.size)
+        assertEquals(RecordingSessionStatus.COMPLETED, fixture.store.load(source.sessionId)!!.session.status)
     }
 
     @Test
@@ -184,7 +239,7 @@ private class FakeRecorderSessionStore : RecorderSessionStore {
     private val assets = linkedMapOf<String, ScreenshotAsset>()
     private val snapshots = linkedMapOf<String, MutableList<A11ySnapshot>>()
     private val rawEvents = linkedMapOf<String, MutableList<RawRecordingEvent>>()
-    private val interactions = linkedMapOf<String, MutableList<TapInteraction>>()
+    private val interactions = linkedMapOf<String, MutableList<RecordingInteraction>>()
     var failInitialPersist = false
 
     override suspend fun createSession(session: RecordingSession) { sessions[session.sessionId] = session }
@@ -196,18 +251,18 @@ private class FakeRecorderSessionStore : RecorderSessionStore {
         assets[asset.assetHash] = asset
         snapshots.getOrPut(session.sessionId, ::mutableListOf).add(snapshot)
     }
-    override suspend fun persistTap(rawEvent: RawRecordingEvent, interaction: TapInteraction) {
-        rawEvents.getOrPut(rawEvent.sessionId, ::mutableListOf).add(rawEvent)
+    override suspend fun persistInteraction(rawEvents: List<RawRecordingEvent>, interaction: RecordingInteraction) {
+        this.rawEvents.getOrPut(interaction.sessionId, ::mutableListOf).addAll(rawEvents)
         interactions.getOrPut(interaction.sessionId, ::mutableListOf).add(interaction)
     }
-    override suspend fun persistUnchangedCapture(session: RecordingSession, asset: ScreenshotAsset, frame: CaptureFrame, snapshot: A11ySnapshot, interaction: TapInteraction) {
+    override suspend fun persistUnchangedCapture(session: RecordingSession, asset: ScreenshotAsset, frame: CaptureFrame, snapshot: A11ySnapshot, interaction: RecordingInteraction) {
         sessions[session.sessionId] = session
         assets[asset.assetHash] = asset
         frames.getOrPut(session.sessionId, ::mutableListOf).add(frame)
         snapshots.getOrPut(session.sessionId, ::mutableListOf).add(snapshot)
         replaceInteraction(interaction)
     }
-    override suspend fun persistChangedCapture(session: RecordingSession, closedScene: RecordingScene, newScene: RecordingScene, asset: ScreenshotAsset, frame: CaptureFrame, snapshot: A11ySnapshot, interaction: TapInteraction) {
+    override suspend fun persistChangedCapture(session: RecordingSession, closedScene: RecordingScene, newScene: RecordingScene, asset: ScreenshotAsset, frame: CaptureFrame, snapshot: A11ySnapshot, interaction: RecordingInteraction) {
         sessions[session.sessionId] = session
         scenes.getValue(session.sessionId).replaceAll { if (it.sceneId == closedScene.sceneId) closedScene else it }
         scenes.getValue(session.sessionId).add(newScene)
@@ -216,7 +271,7 @@ private class FakeRecorderSessionStore : RecorderSessionStore {
         snapshots.getOrPut(session.sessionId, ::mutableListOf).add(snapshot)
         replaceInteraction(interaction)
     }
-    override suspend fun persistFailedInteraction(session: RecordingSession, interaction: TapInteraction) {
+    override suspend fun persistFailedInteraction(session: RecordingSession, interaction: RecordingInteraction) {
         sessions[session.sessionId] = session
         replaceInteraction(interaction)
     }
@@ -237,10 +292,10 @@ private class FakeRecorderSessionStore : RecorderSessionStore {
     override suspend fun recoverInterrupted(failure: String): List<String> = sessions.values
         .filter { it.status in setOf(RecordingSessionStatus.PREPARING, RecordingSessionStatus.RECORDING, RecordingSessionStatus.STOPPING) }
         .map { session ->
-            sessions[session.sessionId] = session.copy(status = RecordingSessionStatus.PARTIAL, failure = failure)
+            sessions[session.sessionId] = session.copy(status = RecordingSessionStatus.INTERRUPTED, failure = failure)
             session.sessionId
         }
-    private fun replaceInteraction(interaction: TapInteraction) {
+    private fun replaceInteraction(interaction: RecordingInteraction) {
         interactions.getValue(interaction.sessionId).replaceAll { if (it.interactionId == interaction.interactionId) interaction else it }
     }
 }

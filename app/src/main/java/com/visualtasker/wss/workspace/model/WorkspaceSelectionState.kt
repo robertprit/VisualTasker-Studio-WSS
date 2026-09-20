@@ -14,7 +14,7 @@ data class WorkspaceSelectionState(
 ) {
     fun selectBlock(
         blockId: BlockId,
-        sourceLine: Int? = this.sourceLine,
+        sourceLine: Int? = null,
         source: String = "blockeditor",
     ): WorkspaceSelectionState =
         copy(
@@ -27,7 +27,7 @@ data class WorkspaceSelectionState(
 
     fun selectFlowNode(
         nodeId: FlowNodeId,
-        sourceLine: Int? = this.sourceLine,
+        sourceLine: Int? = null,
         source: String = "flowchart",
     ): WorkspaceSelectionState =
         copy(
@@ -67,6 +67,11 @@ data class WorkspaceSelectionState(
             source = source,
         )
 }
+
+data class WorkspaceHistoryEntry(
+    val serializedJson: String,
+    val selection: WorkspaceSelectionState,
+)
 
 fun BlockId.toFlowNodeId(): FlowNodeId = FlowNodeId("block:$value")
 

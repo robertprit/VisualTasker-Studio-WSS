@@ -1,7 +1,9 @@
 package com.visualtasker.chartgraph.demo.data
 
 enum class ChartType {
-    LINE, COLUMN, PIE, DONUT, CANDLE
+    LINE, COLUMN, PIE, DONUT, CANDLE, HISTOGRAM, BOX_PLOT, SCATTER, HEATMAP,
+    VENN_LINEAR, VENN_STACKED, VENN_RADIAL, VENN_GROUP, AREA, BUBBLE, MOSAIC,
+    GAUGE, GANTT, RADAR, WATERFALL, FUNNEL, PARETO, PICTOGRAPH, DIAGRAM
 }
 
 enum class MarketInterval(val millis: Long, val label: String) {

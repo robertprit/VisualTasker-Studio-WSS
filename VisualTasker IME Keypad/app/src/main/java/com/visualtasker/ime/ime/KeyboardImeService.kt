@@ -23,7 +23,6 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -39,6 +38,8 @@ import com.visualtasker.ime.ime.context.KeyboardLayout
 import com.visualtasker.ime.ime.context.KeyboardProfile
 import com.visualtasker.ime.ime.context.ResolvedKeyboardProfile
 import com.visualtasker.ime.ime.gestures.GestureEngine
+import com.visualtasker.ime.ime.handwriting.DigitalInkHandwritingRecognizer
+import com.visualtasker.ime.ime.handwriting.HandwritingCanvasView
 import com.visualtasker.ime.ime.input.InputConnectionFacade
 import com.visualtasker.ime.ime.security.ImeSecurityPolicy
 import com.visualtasker.ime.ime.selection.SelectionAction
@@ -47,6 +48,9 @@ import com.visualtasker.ime.ime.snippets.SnippetDefinition
 import com.visualtasker.ime.ime.snippets.SnippetEngine
 import com.visualtasker.ime.ime.stylus.AndroidStylusSupport
 import com.visualtasker.ime.ime.stylus.StylusMode
+import com.visualtasker.ime.ime.toolbar.SwipeToolbarView
+import com.visualtasker.ime.ime.toolbar.ToolbarAction
+import com.visualtasker.ime.ime.toolbar.ToolbarPageCatalog
 import com.visualtasker.ime.ime.vtbridge.IntentVisionTaskerBridge
 import com.visualtasker.ime.storage.PrefsStore
 import com.visualtasker.ime.tasker.TaskerActionReceiver
@@ -70,13 +74,13 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
     private lateinit var inlineToolSheet: LinearLayout
     private lateinit var inlineSheetTitle: TextView
     private lateinit var inlineSheetContent: FrameLayout
-    private lateinit var iconBandPanel: HorizontalScrollView
-    private lateinit var iconBandToggle: View
+    private lateinit var swipeToolbar: SwipeToolbarView
     private lateinit var rightNumpadPanel: LinearLayout
     private lateinit var inputFacade: InputConnectionFacade
     private lateinit var actionRouter: ActionRouter
     private val gestureEngine = GestureEngine()
     private val stylusSupport = AndroidStylusSupport()
+    private lateinit var handwritingRecognizer: DigitalInkHandwritingRecognizer
 
     private val taskerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -98,6 +102,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
             onInput = { text -> insertText(text) },
             onUiSheet = { routeUiSheet(it) }
         )
+        handwritingRecognizer = DigitalInkHandwritingRecognizer()
         val filter = IntentFilter(TaskerActionReceiver.ACTION_TASKER_INSERT_TEXT)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(taskerReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -108,6 +113,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
 
     override fun onDestroy() {
         unregisterReceiver(taskerReceiver)
+        if (::handwritingRecognizer.isInitialized) handwritingRecognizer.close()
         super.onDestroy()
     }
 
@@ -119,8 +125,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
         inlineToolSheet = root.findViewById(R.id.inlineToolSheet)
         inlineSheetTitle = root.findViewById(R.id.inlineSheetTitle)
         inlineSheetContent = root.findViewById(R.id.inlineSheetContent)
-        iconBandPanel = root.findViewById(R.id.iconBandPanel)
-        iconBandToggle = root.findViewById(R.id.iconBandToggle)
+        swipeToolbar = root.findViewById(R.id.swipeToolbar)
 
         qwertzKeyboard = Keyboard(this, R.xml.keyboard_qwertz)
         symbolsKeyboard = Keyboard(this, R.xml.keyboard_symbols)
@@ -293,37 +298,83 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
     }
 
     private fun bindIconBar(root: View) {
-        setIconAction(root, R.id.iconBandToggle) { toggleIconBand() }
-        setIconAction(root, R.id.modeLettersButton) { setManualProfile(KeyboardProfile.NORMAL) }
-        setIconAction(root, R.id.modeSymbolsButton) {
-            manualProfileOverride = KeyboardProfile.NORMAL
-            switchKeyboard(symbolsKeyboard)
+        val slotLabels = listOf(
+            prefsStore.getVtKeySlot(1).label,
+            prefsStore.getVtKeySlot(2).label
+        )
+        swipeToolbar.configure(ToolbarPageCatalog.pages(slotLabels)) { action ->
+            performKeyFeedback()
+            handleToolbarAction(action)
         }
-        setIconAction(root, R.id.modeDeveloperButton) { setManualProfile(KeyboardProfile.DEVELOPER) }
-        setIconAction(root, R.id.modeEmscriptButton) { setManualProfile(KeyboardProfile.EMSCRIPT) }
-        setIconAction(root, R.id.modeVisionTaskerButton) { setManualProfile(KeyboardProfile.VISIONTASKER) }
-        setIconAction(root, R.id.calculatorButton) { renderCalculatorSheet() }
-        setIconAction(root, R.id.colorButton) { renderColorSheet() }
-
-        setIconAction(root, R.id.selectButton) {
-            currentInputConnection.performContextMenuAction(android.R.id.selectAll)
-        }
-        setIconAction(root, R.id.undoButton) { sendCtrlShortcut(KeyEvent.KEYCODE_Z) }
-        setIconAction(root, R.id.redoButton) { sendCtrlShortcut(KeyEvent.KEYCODE_Y) }
-        setIconAction(root, R.id.cutButton) { currentInputConnection.performContextMenuAction(android.R.id.cut) }
-        setIconAction(root, R.id.copyButton) { currentInputConnection.performContextMenuAction(android.R.id.copy) }
-        setIconAction(root, R.id.pasteButton) { performPaste() }
-        setIconAction(root, R.id.commandPaletteButton) { renderCommandPaletteSheet() }
     }
 
-    private fun toggleIconBand() {
-        if (iconBandPanel.visibility == View.VISIBLE) {
-            iconBandPanel.visibility = View.GONE
-            iconBandToggle.rotation = 0f
-        } else {
-            iconBandPanel.visibility = View.VISIBLE
-            iconBandToggle.rotation = 90f
+    private fun handleToolbarAction(action: ToolbarAction) {
+        when (action) {
+            ToolbarAction.UNDO -> sendCtrlShortcut(KeyEvent.KEYCODE_Z)
+            ToolbarAction.REDO -> sendCtrlShortcut(KeyEvent.KEYCODE_Y)
+            ToolbarAction.CUT -> currentInputConnection.performContextMenuAction(android.R.id.cut)
+            ToolbarAction.COPY -> currentInputConnection.performContextMenuAction(android.R.id.copy)
+            ToolbarAction.PASTE -> performPaste()
+            ToolbarAction.CLIPBOARD_HISTORY -> renderClipboardSheet()
+            ToolbarAction.QWERTZ -> setManualProfile(KeyboardProfile.NORMAL)
+            ToolbarAction.SPECIAL_1 -> {
+                manualProfileOverride = KeyboardProfile.NORMAL
+                switchKeyboard(symbolsKeyboard)
+            }
+            ToolbarAction.SPECIAL_2 -> {
+                manualProfileOverride = KeyboardProfile.DEVELOPER
+                switchKeyboard(functionKeyboard)
+            }
+            ToolbarAction.COLOR_PICKER -> renderColorSheet()
+            ToolbarAction.CALCULATOR -> renderCalculatorSheet()
+            ToolbarAction.HANDWRITING -> {
+                stylusSupport.setMode(StylusMode.HANDWRITING)
+                renderHandwritingSheet()
+            }
+            ToolbarAction.ESCAPE -> sendKeyDownUp(KeyEvent.KEYCODE_ESCAPE)
+            ToolbarAction.TAB -> sendKeyDownUp(KeyEvent.KEYCODE_TAB)
+            ToolbarAction.HOME -> sendKeyDownUp(KeyEvent.KEYCODE_MOVE_HOME)
+            ToolbarAction.END -> sendKeyDownUp(KeyEvent.KEYCODE_MOVE_END)
+            ToolbarAction.WORKFLOW_START -> dispatchVtAction("start_workflow", mapOf("name" to "default"))
+            ToolbarAction.WORKFLOW_STOP -> dispatchVtAction("stop_workflow")
+            ToolbarAction.RECORDER_TOGGLE -> dispatchVtAction("toggle_recorder")
+            ToolbarAction.WATCHDOG_TOGGLE -> dispatchVtAction("toggle_watchdog")
+            ToolbarAction.VT_SLOT_1 -> dispatchConfiguredVtSlot(1)
+            ToolbarAction.VT_SLOT_2 -> dispatchConfiguredVtSlot(2)
+            else -> {
+                val functionNumber = action.name.removePrefix("F").toIntOrNull() ?: return
+                sendKeyDownUp(KeyEvent.KEYCODE_F1 + functionNumber - 1)
+            }
         }
+    }
+
+    private fun dispatchConfiguredVtSlot(index: Int) {
+        val slot = prefsStore.getVtKeySlot(index)
+        if (slot.script.isBlank()) {
+            Toast.makeText(this, "${slot.label} ist nicht belegt", Toast.LENGTH_SHORT).show()
+            return
+        }
+        dispatchVtAction(
+            action = "run_script",
+            payload = mapOf(
+                "eventSlot" to "slot_$index",
+                "message" to "${slot.label} vom VT-Keypad",
+                "script" to slot.script
+            )
+        )
+    }
+
+    private fun dispatchVtAction(action: String, payload: Map<String, String> = emptyMap()) {
+        if (!ImeSecurityPolicy.canSendToAutomation(currentEditorContext)) {
+            Toast.makeText(this, "Sensitive Feld: VT-Aktion blockiert", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val sent = actionRouter.route(ImeCommand.VtCommand(action, payload))
+        Toast.makeText(
+            this,
+            if (sent) "VT-Aktion gesendet" else "VisualTasker nicht erreichbar",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun bindRightNumpad(root: View) {
@@ -497,6 +548,118 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
         showSheet("Color Picker", body, replaceKeyboard = true)
     }
 
+    private fun renderHandwritingSheet() {
+        stylusSupport.setMode(StylusMode.HANDWRITING)
+        val body = verticalContainer()
+        val status = TextView(this).apply {
+            text = "Deutsches Handschriftmodell wird vorbereitet ..."
+            setTextColor(Color.LTGRAY)
+        }
+        val canvas = HandwritingCanvasView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (170 * resources.displayMetrics.density).toInt()
+            )
+        }
+        val result = TextView(this).apply {
+            text = "Noch kein Ergebnis"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setPadding(8, 8, 8, 8)
+        }
+        val candidates = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val clearButton = Button(this).apply { text = "Löschen" }
+        val recognizeButton = Button(this).apply {
+            text = "Erkennen"
+            isEnabled = false
+        }
+        val insertButton = Button(this).apply {
+            text = "Einfügen"
+            isEnabled = false
+        }
+
+        var selectedCandidate = ""
+        clearButton.setOnClickListener {
+            canvas.clearInk()
+            candidates.removeAllViews()
+            selectedCandidate = ""
+            result.text = "Noch kein Ergebnis"
+            insertButton.isEnabled = false
+        }
+        recognizeButton.setOnClickListener {
+            if (!canvas.hasInk) {
+                status.text = "Bitte zuerst schreiben"
+                return@setOnClickListener
+            }
+            recognizeButton.isEnabled = false
+            status.text = "Erkennung läuft ..."
+            handwritingRecognizer.recognize(
+                ink = canvas.snapshotInk(),
+                width = canvas.width.toFloat(),
+                height = canvas.height.toFloat(),
+                preContext = inputFacade.getTextBeforeCursor(20),
+                onResult = { options ->
+                    candidates.removeAllViews()
+                    selectedCandidate = options.firstOrNull().orEmpty()
+                    result.text = selectedCandidate.ifBlank { "Nichts erkannt" }
+                    options.forEach { option ->
+                        candidates.addView(
+                            Button(this).apply {
+                                text = option
+                                setOnClickListener {
+                                    selectedCandidate = option
+                                    result.text = option
+                                    insertButton.isEnabled = true
+                                }
+                            },
+                            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        )
+                    }
+                    insertButton.isEnabled = selectedCandidate.isNotBlank()
+                    recognizeButton.isEnabled = true
+                    status.text = if (options.isEmpty()) "Keine Übereinstimmung" else "Erkannt"
+                },
+                onFailure = { error ->
+                    recognizeButton.isEnabled = true
+                    status.text = "Erkennung fehlgeschlagen: ${error.message ?: "unbekannter Fehler"}"
+                }
+            )
+        }
+        insertButton.setOnClickListener {
+            if (selectedCandidate.isNotBlank()) {
+                insertText(selectedCandidate)
+                canvas.clearInk()
+                hideSheet()
+                stylusSupport.setMode(StylusMode.KEYBOARD)
+            }
+        }
+
+        controls.addView(clearButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        controls.addView(recognizeButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        controls.addView(insertButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        body.addView(status)
+        body.addView(canvas)
+        body.addView(result)
+        body.addView(candidates)
+        body.addView(controls)
+        showSheet("Handschrift", body, replaceKeyboard = true)
+
+        handwritingRecognizer.prepare(
+            onReady = {
+                status.text = "Bereit - mit Finger oder Stift schreiben"
+                recognizeButton.isEnabled = true
+            },
+            onFailure = { error ->
+                status.text = "Modell nicht verfügbar: ${error.message ?: "Download fehlgeschlagen"}"
+            }
+        )
+    }
+
     private fun renderClipboardSheet() {
         val values = prefsStore.getClipboardHistory()
         if (values.isEmpty()) {
@@ -601,7 +764,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
         })
         body.addView(Button(this).apply {
             text = "Stylus-Modus: Handwriting"
-            setOnClickListener { stylusSupport.setMode(StylusMode.HANDWRITING) }
+            setOnClickListener { renderHandwritingSheet() }
         })
         body.addView(Button(this).apply {
             text = "Stylus-Modus: Keyboard"

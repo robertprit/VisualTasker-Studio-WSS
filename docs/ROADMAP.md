@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-09-18
+Stand: 2026-09-20
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
@@ -50,15 +50,16 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - WatchDog-Ereignisse sind als eigene `ExecutionTrace`-kompatible Quelle angebunden und erfassen App-Start, Activity-/App-Wechsel, Button-Klicks sowie Screen-Lock/-Unlock; visuelle Absetzung und LogConsole-Links sind noch nicht final.
 - Floating Overlays und LiveMarker sind als Basis vorhanden, aber noch nicht final integriert.
 - Marker/Vision/Canvas/Datastore brauchen saubere Persistenz, klare Contracts und reale Pipeline-Anbindung.
-- MainScreen ist noch nicht bereinigt oder als alte fixe Studio-Darstellung sauber ersetzt.
+- MainScreen ist als produktiver Pfad stillgelegt; ein adaptiver Studio-Panel-Preset ist in den Workspace-Layout-Einstellungen verfuegbar.
 - Einstellungen sind noch nicht vollstaendig uebergreifend konsolidiert.
 
 ## Meilensteine Bis Stable V1
 
-Aktueller Arbeitsstamm: M10/C6 Release-Haertung. M1, M2.1 und M9.1 sind technisch
-abgeschlossen. Settings, Plugin-Readiness, Persistenz, Release-Preflight und die
-automatische Smoke-Matrix sind implementiert; offen bleiben vor allem manuelle
-visuelle Abnahmen, externe Provider und die MainScreen-Produktentscheidung.
+Aktueller Arbeitsstamm: Editor-/Runtime-Kern und Stable-V1-Haertung. M1, M2.1 und
+M9.1 sind technisch abgeschlossen. Die noch offenen VisualAsset-Details bleiben
+in M6.1 zurueckgestellt. Der neue Konsolidierungs- und Cleanup-Auftrag ist als
+C7 vorgemerkt und startet erst nach dem aktuellen Hauptarbeitsstamm mit einer
+strikt lesenden Bestandsaufnahme.
 
 ### M1: Editor-Core Finalisieren
 
@@ -200,17 +201,34 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 ### M6.1: Visual Abstraction Layer Und VisualAsset Manager
 
 - [ ] VAL als gemeinsame Sprache fuer Block-, Node-, Port-, Facet-, Marker- und Overlay-Darstellung festziehen.
-- [ ] M3ShapeMaker als VisualAsset Manager fuer Blockformen, Nodeformen, Portformen, Icons, Handles und Facet-Designs anbinden.
+- [x] M3ShapeMaker-Design-Editor und neutralen `.ema`-Assetpfad in WSS anbinden.
+- [x] Persistenten VisualAsset-Katalog mit Import, Export, Suche, Filter und Historie bereitstellen.
+- [x] BlockEditor und FlowEditor koennen gebundene VisualAssets ueber stabile Asset-IDs aufloesen.
+- [ ] Port-, Icon-, Handle-, Facet- und Overlay-Assets als vollstaendige Runtime-Consumer anbinden.
 - [ ] BlockDesigner zeigt parallel betroffene FlowchartNode-Vorschau an.
-- [ ] Asset-Katalog fuer Standard-, Custom- und Plugin-Assets speichern, bearbeiten, loeschen und versionieren.
+- [ ] Asset-Katalog im Designer vollstaendig bearbeiten, loeschen und versionieren.
 - [x] Austauschbare Toolbox-Sets fuer Standard, Custom, Mixed, JavaScript und Plugin-Familien einrichten.
 - [x] `.ema`-Dateien fuer Shapes, Motion, Draw-Pfade und wiederverwendbare visuelle Assets spezifizieren.
 - [ ] Compose-Overlay-Controls nur als bewusstes Rich-Overlay-Konzept behandeln; gezeichnete Block-/Node-Kerne bleiben performant und serialisierbar.
 - [ ] DnD-Listen als generische Item-Transport-Schicht fuer Marker, RailTrace, Inspector, Datastore, TextEditor, BlockEditor und FlowEditor ausbauen.
+- [ ] Asset-Bindings, fehlende Assets und Schema-Migrationen in Projekt-Preflight und Diagnoseansichten vollstaendig abbilden.
 
 ### M7: Recording Und RailTrace
 
 - [x] Recording Sessions speichern und laden.
+- [x] R0 Ownership-Audit abgeschlossen: kanonischer Record, Raw Evidence, Replay, Run und WatchDog besitzen explizite Write- und Read-Grenzen.
+- [x] R1 Recorder-Identitaeten und deterministische Ordnung mit Sequence, monotonic time und stabiler ID gehaertet.
+- [x] R2 Steps referenzieren typisierte Input-, Window-, Accessibility- und Visual-Evidence statt Screenshotdaten zu besitzen.
+- [x] R3 Recording, Record, Replay, DryRun, WetRun und WatchDog als getrennte Domaenen festgeschrieben.
+- [x] R4 Review bewahrt Originalvorschlag und Human Correction; `UNREVIEWED` und `DEFERRED` sind explizit.
+- [x] R5 Replay-Bookmark speichert Record, Entry, Phase, Position, Tempo und Auswahl ohne automatisches Resume.
+- [x] R6 Prozessabbruch wird als `INTERRUPTED` wiederhergestellt und bleibt diagnostizierbar.
+- [x] R7 Record-Projektionen bleiben read-only; Workflow-Erzeugung fuehrt spaeter ausschliesslich ueber Interpretation, Proposal und Review.
+- [x] R8 Kanonisches Interaction-Schema mit gemeinsamem Header und typisierten Tap-, Swipe-, Text-, Window- und Screenshot-Payloads umgesetzt; redigierter Text behaelt keinen Klartext.
+- [x] R9 Room-Schema v3 migriert Tap-Daten verlustfrei in eine gemeinsame Interaction-Tabelle; JSONL-Import bewahrt stabile RawEvent-Provenance und kann atomar persistiert werden.
+- [x] R10 Read-only Integrity-/Provenance-Pruefung validiert RawEvent-, Interaction-, Evidence-, Resource- und Step-Referenzen deterministisch; RailTrace zeigt den abgeleiteten Step-Report, besitzt aber keine Prueflogik.
+- [x] Kanonische Room-Records mit korrelierter JSONL-Raw-Evidence verbinden, doppelte Session-Eintraege vermeiden und beide Ebenen in RailTrace zusammenfuehren.
+- [x] Records-Leerzustand ohne erfundene Demo-Schritte darstellen.
 - [x] RailTrace Session-Liste und aktive Session-Auswahl einfuehren.
 - [x] Timeline fuer passive Activity-/Scene-Dauer und aktive Events weiter haerten.
 - [x] RailTrace-Modi `Program`, `Step`, `Live`, `Replay` und `Curate` als Vertrag modellieren.
@@ -302,22 +320,30 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 - [x] Workflow/Record/WatchDog-Rail-Modi im RailTrace weiter trennen.
 - [x] `ExecutionTrace` als gemeinsame Run-Operation-Spur fuer Runtime, Flowchart und RailTrace eingefuehrt.
 - [ ] FlowEditor Layout-/Port-/Routing-Finalisierung fortsetzen.
-- [ ] Block/Flow/Text-Synchronisation fuer aktive Auswahl und Undo-Zustand weiter haerten.
+- [x] Block/Flow/Text-Synchronisation fuer aktive Auswahl und Undo-Zustand weiter haerten.
 - [x] Datastore als zentrale Worldview-Ansicht strukturieren: Human, Machine Vision, Runtime, Resources, Junktor.
 - [x] AI-Verarbeitungsschicht als Proposal-/Structured-Result-Grenze per ADR festhalten.
 
 ### C2: Editor-Paritaet Und Gemeinsame Bedienlogik Finalisieren
 
-- [ ] BlockEditor, FlowEditor und TextEditor nutzen dieselben Selection-, Focus- und Highlight-Contracts.
+- [x] BlockEditor, FlowEditor und TextEditor nutzen dieselben Selection-, Focus- und Highlight-Contracts.
 - [ ] Undo/Redo fuer Block, Flow und Text ueber gemeinsame Workflow-Commands absichern.
 - [ ] Zoom, Pan, Center-on-Focus und Minimap-Verhalten in BlockEditor und FlowEditor vereinheitlichen.
 - [ ] Drag/Drop-Feedback fuer Dock, Undock, Drop, Delete und Reject visuell, haptisch und akustisch angleichen.
 - [ ] Kontextmenues fuer Block, Node, Edge, Textzeile und RailTrace-Step konsistent modellieren.
-- [ ] Inspector-Sheets in BlockEditor und FlowEditor auf editierbare Kerndaten reduzieren.
-- [ ] Debug-/Info-Daten aus Inspectoren in DebugInfo und LogConsole verschieben.
+- [x] Inspector-Sheets in BlockEditor und FlowEditor auf editierbare Kerndaten reduzieren.
+- [x] Debug-/Info-Daten aus Inspectoren in DebugInfo und LogConsole verschieben.
 - [ ] BlockDesigner und Node-/Shape-Designer ueber VisualAsset Contracts verbinden.
 - [ ] Reporter-, Operator- und Dataflow-Darstellung in BlockEditor und FlowEditor semantisch angleichen.
-- [ ] Regressionstests fuer Fokuswechsel, Panelwechsel, Drag, Zoom und Auswahl-Sync ergaenzen.
+- [x] Regressionstests fuer Fokuswechsel, Panelwechsel, Drag, Zoom und Auswahl-Sync ergaenzen.
+
+C2-Haertung 2026-09-20: Externe Blockauswahl wird nicht mehr als lokale
+Benutzerauswahl zurueckgespiegelt. Jede kanonische Dokumentersetzung reconciled
+die aktive Auswahl sofort. EMScript Auto-Sync, bestaetigtes Apply und Datei-Laden
+tragen getrennte Mutationsquellen; Auto-Sync und reine Flow-Moves werden als
+zusammenhaengende Undo-Schritte behandelt. Flow-Fokus verschiebt den Viewport nur
+fuer ausserhalb liegende Ziele und niemals waehrend Node-/Kanteninteraktionen.
+Der vollstaendige manuelle Undo/Redo-Abnahmetest bleibt vor dem Abhaken offen.
 
 ### C3: Runtime, EMScript Und Command-Katalog Releasefest Machen
 
@@ -385,6 +411,22 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 - [ ] Manuelle Geraete-Abnahmematrix vollstaendig durchlaufen.
 - [ ] Finalen Repo-Stand nach Freigabe committen, signieren, taggen und pushen.
 
+### C7: Konsolidierung, Cleanup Und Naechster Vertikaler Slice (Zurueckgestellt)
+
+Grundlage: `/home/main/Schreibtisch/aufräumen.md`. Dieser Meilenstein startet
+ausdruecklich ohne neue Feature-Welle und erst nach dem aktuellen Hauptarbeitsstamm.
+
+- [ ] Read-only-Inventur aller Module, Abhaengigkeiten, Modelle, Runtime-Pfade, Persistenz, Tests und Dokumente abschliessen.
+- [ ] Source-of-Truth-, Runtime-Authority- und Write-Authority-Matrix fuer Workflow, Worldview, Recorder, Runtime und Projektionen erstellen.
+- [ ] Recorder-Istpipeline von RecordingSession ueber Raw Evidence, StepCandidate und Review bis ReviewedStep dokumentieren.
+- [ ] EMScript Lexer/Parser/AST-IR/Validator/Generator/Runtime gegen den tatsaechlichen Codebestand klassifizieren; Compiler, Bytecode und VM nicht behaupten, solange sie fehlen.
+- [ ] Three-Editor-Roundtrip inklusive stabiler Block-, Node-, Branch-, Variablen- und Connection-Identitaeten pruefen.
+- [ ] Demo-, Fixture-, Legacy- und Parallelpfade als KEEP, MIGRATE, DEPRECATE, REMOVE oder DECISION_REQUIRED klassifizieren.
+- [ ] Nur eindeutig reproduzierbare Buildartefakte und nachweislich tote Pfade entfernen; Migrationen, Golden Fixtures, Recorder-/Datasetdaten und unklare Dateien behalten.
+- [ ] Architektur-, Recorder-, EMScript-, Provider- und Worldview-Dokumentation auf IMPLEMENTED, PARTIAL, PLANNED und DEPRECATED abgleichen.
+- [ ] Projekttracker und Stable-V1-Risikoliste auf den nachgewiesenen Codezustand bringen.
+- [ ] Genau einen minimalen Slice vorbereiten: Android/A11y Observation -> WorldBefore -> WorkflowAction -> Provider -> ExecutionResult -> frische Observation -> WorldAfter -> ExperienceRecord.
+
 ## Offene Entscheidungen
 
 - [ ] Namen finalisieren: WorkspaceDocument, BlockViewDocument, FlowViewDocument, FlowchartProjection, IRGraph.
@@ -409,6 +451,15 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 8. RailTrace WatchDog-Visualisierung fuer Tasker, Plugin, VT2VT und Provider-Ereignisse weiter farblich/semantisch trennen.
 9. [x] VisualAssets/ShapeMaker-Hub oeffnen, `.ema`-Descriptor pruefen und Toolbox-Set-Konzept im Workspace verankern.
 10. Roundtrip- und Persistenztests fuer Workflow, RecordTrace, Marker und Canvas-Evidence erweitern.
+
+### 2026-09-20
+
+- [x] BlockEditor-Material3-ABI an den WSS-Host angeglichen; Inspector-Auswahl loest keinen `NoSuchMethodError` mehr aus.
+- [x] Text/Block/Flow-Identity bei Feldwertaenderungen und Roundtrip automatisiert abgesichert.
+- [x] Selection-Echos zwischen Host und BlockEditor unterdrueckt, ohne echte Benutzerauswahl zu verlieren.
+- [x] Aktive Auswahl wird nach jeder kanonischen Dokumentersetzung reconciled.
+- [x] Undo-Quellen fuer EMScript Auto-Sync, Confirm-Apply und Datei-Laden getrennt.
+- [x] Flow-Fokus-Reveal gegen laufendes Dragging und Kantenverbinden abgesichert.
 
 ## Abnahmeprotokoll
 

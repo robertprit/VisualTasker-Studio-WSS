@@ -225,7 +225,40 @@ object EmaVisualAssetStore {
                 val descriptor = runCatching { EmaVisualAssetCodec.decodeDescriptor(file.readText()) }.getOrNull()
                 (descriptor as? EmaDescriptorDecodeResult.Decoded)?.descriptor?.let { StoredEmaVisualAsset(it, file) }
             }
+            .sortedWith(
+                compareBy<StoredEmaVisualAsset> { it.descriptor.type.name }
+                    .thenBy { it.descriptor.name }
+                    .thenByDescending { it.descriptor.version }
+            )
+
+    fun latestByAssetId(directory: File): List<StoredEmaVisualAsset> =
+        list(directory)
+            .groupBy { it.descriptor.assetId }
+            .values
+            .mapNotNull { versions -> versions.maxByOrNull { it.descriptor.version } }
             .sortedWith(compareBy<StoredEmaVisualAsset> { it.descriptor.type.name }.thenBy { it.descriptor.name })
+
+    fun createNextVersion(directory: File, asset: StoredEmaVisualAsset, name: String = asset.descriptor.name): EmaVisualAssetImportResult =
+        mutateIdentity(
+            directory = directory,
+            source = asset,
+            assetId = asset.descriptor.assetId,
+            name = name,
+            version = asset.descriptor.version + 1,
+        )
+
+    fun duplicate(
+        directory: File,
+        asset: StoredEmaVisualAsset,
+        assetId: String,
+        name: String = "${asset.descriptor.name} Copy",
+    ): EmaVisualAssetImportResult = mutateIdentity(
+        directory = directory,
+        source = asset,
+        assetId = assetId,
+        name = name,
+        version = 1,
+    )
 
     fun remove(directory: File, asset: StoredEmaVisualAsset): Boolean = runCatching {
         val root = directory.canonicalFile
@@ -233,6 +266,27 @@ object EmaVisualAssetStore {
         require(target.parentFile == root) { "EMA asset is outside the managed catalog." }
         !target.exists() || target.delete()
     }.getOrDefault(false)
+
+    fun removeAllVersions(directory: File, assetId: String): Boolean =
+        list(directory)
+            .filter { it.descriptor.assetId == assetId }
+            .all { remove(directory, it) }
+
+    private fun mutateIdentity(
+        directory: File,
+        source: StoredEmaVisualAsset,
+        assetId: String,
+        name: String,
+        version: Int,
+    ): EmaVisualAssetImportResult = runCatching {
+        val root = JSONObject(source.file.readText())
+        root.getJSONObject("asset").apply {
+            put("assetId", assetId)
+            put("name", name)
+            put("version", version)
+        }
+        importRaw(directory, root.toString(2))
+    }.getOrElse { EmaVisualAssetImportResult.Rejected(it.message ?: "EMA catalog mutation failed") }
 }
 
 fun StoredEmaVisualAsset.toWorkspaceResource(): WorkspaceResource = WorkspaceResource(

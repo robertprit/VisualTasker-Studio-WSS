@@ -36,6 +36,24 @@ object RecordingSessionRuntime {
         }
     }
 
+    suspend fun continueInterrupted(
+        context: Context,
+        interruptedSessionId: String,
+        createdBy: String = "railtrace-recovery",
+    ): RecordingOperationResult<RecordingSession> {
+        val coordinator = coordinator(context)
+        return coordinator.continueInterruptedSession(interruptedSessionId, createdBy).also { result ->
+            if (result is RecordingOperationResult.Success) {
+                activeSessionIdRef.set(result.value.sessionId)
+                RecordingPlaybackRuntime.refresh(context)
+                Log.i(
+                    TAG,
+                    "Session ${result.value.sessionId} continued from ${result.value.resumedFromSessionId}",
+                )
+            }
+        }
+    }
+
     fun recordTap(xPx: Int, yPx: Int) {
         if (activeSessionIdRef.get() == null) return
         val job = scope.launch {

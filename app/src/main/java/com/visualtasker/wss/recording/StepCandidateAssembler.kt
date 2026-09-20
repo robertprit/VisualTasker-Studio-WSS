@@ -2,9 +2,9 @@ package com.visualtasker.wss.recording
 
 object StepCandidateAssembler {
     fun assemble(playback: RecordingPlaybackDocument): StepCandidateDocument {
-        val candidates = playback.entries.sortedBy(RecordingPlaybackEntry::sequence).mapIndexed { index, entry ->
-            assembleTap(playback, entry, index)
-        }
+        val candidates = playback.entries.sortedBy(RecordingPlaybackEntry::sequence).mapNotNull { entry ->
+            assembleTap(playback, entry)
+        }.mapIndexed { index, candidate -> candidate.copy(ordinal = index + 1) }
         return StepCandidateDocument(
             documentId = "step-candidates:${playback.sessionId}:record-v${playback.schemaVersion}",
             sessionId = playback.sessionId,
@@ -29,24 +29,24 @@ object StepCandidateAssembler {
     private fun assembleTap(
         playback: RecordingPlaybackDocument,
         entry: RecordingPlaybackEntry,
-        index: Int,
-    ): StepCandidate {
-        val tap = entry.interaction.tap
+    ): StepCandidate? {
+        val interaction = entry.interaction.interaction
+        val tap = interaction.payload as? RecordingInteractionPayload.Tap ?: return null
         val before = entry.beforeScene
         val root = before?.a11ySnapshot?.rootNode
-        val explicit = tap.targetA11yNodeId?.let { root?.findById(it) }
-        val ranked = root?.rankedContainingNodes(tap.xPx, tap.yPx).orEmpty()
+        val explicit = tap.targetReference?.let { root?.findById(it) }
+        val ranked = root?.rankedContainingNodes(tap.position.xPx, tap.position.yPx).orEmpty()
         val diagnostics = mutableListOf<StepCandidateDiagnostic>()
         val confidenceReasons = mutableListOf<ConfidenceReason>()
-        var status = StepReviewStatus.PROPOSED
+        var status = StepReviewStatus.UNREVIEWED
 
         val targetNode = when {
             explicit != null -> {
                 confidenceReasons += ConfidenceReason.EXPLICIT_RECORDED_TARGET
                 explicit
             }
-            tap.targetA11yNodeId != null -> {
-                diagnostics += diagnostic("RECORDED_TARGET_MISSING", "Das aufgezeichnete A11y-Ziel fehlt im Vorher-Snapshot.", tap.targetA11yNodeId)
+            tap.targetReference != null -> {
+                diagnostics += diagnostic("RECORDED_TARGET_MISSING", "Das aufgezeichnete A11y-Ziel fehlt im Vorher-Snapshot.", tap.targetReference)
                 confidenceReasons += ConfidenceReason.CORRUPT_SOURCE_REFERENCE
                 status = StepReviewStatus.NEEDS_REVIEW
                 ranked.firstOrNull()?.node
@@ -63,37 +63,37 @@ object StepCandidateAssembler {
             confidenceReasons -= ConfidenceReason.SINGLE_CONTAINING_NODE
             confidenceReasons += ConfidenceReason.MULTIPLE_TARGETS
             status = StepReviewStatus.NEEDS_REVIEW
-            diagnostics += diagnostic("AMBIGUOUS_TARGET", "Mehrere gleich plausible A11y-Ziele enthalten den Tap.", tap.interactionId)
+            diagnostics += diagnostic("AMBIGUOUS_TARGET", "Mehrere gleich plausible A11y-Ziele enthalten den Tap.", interaction.interactionId)
         }
         if (before == null) {
             confidenceReasons += ConfidenceReason.MISSING_BEFORE_SCENE
             status = StepReviewStatus.UNSUPPORTED
-            diagnostics += diagnostic("BEFORE_SCENE_MISSING", "Ohne Vorher-Szene kann kein belastbares Ziel abgeleitet werden.", tap.beforeSceneId)
+            diagnostics += diagnostic("BEFORE_SCENE_MISSING", "Ohne Vorher-Szene kann kein belastbares Ziel abgeleitet werden.", interaction.beforeSceneId)
         } else if (root == null) {
             confidenceReasons += ConfidenceReason.MISSING_A11Y_SNAPSHOT
             status = StepReviewStatus.NEEDS_REVIEW
-            diagnostics += diagnostic("A11Y_SNAPSHOT_MISSING", "Der Vorher-Szene fehlt ein A11y-Snapshot.", tap.beforeSceneId)
+            diagnostics += diagnostic("A11Y_SNAPSHOT_MISSING", "Der Vorher-Szene fehlt ein A11y-Snapshot.", interaction.beforeSceneId)
         }
         if (entry.afterScene == null && entry.transitionStatus != RecordingPlaybackTransitionStatus.UNCHANGED) {
             confidenceReasons += ConfidenceReason.MISSING_AFTER_SCENE
-            if (status == StepReviewStatus.PROPOSED) status = StepReviewStatus.NEEDS_REVIEW
+            if (status == StepReviewStatus.UNREVIEWED) status = StepReviewStatus.NEEDS_REVIEW
         }
 
         targetNode?.let { node ->
             if (!node.clickable) confidenceReasons += ConfidenceReason.TARGET_NOT_CLICKABLE
             if (!node.visibleToUser) confidenceReasons += ConfidenceReason.TARGET_NOT_VISIBLE
             if (!node.enabled) confidenceReasons += ConfidenceReason.TARGET_NOT_ENABLED
-            if (!node.contains(tap.xPx, tap.yPx)) confidenceReasons += ConfidenceReason.TAP_OUTSIDE_TARGET
+            if (!node.contains(tap.position.xPx, tap.position.yPx)) confidenceReasons += ConfidenceReason.TAP_OUTSIDE_TARGET
         } ?: run {
             confidenceReasons += ConfidenceReason.COORDINATE_ONLY
-            if (status == StepReviewStatus.PROPOSED) status = StepReviewStatus.NEEDS_REVIEW
+            if (status == StepReviewStatus.UNREVIEWED) status = StepReviewStatus.NEEDS_REVIEW
         }
 
         val target = targetNode?.toCandidateTarget(
             tap = tap,
             scene = before,
             alternatives = topTies.map { it.node.stableSnapshotNodeId }.filterNot { it == targetNode.stableSnapshotNodeId },
-        ) ?: CandidateTarget.Coordinate(tap.xPx, tap.yPx)
+        ) ?: CandidateTarget.Coordinate(tap.position.xPx, tap.position.yPx)
         val confidence = CandidateConfidence(
             level = confidenceLevel(explicit != null, targetNode, topTies.size, before != null, root != null),
             reasons = confidenceReasons.distinct(),
@@ -107,16 +107,17 @@ object StepCandidateAssembler {
             afterFrameId = entry.afterScene?.primaryFrame?.frame?.frameId,
             afterAssetReference = entry.afterScene?.primaryFrame?.frame?.assetReference,
             afterA11ySnapshotId = entry.afterScene?.a11ySnapshot?.snapshotId,
-            tapXpx = tap.xPx,
-            tapYpx = tap.yPx,
+            tapXpx = tap.position.xPx,
+            tapYpx = tap.position.yPx,
             targetBounds = (target as? CandidateTarget.A11y)?.let { listOf(it.left, it.top, it.right, it.bottom) },
+            evidenceRefs = entry.evidence.map(RecordingEvidenceRef::evidenceId),
         )
         return StepCandidate(
-            candidateId = "step-candidate:${playback.sessionId}:${tap.interactionId}:v${playback.schemaVersion}",
+            candidateId = "step-candidate:${playback.sessionId}:${interaction.interactionId}:v${playback.schemaVersion}",
             sessionId = playback.sessionId,
-            ordinal = index + 1,
+            ordinal = 0,
             sourceEntryId = entry.entryId,
-            sourceInteractionId = tap.interactionId,
+            sourceInteractionId = interaction.interactionId,
             action = CandidateAction.TAP,
             target = target,
             displayLabel = target.defaultLabel(),
@@ -195,7 +196,7 @@ private fun A11yNodeSnapshot.contains(x: Int, y: Int): Boolean = x in left..righ
 private fun A11yNodeSnapshot.hasLabel(): Boolean = !text.isNullOrBlank() || !contentDescription.isNullOrBlank()
 
 private fun A11yNodeSnapshot.toCandidateTarget(
-    tap: TapInteraction,
+    tap: RecordingInteractionPayload.Tap,
     scene: RecordingPlaybackScene?,
     alternatives: List<String>,
 ) = CandidateTarget.A11y(
@@ -213,8 +214,8 @@ private fun A11yNodeSnapshot.toCandidateTarget(
     enabled = enabled,
     packageName = scene?.scene?.windowContext?.packageName,
     windowId = scene?.scene?.windowContext?.windowId,
-    xPx = tap.xPx,
-    yPx = tap.yPx,
+    xPx = tap.position.xPx,
+    yPx = tap.position.yPx,
     alternativeNodeIds = alternatives,
 )
 

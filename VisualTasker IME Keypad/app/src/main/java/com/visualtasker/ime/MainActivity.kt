@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.KeyEvent
 import android.widget.Button
+import android.widget.EditText
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.Toast
@@ -35,6 +36,10 @@ class MainActivity : AppCompatActivity() {
         val s211 = findViewById<Spinner>(R.id.spinnerSpecial211)
         val s212 = findViewById<Spinner>(R.id.spinnerSpecial212)
         val s213 = findViewById<Spinner>(R.id.spinnerSpecial213)
+        val vtSlot1Label = findViewById<EditText>(R.id.vtSlot1Label)
+        val vtSlot1Script = findViewById<EditText>(R.id.vtSlot1Script)
+        val vtSlot2Label = findViewById<EditText>(R.id.vtSlot2Label)
+        val vtSlot2Script = findViewById<EditText>(R.id.vtSlot2Script)
 
         val adapter = ArrayAdapter(
             this,
@@ -53,6 +58,12 @@ class MainActivity : AppCompatActivity() {
         setSpinnerSelection(s211, prefs.getSpecialKeyMapping(-211, KeyEvent.KEYCODE_F2))
         setSpinnerSelection(s212, prefs.getSpecialKeyMapping(-212, KeyEvent.KEYCODE_F3))
         setSpinnerSelection(s213, prefs.getSpecialKeyMapping(-213, KeyEvent.KEYCODE_F4))
+        val slot1 = prefs.getVtKeySlot(1)
+        val slot2 = prefs.getVtKeySlot(2)
+        vtSlot1Label.setText(slot1.label)
+        vtSlot1Script.setText(slot1.script)
+        vtSlot2Label.setText(slot2.label)
+        vtSlot2Script.setText(slot2.script)
 
         findViewById<Button>(R.id.saveSettingsButton).setOnClickListener {
             prefs.setDarkKeyboardEnabled(darkSwitch.isChecked)
@@ -64,6 +75,8 @@ class MainActivity : AppCompatActivity() {
             prefs.setSpecialKeyMapping(-211, selectedKeyCode(s211))
             prefs.setSpecialKeyMapping(-212, selectedKeyCode(s212))
             prefs.setSpecialKeyMapping(-213, selectedKeyCode(s213))
+            prefs.setVtKeySlot(1, vtSlot1Label.text.toString(), vtSlot1Script.text.toString())
+            prefs.setVtKeySlot(2, vtSlot2Label.text.toString(), vtSlot2Script.text.toString())
             Toast.makeText(this, "Einstellungen gespeichert", Toast.LENGTH_SHORT).show()
         }
     }

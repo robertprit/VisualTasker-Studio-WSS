@@ -2,6 +2,7 @@ package com.visualtasker.wss.emscript.apply
 
 import com.visualtasker.wss.emscript.parser.EmscriptParseIssue
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
+import com.visualtasker.wss.workspace.model.WorkspaceIdentityReconciler
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
@@ -18,6 +19,7 @@ class EmscriptApplyGuard(
         draft: String,
         workspaceId: String = "workflow-main",
         registry: BlockRegistry? = null,
+        previousDocument: WorkspaceDocument? = null,
     ): EmscriptApplyGuardResult {
         val importResult = importer.import(draft, workspaceId = workspaceId)
         if (!importResult.isSuccess || importResult.document == null) {
@@ -27,7 +29,7 @@ class EmscriptApplyGuard(
             )
         }
 
-        val imported = importResult.document
+        val imported = WorkspaceIdentityReconciler.reconcile(previousDocument, importResult.document)
         val effectiveRegistry = registry ?: imported.registryWithVariables()
         val validation = if (registry != null) {
             Validator.validate(imported, registry)

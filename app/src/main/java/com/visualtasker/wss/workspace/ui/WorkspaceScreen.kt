@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -87,10 +88,12 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Minimize
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlayArrow
@@ -114,11 +117,30 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import com.compose.canvas.VectorShapeEditorApp
+import com.compose.canvas.asset.EmaCodec as ShapeMakerEmaCodec
+import com.compose.canvas.asset.VisualAssetType as ShapeMakerVisualAssetType
+import com.compose.canvas.asset.newVisualAsset
+import com.compose.canvas.core.VectorDocument
+import com.compose.canvas.editor.EditorState
+import com.compose.canvas.renderer.VectorRenderer
+import com.compose.canvas.viewport.ViewportState
 import com.visualtasker.chartgraph.compose.ChartGraph
+import com.visualtasker.chartgraph.domain.BoxPlotPoint
+import com.visualtasker.chartgraph.domain.BubblePoint
+import com.visualtasker.chartgraph.domain.CandlePoint
 import com.visualtasker.chartgraph.domain.ChartDocument
 import com.visualtasker.chartgraph.domain.ChartKind
 import com.visualtasker.chartgraph.domain.ChartPoint
 import com.visualtasker.chartgraph.domain.ChartSeries
+import com.visualtasker.chartgraph.domain.DiagramEdge
+import com.visualtasker.chartgraph.domain.DiagramNode
+import com.visualtasker.chartgraph.domain.GanttTask
+import com.visualtasker.chartgraph.domain.HeatmapCell
+import com.visualtasker.chartgraph.domain.MosaicCell
+import com.visualtasker.chartgraph.domain.RadarAxis
+import com.visualtasker.chartgraph.domain.RadarSeries
+import com.visualtasker.chartgraph.domain.VennSet
+import com.visualtasker.chartgraph.domain.VennOverlap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -218,6 +240,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.visualtasker.wss.accessibility.RuntimePoint
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
 import com.visualtasker.wss.components.IconMotionConfig
@@ -235,6 +258,12 @@ import com.visualtasker.wss.recording.RecordingPlaybackRuntime
 import com.visualtasker.wss.recording.RecordingPlaybackRuntimeState
 import com.visualtasker.wss.recording.RecordingPlaybackState
 import com.visualtasker.wss.recording.RecordingPlaybackStatus
+import com.visualtasker.wss.recording.RecordingOperationResult
+import com.visualtasker.wss.recording.RecordingReplayBookmark
+import com.visualtasker.wss.recording.RecordingSessionRuntime
+import com.visualtasker.wss.recording.RecordingSessionStatus
+import com.visualtasker.wss.recording.RecordingIntegrityIssue
+import com.visualtasker.wss.recording.RecordingIntegritySeverity
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
@@ -272,11 +301,18 @@ import com.visualtasker.wss.logging.StudioLogSourceSurface
 import com.visualtasker.wss.logging.toWatchDogLogProjections
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_APPLY
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_AUTO
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_CONFIRM
+import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_EMSCRIPT_FILE_PREFIX
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_FLOWCHART_PREFIX
 import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_VT2VT_PREFIX
 import com.visualtasker.wss.workspace.model.FlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.ToolboxSetMode
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
+import com.visualtasker.wss.workspace.model.WorkspaceHistoryEntry
+import com.visualtasker.wss.workspace.model.WorkspaceSelectionResolver
+import com.visualtasker.wss.workspace.model.WorkspaceSelectionEchoGuard
+import com.visualtasker.wss.workspace.model.WorkspaceMutationSourcePolicy
 import com.visualtasker.wss.workspace.model.WorkspaceReleasePreflight
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
 import com.visualtasker.wss.workspace.model.accepts
@@ -300,6 +336,7 @@ import com.visualtasker.wss.workspace.model.RailTrackKind
 import com.visualtasker.wss.workspace.model.RailTrack
 import com.visualtasker.wss.workspace.model.RecordingEventStore
 import com.visualtasker.wss.workspace.model.RecordingSessionUi
+import com.visualtasker.wss.workspace.model.mergeCanonicalRecordingSteps
 import com.visualtasker.wss.workspace.model.DatastoreResourceProjector
 import com.visualtasker.wss.workspace.model.DatastoreDomainProjector
 import com.visualtasker.wss.workspace.model.EmaVisualAssetImportResult
@@ -308,7 +345,15 @@ import com.visualtasker.wss.workspace.model.EmaVisualAssetIssueSeverity
 import com.visualtasker.wss.workspace.model.EmaVisualAssetBindingTarget
 import com.visualtasker.wss.workspace.model.EmaVisualAssetStore
 import com.visualtasker.wss.workspace.model.EmaVisualAssetType
+import com.visualtasker.wss.workspace.model.StoredEmaVisualAsset
 import com.visualtasker.wss.workspace.model.M3ShapeMakerBridgeContract
+import com.visualtasker.wss.workspace.model.VisualAssetCapabilityResolver
+import com.visualtasker.wss.workspace.model.VisualAssetBinding
+import com.visualtasker.wss.workspace.model.VisualAssetCatalog
+import com.visualtasker.wss.workspace.model.VisualAssetCatalogStore
+import com.visualtasker.wss.workspace.model.VisualAssetPresentationRuntime
+import com.visualtasker.wss.workspace.model.VisualAssetPackageCodec
+import com.visualtasker.wss.workspace.model.VisualAssetPackageStore
 import com.visualtasker.wss.workspace.model.LegacyStudioResourceImporter
 import com.visualtasker.wss.workspace.model.LegacyStudioResourceImportResult
 import com.visualtasker.wss.workspace.model.ReadOnlyKnowledgeIndexProjector
@@ -449,6 +494,9 @@ import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
 import de.visualtasker.blockeditor.compose.theme.setBlockCategoryColorOverride
 import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.blockeditor.compose.render.BlockVisualPathProvider
+import de.visualtasker.blockeditor.compose.render.BlockVisualPathResult
+import de.visualtasker.flowchart.compose.FlowchartNodeShapeProvider
 import de.visualtasker.blockeditor.registry.BlockDefinition
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
@@ -1139,8 +1187,8 @@ fun WorkspaceScreen(
             ),
         )
     }
-    val workspaceUndoStack = remember(uiPrefs) { mutableStateListOf<String>() }
-    val workspaceRedoStack = remember(uiPrefs) { mutableStateListOf<String>() }
+    val workspaceUndoStack = remember(uiPrefs) { mutableStateListOf<WorkspaceHistoryEntry>() }
+    val workspaceRedoStack = remember(uiPrefs) { mutableStateListOf<WorkspaceHistoryEntry>() }
     var lastWorkspaceChangeSource by remember(uiPrefs) { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
@@ -1772,7 +1820,12 @@ fun WorkspaceScreen(
     val logConsoleState = remember { LogConsoleUiState() }
     val emscriptApplyGuard = remember { EmscriptApplyGuard() }
     fun replaceWorkflowStateFromJson(updated: String, source: String) {
+        val previousSelection = workspaceSelectionState
         workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
+        workspaceSelectionState = WorkspaceSelectionResolver.reconcile(
+            document = workflowState.document,
+            selection = previousSelection,
+        )
         flowRuntimeSnapshot = null
         workspaceDryRunResult = null
         workspaceDryRunRevision = null
@@ -1793,8 +1846,8 @@ fun WorkspaceScreen(
                 )
                 return@applyWorkspaceJsonChange
             }
-            if (!source.coalescesWith(lastWorkspaceChangeSource)) {
-                workspaceUndoStack.add(workflowState.serializedJson)
+            if (!WorkspaceMutationSourcePolicy.coalesces(source, lastWorkspaceChangeSource)) {
+                workspaceUndoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
             }
             workspaceRedoStack.clear()
             replaceWorkflowStateFromJson(updated, source)
@@ -1832,9 +1885,16 @@ fun WorkspaceScreen(
             .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
             .updateManualContent(content)
         uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
-        when (val preview = emscriptApplyGuard.preview(content, workspaceId = "workflow-main")) {
+        when (val preview = emscriptApplyGuard.preview(
+            content,
+            workspaceId = "workflow-main",
+            previousDocument = workflowState.document,
+        )) {
             is EmscriptApplyGuardResult.Success -> {
-                applyWorkspaceJsonChange(preview.serializedWorkspaceJson, WORKFLOW_SOURCE_EMSCRIPT_APPLY)
+                applyWorkspaceJsonChange(
+                    preview.serializedWorkspaceJson,
+                    "$WORKFLOW_SOURCE_EMSCRIPT_FILE_PREFIX$name",
+                )
                 studioLogStore.append(
                     level = StudioLogLevel.INFO,
                     source = "EMSCRIPT",
@@ -1880,7 +1940,11 @@ fun WorkspaceScreen(
             documentRevision = workflowState.revision.toLong(),
             groupKey = "emscript:draft-updated:$source"
         )
-        when (val preview = emscriptApplyGuard.preview(content, workspaceId = "workflow-main")) {
+        when (val preview = emscriptApplyGuard.preview(
+            content,
+            workspaceId = "workflow-main",
+            previousDocument = workflowState.document,
+        )) {
             is EmscriptApplyGuardResult.Success -> {
                 applyWorkspaceJsonChange(preview.serializedWorkspaceJson, "$WORKFLOW_SOURCE_EMSCRIPT_APPLY:$source")
             }
@@ -1920,10 +1984,14 @@ fun WorkspaceScreen(
             .debounce(650)
             .collect { content ->
                 if (content.isBlank()) return@collect
-                when (val preview = emscriptApplyGuard.preview(content, workspaceId = "workflow-main")) {
+                when (val preview = emscriptApplyGuard.preview(
+                    content,
+                    workspaceId = "workflow-main",
+                    previousDocument = workflowState.document,
+                )) {
                     is EmscriptApplyGuardResult.Success -> {
                         if (preview.serializedWorkspaceJson != workflowState.serializedJson) {
-                            applyWorkspaceJsonChange(preview.serializedWorkspaceJson, WORKFLOW_SOURCE_EMSCRIPT_APPLY)
+                            applyWorkspaceJsonChange(preview.serializedWorkspaceJson, WORKFLOW_SOURCE_EMSCRIPT_AUTO)
                             studioLogStore.append(
                                 level = StudioLogLevel.DEBUG,
                                 source = "EMSCRIPT",
@@ -1943,8 +2011,9 @@ fun WorkspaceScreen(
         if (previous == null) {
             false
         } else {
-            workspaceRedoStack.add(workflowState.serializedJson)
-            replaceWorkflowStateFromJson(previous, "workspace:undo")
+            workspaceRedoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
+            replaceWorkflowStateFromJson(previous.serializedJson, "workspace:undo")
+            workspaceSelectionState = WorkspaceSelectionResolver.reconcile(workflowState.document, previous.selection)
             lastWorkspaceChangeSource = null
             true
         }
@@ -1954,8 +2023,9 @@ fun WorkspaceScreen(
         if (next == null) {
             false
         } else {
-            workspaceUndoStack.add(workflowState.serializedJson)
-            replaceWorkflowStateFromJson(next, "workspace:redo")
+            workspaceUndoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
+            replaceWorkflowStateFromJson(next.serializedJson, "workspace:redo")
+            workspaceSelectionState = WorkspaceSelectionResolver.reconcile(workflowState.document, next.selection)
             lastWorkspaceChangeSource = null
             true
         }
@@ -2106,6 +2176,11 @@ fun WorkspaceScreen(
     }
     val latestEmscriptProjected = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
     val latestEmscriptGenerationFailure = workflowState.emscriptProjection.exceptionOrNull()?.message
+    val visibleEmscriptDraft = currentManualEmscriptDraft()
+    val workspaceSourceLines = remember(workflowState.revision, latestEmscriptProjected, visibleEmscriptDraft) {
+        WorkspaceSelectionResolver.sourceLines(workflowState.document, latestEmscriptProjected) +
+            WorkspaceSelectionResolver.derivedSourceLines(workflowState.document, visibleEmscriptDraft)
+    }
     fun dryRunEventCount(result: EmscriptDryRunResult?): Int = when (result) {
         is EmscriptDryRunResult.Success -> result.events.size
         is EmscriptDryRunResult.Failure -> result.events.size
@@ -2144,45 +2219,67 @@ fun WorkspaceScreen(
             persistStepperState(uiPrefs, updated)
         }
     }
-    fun focusBlockFromFlowNode(nodeId: FlowNodeId) {
-        workspaceSelectionState = workspaceSelectionState.selectFlowNode(nodeId)
-        val blockId = nodeId.value.removePrefix("block:").takeIf { it != nodeId.value } ?: return
-        val session = activeBlockEditorSessionState.value ?: return
-        val target = BlockId(blockId).takeIf { it in session.controller.document.blocks } ?: return
-        focusRailTraceFromBlockId(blockId)
-        session.controller.replaceWorkspaceDocument(
-            newDocument = session.controller.document,
-            recordHistory = false,
-            focusBlockId = target,
-            selectFocusedBlock = true,
+    fun focusSemanticBlock(blockId: BlockId, source: String) {
+        if (blockId !in workflowState.document.blocks) return
+        val sourceLine = WorkspaceSelectionResolver.sourceLine(
+            document = workflowState.document,
+            blockId = blockId,
+            sourceLines = workspaceSourceLines,
         )
+        workspaceSelectionState = workspaceSelectionState.selectBlock(blockId, sourceLine, source)
+        val targetNode = blockId.toFlowNodeId()
+        selectedFlowchartNodeForInsert = targetNode
+        selectedFlowchartNodeId = targetNode
+        selectedFlowchartEdgeId = null
+        if (source != "blockeditor") {
+            activeBlockEditorSessionState.value?.controller?.focusBlock(blockId, select = true)
+        }
+        if (source != "flowchart") {
+            activeFlowchartSessionState.value
+                ?.takeIf { session -> session.graphDocument.nodes.any { it.id == targetNode } }
+                ?.controller
+                ?.dispatch(FlowInteractionAction.SelectNode(targetNode))
+        }
+        focusRailTraceFromBlockId(blockId.value)
+    }
+    fun focusBlockFromFlowNode(nodeId: FlowNodeId) {
+        val target = nodeId.toBlockIdOrNull() ?: return
+        val targetExists = target in workflowState.document.blocks
+        focusSemanticBlock(target, "flowchart")
         studioLogStore.append(
             level = StudioLogLevel.DEBUG,
             source = "FLOWCHART",
-            message = "Blockeditor auf Flowchart-Node fokussiert",
-            details = "Node=${nodeId.value}, Block=$blockId",
+            message = "Editor-Fokus aus Flowchart: ${workspaceSelectionState.sourceLine?.let { "Zeile $it" } ?: "ohne Textzeile"}",
+            details = "Node=${nodeId.value}, Block=${target.value}",
             documentRevision = workflowState.revision.toLong(),
-            groupKey = "flowchart:block-focus:$blockId"
+            groupKey = "flowchart:block-focus:${target.value}:$targetExists:${workspaceSelectionState.sourceLine}"
         )
     }
     fun focusFlowNodeFromBlock(blockId: BlockId?) {
-        val target = blockId?.let { FlowNodeId("block:${it.value}") } ?: return
-        workspaceSelectionState = workspaceSelectionState.selectBlock(blockId)
-        val session = activeFlowchartSessionState.value ?: return
-        if (session.graphDocument.nodes.none { it.id == target }) return
-        selectedFlowchartNodeForInsert = target
-        selectedFlowchartNodeId = target
-        selectedFlowchartEdgeId = null
-        session.controller.dispatch(FlowInteractionAction.SelectNode(target))
-        focusRailTraceFromBlockId(blockId.value)
+        blockId ?: return
+        focusSemanticBlock(blockId, "blockeditor")
         studioLogStore.append(
             level = StudioLogLevel.DEBUG,
             source = "BLOCKEDITOR",
             message = "Flowchart auf Block fokussiert",
-            details = "Block=${blockId.value}, Node=${target.value}",
+            details = "Block=${blockId.value}, Node=${blockId.toFlowNodeId().value}",
             documentRevision = workflowState.revision.toLong(),
             groupKey = "blockeditor:flow-focus:${blockId.value}"
         )
+    }
+    fun focusFromSourceLine(sourceLine: Int) {
+        val blockId = WorkspaceSelectionResolver.blockAtSourceLine(
+            document = workflowState.document,
+            sourceLine = sourceLine,
+            sourceLines = workspaceSourceLines,
+        )
+        if (blockId == null) {
+            workspaceSelectionState = workspaceSelectionState
+                .clearVisualSelection("texteditor")
+                .copy(sourceLine = sourceLine)
+            return
+        }
+        focusSemanticBlock(blockId, "texteditor")
     }
     fun focusRuntimeSnapshotActiveNode(snapshot: FlowRuntimeSnapshot) {
         val target = snapshot.activeNodeId ?: return
@@ -2458,15 +2555,8 @@ fun WorkspaceScreen(
     val workspaceTopGuardPx = (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP) * density
     val workspaceBottomGuardPx = if (dockAtTop) 0f else WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP * density
 
-    val demoRecorderSteps = remember {
-        mutableStateListOf(
-            RecorderStepUi("step-1", "Start App", "launch", StepStatus.Recorded, timestampMs = 0, durationMs = 900, activityName = "Launcher"),
-            RecorderStepUi("step-2", "Tippe Login", "tap", StepStatus.Edited, timestampMs = 1200, durationMs = 180, activityName = "LoginActivity"),
-            RecorderStepUi("step-3", "Warte auf Element", "wait", StepStatus.Invalid, timestampMs = 1900, durationMs = 1400, activityName = "LoginActivity"),
-            RecorderStepUi("step-4", "Bestaetigen", "tap", StepStatus.Executed, timestampMs = 3600, durationMs = 220, activityName = "DashboardActivity")
-        )
-    }
     var recordingSessions by remember(context) { mutableStateOf(RecordingEventStore.recordingSessions(context)) }
+    var recordingRecoveryMessage by remember { mutableStateOf<String?>(null) }
     var selectedRecordingSessionPath by remember(context) { mutableStateOf(recordingSessions.firstOrNull()?.path) }
     var recordingSteps by remember(context) {
         mutableStateOf(RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath))
@@ -2475,7 +2565,10 @@ fun WorkspaceScreen(
         recordingPlaybackRuntimeState.sessions.map { it.toRecordingSessionUi() }
     }
     val availableRecordingSessions = remember(persistedRecordingSessions, recordingSessions) {
-        persistedRecordingSessions + recordingSessions
+        val canonicalIds = persistedRecordingSessions.mapNotNull { it.path.recordingPlaybackSessionIdOrNull() }.toSet()
+        persistedRecordingSessions + recordingSessions.filter { legacy ->
+            legacy.linkedCanonicalSessionId !in canonicalIds
+        }
     }
     var canonicalSessionSelectionInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(persistedRecordingSessions) {
@@ -2505,10 +2598,14 @@ fun WorkspaceScreen(
             }
         }
     }
-    LaunchedEffect(selectedRecordingSessionPath) {
+    LaunchedEffect(selectedRecordingSessionPath, recordingSessions) {
         val canonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
         if (canonicalSessionId != null) {
-            recordingSteps = emptyList()
+            recordingSteps = recordingSessions
+                .firstOrNull { it.linkedCanonicalSessionId == canonicalSessionId }
+                ?.path
+                ?.let(RecordingEventStore::recordingStepsFor)
+                .orEmpty()
             RecordingPlaybackRuntime.loadSession(context, canonicalSessionId)
         } else {
             recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
@@ -2547,7 +2644,7 @@ fun WorkspaceScreen(
             selectedCanonicalSessionId != null &&
             recordingPlaybackRuntimeState.playback.document?.sessionId == selectedCanonicalSessionId
         ) {
-            canonicalRecordingSteps
+            mergeCanonicalRecordingSteps(canonicalRecordingSteps, recordingSteps)
         } else if (recordingSteps.isEmpty()) {
             emptyList()
         } else {
@@ -2596,7 +2693,7 @@ fun WorkspaceScreen(
         RailSurfaceMode.Records -> when {
             recordingTraceSteps.isNotEmpty() -> recordingTraceSteps
             recorderStepsProjection != null -> recorderStepsProjection.invoke()
-            else -> demoRecorderSteps
+            else -> emptyList()
         }
         RailSurfaceMode.WatchDog -> when {
             watchDogTraceSteps.isNotEmpty() -> watchDogTraceSteps
@@ -2786,7 +2883,7 @@ fun WorkspaceScreen(
         }
     }
 
-    val bridge = remember(actionSink, recorderStepsProjection, demoRecorderSteps, dryRunRecorderSteps, projectedSteps, stepperPanelState, workspaceDryRunResult, workflowState.revision) {
+    val bridge = remember(actionSink, recorderStepsProjection, dryRunRecorderSteps, projectedSteps, stepperPanelState, workspaceDryRunResult, workflowState.revision) {
         object : PanelActionSink {
             override fun onPanelAction(action: PanelAction) {
                 if (action is PanelAction.SelectStep && workspaceDryRunResult != null) {
@@ -2796,18 +2893,6 @@ fun WorkspaceScreen(
                 }
                 if (action is PanelAction.SelectStep) {
                     selectRailTraceStep(action.stepId, source = "panel-action")
-                }
-                // Demo mutations are active only when no external projection is attached.
-                if (recorderStepsProjection == null) {
-                    when (action) {
-                        is PanelAction.SelectStep -> Unit
-                        is PanelAction.ReorderStep -> demoRecorderSteps.move(action.from, action.to)
-                        is PanelAction.DeleteStep -> {
-                            val index = demoRecorderSteps.indexOfFirst { it.id == action.stepId }
-                            if (index >= 0) demoRecorderSteps.removeAt(index)
-                        }
-                        else -> Unit
-                    }
                 }
                 actionSink?.onPanelAction(action)
             }
@@ -3447,6 +3532,12 @@ fun WorkspaceScreen(
                                 onExpandRequested = onExpandRequested,
                             )
                             isRailTracePanel -> RailTraceCompactRail(
+                                surfaceMode = stepperPanelState.railMode.toSurfaceMode(),
+                                onSurfaceModeChange = { mode ->
+                                    val updated = stepperPanelState.copy(railMode = mode.defaultRailMode())
+                                    stepperPanelState = updated
+                                    persistStepperState(uiPrefs, updated)
+                                },
                                 onSave = {
                                     persistStepperState(uiPrefs, stepperPanelState)
                                     sessionStore.save(WorkspaceSessionSnapshot(panels = panels.toList()))
@@ -3495,6 +3586,8 @@ fun WorkspaceScreen(
                                 onSave = {
                                     blockEditorSessionState.value?.let { persistBlockEditorSession(uiPrefs, it) }
                                 },
+                                onUndoWorkspace = undoWorkspaceChange,
+                                onRedoWorkspace = redoWorkspaceChange,
                             )
                             isFlowchartPanel -> FlowchartCompactActionRail(
                                 session = flowchartSessionState.value,
@@ -3787,6 +3880,7 @@ fun WorkspaceScreen(
                         focusedFlowchartNodeId = workspaceSelectionState.flowNodeId ?: selectedFlowchartNodeId,
                         focusedFlowchartEdgeId = workspaceSelectionState.flowEdgeId ?: selectedFlowchartEdgeId,
                         activeTextSourceLine = workspaceSelectionState.sourceLine,
+                        focusedBlockEditorBlockId = workspaceSelectionState.blockId,
                         blockEditorMiniMapVisible = blockEditorMiniMapVisible,
                         flowchartMiniMapVisible = flowchartMiniMapVisible,
                         flowchartDataFlowVisible = flowchartDataFlowVisible,
@@ -3807,6 +3901,29 @@ fun WorkspaceScreen(
                         onFlowchartRuntimeVisibleChange = { flowchartRuntimeVisible = it },
                         onFlowchartDiagnosticsVisibleChange = { flowchartDiagnosticsVisible = it },
                         onRecordingSessionSelected = { path -> selectedRecordingSessionPath = path },
+                        recordingRecoveryMessage = recordingRecoveryMessage,
+                        onContinueInterruptedSession = { interruptedSessionId ->
+                            coroutineScope.launch {
+                                recordingRecoveryMessage = "Fortsetzung wird vorbereitet..."
+                                recordingRecoveryMessage = when (
+                                    val result = RecordingSessionRuntime.continueInterrupted(
+                                        context = context,
+                                        interruptedSessionId = interruptedSessionId,
+                                    )
+                                ) {
+                                    is RecordingOperationResult.Success -> {
+                                        RecordingPlaybackRuntime.refresh(context)
+                                        "Neue Session ${result.value.sessionId.takeLast(8)} aus ${interruptedSessionId.takeLast(8)} gestartet"
+                                    }
+                                    is RecordingOperationResult.Failure ->
+                                        "${result.code}: ${result.message}"
+                                }
+                            }
+                        },
+                        onRecordingBookmarkDelete = { recordId ->
+                            RecordingPlaybackRuntime.clearBookmark(context, recordId)
+                            recordingRecoveryMessage = "Replay-Bookmark gelöscht"
+                        },
                         onRailTraceStepSelected = { step ->
                             selectRailTraceStep(step.id, source = "rail-panel")
                             bridge.onPanelAction(PanelAction.SelectStep(step.id))
@@ -3914,7 +4031,7 @@ fun WorkspaceScreen(
                             workspaceSelectionState = when {
                                 nodeId != null -> workspaceSelectionState.selectFlowNode(nodeId)
                                 edgeId != null -> workspaceSelectionState.selectFlowEdge(edgeId)
-                                else -> workspaceSelectionState.clearVisualSelection("flowchart")
+                                else -> workspaceSelectionState
                             }
                             selectedFlowchartNodeId = nodeId
                             selectedFlowchartEdgeId = edgeId
@@ -3923,6 +4040,7 @@ fun WorkspaceScreen(
                             edgeId?.let(::focusRailTraceFromFlowEdge)
                         },
                         onBlockEditorBlockSelected = ::focusFlowNodeFromBlock,
+                        onTextSourceLineSelected = ::focusFromSourceLine,
                         onFlowchartNodeDelete = deleteFlowchartNode,
                         onFlowchartNodesDelete = deleteFlowchartNodes,
                         onFlowchartNodesConnect = connectFlowchartNodes,
@@ -4158,6 +4276,20 @@ fun WorkspaceScreen(
                 nextZ = (panels.maxOfOrNull { it.zIndex } ?: 0) + 1
                 focusedPanelId = panels.maxByOrNull { it.zIndex }?.id.orEmpty()
             },
+            onApplyStudioLayout = {
+                panels.clear()
+                panels.addAll(studioPanels())
+                nextId = (panels.maxOfOrNull { it.id.removePrefix("panel-").toIntOrNull() ?: 0 } ?: 0) + 1
+                nextZ = (panels.maxOfOrNull { it.zIndex } ?: 0) + 1
+                focusedPanelId = panels.maxByOrNull { it.zIndex }?.id.orEmpty()
+                autoArrangePanels(
+                    panels = panels,
+                    surfaceSize = surfaceSize,
+                    focusedPanelId = focusedPanelId,
+                    topInsetPx = workspaceTopGuardPx,
+                    bottomInsetPx = workspaceBottomGuardPx,
+                )
+            },
             onSaveLayout = {
                 sessionStore.save(WorkspaceSessionSnapshot(panels = panels.toList()))
                 studioLogStore.append(
@@ -4208,11 +4340,6 @@ fun WorkspaceScreen(
         )
     }
 }
-
-private fun String.coalescesWith(previous: String?): Boolean =
-    previous == this &&
-        startsWith(WORKFLOW_SOURCE_FLOWCHART_PREFIX) &&
-        endsWith(":move")
 
 @Composable
 private fun WorkspaceFloatingPanel(
@@ -4364,6 +4491,7 @@ private fun WorkspacePanelContent(
     focusedFlowchartNodeId: FlowNodeId? = null,
     focusedFlowchartEdgeId: FlowEdgeId? = null,
     activeTextSourceLine: Int? = null,
+    focusedBlockEditorBlockId: BlockId? = null,
     blockEditorMiniMapVisible: Boolean,
     flowchartMiniMapVisible: Boolean,
     flowchartDataFlowVisible: Boolean,
@@ -4380,12 +4508,15 @@ private fun WorkspacePanelContent(
     recordingSessions: List<RecordingSessionUi> = emptyList(),
     selectedRecordingSessionPath: String? = null,
     recordingPlaybackRuntimeState: RecordingPlaybackRuntimeState = RecordingPlaybackRuntimeState(),
+    recordingRecoveryMessage: String? = null,
     onFlowchartDataFlowVisibleChange: (Boolean) -> Unit = {},
     onFlowchartRuntimeVisibleChange: (Boolean) -> Unit = {},
     onFlowchartDiagnosticsVisibleChange: (Boolean) -> Unit = {},
     onStepperStateChange: (StepperPanelState) -> Unit = {},
     onStepperStateSave: (StepperPanelState) -> Unit = {},
     onRecordingSessionSelected: (String) -> Unit = {},
+    onContinueInterruptedSession: (String) -> Unit = {},
+    onRecordingBookmarkDelete: (String) -> Unit = {},
     onRailTraceStepSelected: (RecorderStepUi) -> Unit = {},
     onLogSourceTargetSelected: (StudioLogSourceTarget) -> Unit = {},
     onEmscriptSessionChange: (EmscriptEditorSession) -> Unit,
@@ -4402,6 +4533,7 @@ private fun WorkspacePanelContent(
     onFlowchartNodeSelected: (FlowNodeId) -> Unit = {},
     onFlowchartSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit = { _, _ -> },
     onBlockEditorBlockSelected: (BlockId?) -> Unit = {},
+    onTextSourceLineSelected: (Int) -> Unit = {},
     onFlowchartNodeDelete: (FlowNodeId) -> Unit = {},
     onFlowchartNodesDelete: (Set<FlowNodeId>) -> Unit = {},
     onFlowchartNodesConnect: (FlowNodeId, FlowNodeId, FlowEdgeKind, String?) -> Unit = { _, _, _, _ -> },
@@ -4430,6 +4562,10 @@ private fun WorkspacePanelContent(
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     val context = LocalContext.current
+    val visualAssetCatalogRevision by VisualAssetCatalogStore.revision.collectAsState()
+    val visualAssetRuntime = remember(context, visualAssetCatalogRevision, workflowState.resources) {
+        VisualAssetPresentationRuntime.load(visualAssetStoreDirectory(context))
+    }
     when (panel.type) {
         PanelType.RecorderSteps -> RecorderStepsPanel(
             steps = steps,
@@ -4446,6 +4582,10 @@ private fun WorkspacePanelContent(
             selectedRecordingSessionPath = selectedRecordingSessionPath,
             onRecordingSessionSelected = onRecordingSessionSelected,
             recordingPlaybackState = recordingPlaybackRuntimeState.playback,
+            recordingReplayBookmark = recordingPlaybackRuntimeState.replayBookmark,
+            recoveryMessage = recordingRecoveryMessage,
+            onContinueInterruptedSession = onContinueInterruptedSession,
+            onRecordingBookmarkDelete = onRecordingBookmarkDelete,
             onRecordingPlaybackPlayPause = {
                 if (recordingPlaybackRuntimeState.playback.status == RecordingPlaybackStatus.PLAYING) {
                     RecordingPlaybackRuntime.pause()
@@ -4505,8 +4645,10 @@ private fun WorkspacePanelContent(
             workflowState = workflowState,
             paletteInsertMode = paletteInsertMode,
             showMiniMap = blockEditorMiniMapVisible,
+            visualAssetRuntime = visualAssetRuntime,
             onSessionReady = onBlockEditorSessionReady,
             onBlockSelected = onBlockEditorBlockSelected,
+            focusedBlockId = focusedBlockEditorBlockId,
             onWorkspaceJsonChange = onWorkspaceJsonChange
         )
         PanelType.Flowchart -> FlowchartPanel(
@@ -4525,6 +4667,7 @@ private fun WorkspacePanelContent(
             reporterNodesVisible = flowchartReporterNodesVisible,
             variableNodesVisible = flowchartVariableNodesVisible,
             operatorNodesVisible = flowchartOperatorNodesVisible,
+            visualAssetRuntime = visualAssetRuntime,
             onNodeSelected = onFlowchartNodeSelected,
             onSelectionChanged = onFlowchartSelectionChanged,
             onNodeDelete = onFlowchartNodeDelete,
@@ -4555,7 +4698,7 @@ private fun WorkspacePanelContent(
                 onSessionChange = onEmscriptSessionChange,
                 logStore = logStore,
                 workspaceJson = workflowState.serializedJson,
-                onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_APPLY) },
+                onWorkspaceJsonChange = { updated -> onWorkspaceJsonChange(updated, WORKFLOW_SOURCE_EMSCRIPT_CONFIRM) },
                 liveRunStatus = capabilityReport.editorGateSummary(),
                 activeSourceLine = activeTextSourceLine ?: activeRuntimeSourceLine(
                     workflowState = workflowState,
@@ -4566,6 +4709,7 @@ private fun WorkspacePanelContent(
                         .orEmpty(),
                     projectedScriptText = latestEmscriptProjected,
                 ),
+                onSourceLineSelected = onTextSourceLineSelected,
                 syntaxPaletteOverride = SyntaxHighlighter.Palette(
                     keyword = appearance.syntaxKeyword,
                     control = appearance.syntaxControl,
@@ -4697,7 +4841,11 @@ private fun WorkspacePanelContent(
             onResourceImported = onWorkspaceResourceUpsert,
             onResourceRemoved = onWorkspaceResourceRemove,
         )
-        PanelType.ChartGraph -> ChartGraphPanel()
+        PanelType.ChartGraph -> ChartGraphPanel(
+            steps = steps,
+            datastore = runtimeDatastore,
+            emscript = latestEmscriptProjected,
+        )
         PanelType.Vt2Vt -> Vt2VtPanel(
             workflowState = workflowState,
             logStore = logStore,
@@ -5739,57 +5887,242 @@ private fun DatastorePanel(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChartGraphPanel() {
-    var kind by remember { mutableStateOf(ChartKind.LINE) }
-    val samples = remember {
-        listOf(
-            ChartSeries(
-                id = "runtime",
-                label = "Runtime",
-                colorArgb = 0xFF5BE7C4,
-                points = listOf(18.0, 26.0, 22.0, 38.0, 34.0, 51.0, 47.0, 63.0)
-                    .mapIndexed { index, value -> ChartPoint(index.toDouble(), value) },
-            ),
-            ChartSeries(
-                id = "confidence",
-                label = "Confidence",
-                colorArgb = 0xFFFFC857,
-                points = listOf(32.0, 29.0, 41.0, 44.0, 57.0, 54.0, 69.0, 74.0)
-                    .mapIndexed { index, value -> ChartPoint(index.toDouble(), value) },
-            ),
-        )
-    }
-    val document = remember(kind) {
-        ChartDocument(
-            id = "workspace-preview",
-            title = "Workspace Telemetrie",
-            kind = kind,
-            series = samples,
-        )
-    }
+private fun ChartGraphPanel(
+    steps: List<RecorderStepUi>,
+    datastore: Map<String, String>,
+    emscript: String,
+) {
+    val chartOrder = remember { mutableStateListOf<ChartKind>().apply { addAll(ChartKind.entries) } }
+    val sources = remember { mutableStateMapOf<ChartKind, ChartGraphDataSource>() }
+    var sourceMenuFor by remember { mutableStateOf<ChartKind?>(null) }
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(10.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+        state = rememberLazyListState(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 8.dp),
     ) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(ChartKind.entries.filter { it != ChartKind.CANDLE }) { candidate ->
-                FilterChip(
-                    selected = kind == candidate,
-                    onClick = { kind = candidate },
-                    label = { Text(candidate.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                )
+        items(chartOrder, key = ChartKind::name) { kind ->
+            val source = sources[kind] ?: ChartGraphDataSource.Demo
+            val series = remember(source, steps, datastore, emscript) {
+                chartSeriesFor(source, steps, datastore, emscript)
+            }
+            val document = remember(kind, source, series) {
+                chartDocumentFor(kind, source, series)
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth().height(260.dp).animateItem(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = 6.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Diagramm verschieben",
+                        modifier = Modifier
+                            .size(34.dp)
+                            .pointerInput(kind, chartOrder.toList()) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { dragAccumulator = 0f },
+                                    onDragCancel = { dragAccumulator = 0f },
+                                    onDragEnd = { dragAccumulator = 0f },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        dragAccumulator += amount.y
+                                        val current = chartOrder.indexOf(kind)
+                                        val direction = when {
+                                            dragAccumulator > 72f -> 1
+                                            dragAccumulator < -72f -> -1
+                                            else -> 0
+                                        }
+                                        val target = (current + direction).coerceIn(chartOrder.indices)
+                                        if (direction != 0 && target != current) {
+                                            chartOrder.removeAt(current)
+                                            chartOrder.add(target, kind)
+                                            dragAccumulator = 0f
+                                        }
+                                    },
+                                )
+                            },
+                    )
+                    Text(kind.displayLabel(), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    Box {
+                        AssistChip(
+                            onClick = { sourceMenuFor = kind },
+                            label = { Text(source.label) },
+                        )
+                        DropdownMenu(
+                            expanded = sourceMenuFor == kind,
+                            onDismissRequest = { sourceMenuFor = null },
+                        ) {
+                            ChartGraphDataSource.entries.forEach { candidate ->
+                                DropdownMenuItem(
+                                    text = { Text(candidate.label) },
+                                    onClick = {
+                                        sources[kind] = candidate
+                                        sourceMenuFor = null
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                ChartGraph(document = document, modifier = Modifier.fillMaxWidth().weight(1f))
             }
         }
-        Surface(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            ChartGraph(document = document, modifier = Modifier.fillMaxSize())
-        }
     }
+}
+
+private enum class ChartGraphDataSource(val label: String) {
+    Demo("Demo"),
+    Datastore("Datastore"),
+    RailTrace("RailTrace"),
+    EMScript("EMScript"),
+}
+
+private fun chartSeriesFor(
+    source: ChartGraphDataSource,
+    steps: List<RecorderStepUi>,
+    datastore: Map<String, String>,
+    emscript: String,
+): List<ChartSeries> = when (source) {
+    ChartGraphDataSource.Demo -> listOf(
+        ChartSeries("runtime", "Runtime", 0xFF5BE7C4, listOf(18.0, 26.0, 22.0, 38.0, 34.0, 51.0, 47.0, 63.0).mapIndexed { index, value -> ChartPoint(index.toDouble(), value) }),
+        ChartSeries("confidence", "Confidence", 0xFFFFC857, listOf(32.0, 29.0, 41.0, 44.0, 57.0, 54.0, 69.0, 74.0).mapIndexed { index, value -> ChartPoint(index.toDouble(), value) }),
+    )
+    ChartGraphDataSource.Datastore -> {
+        val numeric = datastore.entries.mapNotNull { (key, value) -> value.toDoubleOrNull()?.let { key to it } }
+        listOf(
+            ChartSeries("datastore", "Datastore", 0xFF4DD0E1, numeric.mapIndexed { index, (_, value) -> ChartPoint(index.toDouble(), value) }),
+        )
+    }
+    ChartGraphDataSource.RailTrace -> listOf(
+        ChartSeries("duration", "Dauer ms", 0xFF8F7CFF, steps.mapIndexed { index, step -> ChartPoint(index.toDouble(), (step.durationMs ?: 0L).toDouble()) }),
+        ChartSeries("status", "Status", 0xFFFF8A65, steps.mapIndexed { index, step -> ChartPoint(index.toDouble(), step.status.ordinal.toDouble() + 1.0) }),
+    )
+    ChartGraphDataSource.EMScript -> {
+        val lines = emscript.lineSequence().map(String::trim).filter { it.isNotBlank() && !it.startsWith("//") }.toList()
+        listOf(
+            ChartSeries("commands", "Befehlslänge", 0xFFFFC857, lines.mapIndexed { index, line -> ChartPoint(index.toDouble(), line.length.toDouble()) }),
+            ChartSeries("parameters", "Parameter", 0xFF66BB6A, lines.mapIndexed { index, line -> ChartPoint(index.toDouble(), line.count { it == ',' }.toDouble() + if ('(' in line) 1.0 else 0.0) }),
+        )
+    }
+}
+
+private fun chartDocumentFor(
+    kind: ChartKind,
+    source: ChartGraphDataSource,
+    inputSeries: List<ChartSeries>,
+): ChartDocument {
+    val series = inputSeries.map { candidate ->
+        candidate.takeIf { it.points.isNotEmpty() }
+            ?: candidate.copy(points = listOf(ChartPoint(0.0, 0.0)))
+    }
+    val flatPoints = series.flatMap(ChartSeries::points)
+    val colors = listOf(0xFF5BE7C4, 0xFFFFC857, 0xFF8F7CFF, 0xFFFF6B7A, 0xFF4DD0E1)
+    val nodes = flatPoints.take(16).mapIndexed { index, point ->
+        DiagramNode("node-$index", "${index + 1}: ${point.y.toInt()}", index / 4, colors[index % colors.size])
+    }
+    val minimum = flatPoints.minOfOrNull(ChartPoint::y) ?: 0.0
+    val maximum = flatPoints.maxOfOrNull(ChartPoint::y) ?: 100.0
+    val radarInput = buildList {
+        addAll(series.take(3))
+        if (size < 3 && flatPoints.isNotEmpty()) {
+            add(ChartSeries("aggregate", "Gesamt", colors[2], flatPoints.take(8)))
+        }
+    }.take(3)
+    val vennSets = List(4) { index ->
+        val chart = series[index % series.size]
+        VennSet(
+            id = "${chart.id}-$index",
+            label = "${chart.label} ${index + 1}",
+            value = kotlin.math.abs(chart.points.getOrNull(index)?.y ?: index + 1.0).coerceAtLeast(1.0),
+            colorArgb = colors[index],
+        )
+    }
+    val commonVennValue = vennSets.minOf(VennSet::value) * 0.45
+    return ChartDocument(
+        id = "wss-${source.name.lowercase()}-${kind.name.lowercase()}",
+        title = "${kind.displayLabel()} · ${source.label}",
+        kind = kind,
+        series = series,
+        candles = flatPoints.windowed(2).take(18).mapIndexed { index, pair ->
+            val open = pair.first().y
+            val close = pair.last().y
+            val spread = kotlin.math.abs(close - open) * 0.25 + 1.0
+            CandlePoint(index.toDouble(), open, maxOf(open, close) + spread, minOf(open, close) - spread, close)
+        },
+        boxPlots = series.flatMap { chart ->
+            chart.points.chunked(4).take(6).mapIndexedNotNull { index, chunk ->
+                val values = chunk.map(ChartPoint::y).sorted()
+                if (values.isEmpty()) null else BoxPlotPoint(
+                    "${chart.label} ${index + 1}",
+                    values.first(),
+                    values[(values.lastIndex * 0.25).toInt()],
+                    values[(values.lastIndex * 0.5).toInt()],
+                    values[(values.lastIndex * 0.75).toInt()],
+                    values.last(),
+                )
+            }
+        },
+        heatmapCells = series.flatMapIndexed { row, chart -> chart.points.take(16).mapIndexed { column, point -> HeatmapCell(column, row, point.y) } },
+        histogramBinCount = 10,
+        bubbles = flatPoints.take(30).mapIndexed { index, point -> BubblePoint(point.x, point.y, kotlin.math.abs(point.y), colorArgb = colors[index % colors.size]) },
+        vennSets = vennSets,
+        vennOverlaps = listOf(
+            VennOverlap(vennSets.mapTo(linkedSetOf(), VennSet::id), commonVennValue, "Gemeinsam"),
+        ),
+        mosaicCells = series.flatMapIndexed { seriesIndex, chart -> chart.points.take(8).mapIndexed { index, point -> MosaicCell(chart.label, "$index", kotlin.math.abs(point.y), colors[(seriesIndex + index) % colors.size]) } },
+        gaugeValue = flatPoints.lastOrNull()?.y ?: 0.0,
+        gaugeMinimum = minimum,
+        gaugeMaximum = if (maximum > minimum) maximum else minimum + 1.0,
+        ganttTasks = flatPoints.take(10).mapIndexed { index, point -> GanttTask("task-$index", "Step ${index + 1}", index.toDouble(), index + 1.0 + kotlin.math.abs(point.y % 3.0), (kotlin.math.abs(point.y) / kotlin.math.abs(maximum).coerceAtLeast(1.0)).coerceIn(0.0, 1.0), colors[index % colors.size]) },
+        radarSeries = radarInput.map { chart ->
+            RadarSeries(
+                id = chart.id,
+                label = chart.label,
+                colorArgb = chart.colorArgb,
+                axes = chart.points.take(8).mapIndexed { index, point -> RadarAxis("A${index + 1}", kotlin.math.abs(point.y), kotlin.math.abs(maximum).coerceAtLeast(1.0)) },
+            )
+        },
+        diagramNodes = nodes,
+        diagramEdges = nodes.zipWithNext { first, second -> DiagramEdge(first.id, second.id) },
+        xAxisLabel = "Index",
+        yAxisLabel = source.label,
+    )
+}
+
+private fun ChartKind.displayLabel(): String = when (this) {
+    ChartKind.LINE -> "Linie"
+    ChartKind.BAR -> "Balken"
+    ChartKind.PIE -> "Kreis"
+    ChartKind.DONUT -> "Donut"
+    ChartKind.CANDLE -> "Kerzen"
+    ChartKind.HISTOGRAM -> "Histogramm"
+    ChartKind.BOX_PLOT -> "Boxplot"
+    ChartKind.SCATTER -> "Streuung"
+    ChartKind.HEATMAP -> "Heatmap"
+    ChartKind.VENN_LINEAR -> "Venn linear"
+    ChartKind.VENN_STACKED -> "Venn gestapelt"
+    ChartKind.VENN_RADIAL -> "Venn radial"
+    ChartKind.VENN_GROUP -> "Venn Gruppe"
+    ChartKind.AREA -> "Fläche"
+    ChartKind.BUBBLE -> "Blasen"
+    ChartKind.MOSAIC -> "Mosaik"
+    ChartKind.GAUGE -> "Gauge"
+    ChartKind.GANTT -> "Gantt"
+    ChartKind.RADAR -> "Radar"
+    ChartKind.WATERFALL -> "Wasserfall"
+    ChartKind.FUNNEL -> "Trichter"
+    ChartKind.PARETO -> "Pareto"
+    ChartKind.PICTOGRAPH -> "Piktogramm"
+    ChartKind.DIAGRAM -> "Mindmap / Flowchart"
 }
 
 @Composable
@@ -5801,10 +6134,18 @@ private fun VisualAssetManagerPanel(
     onResourceRemoved: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val launchIntent = remember(context) {
+    var bridgeProbeRevision by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(context) {
+        bridgeProbeRevision += 1
+        onPauseOrDispose { }
+    }
+    val externalLaunchIntent = remember(context, bridgeProbeRevision) {
         Intent(M3ShapeMakerBridgeContract.ACTION_CREATE_VISUAL_ASSET)
             .setPackage(M3_SHAPEMAKER_PACKAGE)
-            .takeIf { context.packageManager.resolveActivity(it, 0) != null }
+            .takeIf { context.packageManager.resolveActivity(it, PackageManager.MATCH_DEFAULT_ONLY) != null }
+    }
+    val capabilityStatus = remember(externalLaunchIntent) {
+        VisualAssetCapabilityResolver.resolve(externalEditorAvailable = externalLaunchIntent != null)
     }
     val templateCount = remember(screenshotState.savedMarkers.toList()) {
         screenshotState.savedMarkers.count { it.markerMode == ScreenshotCanvasMarkerMode.Template }
@@ -5814,8 +6155,42 @@ private fun VisualAssetManagerPanel(
     var requestedAssetType by rememberSaveable { mutableStateOf(EmaVisualAssetType.BLOCK_SHAPE) }
     var assetTypeMenuOpen by remember { mutableStateOf(false) }
     var showEmbeddedDesigner by rememberSaveable { mutableStateOf(true) }
+    var embeddedAssetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var embeddedAssetVersion by rememberSaveable { mutableIntStateOf(1) }
+    var embeddedAssetName by rememberSaveable { mutableStateOf("Visual Asset") }
+    val embeddedEditorState = remember {
+        EditorState(initialDocument = VectorDocument(name = embeddedAssetName))
+    }
     val assetDirectory = remember(context) { visualAssetStoreDirectory(context) }
-    val storedAssets = remember(assetDirectory, assetRevision) { EmaVisualAssetStore.list(assetDirectory) }
+    val catalogFile = remember(assetDirectory) { File(assetDirectory, "catalog.json") }
+    var visualAssetCatalog by remember(catalogFile) {
+        mutableStateOf(VisualAssetCatalogStore.load(catalogFile))
+    }
+    val allStoredAssets = remember(assetDirectory, assetRevision) { EmaVisualAssetStore.list(assetDirectory) }
+    val storedAssets = remember(assetDirectory, assetRevision) { EmaVisualAssetStore.latestByAssetId(assetDirectory) }
+    var assetSearchQuery by rememberSaveable { mutableStateOf("") }
+    var assetTypeFilter by rememberSaveable { mutableStateOf<EmaVisualAssetType?>(null) }
+    val filteredStoredAssets = remember(storedAssets, assetSearchQuery, assetTypeFilter) {
+        val query = assetSearchQuery.trim()
+        storedAssets.filter { stored ->
+            (assetTypeFilter == null || stored.descriptor.type == assetTypeFilter) &&
+                (query.isBlank() ||
+                    stored.descriptor.name.contains(query, ignoreCase = true) ||
+                    stored.descriptor.assetId.contains(query, ignoreCase = true) ||
+                    stored.descriptor.tags.any { it.contains(query, ignoreCase = true) })
+        }
+    }
+    val versionCounts = remember(allStoredAssets) {
+        allStoredAssets.groupingBy { it.descriptor.assetId }.eachCount()
+    }
+    var selectedCatalogAssetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var bindingTargetId by rememberSaveable { mutableStateOf("default") }
+    var bindingTarget by rememberSaveable { mutableStateOf(EmaVisualAssetBindingTarget.Block) }
+    fun updateVisualAssetCatalog(transform: (VisualAssetCatalog) -> VisualAssetCatalog) {
+        val updated = transform(visualAssetCatalog)
+        visualAssetCatalog = updated
+        VisualAssetCatalogStore.save(catalogFile, updated)
+    }
     val bindingCounts = remember(storedAssets) {
         EmaVisualAssetBindingTarget.entries.associateWith { target ->
             storedAssets.count { target in it.descriptor.bindingTargets }
@@ -5824,7 +6199,7 @@ private fun VisualAssetManagerPanel(
     val assetIssues = remember(workflowState.resources, assetRevision) {
         EmaVisualAssetIntegrity.inspect(workflowState.resources)
     }
-    fun importRawAsset(raw: Result<String>) {
+    fun importRawAsset(raw: Result<String>): EmaVisualAssetImportResult {
         val result = raw.fold(
             onSuccess = { EmaVisualAssetStore.importRaw(assetDirectory, it) },
             onFailure = { EmaVisualAssetImportResult.Rejected(it.message ?: "EMA-Import fehlgeschlagen.") },
@@ -5837,6 +6212,7 @@ private fun VisualAssetManagerPanel(
             }
             is EmaVisualAssetImportResult.Rejected -> importStatus = result.message
         }
+        return result
     }
     fun readAsset(uri: Uri): Result<String> = runCatching {
         context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
@@ -5844,6 +6220,38 @@ private fun VisualAssetManagerPanel(
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importRawAsset(readAsset(it)) }
+    }
+    val packageImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        readAsset(uri).fold(
+            onSuccess = { raw ->
+                val result = VisualAssetPackageStore.import(assetDirectory, visualAssetCatalog, raw)
+                if (result == null) {
+                    importStatus = "Ungültiges Visual-Asset-Paket."
+                } else {
+                    result.importedAssets.forEach { onResourceImported(it.toWorkspaceResource()) }
+                    visualAssetCatalog = result.catalog
+                    VisualAssetCatalogStore.save(catalogFile, result.catalog)
+                    assetRevision += 1
+                    importStatus = "Paket: ${result.importedAssets.size} importiert, ${result.rejectedDocuments} verworfen"
+                }
+            },
+            onFailure = { importStatus = it.message ?: "Paket konnte nicht gelesen werden." },
+        )
+    }
+    val packageExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            val raw = VisualAssetPackageCodec.encode(visualAssetCatalog, allStoredAssets)
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(raw) }
+                ?: error("Zieldatei konnte nicht geöffnet werden.")
+        }.onSuccess {
+            importStatus = "Asset-Paket exportiert: ${allStoredAssets.size} Version(en)"
+        }.onFailure {
+            importStatus = it.message ?: "Paketexport fehlgeschlagen."
+        }
     }
     val shapeMakerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -5873,20 +6281,23 @@ private fun VisualAssetManagerPanel(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Column {
-                Text("Visual Assets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "M3ShapeMaker Bridge",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Visual Assets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "M3ShapeMaker",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 FilterChip(
                     selected = showEmbeddedDesigner,
                     onClick = { showEmbeddedDesigner = true },
@@ -5897,9 +6308,18 @@ private fun VisualAssetManagerPanel(
                     onClick = { showEmbeddedDesigner = false },
                     label = { Text("Assets") },
                 )
-                Box {
-                    OutlinedButton(onClick = { assetTypeMenuOpen = true }) {
-                        Text(requestedAssetType.name)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = { assetTypeMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(requestedAssetType.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DropdownMenu(
                         expanded = assetTypeMenuOpen,
@@ -5916,9 +6336,10 @@ private fun VisualAssetManagerPanel(
                         }
                     }
                 }
-                FilledTonalButton(
+                TooltipIconButton(
+                    tooltip = if (externalLaunchIntent != null) "In externer ShapeMaker-App öffnen" else "Externe ShapeMaker-App fehlt",
                     onClick = {
-                        launchIntent?.let { intent ->
+                        externalLaunchIntent?.let { intent ->
                             shapeMakerLauncher.launch(
                                 Intent(intent).putExtra(
                                     M3ShapeMakerBridgeContract.EXTRA_REQUESTED_ASSET_TYPE,
@@ -5927,19 +6348,82 @@ private fun VisualAssetManagerPanel(
                             )
                         }
                     },
-                    enabled = launchIntent != null,
+                    enabled = externalLaunchIntent != null,
                 ) {
-                    Text(if (launchIntent != null) "Neu in ShapeMaker" else "ShapeMaker fehlt")
+                    Icon(Icons.Default.OpenInNew, contentDescription = "Extern öffnen")
                 }
             }
         }
 
         if (showEmbeddedDesigner) {
-            VectorShapeEditorApp(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp)),
-            )
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = embeddedAssetName,
+                    onValueChange = { embeddedAssetName = it },
+                    label = { Text("Asset-Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            embeddedAssetId = null
+                            embeddedAssetVersion = 1
+                            embeddedAssetName = "Visual Asset"
+                            embeddedEditorState.replaceDocument(VectorDocument(name = "Visual Asset"))
+                            importStatus = "Neues Asset"
+                        },
+                    ) {
+                        Text("Neu")
+                    }
+                    Button(
+                        onClick = {
+                            val assetId = embeddedAssetId
+                                ?: "asset-${System.currentTimeMillis()}"
+                            val asset = newVisualAsset(
+                                assetId = assetId,
+                                name = embeddedAssetName.trim(),
+                                document = embeddedEditorState.document,
+                            ).let { base ->
+                                base.copy(
+                                    identity = base.identity.copy(
+                                        type = ShapeMakerVisualAssetType.valueOf(requestedAssetType.name),
+                                        version = embeddedAssetVersion,
+                                    )
+                                )
+                            }
+                            val result = importRawAsset(Result.success(ShapeMakerEmaCodec.encode(asset)))
+                            if (result is EmaVisualAssetImportResult.Imported) {
+                                embeddedAssetId = result.asset.descriptor.assetId
+                                embeddedAssetVersion = result.asset.descriptor.version + 1
+                            }
+                        },
+                        enabled = embeddedAssetName.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Im Katalog speichern")
+                    }
+                }
+                VisualAssetProjectionPreviews(
+                    document = embeddedEditorState.document,
+                    assetName = embeddedAssetName,
+                    version = embeddedAssetVersion,
+                )
+                VectorShapeEditorApp(
+                    editorState = embeddedEditorState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+            }
             return@Column
         }
 
@@ -5952,15 +6436,48 @@ private fun VisualAssetManagerPanel(
                 onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) },
                 modifier = Modifier.weight(1f),
             ) {
-                Text(".ema importieren")
+                Text(".ema")
             }
-            importStatus?.let { status ->
-                Text(
-                    text = status,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+            FilledTonalButton(
+                onClick = { packageImportLauncher.launch(arrayOf("application/json", "*/*")) },
+                modifier = Modifier.weight(1f),
+            ) { Text("Paket laden") }
+            FilledTonalButton(
+                onClick = { packageExportLauncher.launch("visualtasker-assets.vtap.json") },
+                enabled = allStoredAssets.isNotEmpty(),
+                modifier = Modifier.weight(1f),
+            ) { Text("Paket sichern") }
+        }
+        importStatus?.let { status ->
+            Text(
+                text = status,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+            )
+        }
+        OutlinedTextField(
+            value = assetSearchQuery,
+            onValueChange = { assetSearchQuery = it },
+            label = { Text("Assets suchen") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            item {
+                FilterChip(
+                    selected = assetTypeFilter == null,
+                    onClick = { assetTypeFilter = null },
+                    label = { Text("Alle") },
+                )
+            }
+            items(EmaVisualAssetType.entries, key = { it.name }) { type ->
+                FilterChip(
+                    selected = assetTypeFilter == type,
+                    onClick = { assetTypeFilter = type },
+                    label = { Text(type.name) },
                 )
             }
         }
@@ -5973,7 +6490,11 @@ private fun VisualAssetManagerPanel(
                 DatastoreSection("Asset Status") {
                     DatastoreMetric("Format", "application/vnd.emscript.motion+json")
                     DatastoreMetric("Dateiendung", ".ema")
-                    DatastoreMetric("ShapeMaker", if (launchIntent != null) "installiert" else "nicht installiert")
+                    DatastoreMetric("Designer", if (capabilityStatus.embeddedDesigner) "eingebunden" else "nicht verfügbar")
+                    DatastoreMetric("Externe App", if (capabilityStatus.externalEditor) "verfügbar" else "optional / fehlt")
+                    DatastoreMetric("EMA Import", if (capabilityStatus.emaImport) "bereit" else "nicht verfügbar")
+                    DatastoreMetric("EMA Export", if (capabilityStatus.emaExport) "bereit" else "nicht verfügbar")
+                    DatastoreMetric("Asset Runtime", if (capabilityStatus.assetRuntime) "bereit" else "vorbereitet")
                     DatastoreMetric("Importierte Assets", storedAssets.size.toString())
                     DatastoreMetric(
                         "Integrität",
@@ -5984,29 +6505,89 @@ private fun VisualAssetManagerPanel(
                     DatastoreMetric("Workflow Revision", workflowState.revision.toString())
                 }
             }
-            if (storedAssets.isNotEmpty()) {
+            if (filteredStoredAssets.isNotEmpty()) {
                 item {
                     DatastoreSection("Asset Katalog") {
-                        storedAssets.take(20).forEach { stored ->
+                        filteredStoredAssets.take(40).forEach { stored ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            selectedCatalogAssetId = if (selectedCatalogAssetId == stored.descriptor.assetId) {
+                                                null
+                                            } else {
+                                                stored.descriptor.assetId
+                                            }
+                                            bindingTarget = stored.descriptor.bindingTargets.firstOrNull()
+                                                ?: EmaVisualAssetBindingTarget.Overlay
+                                            bindingTargetId = visualAssetCatalog.bindings
+                                                .firstOrNull { it.assetId == stored.descriptor.assetId }
+                                                ?.targetId
+                                                ?: "default"
+                                        }
+                                        .padding(vertical = 4.dp)
+                                ) {
                                     Text(stored.descriptor.name, style = MaterialTheme.typography.labelMedium)
                                     Text(
-                                        "${stored.descriptor.type.name} v${stored.descriptor.version} | states=${stored.descriptor.stateCount} | motion=${stored.descriptor.animationCount}",
+                                        "${stored.descriptor.type.name} v${stored.descriptor.version} | ${versionCounts[stored.descriptor.assetId] ?: 1} Version(en) | ports=${stored.descriptor.portCount}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                                 TooltipIconButton(
+                                    tooltip = "Asset bearbeiten",
+                                    onClick = {
+                                        runCatching { ShapeMakerEmaCodec.decode(stored.file.readText()) }
+                                            .onSuccess { asset ->
+                                                embeddedAssetId = asset.identity.assetId
+                                                embeddedAssetVersion = asset.identity.version + 1
+                                                embeddedAssetName = asset.identity.name
+                                                requestedAssetType = runCatching {
+                                                    EmaVisualAssetType.valueOf(asset.identity.type.name)
+                                                }.getOrDefault(EmaVisualAssetType.ANIMATED_SHAPE)
+                                                embeddedEditorState.replaceDocument(asset.design)
+                                                showEmbeddedDesigner = true
+                                                importStatus = "Bearbeiten: ${asset.identity.name}"
+                                            }
+                                            .onFailure { error ->
+                                                importStatus = error.message ?: "Asset konnte nicht geöffnet werden."
+                                            }
+                                    },
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Asset bearbeiten")
+                                }
+                                TooltipIconButton(
+                                    tooltip = "Asset duplizieren",
+                                    onClick = {
+                                        val duplicateId = "${stored.descriptor.assetId}-copy-${System.currentTimeMillis()}"
+                                        when (val result = EmaVisualAssetStore.duplicate(assetDirectory, stored, duplicateId)) {
+                                            is EmaVisualAssetImportResult.Imported -> {
+                                                onResourceImported(result.asset.toWorkspaceResource())
+                                                assetRevision += 1
+                                                selectedCatalogAssetId = result.asset.descriptor.assetId
+                                                importStatus = "Dupliziert: ${result.asset.descriptor.name}"
+                                            }
+                                            is EmaVisualAssetImportResult.Rejected -> importStatus = result.message
+                                        }
+                                    },
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Asset duplizieren")
+                                }
+                                TooltipIconButton(
                                     tooltip = "Asset löschen",
                                     onClick = {
                                         val resourceId = stored.toWorkspaceResource().id
-                                        if (EmaVisualAssetStore.remove(assetDirectory, stored)) {
+                                        if (EmaVisualAssetStore.removeAllVersions(assetDirectory, stored.descriptor.assetId)) {
                                             onResourceRemoved(resourceId)
+                                            updateVisualAssetCatalog { it.removeAsset(stored.descriptor.assetId) }
+                                            if (selectedCatalogAssetId == stored.descriptor.assetId) {
+                                                selectedCatalogAssetId = null
+                                            }
                                             assetRevision += 1
                                             importStatus = "Gelöscht: ${stored.descriptor.name}"
                                         } else {
@@ -6016,6 +6597,61 @@ private fun VisualAssetManagerPanel(
                                 ) {
                                     Icon(Icons.Default.Delete, contentDescription = "Asset löschen")
                                 }
+                            }
+                            if (selectedCatalogAssetId == stored.descriptor.assetId) {
+                                val versions = allStoredAssets
+                                    .filter { it.descriptor.assetId == stored.descriptor.assetId }
+                                    .sortedByDescending { it.descriptor.version }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    versions.forEach { version ->
+                                        AssistChip(
+                                            onClick = {
+                                                runCatching { ShapeMakerEmaCodec.decode(version.file.readText()) }
+                                                    .onSuccess { asset ->
+                                                        embeddedAssetId = asset.identity.assetId
+                                                        embeddedAssetVersion = asset.identity.version + 1
+                                                        embeddedAssetName = asset.identity.name
+                                                        requestedAssetType = runCatching {
+                                                            EmaVisualAssetType.valueOf(asset.identity.type.name)
+                                                        }.getOrDefault(EmaVisualAssetType.ANIMATED_SHAPE)
+                                                        embeddedEditorState.replaceDocument(asset.design)
+                                                        showEmbeddedDesigner = true
+                                                    }
+                                            },
+                                            label = { Text("v${version.descriptor.version}") },
+                                        )
+                                    }
+                                }
+                                VisualAssetCatalogBindingEditor(
+                                    stored = stored,
+                                    catalog = visualAssetCatalog,
+                                    selectedTarget = bindingTarget,
+                                    targetId = bindingTargetId,
+                                    onTargetChange = { bindingTarget = it },
+                                    onTargetIdChange = { bindingTargetId = it },
+                                    onBind = {
+                                        updateVisualAssetCatalog { catalog ->
+                                            catalog.upsertBinding(
+                                                VisualAssetBinding(
+                                                    assetId = stored.descriptor.assetId,
+                                                    target = bindingTarget,
+                                                    targetId = bindingTargetId.trim().ifBlank { "default" },
+                                                )
+                                            )
+                                        }
+                                        importStatus = "Gebunden: ${stored.descriptor.name} → ${bindingTarget.name}/$bindingTargetId"
+                                    },
+                                    onToolboxToggle = { setId ->
+                                        updateVisualAssetCatalog { catalog ->
+                                            catalog.toggleAssetInToolbox(setId, stored.descriptor.assetId)
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
@@ -6040,7 +6676,11 @@ private fun VisualAssetManagerPanel(
                     DatastoreMetric("Ports", bindingCounts[EmaVisualAssetBindingTarget.Port].toString())
                     DatastoreMetric("Icons", bindingCounts[EmaVisualAssetBindingTarget.Icon].toString())
                     DatastoreMetric("Compose Overlay", bindingCounts[EmaVisualAssetBindingTarget.Overlay].toString())
-                    DatastoreMetric("Toolbox Sets", "Standard / Custom / Mixed / JavaScript")
+                    DatastoreMetric("Aktive Zuordnungen", visualAssetCatalog.bindings.size.toString())
+                    DatastoreMetric(
+                        "Toolbox Sets",
+                        visualAssetCatalog.toolboxSets.joinToString(" / ") { "${it.name} (${it.assetIds.size})" },
+                    )
                 }
             }
             item {
@@ -6048,6 +6688,149 @@ private fun VisualAssetManagerPanel(
                     visualAssetSteps.forEachIndexed { index, step ->
                         DatastoreMetric("${index + 1}", step)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VisualAssetProjectionPreviews(
+    document: VectorDocument,
+    assetName: String,
+    version: Int,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        VisualAssetProjectionPreview(
+            label = "Block",
+            detail = "${assetName.ifBlank { "Unbenannt" }} · v$version",
+            document = document,
+            modifier = Modifier.weight(1f),
+        )
+        VisualAssetProjectionPreview(
+            label = "FlowNode",
+            detail = "${document.metadata.ports.size} Ports · ${document.metadata.contentAreas.size} Bereiche",
+            document = document,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun VisualAssetProjectionPreview(
+    label: String,
+    detail: String,
+    document: VectorDocument,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(74.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            ) {
+                val viewport = ViewportState(screenWidth = size.width, screenHeight = size.height)
+                    .fitToDocument(document.canvas.width, document.canvas.height)
+                VectorRenderer.drawDocument(
+                    scope = this,
+                    document = document,
+                    viewport = viewport,
+                    gridVisible = false,
+                )
+            }
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VisualAssetCatalogBindingEditor(
+    stored: StoredEmaVisualAsset,
+    catalog: VisualAssetCatalog,
+    selectedTarget: EmaVisualAssetBindingTarget,
+    targetId: String,
+    onTargetChange: (EmaVisualAssetBindingTarget) -> Unit,
+    onTargetIdChange: (String) -> Unit,
+    onBind: () -> Unit,
+    onToolboxToggle: (String) -> Unit,
+) {
+    var targetMenuOpen by remember { mutableStateOf(false) }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("WSS-Zuordnung", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "${stored.descriptor.portCount} Ports · ${stored.descriptor.anchorCount} Anker · ${stored.descriptor.contentAreaCount} Inhaltsbereiche",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(0.8f)) {
+                    OutlinedButton(onClick = { targetMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(selectedTarget.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    DropdownMenu(expanded = targetMenuOpen, onDismissRequest = { targetMenuOpen = false }) {
+                        stored.descriptor.bindingTargets.forEach { target ->
+                            DropdownMenuItem(
+                                text = { Text(target.name) },
+                                onClick = {
+                                    onTargetChange(target)
+                                    targetMenuOpen = false
+                                },
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = targetId,
+                    onValueChange = onTargetIdChange,
+                    label = { Text("Typ/ID") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1.2f),
+                )
+                Button(onClick = onBind, enabled = targetId.isNotBlank()) {
+                    Text("Binden")
+                }
+            }
+            catalog.bindings
+                .filter { it.assetId == stored.descriptor.assetId }
+                .forEach { binding ->
+                    Text(
+                        "Aktiv: ${binding.target.name} → ${binding.targetId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(catalog.toolboxSets, key = { it.id }) { set ->
+                    FilterChip(
+                        selected = stored.descriptor.assetId in set.assetIds,
+                        onClick = { onToolboxToggle(set.id) },
+                        label = { Text(set.name) },
+                    )
                 }
             }
         }
@@ -10318,6 +11101,8 @@ private fun RailTraceTrackChip(track: RailTrack) {
 
 @Composable
 private fun ColumnScope.RailTraceCompactRail(
+    surfaceMode: RailSurfaceMode,
+    onSurfaceModeChange: (RailSurfaceMode) -> Unit,
     onSave: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
@@ -10334,6 +11119,24 @@ private fun ColumnScope.RailTraceCompactRail(
     onExpandRequested: () -> Unit,
 ) {
     val actions = listOf(
+        WorkspaceRailActionSpec(
+            label = "Records-Modus",
+            icon = Icons.Default.FiberManualRecord,
+            selected = surfaceMode == RailSurfaceMode.Records,
+            onClick = { onSurfaceModeChange(RailSurfaceMode.Records) },
+        ),
+        WorkspaceRailActionSpec(
+            label = "Run-Modus",
+            icon = Icons.Default.PlayArrow,
+            selected = surfaceMode == RailSurfaceMode.Run,
+            onClick = { onSurfaceModeChange(RailSurfaceMode.Run) },
+        ),
+        WorkspaceRailActionSpec(
+            label = "WatchDog-Modus",
+            icon = Icons.Default.BugReport,
+            selected = surfaceMode == RailSurfaceMode.WatchDog,
+            onClick = { onSurfaceModeChange(RailSurfaceMode.WatchDog) },
+        ),
         WorkspaceRailActionSpec("Save Workspace", Icons.Default.Save, onClick = onSave),
         WorkspaceRailActionSpec("Undo", Icons.AutoMirrored.Filled.Undo, onClick = onUndo),
         WorkspaceRailActionSpec("Redo", Icons.AutoMirrored.Filled.Redo, onClick = onRedo),
@@ -10537,6 +11340,10 @@ private fun RecorderStepsPanel(
     selectedRecordingSessionPath: String? = null,
     onRecordingSessionSelected: (String) -> Unit = {},
     recordingPlaybackState: RecordingPlaybackState = RecordingPlaybackState(),
+    recordingReplayBookmark: RecordingReplayBookmark? = null,
+    recoveryMessage: String? = null,
+    onContinueInterruptedSession: (String) -> Unit = {},
+    onRecordingBookmarkDelete: (String) -> Unit = {},
     onRecordingPlaybackPlayPause: () -> Unit = {},
     onRecordingPlaybackPrevious: () -> Unit = {},
     onRecordingPlaybackNext: () -> Unit = {},
@@ -10843,6 +11650,19 @@ private fun RecorderStepsPanel(
                         }
                     }
                 }
+                val interruptedDocument = recordingPlaybackState.document?.takeIf {
+                    it.sessionStatus == RecordingSessionStatus.INTERRUPTED
+                }
+                if (railProjection.surfaceMode == RailSurfaceMode.Records && interruptedDocument != null) {
+                    RailTraceRecoveryCard(
+                        sessionId = interruptedDocument.sessionId,
+                        bookmark = recordingReplayBookmark?.takeIf { it.recordId == interruptedDocument.sessionId },
+                        message = recoveryMessage,
+                        onContinue = { onContinueInterruptedSession(interruptedDocument.sessionId) },
+                        onRestart = onRecordingPlaybackRestart,
+                        onDeleteBookmark = { onRecordingBookmarkDelete(interruptedDocument.sessionId) },
+                    )
+                }
                 if (railProjection.surfaceMode == RailSurfaceMode.Records && steps.any { "review.status" in it.properties }) {
                     Text(
                         text = "Review: ${reviewProgress.first} geprueft | ${reviewProgress.second} offen | ${reviewProgress.third} verworfen",
@@ -11059,6 +11879,48 @@ private fun RailTraceStepInspector(
             RailTraceInspectorRow("Zeit", step.timestampMs?.formatTimelineMillis() ?: "-")
             RailTraceInspectorRow("Dauer", step.durationMs?.formatTimelineMillis() ?: "-")
             RailTraceInspectorRow("Activity", step.activityName ?: "-")
+            step.integrityReport?.let { report ->
+                HorizontalDivider()
+                Text("Evidence", style = MaterialTheme.typography.labelMedium)
+                RailTraceInspectorRow(
+                    "Integrity",
+                    if (report.isValid) "VALID" else "INVALID",
+                    if (report.isValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
+                RailTraceInspectorRow("Interaction", report.interactionId)
+                report.provenance.evidence.forEach { evidence ->
+                    RailTraceInspectorRow(
+                        evidence.evidence.kind.name,
+                        evidence.evidence.evidenceId,
+                        MaterialTheme.colorScheme.secondary,
+                    )
+                    evidence.resources.forEach { resource ->
+                        RailTraceInspectorRow("  ${resource.kind.name}", resource.resourceId)
+                    }
+                }
+                HorizontalDivider()
+                Text("Provenance", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    text = report.provenance.displayTree(),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (report.issues.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("Diagnosen", style = MaterialTheme.typography.labelMedium)
+                    report.issues.forEach { issue ->
+                        RailTraceInspectorRow(
+                            issue.code,
+                            issue.integrityMessage(),
+                            when (issue.severity) {
+                                RecordingIntegritySeverity.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+                                RecordingIntegritySeverity.WARNING -> MaterialTheme.colorScheme.tertiary
+                                RecordingIntegritySeverity.ERROR -> MaterialTheme.colorScheme.error
+                            },
+                        )
+                    }
+                }
+            }
             val sourceKind = step.properties["sourceKind"]
             val sourceId = step.properties["sourceId"]
             val sourceLine = step.properties["sourceLine"]
@@ -11101,6 +11963,98 @@ private fun RailTraceStepInspector(
             }
         }
     }
+}
+
+@Composable
+private fun RailTraceRecoveryCard(
+    sessionId: String,
+    bookmark: RecordingReplayBookmark?,
+    message: String?,
+    onContinue: () -> Unit,
+    onRestart: () -> Unit,
+    onDeleteBookmark: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.42f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.62f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Unterbrochene Session", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "${sessionId.takeLast(12)} bleibt unverändert. Fortsetzen erzeugt eine neue verknüpfte Session.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            if (bookmark == null) {
+                Text(
+                    "Kein Replay-Bookmark gespeichert",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                RailTraceInspectorRow("Position", bookmark.positionMs.formatTimelineMillis())
+                RailTraceInspectorRow("Tempo", "${bookmark.speed}x")
+                RailTraceInspectorRow("Selected Step", bookmark.entryId ?: "-")
+            }
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+                    Text("Fortsetzen", maxLines = 1)
+                }
+                OutlinedButton(onClick = onRestart, modifier = Modifier.fillMaxWidth()) {
+                    Text("Von Anfang", maxLines = 1)
+                }
+                TextButton(
+                    onClick = onDeleteBookmark,
+                    enabled = bookmark != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Bookmark löschen")
+                }
+            }
+            message?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+    }
+}
+
+private fun com.visualtasker.wss.recording.RecordingStepProvenance.displayTree(): String = buildString {
+    append("Step ").append(stepId)
+    if (evidence.isEmpty()) {
+        append("\n  Interaction ").append(interactionId)
+        rawEventIds.forEach { rawEventId -> append("\n    RawEvent ").append(rawEventId) }
+    } else {
+        evidence.forEach { item ->
+            append("\n  Evidence ").append(item.evidence.evidenceId)
+            append("\n    Interaction ").append(interactionId)
+            rawEventIds.forEach { rawEventId -> append("\n      RawEvent ").append(rawEventId) }
+            item.resources.forEach { resource ->
+                append("\n    ").append(resource.kind.name).append(' ').append(resource.resourceId)
+            }
+        }
+    }
+}
+
+private fun RecordingIntegrityIssue.integrityMessage(): String = when (this) {
+    is RecordingIntegrityIssue.MissingRawEvent -> "RawEvent $rawEventId fehlt"
+    is RecordingIntegrityIssue.MissingEvidence -> "Evidence $evidenceId fehlt"
+    is RecordingIntegrityIssue.MissingResource -> "${resource.kind.name} ${resource.resourceId} fehlt"
+    is RecordingIntegrityIssue.BrokenStepEvidenceRef -> "Step verweist auf unbekannte Evidence $evidenceId"
+    is RecordingIntegrityIssue.BrokenStepInteractionRef -> "Step verweist auf unbekannte Interaction $interactionId"
+    is RecordingIntegrityIssue.OrphanEvidence -> "Evidence $evidenceId ist verwaist"
+    is RecordingIntegrityIssue.OrphanInteraction -> "Interaction $interactionId ist verwaist"
 }
 
 private val railTraceInspectorPrimaryPropertyKeys = setOf(
@@ -12024,8 +12978,10 @@ private fun BlockEditorPanel(
     workflowState: WorkspaceWorkflowState,
     paletteInsertMode: BlockPaletteInsertMode,
     showMiniMap: Boolean,
+    visualAssetRuntime: VisualAssetPresentationRuntime,
     onSessionReady: (BlockEditorShellEditorSession?) -> Unit,
     onBlockSelected: (BlockId?) -> Unit,
+    focusedBlockId: BlockId?,
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
     val hostServices = remember(panelId) { WorkspaceShellUiPluginHostAdapter() }
@@ -12050,10 +13006,11 @@ private fun BlockEditorPanel(
     }
     val session = boundEditor.session as BlockEditorShellEditorSession
     val sessionSource = "$WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX$panelId"
+    val selectionEchoGuard = remember(session) { WorkspaceSelectionEchoGuard<BlockId>() }
     LaunchedEffect(session) {
         onSessionReady(session)
     }
-    LaunchedEffect(session, workflowState.revision, workflowState.mutationSource) {
+    LaunchedEffect(session, workflowState.revision, workflowState.mutationSource, focusedBlockId) {
         val current = WorkspaceSerializer.serialize(session.controller.document)
         if (
             workflowState.mutationSource != sessionSource &&
@@ -12070,6 +13027,16 @@ private fun BlockEditorPanel(
             )
             onSessionReady(session)
         }
+        focusedBlockId
+            ?.takeIf { it in session.controller.document.blocks }
+            ?.let { target ->
+                if (session.controller.selectedBlockIds.singleOrNull() != target) {
+                    selectionEchoGuard.expect(target)
+                    session.controller.focusBlock(target, select = true)
+                } else {
+                    selectionEchoGuard.clear()
+                }
+            }
     }
 
     DisposableEffect(boundEditor, uiPrefs, onSessionReady) {
@@ -12087,12 +13054,31 @@ private fun BlockEditorPanel(
     }
     LaunchedEffect(session, onBlockSelected) {
         snapshotFlow { session.controller.selectedBlockIds.singleOrNull() }
-            .collect(onBlockSelected)
+            .collect { selected ->
+                if (!selectionEchoGuard.consumeIfEcho(selected)) {
+                    onBlockSelected(selected)
+                }
+            }
+    }
+
+    val visualPathProvider = remember(visualAssetRuntime) {
+        BlockVisualPathProvider { request ->
+            val targetId = request.definition?.id
+                ?: return@BlockVisualPathProvider BlockVisualPathResult.Unsupported
+            visualAssetRuntime.pathFor(
+                target = EmaVisualAssetBindingTarget.Block,
+                targetId = targetId,
+                width = request.targetSize.width,
+                height = request.targetSize.height,
+            )?.let(BlockVisualPathResult::LegacyPath)
+                ?: BlockVisualPathResult.Unsupported
+        }
     }
 
     BlockEditorShellPanel(
         session = session,
         onSave = { persistBlockEditorSession(uiPrefs, session) },
+        visualPathProvider = visualPathProvider,
         uiConfig = de.visualtasker.blockeditor.compose.host.BlockEditorHostUiConfig(
             showBottomPanel = false,
             showFloatingInspector = true,
@@ -12115,12 +13101,16 @@ private fun ColumnScope.BlockEditorCompactCategoryRail(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
+    onUndoWorkspace: () -> Boolean,
+    onRedoWorkspace: () -> Boolean,
 ) {
     val actions = DefaultEditorInteractionPolicy.actionsFor(EditorProjection.BlockEditor).mapNotNull { descriptor ->
         descriptor.toBlockEditorRailAction(
             session = session,
             onExpandRequested = onExpandRequested,
             onSave = onSave,
+            onUndoWorkspace = onUndoWorkspace,
+            onRedoWorkspace = onRedoWorkspace,
         )
     }
     Column(
@@ -12156,13 +13146,19 @@ private fun EditorActionDescriptor.toBlockEditorRailAction(
     session: BlockEditorShellEditorSession?,
     onExpandRequested: () -> Unit,
     onSave: () -> Unit,
+    onUndoWorkspace: () -> Boolean,
+    onRedoWorkspace: () -> Boolean,
 ): WorkspaceRailActionSpec? {
     val controller = session?.controller
     val hasSession = session != null
     return when (id) {
         EditorActionId.Save -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession, onClick = onSave)
-        EditorActionId.Undo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.undo() }
-        EditorActionId.Redo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) { controller?.redo() }
+        EditorActionId.Undo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            if (!onUndoWorkspace()) controller?.undo()
+        }
+        EditorActionId.Redo -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
+            if (!onRedoWorkspace()) controller?.redo()
+        }
         EditorActionId.AutoArrange -> WorkspaceRailActionSpec(label, editorActionIcon(id), enabled = hasSession) {
             controller?.autoArrangeWorkspace()
         }
@@ -12816,6 +13812,7 @@ private fun FlowchartPanel(
     reporterNodesVisible: Boolean,
     variableNodesVisible: Boolean,
     operatorNodesVisible: Boolean,
+    visualAssetRuntime: VisualAssetPresentationRuntime,
     onNodeSelected: (FlowNodeId) -> Unit,
     onSelectionChanged: (FlowNodeId?, FlowEdgeId?) -> Unit,
     onNodeDelete: (FlowNodeId) -> Unit,
@@ -12872,6 +13869,19 @@ private fun FlowchartPanel(
         }
     }
 
+    val visualNodeShapeProvider = remember(visualAssetRuntime) {
+        FlowchartNodeShapeProvider { node, width, height ->
+            val targetId = (node.properties["blockType"] as? FlowSemanticValue.StringValue)?.value
+                ?: return@FlowchartNodeShapeProvider null
+            visualAssetRuntime.pathFor(
+                target = EmaVisualAssetBindingTarget.FlowNode,
+                targetId = targetId,
+                width = width,
+                height = height,
+            )
+        }
+    }
+
     FlowchartShellPanel(
         session = session,
         runtimeSnapshot = runtimeSnapshot,
@@ -12901,6 +13911,7 @@ private fun FlowchartPanel(
         reporterNodesVisible = reporterNodesVisible,
         variableNodesVisible = variableNodesVisible,
         operatorNodesVisible = operatorNodesVisible,
+        visualNodeShapeProvider = visualNodeShapeProvider,
         onDataFlowVisibleChange = onDataFlowVisibleChange,
         onRuntimeLayerVisibleChange = onRuntimeVisibleChange,
         onDiagnosticsVisibleChange = onDiagnosticsVisibleChange,
@@ -13008,6 +14019,15 @@ private fun defaultPanels(): List<PanelState> = listOf(
     workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor", 470f, 124f, 360f, 300f, 2),
     workspacePanel("panel-3", PanelType.Flowchart, "Flowchart", 470f, 460f, 360f, 300f, 3),
     workspacePanel("panel-4", PanelType.LogConsole, "LogConsole", 860f, 150f, 320f, 240f, 4)
+)
+
+private fun studioPanels(): List<PanelState> = listOf(
+    workspacePanel("panel-1", PanelType.TextEditor, "TextEditor", 84f, 112f, 360f, 300f, 1),
+    workspacePanel("panel-2", PanelType.BlockEditor, "BlockEditor", 458f, 112f, 360f, 300f, 2),
+    workspacePanel("panel-3", PanelType.Flowchart, "Flowchart", 84f, 426f, 360f, 300f, 3),
+    workspacePanel("panel-4", PanelType.RecorderSteps, "RailTrace", 458f, 426f, 360f, 300f, 4),
+    workspacePanel("panel-5", PanelType.LogConsole, "LogConsole", 832f, 112f, 320f, 240f, 5),
+    workspacePanel("panel-6", PanelType.DebugInfo, "Debug", 832f, 366f, 320f, 240f, 6),
 )
 
 private fun workspacePanel(
@@ -13123,12 +14143,6 @@ private fun updatePanel(
 ) {
     val index = panels.indexOfFirst { it.id == id }
     if (index >= 0) panels[index] = updater(panels[index])
-}
-
-private fun MutableList<RecorderStepUi>.move(from: Int, to: Int) {
-    if (from == to || from !in indices || to !in indices) return
-    val item = removeAt(from)
-    add(to, item)
 }
 
 private fun persistStepperState(
@@ -13493,6 +14507,7 @@ private fun WorkspaceSettingsBottomSheet(
     focusedFlowchartEdgeId: FlowEdgeId?,
     activeRuntimeStepIndex: Int?,
     onResetPanels: () -> Unit,
+    onApplyStudioLayout: () -> Unit,
     onSaveLayout: () -> Unit,
     onDeleteLayout: () -> Unit,
     onAutoArrange: () -> Unit,
@@ -13587,6 +14602,9 @@ private fun WorkspaceSettingsBottomSheet(
                 Text("Aktuell: $themeMode")
                 Button(onClick = onResetPanels, modifier = Modifier.padding(top = 8.dp)) {
                     Text("Panels zurücksetzen")
+                }
+                OutlinedButton(onClick = onApplyStudioLayout) {
+                    Text("Studio-Layout anwenden")
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

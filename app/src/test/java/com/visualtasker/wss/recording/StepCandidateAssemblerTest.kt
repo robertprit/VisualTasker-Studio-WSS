@@ -19,7 +19,7 @@ class StepCandidateAssemblerTest {
         assertEquals("button", (candidate.target as CandidateTarget.A11y).nodeId)
         assertEquals(ConfidenceLevel.HIGH, candidate.confidence.level)
         assertTrue(ConfidenceReason.EXPLICIT_RECORDED_TARGET in candidate.confidence.reasons)
-        assertEquals(StepReviewStatus.PROPOSED, candidate.reviewStatus)
+        assertEquals(StepReviewStatus.UNREVIEWED, candidate.reviewStatus)
     }
 
     @Test
@@ -142,7 +142,7 @@ class StepCandidateAssemblerTest {
     ): RecordingPlaybackDocument {
         val before = scene("scene-before", 1, "snapshot-before", children)
         val after = if (changed) scene("scene-after", 2, "snapshot-after", children) else before
-        val tap = TapInteraction(
+        val tap = recordingTapInteraction(
             interactionId = "interaction-1",
             rawEventId = "raw-1",
             sessionId = "session-1",

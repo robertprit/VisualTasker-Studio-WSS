@@ -1,5 +1,15 @@
 package com.visualtasker.wss.workspace.model
 
+import com.compose.canvas.asset.EmaCodec as ShapeMakerEmaCodec
+import com.compose.canvas.asset.VisualAssetIdentity
+import com.compose.canvas.asset.VisualAssetType
+import com.compose.canvas.asset.newVisualAsset
+import com.compose.canvas.core.ShapeMetadata
+import com.compose.canvas.core.VectorDocument
+import com.compose.canvas.geometry.RectF
+import com.compose.canvas.metadata.ContentArea
+import com.compose.canvas.metadata.Port
+import com.compose.canvas.metadata.PortType
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,5 +130,58 @@ class EmaVisualAssetTest {
         assertEquals(setOf(EmaVisualAssetBindingTarget.Block), descriptor.bindingTargets)
         val portDescriptor = descriptor.copy(type = EmaVisualAssetType.PORT_SHAPE)
         assertEquals(setOf(EmaVisualAssetBindingTarget.Port), portDescriptor.bindingTargets)
+    }
+
+    @Test
+    fun createsVersionHistoryAndIndependentDuplicatesWithoutChangingDesign() {
+        val directory = Files.createTempDirectory("ema-versions").toFile()
+        val imported = EmaVisualAssetStore.importRaw(directory, validEma) as EmaVisualAssetImportResult.Imported
+
+        val next = EmaVisualAssetStore.createNextVersion(directory, imported.asset, "Alert Block Renamed")
+            as EmaVisualAssetImportResult.Imported
+        val duplicate = EmaVisualAssetStore.duplicate(directory, imported.asset, "block-alert-copy")
+            as EmaVisualAssetImportResult.Imported
+
+        assertEquals(4, next.asset.descriptor.version)
+        assertEquals("Alert Block Renamed", next.asset.descriptor.name)
+        assertEquals(1, duplicate.asset.descriptor.version)
+        assertEquals("block-alert-copy", duplicate.asset.descriptor.assetId)
+        assertEquals(3, EmaVisualAssetStore.list(directory).size)
+        assertEquals(2, EmaVisualAssetStore.latestByAssetId(directory).size)
+        assertTrue(next.asset.file.readText().contains("\"name\": \"Alert\""))
+    }
+
+    @Test
+    fun roundTripsRealShapeMakerSemanticsThroughWssCatalog() {
+        val document = VectorDocument(
+            name = "Semantic Shape",
+            metadata = ShapeMetadata(
+                ports = listOf(
+                    Port(name = "value", x = 10f, y = 20f, portType = PortType.VALUE_INPUT, valueType = "Number"),
+                    Port(name = "next", x = 90f, y = 80f, portType = PortType.NEXT),
+                ),
+                contentAreas = listOf(
+                    ContentArea(name = "body", bounds = RectF(10f, 10f, 90f, 70f), contentType = "compose"),
+                ),
+            ),
+        )
+        val shapeMakerAsset = newVisualAsset("semantic-block", "Semantic Block", document).copy(
+            identity = VisualAssetIdentity(
+                assetId = "semantic-block",
+                name = "Semantic Block",
+                type = VisualAssetType.BLOCK_SHAPE,
+                version = 2,
+            ),
+        )
+        val directory = Files.createTempDirectory("ema-real-roundtrip").toFile()
+
+        val imported = EmaVisualAssetStore.importRaw(directory, ShapeMakerEmaCodec.encode(shapeMakerAsset))
+            as EmaVisualAssetImportResult.Imported
+        val decodedByShapeMaker = ShapeMakerEmaCodec.decode(imported.asset.file.readText())
+
+        assertEquals(2, imported.asset.descriptor.portCount)
+        assertEquals(1, imported.asset.descriptor.contentAreaCount)
+        assertEquals("Number", decodedByShapeMaker.design.metadata.ports.first().valueType)
+        assertEquals("compose", decodedByShapeMaker.design.metadata.contentAreas.single().contentType)
     }
 }

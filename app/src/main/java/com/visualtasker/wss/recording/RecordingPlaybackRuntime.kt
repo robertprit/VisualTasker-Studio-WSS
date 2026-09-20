@@ -26,25 +26,38 @@ data class RecordingPlaybackRuntimeState(
     val reviewDecisions: List<StepReviewDecision> = emptyList(),
     val reviewedDocument: ReviewedStepDocument? = null,
     val reviewError: String? = null,
+    val replayBookmark: RecordingReplayBookmark? = null,
 )
 
 object RecordingPlaybackRuntime {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val repositoryRef = AtomicReference<RecordingPlaybackRepository?>(null)
     private val reviewStoreRef = AtomicReference<StepReviewStore?>(null)
+    private val bookmarkStoreRef = AtomicReference<RecordingReplayBookmarkStore?>(null)
     private val controller = RecordingPlaybackController()
     private val _state = MutableStateFlow(RecordingPlaybackRuntimeState())
     val state: StateFlow<RecordingPlaybackRuntimeState> = _state.asStateFlow()
     private var playbackJob: Job? = null
+    private var lastPersistedBookmark: RecordingReplayBookmark? = null
 
     init {
         scope.launch {
-            controller.state.collect { playback -> _state.value = _state.value.copy(playback = playback) }
+            controller.state.collect { playback ->
+                val bookmark = controller.bookmark()
+                _state.value = _state.value.copy(playback = playback, replayBookmark = bookmark)
+                bookmark?.let {
+                    if (shouldPersistReplayBookmark(lastPersistedBookmark, it)) {
+                        bookmarkStoreRef.get()?.save(it)
+                        lastPersistedBookmark = it
+                    }
+                }
+            }
         }
     }
 
     fun initialize(context: Context) {
         repository(context)
+        bookmarkStore(context)
         refresh(context, loadLatestWhenIdle = true)
     }
 
@@ -74,7 +87,8 @@ object RecordingPlaybackRuntime {
                     else {
                         val candidates = StepCandidateAssembler.assemble(document)
                         val decisions = reviewStore(context).loadForSession(sessionId)
-                        controller.load(document)
+                        lastPersistedBookmark = bookmarkStore(context).load(document.sessionId)
+                        controller.load(document, lastPersistedBookmark)
                         _state.value = _state.value.copy(
                             candidateDocument = candidates,
                             reviewDecisions = decisions,
@@ -263,6 +277,13 @@ object RecordingPlaybackRuntime {
     fun next() { pause(); controller.next() }
     fun previous() { pause(); controller.previous() }
     fun restart() { pause(); controller.restart() }
+    fun clearBookmark(context: Context, recordId: String) {
+        bookmarkStore(context).clear(recordId)
+        if (lastPersistedBookmark?.recordId == recordId) lastPersistedBookmark = null
+        if (_state.value.replayBookmark?.recordId == recordId) {
+            _state.value = _state.value.copy(replayBookmark = null)
+        }
+    }
     fun seekToEntry(index: Int) { pause(); controller.seekToEntry(index) }
     fun setPlaybackSpeed(speed: Float) = controller.setPlaybackSpeed(speed)
     fun selectA11yNode(nodeId: String?) = controller.selectA11yNode(nodeId)
@@ -281,6 +302,13 @@ object RecordingPlaybackRuntime {
             reviewStoreRef.get() ?: RoomStepReviewStore(
                 RecorderDatabase.get(context.applicationContext),
             ).also(reviewStoreRef::set)
+        }
+
+    private fun bookmarkStore(context: Context): RecordingReplayBookmarkStore =
+        bookmarkStoreRef.get() ?: synchronized(this) {
+            bookmarkStoreRef.get() ?: SharedPreferencesRecordingReplayBookmarkStore(
+                context.applicationContext,
+            ).also(bookmarkStoreRef::set)
         }
 }
 

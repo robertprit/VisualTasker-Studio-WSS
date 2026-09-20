@@ -367,7 +367,7 @@ private fun RecordingPlaybackInspector(
                 },
                 onUseCoordinate = { onUseCoordinateTarget(selectedCandidate.candidateId, reviewLabel) },
                 onReject = { onReviewStatus(selectedCandidate.candidateId, StepReviewStatus.REJECTED, reviewLabel) },
-                onLater = { onReviewStatus(selectedCandidate.candidateId, StepReviewStatus.NEEDS_REVIEW, reviewLabel) },
+                onLater = { onReviewStatus(selectedCandidate.candidateId, StepReviewStatus.DEFERRED, reviewLabel) },
                 onNextUnreviewed = onNextUnreviewed,
             )
         }
@@ -515,9 +515,9 @@ private fun reviewStatusColor(status: StepReviewStatus): Color = when (status) {
     StepReviewStatus.CONFIRMED -> Color(0xFF45C995)
     StepReviewStatus.CORRECTED -> Color(0xFF52B7FF)
     StepReviewStatus.REJECTED -> Color(0xFFFF7A90)
-    StepReviewStatus.NEEDS_REVIEW, StepReviewStatus.STALE -> Color(0xFFFFC857)
+    StepReviewStatus.NEEDS_REVIEW, StepReviewStatus.DEFERRED, StepReviewStatus.STALE -> Color(0xFFFFC857)
     StepReviewStatus.UNSUPPORTED -> Color(0xFFD7A5FF)
-    StepReviewStatus.PROPOSED -> Color(0xFF9BA7C6)
+    StepReviewStatus.PROPOSED, StepReviewStatus.UNREVIEWED -> Color(0xFF9BA7C6)
 }
 
 @Composable
@@ -602,8 +602,8 @@ private fun RecordingPlaybackScreenshot(
                         style = Stroke(width = 3.dp.toPx()),
                     )
                 }
-                state.selectedEntry?.interaction?.tap?.let { tap ->
-                    val point = transform.mapPoint(tap.xPx.toFloat(), tap.yPx.toFloat())
+                (state.selectedEntry?.interaction?.interaction?.payload as? com.visualtasker.wss.recording.RecordingInteractionPayload.Tap)?.let { tap ->
+                    val point = transform.mapPoint(tap.position.xPx.toFloat(), tap.position.yPx.toFloat())
                     drawCircle(Color(0xFFFFC857), radius = 9.dp.toPx(), center = Offset(point.x, point.y), style = Stroke(width = 3.dp.toPx()))
                     drawCircle(Color(0xFFFF5DA2), radius = 2.5.dp.toPx(), center = Offset(point.x, point.y))
                 }

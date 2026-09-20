@@ -61,7 +61,7 @@ class RecorderRoomPersistenceTest {
     }
 
     @Test
-    fun recoveryMarksOpenSessionPartialAndPreservesGraph() = runBlocking {
+    fun recoveryMarksOpenSessionInterruptedAndPreservesGraph() = runBlocking {
         val db = openDatabase()
         val store = RoomRecorderSessionStore(db)
         val fixture = initialFixture()
@@ -70,11 +70,38 @@ class RecorderRoomPersistenceTest {
 
         assertEquals(listOf(fixture.recording.sessionId), store.recoverInterrupted("PROCESS_INTERRUPTED"))
         val loaded = store.load(fixture.recording.sessionId)!!
-        assertEquals(RecordingSessionStatus.PARTIAL, loaded.session.status)
+        assertEquals(RecordingSessionStatus.INTERRUPTED, loaded.session.status)
         assertEquals("PROCESS_INTERRUPTED", loaded.session.failure)
         assertEquals(1, loaded.scenes.size)
         assertEquals(1, loaded.frames.size)
         assertEquals(1, loaded.snapshots.size)
+    }
+
+    @Test
+    fun resumedSessionReferenceSurvivesDatabaseRestart() = runBlocking {
+        var db = openDatabase()
+        var store = RoomRecorderSessionStore(db)
+        val source = initialFixture().preparing.copy(
+            sessionId = "session-interrupted",
+            status = RecordingSessionStatus.INTERRUPTED,
+            failure = "PROCESS_INTERRUPTED",
+        )
+        val resumed = source.copy(
+            sessionId = "session-resumed",
+            status = RecordingSessionStatus.RECORDING,
+            failure = null,
+            resumedFromSessionId = source.sessionId,
+        )
+        store.createSession(source)
+        store.createSession(resumed)
+        db.close()
+        database = null
+
+        db = openDatabase()
+        store = RoomRecorderSessionStore(db)
+
+        assertEquals(RecordingSessionStatus.INTERRUPTED, store.load(source.sessionId)?.session?.status)
+        assertEquals(source.sessionId, store.load(resumed.sessionId)?.session?.resumedFromSessionId)
     }
 
     @Test

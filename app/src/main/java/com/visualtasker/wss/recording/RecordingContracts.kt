@@ -1,8 +1,8 @@
 package com.visualtasker.wss.recording
 
-const val RECORDING_SCHEMA_VERSION = 1
+const val RECORDING_SCHEMA_VERSION = 3
 
-enum class RecordingSessionStatus { PREPARING, RECORDING, STOPPING, COMPLETED, PARTIAL, FAILED, PAUSED }
+enum class RecordingSessionStatus { PREPARING, RECORDING, STOPPING, COMPLETED, PARTIAL, INTERRUPTED, FAILED, PAUSED }
 enum class RecordingSceneStatus { OPEN, CLOSED }
 enum class RecordingCaptureStatus { CAPTURED, REUSED, FAILED, DISCARDED }
 enum class RecordingInteractionStatus { CAPTURING_AFTER, UNCHANGED, CHANGED, CAPTURE_FAILED }
@@ -25,6 +25,7 @@ data class RecordingSession(
     val initialSceneId: String? = null,
     val latestSceneId: String? = null,
     val failure: String? = null,
+    val resumedFromSessionId: String? = null,
 )
 
 data class RecordingWindowContext(
@@ -115,19 +116,125 @@ data class RawRecordingEvent(
     val payload: Map<String, String>,
 )
 
-data class TapInteraction(
+enum class RecordingInteractionType { TAP, SWIPE, TEXT, WINDOW, SCREENSHOT }
+enum class RecordingInteractionSource { RECORDER, ACCESSIBILITY, OVERLAY, IMPORT, SYSTEM }
+enum class RecordingWindowChange { APPEARED, DISAPPEARED, ACTIVITY_CHANGED, FOCUS_CHANGED, FOREGROUND_CHANGED }
+
+data class RecordingPoint(
+    val xPx: Int,
+    val yPx: Int,
+)
+
+sealed interface RecordingInteractionPayload {
+    data class Tap(
+        val position: RecordingPoint,
+        val durationMs: Long? = null,
+        val pointerId: Int? = null,
+        val button: String? = null,
+        val targetReference: String? = null,
+    ) : RecordingInteractionPayload
+
+    data class Swipe(
+        val start: RecordingPoint,
+        val end: RecordingPoint,
+        val durationMs: Long,
+        val path: List<RecordingPoint> = emptyList(),
+        val pointerId: Int? = null,
+    ) : RecordingInteractionPayload
+
+    data class Text(
+        val value: String?,
+        val redacted: Boolean,
+        val valueHash: String? = null,
+        val targetReference: String? = null,
+        val inputMethod: String? = null,
+    ) : RecordingInteractionPayload {
+        init {
+            require(!redacted || value == null) { "Redacted text must not retain its clear value." }
+        }
+    }
+
+    data class Window(
+        val change: RecordingWindowChange,
+        val packageName: String?,
+        val activityName: String?,
+        val windowId: String?,
+        val title: String? = null,
+    ) : RecordingInteractionPayload
+
+    data class Screenshot(
+        val resource: RecordingResourceRef,
+        val widthPx: Int? = null,
+        val heightPx: Int? = null,
+    ) : RecordingInteractionPayload {
+        init {
+            require(resource.kind == RecordingResourceKind.SCREENSHOT_ASSET) {
+                "Screenshot interactions must reference a screenshot asset."
+            }
+        }
+    }
+}
+
+data class RecordingInteraction(
     val interactionId: String,
-    val rawEventId: String,
     val sessionId: String,
     val sequence: Long,
     val occurredAtEpochMs: Long,
     val occurredAtElapsedRealtimeNanos: Long,
-    val xPx: Int,
-    val yPx: Int,
-    val beforeSceneId: String,
+    val source: RecordingInteractionSource,
+    val rawEventIds: List<String>,
+    val evidenceRefs: List<String> = emptyList(),
+    val beforeSceneId: String? = null,
     val afterSceneId: String? = null,
-    val targetA11yNodeId: String? = null,
     val status: RecordingInteractionStatus,
+    val payload: RecordingInteractionPayload,
+) {
+    val type: RecordingInteractionType
+        get() = when (payload) {
+            is RecordingInteractionPayload.Tap -> RecordingInteractionType.TAP
+            is RecordingInteractionPayload.Swipe -> RecordingInteractionType.SWIPE
+            is RecordingInteractionPayload.Text -> RecordingInteractionType.TEXT
+            is RecordingInteractionPayload.Window -> RecordingInteractionType.WINDOW
+            is RecordingInteractionPayload.Screenshot -> RecordingInteractionType.SCREENSHOT
+        }
+
+    init {
+        require(interactionId.isNotBlank()) { "Interaction id must not be blank." }
+        require(sessionId.isNotBlank()) { "Interaction session id must not be blank." }
+        require(sequence >= 0L) { "Interaction sequence must not be negative." }
+        require(rawEventIds.isNotEmpty()) { "Canonical interactions require raw provenance." }
+        require(rawEventIds.none(String::isBlank)) { "Raw event ids must not be blank." }
+    }
+}
+
+fun recordingTapInteraction(
+    interactionId: String,
+    rawEventId: String,
+    sessionId: String,
+    sequence: Long,
+    occurredAtEpochMs: Long,
+    occurredAtElapsedRealtimeNanos: Long,
+    xPx: Int,
+    yPx: Int,
+    beforeSceneId: String,
+    afterSceneId: String? = null,
+    targetA11yNodeId: String? = null,
+    status: RecordingInteractionStatus,
+): RecordingInteraction = RecordingInteraction(
+    interactionId = interactionId,
+    sessionId = sessionId,
+    sequence = sequence,
+    occurredAtEpochMs = occurredAtEpochMs,
+    occurredAtElapsedRealtimeNanos = occurredAtElapsedRealtimeNanos,
+    source = RecordingInteractionSource.RECORDER,
+    rawEventIds = listOf(rawEventId),
+    beforeSceneId = beforeSceneId,
+    afterSceneId = afterSceneId,
+    status = status,
+    payload = RecordingInteractionPayload.Tap(
+        position = RecordingPoint(xPx, yPx),
+        targetReference = targetA11yNodeId,
+    ),
 )
 
 data class RecorderCapture(
@@ -147,7 +254,7 @@ data class PersistedRecordingSession(
     val assets: List<ScreenshotAsset>,
     val snapshots: List<A11ySnapshot>,
     val rawEvents: List<RawRecordingEvent>,
-    val interactions: List<TapInteraction>,
+    val interactions: List<RecordingInteraction>,
 )
 
 sealed interface RecordingOperationResult<out T> {

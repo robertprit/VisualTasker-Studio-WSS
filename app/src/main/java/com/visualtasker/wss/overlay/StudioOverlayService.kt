@@ -655,7 +655,11 @@ class StudioOverlayService : Service() {
             }
             when (result) {
                 is RecordingOperationResult.Success -> {
-                    val target = RecordingEventStore.start(this@StudioOverlayService, baselineWindowContext = baseline)
+                    val target = RecordingEventStore.start(
+                        this@StudioOverlayService,
+                        baselineWindowContext = baseline,
+                        canonicalSessionId = result.value.sessionId,
+                    )
                     setStatus("Aufnahme laeuft: ${target.name}")
                     startRecordingTicker()
                 }
@@ -945,11 +949,18 @@ class StudioOverlayService : Service() {
                         }
                     }
 
-                    MotionEvent.ACTION_UP,
-                    MotionEvent.ACTION_CANCEL,
-                    -> {
+                    MotionEvent.ACTION_UP -> {
+                        if (dragging) {
+                            savePlacement(key, params, visible = true)
+                        } else {
+                            v.performClick()
+                        }
+                        return true
+                    }
+
+                    MotionEvent.ACTION_CANCEL -> {
                         if (dragging) savePlacement(key, params, visible = true)
-                        return dragging
+                        return true
                     }
                 }
                 return dragging
