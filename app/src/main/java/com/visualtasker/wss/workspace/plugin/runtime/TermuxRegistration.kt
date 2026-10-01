@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 
 const val TERMUX_PACKAGE = "com.termux"
@@ -58,10 +57,13 @@ data class TermuxCommandResult(
 }
 
 object TermuxRegistration {
+    internal fun inspectInstallation(context: Context): PackageInstallationInspection =
+        context.packageManager.inspectInstalledPackages(listOf(TERMUX_PACKAGE))
+
     fun inspect(context: Context): TermuxRegistrationStatus {
         val packageManager = context.packageManager
-        val installed = packageManager.isPackageInstalled(TERMUX_PACKAGE)
-        val apiInstalled = packageManager.isPackageInstalled(TERMUX_API_PACKAGE)
+        val installed = inspectInstallation(context).installed
+        val apiInstalled = packageManager.inspectInstalledPackages(listOf(TERMUX_API_PACKAGE)).installed
         val permissionGranted =
             packageManager.checkPermission(TERMUX_RUN_COMMAND_PERMISSION, context.packageName) ==
                 PackageManager.PERMISSION_GRANTED
@@ -141,13 +143,3 @@ object TermuxRegistration {
             Intent(Settings.ACTION_SETTINGS)
         }
 }
-
-private fun PackageManager.isPackageInstalled(packageName: String): Boolean =
-    runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0L))
-        } else {
-            @Suppress("DEPRECATION")
-            getPackageInfo(packageName, 0)
-        }
-    }.isSuccess

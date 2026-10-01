@@ -22,6 +22,9 @@ import android.os.VibratorManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import kotlin.math.PI
 import kotlin.math.sin
 import androidx.compose.foundation.Canvas
@@ -92,6 +95,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Minimize
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
@@ -109,6 +113,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Upload
@@ -118,12 +123,19 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import com.compose.canvas.VectorShapeEditorApp
 import com.compose.canvas.asset.EmaCodec as ShapeMakerEmaCodec
+import com.compose.canvas.asset.VisualAsset as ShapeMakerVisualAsset
 import com.compose.canvas.asset.VisualAssetType as ShapeMakerVisualAssetType
 import com.compose.canvas.asset.newVisualAsset
+import com.m3shapes.editor.VisualTaskerBuiltInAssets
 import com.compose.canvas.core.VectorDocument
 import com.compose.canvas.editor.EditorState
+import com.compose.canvas.ui.panels.EditorToolsRail
+import com.compose.canvas.ui.panels.InspectorContent
+import com.compose.canvas.ui.panels.LayersContent
 import com.compose.canvas.renderer.VectorRenderer
+import com.compose.canvas.viewport.ViewportController
 import com.compose.canvas.viewport.ViewportState
+import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import com.visualtasker.chartgraph.compose.ChartGraph
 import com.visualtasker.chartgraph.domain.BoxPlotPoint
 import com.visualtasker.chartgraph.domain.BubblePoint
@@ -256,6 +268,8 @@ import com.visualtasker.wss.overlay.LiveMarkerResult
 import com.visualtasker.wss.overlay.LiveMarkerStore
 import com.visualtasker.wss.recording.RecordingPlaybackRuntime
 import com.visualtasker.wss.recording.RecordingPlaybackRuntimeState
+import com.visualtasker.wss.recording.RecordingPlaybackPhase
+import com.visualtasker.wss.recording.RecordingPlaybackPreviewPolicy
 import com.visualtasker.wss.recording.RecordingPlaybackState
 import com.visualtasker.wss.recording.RecordingPlaybackStatus
 import com.visualtasker.wss.recording.RecordingOperationResult
@@ -279,6 +293,12 @@ import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityReport
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityStatus
 import com.visualtasker.wss.emscript.runtime.CommandToolboxAvailability
+import com.visualtasker.wss.emscript.runtime.DatastoreGetQueryRuntime
+import com.visualtasker.wss.emscript.runtime.FileReadTextQueryRuntime
+import com.visualtasker.wss.emscript.runtime.RuntimeDatastoreLoadResult
+import com.visualtasker.wss.emscript.runtime.EmscriptRuntimeDiagnosticException
+import com.visualtasker.wss.emscript.runtime.RuntimeQueryDiagnosticCodes
+import com.visualtasker.wss.emscript.runtime.EmscriptValue
 import com.visualtasker.wss.emscript.runtime.toToolboxCapability
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
@@ -348,6 +368,7 @@ import com.visualtasker.wss.workspace.model.EmaVisualAssetType
 import com.visualtasker.wss.workspace.model.StoredEmaVisualAsset
 import com.visualtasker.wss.workspace.model.M3ShapeMakerBridgeContract
 import com.visualtasker.wss.workspace.model.VisualAssetCapabilityResolver
+import com.visualtasker.wss.workspace.model.VisualAssetBridgeInbox
 import com.visualtasker.wss.workspace.model.VisualAssetBinding
 import com.visualtasker.wss.workspace.model.VisualAssetCatalog
 import com.visualtasker.wss.workspace.model.VisualAssetCatalogStore
@@ -450,12 +471,14 @@ import com.visualtasker.wss.workspace.plugin.runtime.CustomChromeTabSettings
 import com.visualtasker.wss.workspace.plugin.runtime.PluginReadinessEntry
 import com.visualtasker.wss.workspace.plugin.runtime.PluginReadinessState
 import com.visualtasker.wss.workspace.plugin.runtime.PluginRuntimeReadiness
+import com.visualtasker.wss.workspace.plugin.runtime.PackageInstallationInspection
 import com.visualtasker.wss.workspace.plugin.runtime.ShizukuRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginContract
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginSettings
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginSessionStore
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.TermuxRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.toAvailabilityAdapterResult
 import com.visualtasker.wss.workspace.vt2vt.VT2VT_MESSAGE_FORMAT
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionState
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionManager
@@ -527,6 +550,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -1192,13 +1216,18 @@ fun WorkspaceScreen(
     var lastWorkspaceChangeSource by remember(uiPrefs) { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
-    val runtimeDatastore = remember(context) {
+    val runtimeDatastoreLoad = remember(context) { loadRuntimeDatastore(context) }
+    var runtimeDatastoreLoadFailure by remember(runtimeDatastoreLoad) {
+        mutableStateOf(runtimeDatastoreLoad.failure)
+    }
+    val runtimeDatastore = remember(runtimeDatastoreLoad) {
         mutableStateMapOf<String, String>().apply {
-            putAll(loadRuntimeDatastore(context))
+            putAll(runtimeDatastoreLoad.values)
         }
     }
     LaunchedEffect(runtimeDatastore) {
         snapshotFlow { runtimeDatastore.toMap() }
+            .drop(1)
             .debounce(250)
             .collect { values ->
                 persistRuntimeDatastore(context, values)
@@ -1300,9 +1329,9 @@ fun WorkspaceScreen(
                     }
                 },
                 fileReadText = { path ->
-                    runtimeFileFor(context, path)
-                        ?.takeIf { it.isFile }
-                        ?.readText()
+                    FileReadTextQueryRuntime.read(path, resolve = { candidate ->
+                        runtimeFileFor(context, candidate)
+                    })
                 },
                 fileWriteText = { path, text ->
                     runtimeFileFor(context, path)?.let { file ->
@@ -1440,47 +1469,97 @@ fun WorkspaceScreen(
                     true
                 },
                 templateCompare = { name, region, processing ->
-                    val marker = workspaceCanvasState.savedMarkers.firstOrNull {
-                        it.markerMode == ScreenshotCanvasMarkerMode.Template &&
-                            (it.label.equals(name, ignoreCase = true) || it.id == name)
-                    }
-                    if (marker == null) {
-                        null
-                    } else {
+                    try {
+                        val marker = workspaceCanvasState.savedMarkers.firstOrNull {
+                            it.markerMode == ScreenshotCanvasMarkerMode.Template &&
+                                (it.label.equals(name, ignoreCase = true) || it.id == name)
+                        } ?: throw EmscriptRuntimeDiagnosticException(
+                            RuntimeQueryDiagnosticCodes.TEMPLATE_NOT_FOUND,
+                            "Template '$name' wurde nicht gefunden.",
+                        )
                         val assets = loadScreenshotCanvasAssets(context)
-                        val liveAsset = assets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId } ?: assets.firstOrNull()
-                        val referenceAsset = assets.firstOrNull { it.id == marker.assetId } ?: liveAsset
-                        val liveBitmap = liveAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
-                        val referenceBitmap = referenceAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
+                        val liveAsset = assets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId }
+                            ?: assets.firstOrNull()
+                            ?: throw EmscriptRuntimeDiagnosticException(
+                                RuntimeQueryDiagnosticCodes.TEMPLATE_IMAGE_UNAVAILABLE,
+                                "Das Live-Bild ist nicht verfuegbar.",
+                            )
+                        val referenceAsset = marker.assetId
+                            ?.let { assetId -> assets.firstOrNull { it.id == assetId } }
+                            ?: throw EmscriptRuntimeDiagnosticException(
+                                RuntimeQueryDiagnosticCodes.TEMPLATE_IMAGE_UNAVAILABLE,
+                                "Das Referenzbild fuer Template '$name' ist nicht verfuegbar.",
+                            )
+                        val liveBitmap = decodeScreenshotBitmap(liveAsset.file.absolutePath)
+                            ?: throw EmscriptRuntimeDiagnosticException(
+                                RuntimeQueryDiagnosticCodes.TEMPLATE_IMAGE_UNAVAILABLE,
+                                "Das Live-Bild konnte nicht dekodiert werden.",
+                            )
+                        val referenceBitmap = decodeScreenshotBitmap(referenceAsset.file.absolutePath)
+                            ?: throw EmscriptRuntimeDiagnosticException(
+                                RuntimeQueryDiagnosticCodes.TEMPLATE_IMAGE_UNAVAILABLE,
+                                "Das Referenzbild konnte nicht dekodiert werden.",
+                            )
+                        val liveRegion = region.toScreenshotRegion()
+                        if (safeBitmapRegion(liveBitmap, liveRegion) == null ||
+                            safeBitmapRegion(referenceBitmap, marker.region) == null
+                        ) {
+                            throw EmscriptRuntimeDiagnosticException(
+                                RuntimeQueryDiagnosticCodes.TEMPLATE_REGION_UNAVAILABLE,
+                                "Die Live- oder Referenzregion ist nicht verwendbar.",
+                            )
+                        }
                         val mode = processingModeFromRuntime(processing)
                         val score = compareScreenshotRegions(
                             liveBitmap = liveBitmap,
-                            liveRegion = region.toScreenshotRegion(),
+                            liveRegion = liveRegion,
                             liveMode = mode,
                             referenceBitmap = referenceBitmap,
                             referenceRegion = marker.region,
                             referenceMode = marker.processingMode,
+                        ) ?: throw EmscriptRuntimeDiagnosticException(
+                            RuntimeQueryDiagnosticCodes.TEMPLATE_COMPARE_FAILED,
+                            "Der Bildvergleich konnte nicht ausgefuehrt werden.",
                         )
                         workspaceCanvasState.referenceMarkerId = marker.id
-                        workspaceCanvasState.selectedRegion = region.toScreenshotRegion()
+                        workspaceCanvasState.selectedRegion = liveRegion
                         workspaceCanvasState.visualTestScore = score
                         score
+                    } catch (error: EmscriptRuntimeDiagnosticException) {
+                        throw error
+                    } catch (error: Exception) {
+                        throw EmscriptRuntimeDiagnosticException(
+                            RuntimeQueryDiagnosticCodes.TEMPLATE_COMPARE_FAILED,
+                            "Der Bildvergleich ist technisch fehlgeschlagen.",
+                            error,
+                        )
                     }
                 },
                 datastorePut = { key, value ->
                     runtimeDatastore[key] = value
+                    runtimeDatastoreLoadFailure = null
                 },
                 datastoreGet = { key ->
-                    runtimeDatastore[key]
+                    DatastoreGetQueryRuntime.get(
+                        values = runtimeDatastore,
+                        loadFailure = runtimeDatastoreLoadFailure,
+                        key = key,
+                    )
                 },
                 chromeTabCommand = { command, args ->
-                    val status = CustomChromeTabRegistration.inspect(context)
-                    when (command) {
-                        "chrometab.issupported" -> RuntimeAdapterResult(
-                            success = status.supported,
-                            message = "ChromeTab.isSupported = ${status.supported}; ${status.summary}",
-                            warning = !status.supported,
-                        )
+                    when (command.lowercase()) {
+                        "chrometab.issupported" -> try {
+                            val status = CustomChromeTabRegistration.inspect(context)
+                            RuntimeAdapterResult.success(
+                                value = EmscriptValue.BooleanValue(status.supported),
+                                message = "chromeTab.isSupported = ${status.supported}; ${status.summary}",
+                            )
+                        } catch (error: Exception) {
+                            RuntimeAdapterResult.failure(
+                                diagnosticCode = RuntimeQueryDiagnosticCodes.CHROME_TAB_RESOLUTION_FAILED,
+                                message = "Custom-Tabs-Serviceauflösung fehlgeschlagen: ${error.message.orEmpty()}",
+                            )
+                        }
                         "chrometab.open",
                         "chrometab.create",
                         -> {
@@ -1490,11 +1569,13 @@ fun WorkspaceScreen(
                         }
                         "chrometab.bind",
                         "chrometab.maylaunchurl",
-                        -> RuntimeAdapterResult(
-                            success = status.supported,
-                            message = "$command vorbereitet: ${status.summary}",
-                            warning = !status.supported,
-                        )
+                        -> CustomChromeTabRegistration.inspect(context).let { status ->
+                            RuntimeAdapterResult(
+                                success = status.supported,
+                                message = "$command vorbereitet: ${status.summary}",
+                                warning = !status.supported,
+                            )
+                        }
                         "chrometab.close",
                         "chrometab.requestpostmessagechannel",
                         "chrometab.postmessage",
@@ -1506,11 +1587,36 @@ fun WorkspaceScreen(
                         else -> RuntimeAdapterResult(false, "$command ist im CustomChromeTab-Adapter unbekannt.")
                     }
                 },
+                taskerInstalled = {
+                    TaskerRegistration.inspectInstallation(context).toInstalledAdapterResult(
+                        commandId = "tasker.isInstalled",
+                        diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_INSTALLATION_CHECK_FAILED,
+                    )
+                },
+                shizukuInstalled = {
+                    ShizukuRegistration.inspectInstallation(context).toInstalledAdapterResult(
+                        commandId = "shizuku.isInstalled",
+                        diagnosticCode = RuntimeQueryDiagnosticCodes.SHIZUKU_INSTALLATION_CHECK_FAILED,
+                    )
+                },
+                shizukuAvailable = {
+                    ShizukuRegistration.inspectAvailability(context).toAvailabilityAdapterResult()
+                },
+                termuxInstalled = {
+                    TermuxRegistration.inspectInstallation(context).toInstalledAdapterResult(
+                        commandId = "termux.isInstalled",
+                        diagnosticCode = RuntimeQueryDiagnosticCodes.TERMUX_INSTALLATION_CHECK_FAILED,
+                    )
+                },
                 taskerCommand = { command, args ->
-                    val status = TaskerRegistration.inspect(context)
                     when (command) {
-                        "tasker.isinstalled" -> RuntimeAdapterResult(true, "Tasker.isInstalled = ${status.installed}", warning = false)
-                        "tasker.isenabled" -> RuntimeAdapterResult(status.available, "Tasker.isEnabled = ${status.available}; ${status.summary}", warning = !status.available)
+                        "tasker.isinstalled" -> TaskerRegistration.inspectInstallation(context).toInstalledAdapterResult(
+                            commandId = "tasker.isInstalled",
+                            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_INSTALLATION_CHECK_FAILED,
+                        )
+                        "tasker.isenabled" -> TaskerRegistration.inspect(context).let { status ->
+                            RuntimeAdapterResult(status.available, "Tasker.isEnabled = ${status.available}; ${status.summary}", warning = !status.available)
+                        }
                         "tasker.lastresult" -> {
                             val runId = args.firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
                             val result = TaskerPluginSessionStore.lastResult(context, runId)
@@ -1562,17 +1668,25 @@ fun WorkspaceScreen(
                     }
                 },
                 shizukuCommand = { command, args ->
-                    val status = ShizukuRegistration.inspect(context)
                     when (command) {
-                        "shizuku.isinstalled" -> RuntimeAdapterResult(true, "Shizuku.isInstalled = ${status.installed}", warning = false)
-                        "shizuku.isavailable" -> RuntimeAdapterResult(status.available, "Shizuku.isAvailable = ${status.available}")
-                        "shizuku.permissionstate" -> RuntimeAdapterResult(status.permissionGranted, "Shizuku.permissionState = ${if (status.permissionGranted) "granted" else "missing"}")
+                        "shizuku.isinstalled" -> ShizukuRegistration.inspectInstallation(context).toInstalledAdapterResult(
+                            commandId = "shizuku.isInstalled",
+                            diagnosticCode = RuntimeQueryDiagnosticCodes.SHIZUKU_INSTALLATION_CHECK_FAILED,
+                        )
+                        "shizuku.isavailable" ->
+                            ShizukuRegistration.inspectAvailability(context).toAvailabilityAdapterResult()
+                        "shizuku.permissionstate" -> ShizukuRegistration.inspect(context).let { status ->
+                            RuntimeAdapterResult(status.permissionGranted, "Shizuku.permissionState = ${if (status.permissionGranted) "granted" else "missing"}")
+                        }
                         "shizuku.requestpermission" -> {
+                            val status = ShizukuRegistration.inspect(context)
                             val requested = ShizukuRegistration.requestPermissionIfPossible()
                             if (!requested) context.safeStartActivity(ShizukuRegistration.settingsIntent(status))
                             RuntimeAdapterResult(status.available, if (requested) "Shizuku Permission angefragt" else "Shizuku Permission/Settings geöffnet")
                         }
-                        "shizuku.getuid" -> RuntimeAdapterResult(status.available, "Shizuku.getUid = ${status.uid ?: -1}")
+                        "shizuku.getuid" -> ShizukuRegistration.inspect(context).let { status ->
+                            RuntimeAdapterResult(status.available, "Shizuku.getUid = ${status.uid ?: -1}")
+                        }
                         "shizuku.exec",
                         "shizuku.shell",
                         -> {
@@ -1633,11 +1747,16 @@ fun WorkspaceScreen(
                     }
                 },
                 termuxCommand = { command, args ->
-                    val status = TermuxRegistration.inspect(context)
                     when (command) {
-                        "termux.isinstalled" -> RuntimeAdapterResult(true, "Termux.isInstalled = ${status.installed}", warning = false)
-                        "termux.canruncommands" -> RuntimeAdapterResult(status.canRunCommands, "Termux.canRunCommands = ${status.canRunCommands}; ${status.summary}")
+                        "termux.isinstalled" -> TermuxRegistration.inspectInstallation(context).toInstalledAdapterResult(
+                            commandId = "termux.isInstalled",
+                            diagnosticCode = RuntimeQueryDiagnosticCodes.TERMUX_INSTALLATION_CHECK_FAILED,
+                        )
+                        "termux.canruncommands" -> TermuxRegistration.inspect(context).let { status ->
+                            RuntimeAdapterResult(status.canRunCommands, "Termux.canRunCommands = ${status.canRunCommands}; ${status.summary}")
+                        }
                         "termux.get" -> {
+                            val status = TermuxRegistration.inspect(context)
                             val key = args.firstOrNull().orEmpty()
                             val value = when (key.lowercase()) {
                                 "installed" -> status.installed.toString()
@@ -1667,6 +1786,7 @@ fun WorkspaceScreen(
                             RuntimeAdapterResult(result.success, result.message, warning = !result.success)
                         }
                         "termux.api" -> {
+                            val status = TermuxRegistration.inspect(context)
                             val apiCommand = args.firstOrNull().orEmpty().ifBlank { "battery-status" }
                             val result = TermuxRegistration.runCommand(
                                 context,
@@ -1722,7 +1842,7 @@ fun WorkspaceScreen(
     val workspaceSyncGuard = remember { WorkspaceSyncGuard() }
     var workspaceDryRunSequence by remember { mutableStateOf(0L) }
     var workspaceDryRunResult by remember { mutableStateOf<EmscriptDryRunResult?>(null) }
-    var workspaceDryRunRevision by remember { mutableStateOf<Long?>(null) }
+    var workspaceDryRunSource by remember { mutableStateOf<String?>(null) }
     var workspaceDryRunStepIndex by remember { mutableIntStateOf(0) }
     val activeBlockEditorSessionState = remember { mutableStateOf<BlockEditorShellEditorSession?>(null) }
     val activeFlowchartSessionState = remember { mutableStateOf<FlowchartShellEditorSession?>(null) }
@@ -1821,15 +1941,20 @@ fun WorkspaceScreen(
     val emscriptApplyGuard = remember { EmscriptApplyGuard() }
     fun replaceWorkflowStateFromJson(updated: String, source: String) {
         val previousSelection = workspaceSelectionState
-        workflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
+        val previousProjectedScript = workflowState.emscriptProjection.getOrNull()
+        val nextWorkflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
+        val semanticWorkflowChanged = nextWorkflowState.emscriptProjection.getOrNull() != previousProjectedScript
+        workflowState = nextWorkflowState
         workspaceSelectionState = WorkspaceSelectionResolver.reconcile(
             document = workflowState.document,
             selection = previousSelection,
         )
-        flowRuntimeSnapshot = null
-        workspaceDryRunResult = null
-        workspaceDryRunRevision = null
-        workspaceDryRunStepIndex = 0
+        if (semanticWorkflowChanged) {
+            flowRuntimeSnapshot = null
+            workspaceDryRunResult = null
+            workspaceDryRunSource = null
+            workspaceDryRunStepIndex = 0
+        }
         uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, workflowState.serializedJson).apply()
     }
     val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
@@ -2321,6 +2446,7 @@ fun WorkspaceScreen(
         workspaceDryRunStepIndex = stepIndex.coerceIn(0, eventCount)
         syncRailTraceToDryRunStep(
             result = result,
+            runId = "emscript-dry-run:$workspaceDryRunSequence",
             stepIndex = workspaceDryRunStepIndex,
             currentState = stepperPanelState,
             onStateChanged = { updated ->
@@ -2328,7 +2454,6 @@ fun WorkspaceScreen(
                 persistStepperState(uiPrefs, updated)
             },
         )
-        workspaceDryRunSequence += 1
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
             irGraph = workflowState.irGraph,
             graph = workflowState.flowchartProjection.graph,
@@ -2355,10 +2480,12 @@ fun WorkspaceScreen(
         }
         val result = workspaceDryRunRuntime.run(workflowState.document)
         workspaceDryRunResult = result
-        workspaceDryRunRevision = workflowState.revision.toLong()
+        workspaceDryRunSource = latestEmscriptProjected
         workspaceDryRunStepIndex = dryRunEventCount(result)
+        workspaceDryRunSequence += 1
         syncRailTraceToDryRunStep(
             result = result,
+            runId = "emscript-dry-run:$workspaceDryRunSequence",
             stepIndex = workspaceDryRunStepIndex,
             currentState = stepperPanelState,
             onStateChanged = { updated ->
@@ -2366,7 +2493,6 @@ fun WorkspaceScreen(
                 persistStepperState(uiPrefs, updated)
             },
         )
-        workspaceDryRunSequence += 1
         val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
             irGraph = workflowState.irGraph,
             graph = workflowState.flowchartProjection.graph,
@@ -2468,9 +2594,12 @@ fun WorkspaceScreen(
             )
             val result = workspaceBasicRuntime.run(workflowState.document)
             workspaceDryRunResult = result
+            workspaceDryRunSource = latestEmscriptProjected
             workspaceDryRunStepIndex = dryRunEventCount(result)
+            workspaceDryRunSequence += 1
             syncRailTraceToDryRunStep(
                 result = result,
+                runId = "emscript-dry-run:$workspaceDryRunSequence",
                 stepIndex = workspaceDryRunStepIndex,
                 currentState = stepperPanelState,
                 onStateChanged = { updated ->
@@ -2478,7 +2607,6 @@ fun WorkspaceScreen(
                     persistStepperState(uiPrefs, updated)
                 },
             )
-            workspaceDryRunSequence += 1
             val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
                 irGraph = workflowState.irGraph,
                 graph = workflowState.flowchartProjection.graph,
@@ -2558,9 +2686,6 @@ fun WorkspaceScreen(
     var recordingSessions by remember(context) { mutableStateOf(RecordingEventStore.recordingSessions(context)) }
     var recordingRecoveryMessage by remember { mutableStateOf<String?>(null) }
     var selectedRecordingSessionPath by remember(context) { mutableStateOf(recordingSessions.firstOrNull()?.path) }
-    var recordingSteps by remember(context) {
-        mutableStateOf(RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath))
-    }
     val persistedRecordingSessions = remember(recordingPlaybackRuntimeState.sessions) {
         recordingPlaybackRuntimeState.sessions.map { it.toRecordingSessionUi() }
     }
@@ -2581,6 +2706,10 @@ fun WorkspaceScreen(
         var lastRecordingSignature = RecordingEventStore.latestRecordingFile(context)?.recordingSignature().orEmpty()
         while (true) {
             delay(1_000)
+            val activeRecordingPath = RecordingEventStore.activeFilePath()
+            if (activeRecordingPath != null && selectedRecordingSessionPath != activeRecordingPath) {
+                selectedRecordingSessionPath = activeRecordingPath
+            }
             val latestFile = RecordingEventStore.latestRecordingFile(context)
             val currentSignature = latestFile?.recordingSignature().orEmpty()
             if (currentSignature != lastRecordingSignature) {
@@ -2592,28 +2721,31 @@ fun WorkspaceScreen(
                 ) {
                     selectedRecordingSessionPath = recordingSessions.firstOrNull()?.path
                 }
-                if (selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() == null) {
-                    recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
-                }
             }
         }
     }
-    LaunchedEffect(selectedRecordingSessionPath, recordingSessions) {
-        val canonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
-        if (canonicalSessionId != null) {
-            recordingSteps = recordingSessions
-                .firstOrNull { it.linkedCanonicalSessionId == canonicalSessionId }
-                ?.path
-                ?.let(RecordingEventStore::recordingStepsFor)
-                .orEmpty()
-            RecordingPlaybackRuntime.loadSession(context, canonicalSessionId)
-        } else {
-            recordingSteps = RecordingEventStore.recordingStepsFor(selectedRecordingSessionPath)
-        }
+    val selectedCanonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
+    val selectedRecordingEvidencePath = remember(
+        selectedRecordingSessionPath,
+        selectedCanonicalSessionId,
+        recordingSessions,
+    ) {
+        resolveRecordingEvidencePath(selectedRecordingSessionPath, recordingSessions)
+    }
+    val recordingSteps = remember(selectedRecordingEvidencePath, recordingSessions) {
+        RecordingEventStore.recordingStepsFor(selectedRecordingEvidencePath)
+    }
+    LaunchedEffect(selectedCanonicalSessionId) {
+        selectedCanonicalSessionId?.let { RecordingPlaybackRuntime.loadSession(context, it) }
     }
     // Workspace shell stays truth-neutral: runtime projection wins over external projection, then demo data.
-    val dryRunRecorderSteps = remember(workspaceDryRunResult, workspaceDryRunRevision, workflowState.revision) {
-        if (workspaceDryRunRevision == workflowState.revision.toLong()) {
+    val dryRunRecorderSteps = remember(
+        workspaceDryRunResult,
+        workspaceDryRunSource,
+        workspaceDryRunSequence,
+        workflowState.revision,
+    ) {
+        if (workspaceDryRunSource == latestEmscriptProjected) {
             workspaceDryRunResult?.toRailTraceSteps(
                 runId = "emscript-dry-run:$workspaceDryRunSequence",
                 mode = ExecutionMode.DryRun,
@@ -2632,7 +2764,6 @@ fun WorkspaceScreen(
             reviewDecisions = recordingPlaybackRuntimeState.reviewDecisions,
         ).orEmpty()
     }
-    val selectedCanonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
     val recordingTraceSteps = remember(
         recordingSteps,
         canonicalRecordingSteps,
@@ -2767,15 +2898,24 @@ fun WorkspaceScreen(
     fun selectRailTraceStep(stepId: String, source: String = "railtrace") {
         selectedRailTraceStepId = stepId
         val index = projectedSteps.indexOfFirst { it.id == stepId }
+        val selectedStep = projectedSteps.getOrNull(index)
+        val canonicalEntryIndex = selectedStep?.let { step ->
+            canonicalEntryIndexForRailStep(
+                step = step,
+                canonicalEntryIds = recordingPlaybackRuntimeState.playback.document
+                    ?.entries
+                    ?.map { it.entryId }
+                    .orEmpty(),
+            )
+        }
         if (
             stepperPanelState.railMode.toSurfaceMode() == RailSurfaceMode.Records &&
             selectedCanonicalSessionId != null &&
-            index >= 0 &&
-            recordingPlaybackRuntimeState.playback.selectedEntryIndex != index
+            canonicalEntryIndex != null &&
+            recordingPlaybackRuntimeState.playback.selectedEntryIndex != canonicalEntryIndex
         ) {
-            RecordingPlaybackRuntime.seekToEntry(index)
+            RecordingPlaybackRuntime.seekToEntry(canonicalEntryIndex)
         }
-        val selectedStep = projectedSteps.getOrNull(index)
         val focusTarget = selectedStep?.toRailTraceFocusTarget()
         val updatedStepperState = if (index >= 0) {
             stepperPanelState.copy(
@@ -2830,6 +2970,7 @@ fun WorkspaceScreen(
         if (
             selectedCanonicalSessionId != null &&
             stepperPanelState.railMode.toSurfaceMode() == RailSurfaceMode.Records &&
+            recordingPlaybackRuntimeState.playback.status != RecordingPlaybackStatus.READY &&
             recordingPlaybackRuntimeState.playback.document?.sessionId == selectedCanonicalSessionId
         ) {
             recordingPlaybackRuntimeState.playback.selectedEntry?.entryId?.let { entryId ->
@@ -3464,11 +3605,22 @@ fun WorkspaceScreen(
                 val isSceneInspectorPanel = panel.type == PanelType.SceneInspector
                 val isBlockEditorPanel = panel.type == PanelType.BlockEditor
                 val isFlowchartPanel = panel.type == PanelType.Flowchart
-                val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore || panel.type == PanelType.M3Director || panel.type == PanelType.Vt2Vt
+                val isVisualAssetPanel = panel.type == PanelType.M3Director
+                val isScreenshotPanel = panel.type == PanelType.Screenshot || panel.type == PanelType.Marker || panel.type == PanelType.Vision || panel.type == PanelType.Datastore || panel.type == PanelType.Vt2Vt
                 val isLogConsolePanel = panel.type == PanelType.LogConsole || panel.type == PanelType.RuntimeLog
                 val isEmscriptPanel = panel.type == PanelType.TextEditor || panel.type == PanelType.Emscript || panel.type == PanelType.DebugInfo
                 val blockEditorSessionState = remember(panel.id) { mutableStateOf<BlockEditorShellEditorSession?>(null) }
                 val flowchartSessionState = remember(panel.id) { mutableStateOf<FlowchartShellEditorSession?>(null) }
+                val visualAssetEditorState = remember(panel.id) {
+                    EditorState(initialDocument = VectorDocument(name = "Visual Asset"))
+                }
+                val visualAssetViewportController = remember(panel.id) { ViewportController() }
+                var visualAssetCatalogSelection by remember(panel.id) {
+                    mutableStateOf<ShapeMakerVisualAsset?>(null)
+                }
+                var visualAssetRailPage by rememberSaveable(panel.id) {
+                    mutableStateOf(VisualAssetRailPage.Properties)
+                }
                 val panelScreenshotCanvasState = remember(panel.id) { ScreenshotCanvasUiState() }
                 val screenshotCanvasState = if (isScreenshotPanel) workspaceCanvasState else panelScreenshotCanvasState
                 val panelScreenshotAssets = remember(panel.id, panelScreenshotCanvasState.assetRevision) {
@@ -3508,8 +3660,8 @@ fun WorkspaceScreen(
                         railExpanded = expanded
                         persistPanelRailExpanded(uiPrefs, panel.id, expanded)
                     },
-                    showDefaultRailIcons = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
-                    showRailColorPicker = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel),
+                    showDefaultRailIcons = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel || isVisualAssetPanel),
+                    showRailColorPicker = !(isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel || isVisualAssetPanel),
 	                    railExpandedWidth = when {
                         isRailTracePanel -> 240.dp
 	                        isSceneInspectorPanel -> 300.dp
@@ -3517,10 +3669,11 @@ fun WorkspaceScreen(
 	                        isFlowchartPanel -> 300.dp
                         isLogConsolePanel -> 220.dp
                         isEmscriptPanel -> 240.dp
+                        isVisualAssetPanel -> 300.dp
                         isScreenshotPanel -> 220.dp
                         else -> 186.dp
                     },
-                    railExpandedFillHeight = isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel,
+                    railExpandedFillHeight = isRailTracePanel || isSceneInspectorPanel || isBlockEditorPanel || isFlowchartPanel || isLogConsolePanel || isEmscriptPanel || isScreenshotPanel || isVisualAssetPanel,
                     headerLeadingContent = {
                         PanelTypeSwitchButton(
                             currentType = panel.type,
@@ -3540,6 +3693,15 @@ fun WorkspaceScreen(
                     compactRailContent = { onExpandRequested ->
                         when {
                             isSceneInspectorPanel -> SceneInspectorCompactRail(onExpandRequested)
+                            isVisualAssetPanel -> VisualAssetCompactRail(
+                                editorState = visualAssetEditorState,
+                                viewportController = visualAssetViewportController,
+                                selectedPage = visualAssetRailPage,
+                                onPageSelected = { page ->
+                                    visualAssetRailPage = page
+                                    onExpandRequested()
+                                },
+                            )
                             isScreenshotPanel -> ScreenshotCanvasCompactRail(
                                 state = screenshotCanvasState,
                                 panelType = panel.type,
@@ -3716,6 +3878,13 @@ fun WorkspaceScreen(
                                 },
                                 onNextUnreviewed = RecordingPlaybackRuntime::nextUnreviewed,
                                 onBeginTargetCorrection = RecordingPlaybackRuntime::showBeforePhase,
+                            )
+                            isVisualAssetPanel -> VisualAssetExpandedRail(
+                                editorState = visualAssetEditorState,
+                                viewportController = visualAssetViewportController,
+                                selectedPage = visualAssetRailPage,
+                                onPageSelected = { visualAssetRailPage = it },
+                                onAssetSelected = { visualAssetCatalogSelection = it },
                             )
                             isScreenshotPanel -> ScreenshotCanvasRail(
                                 state = screenshotCanvasState,
@@ -4022,6 +4191,9 @@ fun WorkspaceScreen(
                         logStore = studioLogStore,
                         logConsoleState = logConsoleState,
                         runtimeDatastore = runtimeDatastore,
+                        visualAssetEditorState = visualAssetEditorState,
+                        visualAssetViewportController = visualAssetViewportController,
+                        visualAssetCatalogSelection = visualAssetCatalogSelection,
                         onBlockEditorSessionReady = { session ->
                             blockEditorSessionState.value = session
                             if (session != null) {
@@ -4595,6 +4767,11 @@ private fun WorkspacePanelContent(
     onWorkspaceResourceUpsert: (WorkspaceResource) -> Unit = {},
     onWorkspaceResourceRemove: (String) -> Unit = {},
     onWorkspaceResourcesImported: (WorkspaceResourceBundle) -> Unit = {},
+    visualAssetEditorState: EditorState = remember {
+        EditorState(initialDocument = VectorDocument(name = "Visual Asset"))
+    },
+    visualAssetViewportController: ViewportController = remember { ViewportController() },
+    visualAssetCatalogSelection: ShapeMakerVisualAsset? = null,
     runtimeDatastore: Map<String, String> = emptyMap(),
     onWorkspaceJsonChange: (String, String) -> Unit
 ) {
@@ -4863,6 +5040,9 @@ private fun WorkspacePanelContent(
             workflowState = workflowState,
             screenshotState = screenshotCanvasState,
             screenshotAssets = screenshotAssets,
+            embeddedEditorState = visualAssetEditorState,
+            viewportController = visualAssetViewportController,
+            catalogSelection = visualAssetCatalogSelection,
             onResourceImported = onWorkspaceResourceUpsert,
             onResourceRemoved = onWorkspaceResourceRemove,
         )
@@ -4880,6 +5060,429 @@ private fun WorkspacePanelContent(
             activeRuntimeStepIndex = activeRuntimeStepIndex,
         )
     }
+}
+
+private enum class VisualAssetRailPage {
+    Properties,
+    Layers,
+    Catalog,
+}
+
+@Composable
+private fun ColumnScope.VisualAssetCompactRail(
+    editorState: EditorState,
+    viewportController: ViewportController,
+    selectedPage: VisualAssetRailPage,
+    onPageSelected: (VisualAssetRailPage) -> Unit,
+) {
+    TooltipIconButton(
+        tooltip = "Rückgängig",
+        onClick = { editorState.undo() },
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.Undo,
+            contentDescription = "Rückgängig",
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    TooltipIconButton(
+        tooltip = "Wiederholen",
+        onClick = { editorState.redo() },
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.Redo,
+            contentDescription = "Wiederholen",
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    TooltipIconButton(
+        tooltip = "Vergrößern",
+        onClick = {
+            val viewport = viewportController.state
+            viewportController.zoomAt(
+                viewport.clampZoom(viewport.zoom * 1.25f),
+                viewport.screenWidth / 2f,
+                viewport.screenHeight / 2f,
+            )
+        },
+    ) {
+        Icon(Icons.Default.ZoomIn, contentDescription = "Vergrößern", tint = MaterialTheme.colorScheme.onSurface)
+    }
+    TooltipIconButton(
+        tooltip = "Verkleinern",
+        onClick = {
+            val viewport = viewportController.state
+            viewportController.zoomAt(
+                viewport.clampZoom(viewport.zoom / 1.25f),
+                viewport.screenWidth / 2f,
+                viewport.screenHeight / 2f,
+            )
+        },
+    ) {
+        Icon(Icons.Default.ZoomOut, contentDescription = "Verkleinern", tint = MaterialTheme.colorScheme.onSurface)
+    }
+    TooltipIconButton(
+        tooltip = "Ansicht zentrieren",
+        onClick = {
+            viewportController.fitToDocument(
+                editorState.document.canvas.width,
+                editorState.document.canvas.height,
+            )
+        },
+    ) {
+        Icon(
+            Icons.Default.CenterFocusStrong,
+            contentDescription = "Ansicht zentrieren",
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+    EditorToolsRail(
+        editorState = editorState,
+        modifier = Modifier
+            .weight(1f, fill = true)
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+    )
+    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+    TooltipIconButton(
+        tooltip = "Eigenschaften",
+        onClick = { onPageSelected(VisualAssetRailPage.Properties) },
+    ) {
+        Icon(
+            imageVector = Icons.Default.Tune,
+            contentDescription = "Eigenschaften",
+            tint = if (selectedPage == VisualAssetRailPage.Properties) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    TooltipIconButton(
+        tooltip = "Ebenen",
+        onClick = { onPageSelected(VisualAssetRailPage.Layers) },
+    ) {
+        Icon(
+            imageVector = Icons.Default.Layers,
+            contentDescription = "Ebenen",
+            tint = if (selectedPage == VisualAssetRailPage.Layers) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    TooltipIconButton(
+        tooltip = "Asset-Katalog",
+        onClick = { onPageSelected(VisualAssetRailPage.Catalog) },
+    ) {
+        Icon(
+            imageVector = Icons.Default.GridView,
+            contentDescription = "Asset-Katalog",
+            tint = if (selectedPage == VisualAssetRailPage.Catalog) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ColumnScope.VisualAssetExpandedRail(
+    editorState: EditorState,
+    viewportController: ViewportController,
+    selectedPage: VisualAssetRailPage,
+    onPageSelected: (VisualAssetRailPage) -> Unit,
+    onAssetSelected: (ShapeMakerVisualAsset) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        VisualAssetRailPageButton(
+            selected = selectedPage == VisualAssetRailPage.Properties,
+            onClick = { onPageSelected(VisualAssetRailPage.Properties) },
+            icon = Icons.Default.Tune,
+            label = "Details",
+            modifier = Modifier.weight(1f),
+        )
+        VisualAssetRailPageButton(
+            selected = selectedPage == VisualAssetRailPage.Catalog,
+            onClick = { onPageSelected(VisualAssetRailPage.Catalog) },
+            icon = Icons.Default.GridView,
+            label = "Katalog",
+            modifier = Modifier.weight(1f),
+        )
+        VisualAssetRailPageButton(
+            selected = selectedPage == VisualAssetRailPage.Layers,
+            onClick = { onPageSelected(VisualAssetRailPage.Layers) },
+            icon = Icons.Default.Layers,
+            label = "Ebenen",
+            modifier = Modifier.weight(1f),
+        )
+    }
+    when (selectedPage) {
+        VisualAssetRailPage.Properties -> InspectorContent(
+            editorState = editorState,
+            modifier = Modifier
+                .weight(1f, fill = true)
+                .fillMaxWidth(),
+        )
+        VisualAssetRailPage.Layers -> LayersContent(
+            editorState = editorState,
+            modifier = Modifier
+                .weight(1f, fill = true)
+                .fillMaxWidth(),
+        )
+        VisualAssetRailPage.Catalog -> VisualAssetCatalogRail(
+            editorState = editorState,
+            viewportController = viewportController,
+            onAssetSelected = onAssetSelected,
+            modifier = Modifier
+                .weight(1f, fill = true)
+                .fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun VisualAssetRailPageButton(
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(6.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun VisualAssetCatalogRail(
+    editorState: EditorState,
+    viewportController: ViewportController,
+    onAssetSelected: (ShapeMakerVisualAsset) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val catalogRevision by VisualAssetCatalogStore.revision.collectAsState()
+    val assetDirectory = remember(context) { visualAssetStoreDirectory(context) }
+    val catalogFile = remember(assetDirectory) { File(assetDirectory, "catalog.json") }
+    val catalog = remember(catalogFile, catalogRevision) { VisualAssetCatalogStore.load(catalogFile) }
+    val blockTypes = remember {
+        DefaultBlockRegistry.allDefinitions()
+            .filterNot { it.deprecated }
+            .sortedWith(compareBy({ it.category }, { it.label.lowercase() }, { it.id }))
+    }
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedAssetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedTarget by rememberSaveable { mutableStateOf(EmaVisualAssetBindingTarget.Block) }
+    var selectedTargetId by rememberSaveable { mutableStateOf("*") }
+    var typeMenuOpen by remember { mutableStateOf(false) }
+    var bindingStatus by remember { mutableStateOf<String?>(null) }
+    val assets = remember(context, catalogRevision) {
+        val stored = EmaVisualAssetStore.latestByAssetId(assetDirectory)
+            .mapNotNull { item -> runCatching { ShapeMakerEmaCodec.decode(item.file.readText()) }.getOrNull() }
+        (stored + VisualTaskerBuiltInAssets.all)
+            .distinctBy { it.identity.assetId }
+            .sortedWith(compareBy({ it.identity.type.name }, { it.identity.name.lowercase() }))
+    }
+    val filtered = remember(assets, query) {
+        val needle = query.trim()
+        if (needle.isBlank()) assets else assets.filter { asset ->
+            asset.identity.name.contains(needle, ignoreCase = true) ||
+                asset.identity.assetId.contains(needle, ignoreCase = true) ||
+                asset.identity.tags.any { it.contains(needle, ignoreCase = true) }
+        }
+    }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Asset suchen") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "${filtered.size} Assets · Built-in und WSS-Katalog",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(filtered, key = { "${it.identity.assetId}:${it.identity.version}" }) { asset ->
+                val supportedTargets = asset.bindingTargets()
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            editorState.replaceDocument(asset.design)
+                            viewportController.fitToDocument(asset.design.canvas.width, asset.design.canvas.height)
+                            onAssetSelected(asset)
+                            selectedAssetId = if (selectedAssetId == asset.identity.assetId) null else asset.identity.assetId
+                            selectedTarget = supportedTargets.firstOrNull() ?: EmaVisualAssetBindingTarget.Block
+                            selectedTargetId = catalog.bindings
+                                .firstOrNull { binding ->
+                                    binding.assetId == asset.identity.assetId && binding.target == selectedTarget
+                                }
+                                ?.targetId
+                                ?: "*"
+                            bindingStatus = null
+                        },
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(asset.identity.name, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "${asset.identity.type.name} · ${asset.design.metadata.ports.size} Ports",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (selectedAssetId == asset.identity.assetId && supportedTargets.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text("Direkte Zuordnung", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                supportedTargets.forEach { target ->
+                                    FilterChip(
+                                        selected = selectedTarget == target,
+                                        onClick = {
+                                            selectedTarget = target
+                                            selectedTargetId = catalog.bindings
+                                                .firstOrNull { binding ->
+                                                    binding.assetId == asset.identity.assetId && binding.target == target
+                                                }
+                                                ?.targetId
+                                                ?: "*"
+                                        },
+                                        label = { Text(if (target == EmaVisualAssetBindingTarget.FlowNode) "FlowNode" else "Block") },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = selectedTargetId,
+                                    onValueChange = { selectedTargetId = it },
+                                    label = { Text("Block-/Node-Typ") },
+                                    supportingText = { Text("* gilt als Fallback für alle Typen") },
+                                    trailingIcon = {
+                                        IconButton(onClick = { typeMenuOpen = true }) {
+                                            Icon(Icons.Default.ArrowForward, contentDescription = "Typ auswählen")
+                                        }
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                DropdownMenu(
+                                    expanded = typeMenuOpen,
+                                    onDismissRequest = { typeMenuOpen = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Alle Typen (*)") },
+                                        onClick = {
+                                            selectedTargetId = "*"
+                                            typeMenuOpen = false
+                                        },
+                                    )
+                                    blockTypes.forEach { definition ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(definition.label)
+                                                    Text(
+                                                        definition.id,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                selectedTargetId = definition.id
+                                                typeMenuOpen = false
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    when (val imported = EmaVisualAssetStore.importRaw(
+                                        assetDirectory,
+                                        ShapeMakerEmaCodec.encode(asset),
+                                    )) {
+                                        is EmaVisualAssetImportResult.Imported -> {
+                                            val targetId = selectedTargetId.trim().ifBlank { "*" }
+                                            VisualAssetCatalogStore.save(
+                                                catalogFile,
+                                                catalog.upsertBinding(
+                                                    VisualAssetBinding(
+                                                        assetId = asset.identity.assetId,
+                                                        target = selectedTarget,
+                                                        targetId = targetId,
+                                                    )
+                                                ),
+                                            )
+                                            bindingStatus = "Gebunden an ${selectedTarget.name}/$targetId"
+                                        }
+                                        is EmaVisualAssetImportResult.Rejected -> {
+                                            bindingStatus = imported.message
+                                        }
+                                    }
+                                },
+                                enabled = selectedTargetId.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Asset binden")
+                            }
+                            catalog.bindings
+                                .filter { it.assetId == asset.identity.assetId }
+                                .forEach { binding ->
+                                    Text(
+                                        "Aktiv: ${binding.target.name} → ${binding.targetId}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            bindingStatus?.let { status ->
+                                Text(
+                                    status,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun ShapeMakerVisualAsset.bindingTargets(): List<EmaVisualAssetBindingTarget> = when (identity.type) {
+    ShapeMakerVisualAssetType.BLOCK_SHAPE -> listOf(EmaVisualAssetBindingTarget.Block)
+    ShapeMakerVisualAssetType.NODE_SHAPE -> listOf(EmaVisualAssetBindingTarget.FlowNode)
+    ShapeMakerVisualAssetType.SHAPE,
+    ShapeMakerVisualAssetType.ANIMATED_SHAPE,
+    -> listOf(EmaVisualAssetBindingTarget.Block, EmaVisualAssetBindingTarget.FlowNode)
+    else -> emptyList()
 }
 
 @Composable
@@ -6155,6 +6758,9 @@ private fun VisualAssetManagerPanel(
     workflowState: WorkspaceWorkflowState,
     screenshotState: ScreenshotCanvasUiState,
     screenshotAssets: List<ScreenshotCanvasAsset>,
+    embeddedEditorState: EditorState,
+    viewportController: ViewportController,
+    catalogSelection: ShapeMakerVisualAsset?,
     onResourceImported: (WorkspaceResource) -> Unit,
     onResourceRemoved: (String) -> Unit,
 ) {
@@ -6177,15 +6783,13 @@ private fun VisualAssetManagerPanel(
     }
     var assetRevision by remember { mutableIntStateOf(0) }
     var importStatus by remember { mutableStateOf<String?>(null) }
+    val pendingBridgeImport by VisualAssetBridgeInbox.pending.collectAsState()
     var requestedAssetType by rememberSaveable { mutableStateOf(EmaVisualAssetType.BLOCK_SHAPE) }
     var assetTypeMenuOpen by remember { mutableStateOf(false) }
     var showEmbeddedDesigner by rememberSaveable { mutableStateOf(true) }
     var embeddedAssetId by rememberSaveable { mutableStateOf<String?>(null) }
     var embeddedAssetVersion by rememberSaveable { mutableIntStateOf(1) }
     var embeddedAssetName by rememberSaveable { mutableStateOf("Visual Asset") }
-    val embeddedEditorState = remember {
-        EditorState(initialDocument = VectorDocument(name = embeddedAssetName))
-    }
     val assetDirectory = remember(context) { visualAssetStoreDirectory(context) }
     val catalogFile = remember(assetDirectory) { File(assetDirectory, "catalog.json") }
     var visualAssetCatalog by remember(catalogFile) {
@@ -6209,8 +6813,18 @@ private fun VisualAssetManagerPanel(
         allStoredAssets.groupingBy { it.descriptor.assetId }.eachCount()
     }
     var selectedCatalogAssetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var catalogPickerOpen by remember { mutableStateOf(false) }
     var bindingTargetId by rememberSaveable { mutableStateOf("default") }
     var bindingTarget by rememberSaveable { mutableStateOf(EmaVisualAssetBindingTarget.Block) }
+    LaunchedEffect(catalogSelection?.identity?.assetId, catalogSelection?.identity?.version) {
+        val selected = catalogSelection ?: return@LaunchedEffect
+        embeddedAssetId = selected.identity.assetId
+        embeddedAssetVersion = selected.identity.version + 1
+        embeddedAssetName = selected.identity.name
+        requestedAssetType = runCatching { EmaVisualAssetType.valueOf(selected.identity.type.name) }
+            .getOrDefault(EmaVisualAssetType.ANIMATED_SHAPE)
+        importStatus = "Aus Seitenkatalog übernommen: ${selected.identity.name}"
+    }
     fun updateVisualAssetCatalog(transform: (VisualAssetCatalog) -> VisualAssetCatalog) {
         val updated = transform(visualAssetCatalog)
         visualAssetCatalog = updated
@@ -6224,6 +6838,20 @@ private fun VisualAssetManagerPanel(
     val assetIssues = remember(workflowState.resources, assetRevision) {
         EmaVisualAssetIntegrity.inspect(workflowState.resources)
     }
+    fun applyVisualAsset(asset: ShapeMakerVisualAsset, status: String) {
+        embeddedAssetId = asset.identity.assetId
+        embeddedAssetVersion = asset.identity.version + 1
+        embeddedAssetName = asset.identity.name
+        requestedAssetType = runCatching {
+            EmaVisualAssetType.valueOf(asset.identity.type.name)
+        }.getOrDefault(EmaVisualAssetType.ANIMATED_SHAPE)
+        embeddedEditorState.replaceDocument(asset.design)
+        viewportController.fitToDocument(
+            asset.design.canvas.width,
+            asset.design.canvas.height,
+        )
+        importStatus = status
+    }
     fun importRawAsset(raw: Result<String>): EmaVisualAssetImportResult {
         val result = raw.fold(
             onSuccess = { EmaVisualAssetStore.importRaw(assetDirectory, it) },
@@ -6231,9 +6859,15 @@ private fun VisualAssetManagerPanel(
         )
         when (result) {
             is EmaVisualAssetImportResult.Imported -> {
+                runCatching { ShapeMakerEmaCodec.decode(result.asset.file.readText()) }
+                    .onSuccess { asset ->
+                        applyVisualAsset(asset, "Importiert: ${result.asset.descriptor.name}")
+                    }
+                    .onFailure { error ->
+                        importStatus = error.message ?: "Asset wurde gespeichert, konnte aber nicht geöffnet werden."
+                    }
                 onResourceImported(result.asset.toWorkspaceResource())
                 assetRevision += 1
-                importStatus = "Importiert: ${result.asset.descriptor.name}"
             }
             is EmaVisualAssetImportResult.Rejected -> importStatus = result.message
         }
@@ -6242,6 +6876,11 @@ private fun VisualAssetManagerPanel(
     fun readAsset(uri: Uri): Result<String> = runCatching {
         context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
             ?: error("EMA-Datei konnte nicht gelesen werden.")
+    }
+    LaunchedEffect(pendingBridgeImport?.token) {
+        val pending = pendingBridgeImport ?: return@LaunchedEffect
+        importRawAsset(Result.success(pending.rawEma))
+        VisualAssetBridgeInbox.consume(pending.token)
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importRawAsset(readAsset(it)) }
@@ -6408,6 +7047,47 @@ private fun VisualAssetManagerPanel(
                     ) {
                         Text("Neu")
                     }
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedButton(
+                            onClick = { catalogPickerOpen = true },
+                            enabled = storedAssets.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Aus Katalog", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        DropdownMenu(
+                            expanded = catalogPickerOpen,
+                            onDismissRequest = { catalogPickerOpen = false },
+                        ) {
+                            storedAssets.take(50).forEach { stored ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(stored.descriptor.name, maxLines = 1)
+                                            Text(
+                                                "${stored.descriptor.type.name} · v${stored.descriptor.version}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        catalogPickerOpen = false
+                                        runCatching { ShapeMakerEmaCodec.decode(stored.file.readText()) }
+                                            .onSuccess { asset ->
+                                                applyVisualAsset(
+                                                    asset,
+                                                    "Aus Katalog übernommen: ${asset.identity.name}",
+                                                )
+                                            }
+                                            .onFailure { error ->
+                                                importStatus = error.message ?: "Asset konnte nicht übernommen werden."
+                                            }
+                                    },
+                                )
+                            }
+                        }
+                    }
                     Button(
                         onClick = {
                             val assetId = embeddedAssetId
@@ -6443,6 +7123,11 @@ private fun VisualAssetManagerPanel(
                 )
                 VectorShapeEditorApp(
                     editorState = embeddedEditorState,
+                    viewportController = viewportController,
+                    showTopBar = false,
+                    showInspector = false,
+                    showLayers = false,
+                    showExport = false,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -10638,18 +11323,20 @@ private fun loadWorkspaceResourceBundle(context: Context): WorkspaceResourceBund
         }
 }
 
-private fun loadRuntimeDatastore(context: Context): Map<String, String> {
+private fun loadRuntimeDatastore(context: Context): RuntimeDatastoreLoadResult {
     val file = runtimeDatastoreFile(context)
-    if (!file.isFile) return emptyMap()
+    if (!file.isFile) return RuntimeDatastoreLoadResult(emptyMap())
     return runCatching {
         val root = JSONObject(file.readText())
         val values = root.optJSONObject("values") ?: JSONObject()
-        buildMap {
+        RuntimeDatastoreLoadResult(buildMap {
             values.keys().forEach { key ->
                 put(key, values.optString(key, ""))
             }
-        }
-    }.getOrDefault(emptyMap())
+        })
+    }.getOrElse { error ->
+        RuntimeDatastoreLoadResult(emptyMap(), failure = error)
+    }
 }
 
 private fun persistRuntimeDatastore(
@@ -11201,148 +11888,156 @@ private fun RailTraceExpandedRail(
     onScaleChange: (RailScaleMode) -> Unit,
     onZoomChange: (Float) -> Unit,
 ) {
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("RailTrace", style = MaterialTheme.typography.titleSmall)
-        Text("Rail", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        RailSurfaceMode.entries.forEach { mode ->
-            RailTraceSurfaceChip(
-                mode = mode,
-                selected = state.railMode.toSurfaceMode() == mode,
-                onClick = { onModeChange(mode.defaultRailMode()) },
-            )
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("RailTrace", style = MaterialTheme.typography.titleSmall)
+                Text("Rail", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                RailSurfaceMode.entries.forEach { mode ->
+                    RailTraceSurfaceChip(
+                        mode = mode,
+                        selected = state.railMode.toSurfaceMode() == mode,
+                        onClick = { onModeChange(mode.defaultRailMode()) },
+                    )
+                }
+                Text(
+                    text = state.railMode.toSurfaceMode().description,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider()
+                Text("Detailmodus", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val detailModes = when (state.railMode.toSurfaceMode()) {
+                    RailSurfaceMode.Records -> listOf(RailMode.Replay, RailMode.Curate)
+                    RailSurfaceMode.Run -> listOf(RailMode.Step, RailMode.Program)
+                    RailSurfaceMode.WatchDog -> listOf(RailMode.Live)
+                }
+                detailModes.forEach { mode ->
+                    RailTraceModeChip(
+                        label = mode.name.uppercase(),
+                        selected = state.railMode == mode,
+                        onClick = { onModeChange(mode) },
+                    )
+                }
+                HorizontalDivider()
+                Text("Skalierung", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                RailTraceModeChip(
+                    label = "LOGICAL",
+                    selected = state.scaleMode == RailScaleMode.Logical,
+                    onClick = { onScaleChange(RailScaleMode.Logical) },
+                )
+                RailTraceModeChip(
+                    label = "TEMPORAL",
+                    selected = state.scaleMode == RailScaleMode.Temporal,
+                    onClick = { onScaleChange(RailScaleMode.Temporal) },
+                )
+                HorizontalDivider()
+                Text("Timeline Zoom", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Slider(
+                    value = state.timelineZoom,
+                    onValueChange = { onZoomChange(it) },
+                    valueRange = 0.5f..4f,
+                )
+                Text(
+                    "${"%.1f".format(state.timelineZoom)}x",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider()
+                Text("Steps · ${steps.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Text(
-            text = state.railMode.toSurfaceMode().description,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        HorizontalDivider()
-        Text("Detailmodus", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val detailModes = when (state.railMode.toSurfaceMode()) {
-            RailSurfaceMode.Records -> listOf(RailMode.Replay, RailMode.Curate)
-            RailSurfaceMode.Run -> listOf(RailMode.Step, RailMode.Program)
-            RailSurfaceMode.WatchDog -> listOf(RailMode.Live)
+        if (steps.isEmpty()) {
+            item {
+                Text(
+                    "Keine Steps geladen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            itemsIndexed(steps, key = { _, step -> step.id }) { index, step ->
+                RailTraceStepRailCard(
+                    index = index,
+                    step = step,
+                    selected = step.id == (selectedStepId ?: state.selectedStepId),
+                    onClick = { onStepSelected(step) },
+                )
+            }
         }
-        detailModes.forEach { mode ->
-            RailTraceModeChip(
-                label = mode.name.uppercase(),
-                selected = state.railMode == mode,
-                onClick = { onModeChange(mode) },
-            )
-        }
-        HorizontalDivider()
-        Text("Skalierung", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        RailTraceModeChip(
-            label = "LOGICAL",
-            selected = state.scaleMode == RailScaleMode.Logical,
-            onClick = { onScaleChange(RailScaleMode.Logical) },
-        )
-        RailTraceModeChip(
-            label = "TEMPORAL",
-            selected = state.scaleMode == RailScaleMode.Temporal,
-            onClick = { onScaleChange(RailScaleMode.Temporal) },
-        )
-        HorizontalDivider()
-        Text("Timeline Zoom", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Slider(
-            value = state.timelineZoom,
-            onValueChange = { onZoomChange(it) },
-            valueRange = 0.5f..4f,
-        )
-        Text(
-            "${"%.1f".format(state.timelineZoom)}x",
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        HorizontalDivider()
-        Text("Steps", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        RailTraceStepRailList(
-            steps = steps,
-            selectedStepId = selectedStepId ?: state.selectedStepId,
-            onStepSelected = onStepSelected,
-        )
         dragProjection?.let { projection ->
-            HorizontalDivider()
-            WssDragTreeSection(
-                title = "RailTrace Transport",
-                projection = projection,
-                maxItems = 10,
-                onApplyDropEffect = onApplyDropEffect,
-                onPayloadDropped = onPayloadDropped,
-                onPayloadDragPositionChange = onPayloadDragPositionChange,
-            )
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HorizontalDivider()
+                    WssDragTreeSection(
+                        title = "RailTrace Transport",
+                        projection = projection,
+                        maxItems = 10,
+                        onApplyDropEffect = onApplyDropEffect,
+                        onPayloadDropped = onPayloadDropped,
+                        onPayloadDragPositionChange = onPayloadDragPositionChange,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun RailTraceStepRailList(
-    steps: List<RecorderStepUi>,
-    selectedStepId: String?,
-    onStepSelected: (RecorderStepUi) -> Unit,
+private fun RailTraceStepRailCard(
+    index: Int,
+    step: RecorderStepUi,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
-    if (steps.isEmpty()) {
-        Text(
-            "Keine Steps geladen.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        return
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        steps.forEachIndexed { index, step ->
-            val selected = step.id == selectedStepId
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onStepSelected(step) },
-                shape = RoundedCornerShape(8.dp),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f)
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (selected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)
-                    },
-                ),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    Text(
-                        text = (index + 1).toString().padStart(2, '0'),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            step.label,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "${step.actionType} | ${step.status.name}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = statusColor(step.status),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f)
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.58f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Text(
+                text = (index + 1).toString().padStart(2, '0'),
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    step.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${step.actionType} | ${step.status.name}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor(step.status),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -11378,11 +12073,14 @@ private fun RecorderStepsPanel(
     var selectedStepId by remember { mutableStateOf(initialState.selectedStepId) }
     var replayIndex by remember { mutableIntStateOf(initialState.replayIndex) }
     var replayPositionMs by remember { mutableLongStateOf(initialState.replayPositionMs) }
-    var railMode by remember { mutableStateOf(initialState.railMode) }
-    var railScaleMode by remember { mutableStateOf(initialState.scaleMode) }
     var localTimelineZoom by remember { mutableFloatStateOf(timelineZoom.coerceIn(0.5f, 4f)) }
     var playing by remember { mutableStateOf(false) }
-    val canonicalPlaybackActive = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() != null
+    val railSurfaceMode = initialState.railMode.toSurfaceMode()
+    val canonicalPlaybackActive = usesCanonicalRecordingPlayback(
+        surfaceMode = railSurfaceMode,
+        selectedRecordingSessionPath = selectedRecordingSessionPath,
+        steps = steps,
+    )
     val speedSteps = remember(canonicalPlaybackActive) {
         if (canonicalPlaybackActive) listOf(0.5f, 1f, 2f) else listOf(0.2f, 0.5f, 1f, 2f, 4f)
     }
@@ -11400,14 +12098,75 @@ private fun RecorderStepsPanel(
     val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
     val timelineEndMs = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStartMs + 1L) ?: 1L
     val safeIndex = replayIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0))
-    val activeStep = steps.getOrNull(safeIndex)
-    val selectedStep = remember(steps, selectedStepId, safeIndex) {
-        selectedStepId?.let { id -> steps.firstOrNull { it.id == id } } ?: steps.getOrNull(safeIndex)
+    val playbackPreviewPolicy = remember { RecordingPlaybackPreviewPolicy() }
+    val canonicalTargetPositionMs = remember(
+        canonicalPlaybackActive,
+        recordingPlaybackState.status,
+        recordingPlaybackState.selectedEntry?.entryId,
+        recordingPlaybackState.phase,
+        recordingPlaybackState.phaseElapsedMs,
+        timelinePoints,
+        timelineStartMs,
+        timelineEndMs,
+    ) {
+        if (!canonicalPlaybackActive) {
+            replayPositionMs
+        } else {
+            val entryId = recordingPlaybackState.selectedEntry?.entryId
+            val pointIndex = timelinePoints.indexOfFirst {
+                it.step.properties["recording.entryId"] == entryId
+            }
+            val point = timelinePoints.getOrNull(pointIndex)
+            when {
+                recordingPlaybackState.status == RecordingPlaybackStatus.READY -> timelineStartMs
+                recordingPlaybackState.status == RecordingPlaybackStatus.COMPLETED -> timelineEndMs
+                point == null -> replayPositionMs.coerceIn(timelineStartMs, timelineEndMs)
+                else -> {
+                    val phaseDurationMs = playbackPreviewPolicy
+                        .delayFor(recordingPlaybackState)
+                        .coerceAtLeast(1L)
+                    val fraction = (recordingPlaybackState.phaseElapsedMs.toDouble() / phaseDurationMs.toDouble())
+                        .coerceIn(0.0, 1.0)
+                    val (from, to) = when (recordingPlaybackState.phase) {
+                        RecordingPlaybackPhase.BEFORE -> {
+                            val previous = timelinePoints.getOrNull(pointIndex - 1)?.startMs ?: timelineStartMs
+                            previous to point.startMs
+                        }
+                        RecordingPlaybackPhase.AFTER -> {
+                            val next = timelinePoints.getOrNull(pointIndex + 1)?.startMs
+                                ?: point.endMs.coerceAtLeast(point.startMs)
+                            point.startMs to next
+                        }
+                    }
+                    (from + ((to - from) * fraction).toLong()).coerceIn(timelineStartMs, timelineEndMs)
+                }
+            }
+        }
+    }
+    val animatedCanonicalPositionMs by animateFloatAsState(
+        targetValue = canonicalTargetPositionMs.toFloat(),
+        animationSpec = tween(durationMillis = 64, easing = LinearEasing),
+        label = "recording-rail-playhead",
+    )
+    val displayedReplayPositionMs = if (canonicalPlaybackActive) {
+        animatedCanonicalPositionMs.toLong().coerceIn(timelineStartMs, timelineEndMs)
+    } else {
+        replayPositionMs
+    }
+    val displayedSafeIndex = if (canonicalPlaybackActive) {
+        nearestTimelineIndexByStartTimes(timelineStartTimesMs, displayedReplayPositionMs)
+            .coerceIn(0, (steps.size - 1).coerceAtLeast(0))
+    } else {
+        safeIndex
+    }
+    val activeStep = steps.getOrNull(displayedSafeIndex)
+    val selectedStep = remember(steps, selectedStepId, displayedSafeIndex) {
+        selectedStepId?.let { id -> steps.firstOrNull { it.id == id } } ?: steps.getOrNull(displayedSafeIndex)
     }
     var sessionMenuExpanded by remember { mutableStateOf(false) }
     val selectedSession = recordingSessions.firstOrNull { it.path == selectedRecordingSessionPath }
-    val railProjection = remember(steps, railMode, railScaleMode) {
-        steps.toRailProjection(mode = railMode, scaleMode = railScaleMode)
+    val railProjection = remember(steps, initialState.railMode, initialState.scaleMode) {
+        steps.toRailProjection(mode = initialState.railMode, scaleMode = initialState.scaleMode)
     }
     val surfaceAccent = railProjection.surfaceMode.railTraceAccentColor()
     val reviewProgress = remember(steps) {
@@ -11418,21 +12177,17 @@ private fun RecorderStepsPanel(
             statuses.count { it == "REJECTED" },
         )
     }
-    val progressFraction = remember(steps.size, safeIndex, replayPositionMs, timelineStartMs, timelineEndMs, railScaleMode) {
+    val progressFraction = remember(steps.size, displayedSafeIndex, displayedReplayPositionMs, timelineStartMs, timelineEndMs, initialState.scaleMode) {
         if (steps.isEmpty()) {
             0f
-        } else if (railScaleMode == RailScaleMode.Logical) {
-            (safeIndex + 1).toFloat() / steps.size.toFloat()
+        } else if (initialState.scaleMode == RailScaleMode.Logical) {
+            (displayedSafeIndex + 1).toFloat() / steps.size.toFloat()
         } else {
-            ((replayPositionMs - timelineStartMs).toFloat() / (timelineEndMs - timelineStartMs).toFloat()).coerceIn(0f, 1f)
+            ((displayedReplayPositionMs - timelineStartMs).toFloat() / (timelineEndMs - timelineStartMs).toFloat()).coerceIn(0f, 1f)
         }
     }
     LaunchedEffect(timelineZoom) {
         localTimelineZoom = timelineZoom.coerceIn(0.5f, 4f)
-    }
-    LaunchedEffect(initialState.railMode, initialState.scaleMode) {
-        railMode = initialState.railMode
-        railScaleMode = initialState.scaleMode
     }
     LaunchedEffect(canonicalPlaybackActive, recordingPlaybackState.speed, speedSteps) {
         if (canonicalPlaybackActive) {
@@ -11444,8 +12199,8 @@ private fun RecorderStepsPanel(
         index: Int = safeIndex,
         positionMs: Long = replayPositionMs,
         speedValue: Float = speed,
-        mode: RailMode = railMode,
-        scaleMode: RailScaleMode = railScaleMode,
+        mode: RailMode = initialState.railMode,
+        scaleMode: RailScaleMode = initialState.scaleMode,
         zoom: Float = localTimelineZoom,
     ) {
         onViewStateChange(
@@ -11475,6 +12230,18 @@ private fun RecorderStepsPanel(
             stepId = step?.id,
             index = clampedIndex,
             positionMs = replayPositionMs,
+        )
+    }
+
+    fun restartAtTimelineStart() {
+        playing = false
+        if (canonicalPlaybackActive) {
+            onRecordingPlaybackRestart()
+        }
+        selectReplayIndex(
+            index = 0,
+            positionMs = timelineStartMs,
+            emitPanelAction = false,
         )
     }
 
@@ -11555,7 +12322,7 @@ private fun RecorderStepsPanel(
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = if (steps.isEmpty()) "0 / 0" else "${safeIndex + 1} / ${steps.size}",
+                        text = if (steps.isEmpty()) "0 / 0" else "${displayedSafeIndex + 1} / ${steps.size}",
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -11565,11 +12332,11 @@ private fun RecorderStepsPanel(
                             onSaveState(
                                 StepperPanelState(
                                     selectedStepId = selectedStepId,
-                                    replayIndex = safeIndex,
-                                    replayPositionMs = replayPositionMs,
+                                    replayIndex = displayedSafeIndex,
+                                    replayPositionMs = displayedReplayPositionMs,
                                     speed = speed,
-                                    railMode = railMode,
-                                    scaleMode = railScaleMode,
+                                    railMode = initialState.railMode,
+                                    scaleMode = initialState.scaleMode,
                                     timelineZoom = localTimelineZoom,
                                 )
                             )
@@ -11587,7 +12354,7 @@ private fun RecorderStepsPanel(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${railMode.name.uppercase()} | ${railScaleMode.name.uppercase()} | ${"%.1f".format(localTimelineZoom)}x",
+                    text = "${initialState.railMode.name.uppercase()} | ${initialState.scaleMode.name.uppercase()} | ${"%.1f".format(localTimelineZoom)}x",
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -11599,7 +12366,7 @@ private fun RecorderStepsPanel(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = replayPositionMs.formatTimelineMillis(),
+                        text = displayedReplayPositionMs.formatTimelineMillis(),
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -11698,9 +12465,9 @@ private fun RecorderStepsPanel(
                 RailTraceTimeline(
                     projection = railProjection,
                     steps = steps,
-                    activeIndex = safeIndex,
+                    activeIndex = displayedSafeIndex,
                     selectedStepId = selectedStepId,
-                    replayPositionMs = replayPositionMs,
+                    replayPositionMs = displayedReplayPositionMs,
                     zoom = localTimelineZoom,
                     onSeek = { positionMs ->
                         val nextPosition = positionMs.coerceIn(timelineStartMs, timelineEndMs)
@@ -11720,14 +12487,7 @@ private fun RecorderStepsPanel(
                 ) {
                     TooltipIconButton(
                         tooltip = "Zum Anfang",
-                        onClick = {
-                            if (canonicalPlaybackActive) {
-                                onRecordingPlaybackRestart()
-                            } else {
-                                playing = false
-                                selectReplayIndex(index = 0, positionMs = timelineStartMs)
-                            }
-                        },
+                        onClick = ::restartAtTimelineStart,
                         modifier = Modifier.size(34.dp),
                         enabled = steps.isNotEmpty(),
                     ) {
@@ -11754,8 +12514,20 @@ private fun RecorderStepsPanel(
                     TooltipIconButton(
                         tooltip = if (playbackRunning) "Pause" else "Replay",
                         onClick = {
-                            if (canonicalPlaybackActive) onRecordingPlaybackPlayPause()
-                            else playing = !playing
+                            if (canonicalPlaybackActive) {
+                                onRecordingPlaybackPlayPause()
+                            } else if (playing) {
+                                playing = false
+                            } else {
+                                if (replayPositionMs >= timelineEndMs || safeIndex >= steps.lastIndex) {
+                                    selectReplayIndex(
+                                        index = 0,
+                                        positionMs = timelineStartMs,
+                                        emitPanelAction = false,
+                                    )
+                                }
+                                playing = true
+                            }
                         },
                         modifier = Modifier.size(38.dp),
                         enabled = steps.isNotEmpty(),
@@ -11782,14 +12554,7 @@ private fun RecorderStepsPanel(
                     }
                     TooltipIconButton(
                         tooltip = "Stop",
-                        onClick = {
-                            if (canonicalPlaybackActive) {
-                                onRecordingPlaybackRestart()
-                            } else {
-                                playing = false
-                                selectReplayIndex(index = 0, positionMs = timelineStartMs, emitPanelAction = false)
-                            }
-                        },
+                        onClick = ::restartAtTimelineStart,
                         modifier = Modifier.size(34.dp),
                         enabled = playbackRunning,
                     ) {
@@ -12126,12 +12891,13 @@ private fun EmscriptDryRunResult.eventsForRailTrace() = when (this) {
 
 private fun syncRailTraceToDryRunStep(
     result: EmscriptDryRunResult,
+    runId: String,
     stepIndex: Int,
     currentState: StepperPanelState,
     onStateChanged: (StepperPanelState) -> Unit,
 ) {
     val steps = result.toRailTraceSteps(
-        runId = "emscript-dry-run:rail-sync",
+        runId = runId,
         mode = ExecutionMode.DryRun,
     )
     val activeIndex = (stepIndex - 1).takeIf { stepIndex > 0 }?.coerceIn(0, (steps.size - 1).coerceAtLeast(0)) ?: 0
@@ -12310,6 +13076,10 @@ private data class RecorderActivityStepGroup(
     val endMs: Long,
     val steps: List<RecorderStepListEntry>,
 )
+
+internal fun railTimelineWidthDp(stepCount: Int, zoom: Float): Float =
+    (stepCount.coerceAtLeast(8) * 42f * zoom.coerceIn(0.5f, 4f))
+        .coerceIn(360f, 6_000f)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -12585,8 +13355,7 @@ private fun RailTraceTimeline(
 ) {
     val timelinePoints = remember(steps) { buildRecorderTimelinePoints(steps) }
     val activitySegments = remember(timelinePoints) { buildRecorderActivitySegments(timelinePoints) }
-    val minWidth = 360.dp
-    val timelineWidth = maxOf(minWidth, ((steps.size.coerceAtLeast(8) * 42f * zoom.coerceIn(0.5f, 4f))).dp)
+    val timelineWidth = railTimelineWidthDp(steps.size, zoom).dp
     val timelineScrollState = rememberScrollState()
     val density = LocalDensity.current
     val timelineStartMs = timelinePoints.firstOrNull()?.startMs ?: 0L
@@ -12685,6 +13454,13 @@ private fun RailTraceTimelineCanvas(
         RailTrackKind.Prediction to Color(0xFF4DD0E1),
         RailTrackKind.Recovery to Color(0xFFA5D6A7),
     )
+    val pointsByStepId = remember(timelinePoints) { timelinePoints.associateBy { it.step.id } }
+    val pointIndexesByStepId = remember(timelinePoints) {
+        timelinePoints.mapIndexed { index, point -> point.step.id to index }.toMap()
+    }
+    val timelineStartTimesMs = remember(timelinePoints) {
+        timelinePoints.map(RecorderTimelinePoint::startMs)
+    }
     Canvas(
         modifier = modifier.pointerInput(timelinePoints) {
             awaitEachGesture {
@@ -12716,7 +13492,7 @@ private fun RailTraceTimelineCanvas(
         val timelineEnd = timelinePoints.maxOfOrNull { it.endMs }?.coerceAtLeast(timelineStart + 1L) ?: 1L
         fun xForTime(timeMs: Long): Float {
             if (projection.scaleMode == RailScaleMode.Logical && timelinePoints.isNotEmpty()) {
-                val index = timelinePoints.indexOfFirst { timeMs <= it.endMs }.coerceAtLeast(0)
+                val index = nearestTimelineIndexByStartTimes(timelineStartTimesMs, timeMs)
                 val denom = (timelinePoints.size - 1).coerceAtLeast(1).toFloat()
                 return left + (right - left) * (index / denom)
             }
@@ -12760,10 +13536,10 @@ private fun RailTraceTimelineCanvas(
                 cap = StrokeCap.Round,
             )
             track.items.forEach { item ->
-                val point = timelinePoints.firstOrNull { it.step.id == item.sourceId } ?: return@forEach
+                val point = pointsByStepId[item.sourceId] ?: return@forEach
                 val x = xForTime(point.startMs)
                 val selected = item.sourceId == selectedStepId
-                val active = timelinePoints.indexOf(point) == activeIndex
+                val active = pointIndexesByStepId[item.sourceId] == activeIndex
                 val marker = railTimelineMarkerFor(track.kind, item.status, active = active, selected = selected)
                 val markerPaint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
                     isAntiAlias = true
@@ -12817,6 +13593,26 @@ private fun buildRecorderTimelinePoints(steps: List<RecorderStepUi>): List<Recor
         val end = (step.durationMs?.let { start + it } ?: fallbackEnd).coerceAtLeast(start + 80L)
         RecorderTimelinePoint(step, start, end)
     }
+
+internal fun usesCanonicalRecordingPlayback(
+    surfaceMode: RailSurfaceMode,
+    selectedRecordingSessionPath: String?,
+    steps: List<RecorderStepUi>,
+): Boolean =
+    surfaceMode == RailSurfaceMode.Records &&
+        selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull() != null &&
+        steps.isNotEmpty() &&
+        steps.all { it.properties["recording.entryId"].isNullOrBlank().not() }
+
+internal fun resolveRecordingEvidencePath(
+    selectedRecordingSessionPath: String?,
+    sessions: List<RecordingSessionUi>,
+): String? {
+    val canonicalSessionId = selectedRecordingSessionPath?.recordingPlaybackSessionIdOrNull()
+    return canonicalSessionId?.let { sessionId ->
+        sessions.firstOrNull { it.linkedCanonicalSessionId == sessionId }?.path
+    } ?: selectedRecordingSessionPath
+}
 
 private fun railTimelineMarkerFor(
     trackKind: RailTrackKind,
@@ -12920,6 +13716,14 @@ internal fun nearestTimelineIndexByStartTimes(startTimesMs: List<Long>, position
     val previousDistance = kotlin.math.abs(positionMs - startTimesMs[previousIndex])
     val nextDistance = kotlin.math.abs(startTimesMs[nextIndex] - positionMs)
     return if (previousDistance <= nextDistance) previousIndex else nextIndex
+}
+
+internal fun canonicalEntryIndexForRailStep(
+    step: RecorderStepUi,
+    canonicalEntryIds: List<String>,
+): Int? {
+    val entryId = step.properties["recording.entryId"] ?: return null
+    return canonicalEntryIds.indexOf(entryId).takeIf { it >= 0 }
 }
 
 internal fun activeRuntimeRailIndex(
@@ -16173,6 +16977,19 @@ private fun String.trimLiteral(): String =
 
 private fun runtimeFilesRoot(context: Context): java.io.File =
     java.io.File(context.filesDir, "emscript-runtime").apply { mkdirs() }
+
+private fun PackageInstallationInspection.toInstalledAdapterResult(
+    commandId: String,
+    diagnosticCode: String,
+): RuntimeAdapterResult = failure?.let { error ->
+    RuntimeAdapterResult.failure(
+        diagnosticCode = diagnosticCode,
+        message = "$commandId package check failed: ${error.message ?: error::class.java.simpleName}",
+    )
+} ?: RuntimeAdapterResult.success(
+    value = EmscriptValue.BooleanValue(installed),
+    message = "$commandId = $installed",
+)
 
 private fun runtimeFileFor(context: Context, rawPath: String): java.io.File? {
     val clean = rawPath.trim().trim('"').replace('\\', '/').trimStart('/')

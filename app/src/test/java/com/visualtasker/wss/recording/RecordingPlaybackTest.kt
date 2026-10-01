@@ -120,6 +120,30 @@ class RecordingPlaybackTest {
     }
 
     @Test
+    fun blankAccessibilityLabelsRemainInspectable() {
+        val fixture = fixture(changed = true)
+        val blankRoot = fixture.record.snapshots.first().rootNode.copy(
+            className = " ",
+            viewIdResourceName = null,
+            text = " ",
+            contentDescription = "",
+        )
+        val damaged = fixture.record.copy(
+            snapshots = fixture.record.snapshots.mapIndexed { index, snapshot ->
+                if (index == 0) snapshot.copy(rootNode = blankRoot) else snapshot
+            },
+        )
+        val document = RecordingPlaybackProjector.project(damaged, fixture.assetStore::resolve)
+        val controller = RecordingPlaybackController().apply { load(document) }
+
+        val tree = RecordingPlaybackSceneTreeProjector.project("panel-scene", controller.state.value)!!
+        val node = tree.find("a11y:root")
+
+        assertEquals("Element root", node?.label)
+        assertEquals("Element root", node?.payload?.label)
+    }
+
+    @Test
     fun sceneChangeClearsSelectionThatDoesNotExistInAfterScene() {
         val fixture = fixture(changed = true)
         val withoutTarget = fixture.record.snapshots.last().copy(

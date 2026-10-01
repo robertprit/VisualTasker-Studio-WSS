@@ -9,6 +9,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import com.visualtasker.wss.recording.RawRecordingEvent
 import com.visualtasker.wss.recording.RecordingInteraction
@@ -19,6 +20,7 @@ object RecordingEventStore {
 
     private val activeSession = AtomicReference<RecordingSessionWriter?>(null)
     private val activeStatus = AtomicReference(RecordingStatusSnapshot())
+    private val sessionSummaryCache = ConcurrentHashMap<String, CachedRecordingSession>()
 
     fun start(
         context: Context,
@@ -61,6 +63,8 @@ object RecordingEventStore {
     fun isRecording(): Boolean = activeSession.get() != null
 
     fun activeFileName(): String? = activeSession.get()?.file?.name
+
+    fun activeFilePath(): String? = activeSession.get()?.file?.absolutePath
 
     fun activeStatus(): RecordingStatusSnapshot =
         activeSession.get()?.let { writer ->
@@ -160,23 +164,41 @@ object RecordingEventStore {
     fun latestRecordingSteps(context: Context): List<RecorderStepUi> =
         latestRecordingFile(context)?.toRecorderSteps().orEmpty()
 
-    fun recordingSessions(context: Context): List<RecordingSessionUi> =
-        File(context.filesDir, RECORDS_DIR)
+    fun recordingSessions(context: Context): List<RecordingSessionUi> {
+        val files = File(context.filesDir, RECORDS_DIR)
             .listFiles { file -> file.isFile && file.extension == "jsonl" }
             .orEmpty()
             .sortedByDescending { it.lastModified() }
-            .map { file ->
-                val steps = file.toRecorderSteps()
-                RecordingSessionUi(
-                    path = file.absolutePath,
-                    fileName = file.name,
-                    label = file.nameWithoutExtension.removePrefix("overlay-").ifBlank { file.nameWithoutExtension },
-                    lastModifiedMs = file.lastModified(),
-                    stepCount = steps.size,
-                    durationMs = steps.maxOfOrNull { (it.timestampMs ?: 0L) + (it.durationMs ?: 0L) } ?: 0L,
-                    linkedCanonicalSessionId = file.linkedCanonicalSessionId(),
-                )
-            }
+        val livePaths = files.mapTo(mutableSetOf()) { it.absolutePath }
+        sessionSummaryCache.keys.removeAll { it !in livePaths }
+        return files.map { file ->
+            val signature = "${file.lastModified()}:${file.length()}"
+            sessionSummaryCache[file.absolutePath]
+                ?.takeIf { it.signature == signature }
+                ?.session
+                ?: file.toRecordingSessionUi().also { session ->
+                    sessionSummaryCache[file.absolutePath] = CachedRecordingSession(signature, session)
+                }
+        }
+    }
+
+    private fun File.toRecordingSessionUi(): RecordingSessionUi {
+        val steps = toRecorderSteps()
+        return RecordingSessionUi(
+            path = absolutePath,
+            fileName = name,
+            label = nameWithoutExtension.removePrefix("overlay-").ifBlank { nameWithoutExtension },
+            lastModifiedMs = lastModified(),
+            stepCount = steps.size,
+            durationMs = steps.maxOfOrNull { (it.timestampMs ?: 0L) + (it.durationMs ?: 0L) } ?: 0L,
+            linkedCanonicalSessionId = linkedCanonicalSessionId(),
+        )
+    }
+
+    private data class CachedRecordingSession(
+        val signature: String,
+        val session: RecordingSessionUi,
+    )
 
     fun recordingStepsFor(path: String?): List<RecorderStepUi> =
         path
@@ -495,6 +517,7 @@ object RecordingEventStore {
             return evidence.attributes
         }
 
+        @Synchronized
         fun record(kind: String, label: String, attributes: Map<String, String>) {
             val now = System.currentTimeMillis()
             val currentIndex = index++
@@ -510,7 +533,12 @@ object RecordingEventStore {
             val line = values.entries.joinToString(prefix = "{", postfix = "}") { (key, value) ->
                 "\"${key.jsonEscape()}\":\"${value.jsonEscape()}\""
             }
-            runCatching { file.appendText(line + "\n") }
+            try {
+                file.appendText(line + "\n")
+            } catch (error: Throwable) {
+                Log.e("RECORDER/EVENT", "Could not append $kind to ${file.name}", error)
+                return
+            }
             activeStatus.set(
                 RecordingStatusSnapshot(
                     running = true,

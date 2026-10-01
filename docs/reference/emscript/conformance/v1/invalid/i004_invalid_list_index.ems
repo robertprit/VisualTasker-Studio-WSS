@@ -1,0 +1,2 @@
+LET §items: List<Number> = [1]
+LET §missing: Number = §items[2]

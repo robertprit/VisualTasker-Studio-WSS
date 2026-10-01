@@ -1,0 +1,2 @@
+LET §route: Path = path(point(10, 20), point(100, 200), point(300, 400))
+swipe(§route, duration = 600)

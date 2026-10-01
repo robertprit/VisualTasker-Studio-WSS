@@ -1,0 +1,1 @@
+LET §text: String = "bad\qescape"

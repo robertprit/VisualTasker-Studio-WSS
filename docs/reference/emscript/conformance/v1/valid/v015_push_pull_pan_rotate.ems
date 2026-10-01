@@ -1,0 +1,5 @@
+LET §center: Point = point(540, 1100)
+push(§center, startDistance = 40, endDistance = 180, duration = 500)
+pull(§center, startDistance = 180, endDistance = 40, duration = 500)
+pan(point(200, 600), point(600, 600), spacing = 80, duration = 500)
+rotate(§center, angle = 90, radius = 80, duration = 600)

@@ -6,6 +6,7 @@ import de.visualtasker.blockeditor.ir.IrGraphEdgeKind
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.blockeditor.domain.WorkspacePoint as BlockWorkspacePoint
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -51,6 +52,22 @@ class WorkspaceWorkflowStateTest {
         assertEquals(resources, state.resources)
         assertTrue(state.emscriptProjection.isSuccess)
         assertTrue(state.flowchartProjection.graph.nodes.isNotEmpty())
+    }
+
+    @Test
+    fun layoutPositionChangeKeepsExecutableProjectionStable() {
+        val document = WorkspaceBootstrap.starter()
+        val rootId = document.rootBlocks.first()
+        val initial = WorkspaceWorkflowState.fromDocument(document, mutationSource = "initial")
+        val moved = WorkspaceWorkflowState.fromDocument(
+            document = document.copy(
+                rootPositions = document.rootPositions + (rootId to BlockWorkspacePoint(640f, 480f)),
+            ),
+            mutationSource = "flowchart:move",
+        )
+
+        assertTrue(initial.serializedJson != moved.serializedJson)
+        assertEquals(initial.emscriptProjection.getOrThrow(), moved.emscriptProjection.getOrThrow())
     }
 
     @Test

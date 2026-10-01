@@ -2,9 +2,18 @@ package com.visualtasker.wss.emscript.parser
 
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.CommandCatalogKind
+import de.visualtasker.blockeditor.registry.canBeUsedAsExpression
 import de.visualtasker.blockeditor.registry.CommandArgument
 import de.visualtasker.blockeditor.registry.CommandArgumentType
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry
+import de.visualtasker.blockeditor.registry.argumentAt
+import de.visualtasker.blockeditor.registry.maximumArgumentCount
+import de.visualtasker.blockeditor.registry.minimumArgumentCount
+import de.visualtasker.emscript.contract.EmscriptV1OperatorIds
+import de.visualtasker.emscript.contract.EmscriptV1Operators
+import de.visualtasker.emscript.contract.LanguageTypeCompatibility
+import de.visualtasker.emscript.contract.LanguageTypeRef
+import de.visualtasker.emscript.contract.OperatorId
 
 data class EmscriptParseIssue(
     val line: Int,
@@ -35,12 +44,14 @@ sealed interface EmscriptIrStatement {
     data class CommandCall(
         val command: String,
         val arguments: String,
+        val expressionArguments: List<EmscriptIrExpression> = emptyList(),
         val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
     data class Let(
         val variable: String,
         val value: EmscriptIrExpression,
+        val declaredType: LanguageTypeRef? = null,
         val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
@@ -121,20 +132,24 @@ sealed interface EmscriptIrExpression {
     ) : EmscriptIrExpression
 }
 
-enum class EmscriptBinaryOp {
-    OR,
-    AND,
-    ADD,
-    SUB,
-    MUL,
-    DIV,
-    MOD,
-    EQ,
-    NEQ,
-    LT,
-    LTE,
-    GT,
-    GTE,
+enum class EmscriptBinaryOp(val operatorId: OperatorId) {
+    OR(EmscriptV1OperatorIds.OR),
+    AND(EmscriptV1OperatorIds.AND),
+    ADD(EmscriptV1OperatorIds.ADD),
+    SUB(EmscriptV1OperatorIds.SUBTRACT),
+    MUL(EmscriptV1OperatorIds.MULTIPLY),
+    DIV(EmscriptV1OperatorIds.DIVIDE),
+    MOD(EmscriptV1OperatorIds.MODULO),
+    EQ(EmscriptV1OperatorIds.EQUAL),
+    NEQ(EmscriptV1OperatorIds.NOT_EQUAL),
+    LT(EmscriptV1OperatorIds.LESS),
+    LTE(EmscriptV1OperatorIds.LESS_OR_EQUAL),
+    GT(EmscriptV1OperatorIds.GREATER),
+    GTE(EmscriptV1OperatorIds.GREATER_OR_EQUAL),
+    ;
+
+    val canonicalSymbol: String
+        get() = EmscriptV1Operators.requireDefinition(operatorId).symbol
 }
 
 class EmscriptParserSlice(
@@ -194,6 +209,7 @@ private enum class TokenType {
     COMMA,
     DOT,
     COLON,
+    QUESTION,
     PLUS,
     MINUS,
     STAR,
@@ -312,6 +328,10 @@ private class Lexer(private val source: String) {
                 }
                 ':' -> {
                     tokens += token(TokenType.COLON, ":")
+                    advance()
+                }
+                '?' -> {
+                    tokens += token(TokenType.QUESTION, "?")
                     advance()
                 }
                 '=' -> {
@@ -516,9 +536,23 @@ private class Parser(
 
     private fun parseLet(start: Token): EmscriptIrStatement.Let {
         val variable = consume(TokenType.IDENT, "Variablenname nach LET erwartet.")
+        val declaredType = if (match(TokenType.COLON)) parseTypeReference() else null
         consume(TokenType.ASSIGN, "'=' nach Variablenname erwartet.")
         val value = parseExpression()
-        return EmscriptIrStatement.Let(variable.lexeme, value, source = start.sourceSpanOrNull())
+        return EmscriptIrStatement.Let(
+            variable = variable.lexeme,
+            value = value,
+            declaredType = declaredType,
+            source = start.sourceSpanOrNull(),
+        )
+    }
+
+    private fun parseTypeReference(): LanguageTypeRef {
+        val type = consume(TokenType.IDENT, "Typname nach ':' erwartet.")
+        val sourceName = type.lexeme + if (match(TokenType.QUESTION)) "?" else ""
+        return requireNotNull(LanguageTypeCompatibility.fromWorkspaceName(sourceName)) {
+            "Unbekannter Typ '$sourceName'."
+        }
     }
 
     private fun parseSet(start: Token): EmscriptIrStatement.Set {
@@ -629,16 +663,27 @@ private class Parser(
             "click" -> parseClickFunction(command)
             "log" -> parseLogFunction(command)
             "beep" -> parseBeepFunction(command)
-            "vibrate" -> {
-                val args = parseIntegerFunctionArguments(command, min = 1, max = 16)
-                EmscriptIrStatement.Vibrate(args)
-            }
             else -> {
-                val catalogEntry = VisualTaskerCommandCatalog.findByAcceptedName(command.lexeme)
+                val catalogEntry = VisualTaskerCommandCatalog.findLanguageCommandByAcceptedName(command.lexeme)
                 if (catalogEntry != null) {
                     val args = parseRawFunctionArguments(command)
-                    validateCatalogArguments(command, catalogEntry, args.arguments)
-                    return EmscriptIrStatement.CommandCall(catalogEntry.canonicalName, args.rendered)
+                    val expressionTransport = catalogEntry.arguments
+                        .filter { it.type != CommandArgumentType.STATEMENT_BODY }
+                        .takeIf { it.isNotEmpty() && it.all { argument -> argument.acceptedTypes.isNotEmpty() } }
+                    validateCatalogArguments(
+                        command = command,
+                        entry = catalogEntry,
+                        arguments = args.arguments,
+                        validatePrimitiveTypes = expressionTransport == null,
+                    )
+                    val expressionArguments = expressionTransport
+                        ?.let { args.arguments.map { raw -> parseStandaloneExpression(raw, command) } }
+                        .orEmpty()
+                    return EmscriptIrStatement.CommandCall(
+                        command = catalogEntry.canonicalName,
+                        arguments = args.rendered,
+                        expressionArguments = expressionArguments,
+                    )
                 }
                 throw ParseException(command.line, command.column, "Unbekanntes Kommando '${command.lexeme}'.")
             }
@@ -704,18 +749,41 @@ private class Parser(
         return RawFunctionArguments(args.joinToString(","), args)
     }
 
-    private fun validateCatalogArguments(command: Token, entry: CommandCatalogEntry, arguments: List<String>) {
-        val specs = entry.arguments.filter { it.type != CommandArgumentType.STATEMENT_BODY }
-        val required = specs.count { it.required }
+    private fun validateCatalogArguments(
+        command: Token,
+        entry: CommandCatalogEntry,
+        arguments: List<String>,
+        validatePrimitiveTypes: Boolean = true,
+    ) {
+        val required = entry.minimumArgumentCount()
         if (arguments.size < required) {
             throw ParseException(command.line, command.column, "${entry.canonicalName} erwartet mindestens $required Parameter.")
         }
-        if (arguments.size > specs.size) {
-            throw ParseException(command.line, command.column, "${entry.canonicalName} unterstützt maximal ${specs.size} Parameter.")
+        val maximum = entry.maximumArgumentCount()
+        if (maximum != null && arguments.size > maximum) {
+            throw ParseException(command.line, command.column, "${entry.canonicalName} unterstützt maximal $maximum Parameter.")
         }
-        arguments.zip(specs).forEachIndexed { index, (raw, spec) ->
-            validateRawArgument(command, entry, spec, index + 1, raw)
+        if (validatePrimitiveTypes) {
+            arguments.forEachIndexed { index, raw ->
+                val spec = requireNotNull(entry.argumentAt(index))
+                validateRawArgument(command, entry, spec, index + 1, raw)
+            }
         }
+    }
+
+    private fun parseStandaloneExpression(raw: String, command: Token): EmscriptIrExpression =
+        runCatching {
+            Parser(Lexer(raw).lex(), includeSourceSpans = false).parseStandaloneExpression()
+        }.getOrElse { error ->
+            val detail = (error as? ParseException)?.message ?: error.message ?: "ungueltiger Ausdruck"
+            throw ParseException(command.line, command.column, "${command.lexeme}: $detail")
+        }
+
+    private fun parseStandaloneExpression(): EmscriptIrExpression {
+        val expression = parseExpression()
+        skipSeparators()
+        consume(TokenType.EOF, "Unerwarteter Inhalt nach Command-Argument.")
+        return expression
     }
 
     private fun validateRawArgument(
@@ -911,6 +979,13 @@ private class Parser(
             match(TokenType.FALSE) -> EmscriptIrExpression.BooleanLiteral(false)
             match(TokenType.IDENT) -> {
                 val identifier = parseQualifiedIdentifier(previous())
+                if (identifier.lexeme.equals("null", ignoreCase = true)) {
+                    throw ParseException(
+                        identifier.line,
+                        identifier.column,
+                        "NULL_LITERAL_DECISION_REQUIRED: 'null' ist in EMScript v1 noch kein Literal.",
+                    )
+                }
                 if (check(TokenType.LPAREN)) {
                     parseExpressionFunction(identifier)
                 } else {
@@ -930,9 +1005,23 @@ private class Parser(
     }
 
     private fun parseExpressionFunction(function: Token): EmscriptIrExpression.FunctionCall {
-        val entry = VisualTaskerCommandCatalog.findByAcceptedName(function.lexeme)
+        if (function.lexeme.equals("region", ignoreCase = true) || function.lexeme.equals("bbox", ignoreCase = true)) {
+            consume(TokenType.LPAREN, "'(' nach ${function.lexeme} erwartet.")
+            val arguments = mutableListOf<EmscriptIrExpression>()
+            if (!check(TokenType.RPAREN)) {
+                do {
+                    arguments += parseExpression()
+                } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.RPAREN, "')' nach ${function.lexeme}-Parametern erwartet.")
+            if (arguments.size != 4 || arguments.any { it !is EmscriptIrExpression.NumberLiteral }) {
+                throw ParseException(function.line, function.column, "region erwartet vier Number-Literale.")
+            }
+            return EmscriptIrExpression.FunctionCall("region", arguments)
+        }
+        val entry = VisualTaskerCommandCatalog.findLanguageCommandByAcceptedName(function.lexeme)
             ?: throw ParseException(function.line, function.column, "Unbekannter Reporter '${function.lexeme}'.")
-        if (entry.kind !in setOf(CommandCatalogKind.REPORTER, CommandCatalogKind.OPERATOR)) {
+        if (!entry.canBeUsedAsExpression()) {
             throw ParseException(function.line, function.column, "'${function.lexeme}' ist kein Ausdruck.")
         }
         consume(TokenType.LPAREN, "'(' nach ${function.lexeme} erwartet.")
@@ -952,15 +1041,16 @@ private class Parser(
         entry: CommandCatalogEntry,
         arguments: List<EmscriptIrExpression>,
     ) {
-        val specs = entry.arguments.filter { it.type != CommandArgumentType.STATEMENT_BODY }
-        val required = specs.count { it.required }
+        val required = entry.minimumArgumentCount()
         if (arguments.size < required) {
             throw ParseException(function.line, function.column, "${entry.canonicalName} erwartet mindestens $required Parameter.")
         }
-        if (arguments.size > specs.size) {
-            throw ParseException(function.line, function.column, "${entry.canonicalName} unterstützt maximal ${specs.size} Parameter.")
+        val maximum = entry.maximumArgumentCount()
+        if (maximum != null && arguments.size > maximum) {
+            throw ParseException(function.line, function.column, "${entry.canonicalName} unterstützt maximal $maximum Parameter.")
         }
-        arguments.zip(specs).forEachIndexed { index, (argument, spec) ->
+        arguments.forEachIndexed { index, argument ->
+            val spec = requireNotNull(entry.argumentAt(index))
             if (!argument.matchesArgumentType(spec.type)) {
                 throw ParseException(
                     function.line,

@@ -1,0 +1,2 @@
+LET §counter: Number = 1
+SET §counter = §counter + 1

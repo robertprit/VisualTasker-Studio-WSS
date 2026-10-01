@@ -1,0 +1,2 @@
+@group.start("setup")
+LET §value = 1

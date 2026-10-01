@@ -11,7 +11,10 @@ import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceGraph
 import de.visualtasker.blockeditor.domain.asString
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.CommandCatalogEntry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.blockeditor.registry.canBeUsedAsExpression
+import de.visualtasker.blockeditor.registry.workspaceInputNameAt
 import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 import com.visualtasker.wss.emscript.parser.EmscriptBinaryOp
 import com.visualtasker.wss.emscript.parser.EmscriptIrExpression
@@ -21,13 +24,29 @@ import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 class WorkspaceDryRunRuntime(
     private val config: EmscriptDryRunConfig = EmscriptDryRunConfig(),
 ) {
-    fun run(document: WorkspaceDocument): EmscriptDryRunResult =
-        WorkspaceInterpreter(document, config).run()
+    fun run(
+        document: WorkspaceDocument,
+        commandExpressionEvaluator: WorkspaceCommandExpressionEvaluator = DryRunCommandExpressionEvaluator,
+    ): EmscriptDryRunResult =
+        WorkspaceInterpreter(document, config, commandExpressionEvaluator).run()
+}
+
+fun interface WorkspaceCommandExpressionEvaluator {
+    fun evaluate(entry: CommandCatalogEntry, arguments: List<EmscriptValue>): EmscriptValue
+}
+
+private object DryRunCommandExpressionEvaluator : WorkspaceCommandExpressionEvaluator {
+    override fun evaluate(entry: CommandCatalogEntry, arguments: List<EmscriptValue>): EmscriptValue =
+        entry.returnType
+            ?.takeUnless { it.equals("Void", ignoreCase = true) }
+            ?.let(EmscriptRuntimeTypeSafety::defaultValue)
+            ?: error("Void command '${entry.canonicalName}' cannot be evaluated as an expression")
 }
 
 private class WorkspaceInterpreter(
     private val document: WorkspaceDocument,
     private val config: EmscriptDryRunConfig,
+    private val commandExpressionEvaluator: WorkspaceCommandExpressionEvaluator,
 ) {
     private val variables = linkedMapOf<String, EmscriptValue>()
     private val events = mutableListOf<EmscriptDryRunEvent>()
@@ -49,6 +68,15 @@ private class WorkspaceInterpreter(
             emit("done", "Workspace Dry-Run abgeschlossen: ${events.size} Events, ${variables.size} Variablen.")
             EmscriptDryRunResult.Success(events.toList(), variables.toMap())
         }.getOrElse { error ->
+            if (error is EmscriptRuntimeDiagnosticException) {
+                events += EmscriptDryRunEvent(
+                    index = events.size + 1,
+                    kind = "runtime_failure",
+                    message = error.message.orEmpty(),
+                    severity = EmscriptDryRunEventSeverity.ERROR,
+                    diagnosticCode = error.diagnosticCode,
+                )
+            }
             EmscriptDryRunResult.Failure(
                 message = error.message ?: "Workspace Dry-Run fehlgeschlagen.",
                 events = events.toList(),
@@ -73,7 +101,11 @@ private class WorkspaceInterpreter(
         when (block.type) {
             BlockTypes.ACTION_CLICK_TEXT -> emitBlock(blockId, "click", "würde Text \"${block.fieldText("text")}\" anklicken")
             BlockTypes.ACTION_WAIT -> emitBlock(blockId, "wait", "würde ${block.fieldNumber("ms").toLong().coerceAtLeast(0L)} ms warten")
-            BlockTypes.DEBUG_LOG -> emitBlock(blockId, "log", block.fieldText("message"))
+            BlockTypes.DEBUG_LOG -> {
+                val value = evaluateOptionalValueInput(block, "value")
+                    ?: EmscriptValue.StringValue(block.fieldText("message"))
+                emitBlock(blockId, "log", value.renderDryRun())
+            }
             BlockTypes.FEEDBACK_BEEP -> {
                 val hz = block.fieldNumber("frequency").toInt().coerceIn(20, 20_000)
                 val duration = block.fieldNumber("durationMs").toInt().coerceIn(10, 10_000)
@@ -81,12 +113,26 @@ private class WorkspaceInterpreter(
                 emitBlock(blockId, "beep", "würde Beep ${hz}Hz/${duration}ms/${volume}% abspielen")
             }
             BlockTypes.FEEDBACK_VIBRATE -> {
-                val pattern = block.fieldLongList("pattern").joinToString(",")
-                emitBlock(blockId, "vibrate", "würde Vibrationsmuster $pattern ms starten")
+                val entry = requireNotNull(VisualTaskerCommandCatalog.findByBlockType(block.type))
+                val expressionPattern = buildList {
+                    for (index in block.valueInputs.indices) {
+                        val inputName = entry.workspaceInputNameAt(index) ?: break
+                        val value = evaluateOptionalValueInput(block, inputName) ?: break
+                        add(value.asDoubleDryRun("vibrate Parameter ${index + 1}").toLong())
+                    }
+                }
+                val pattern = expressionPattern.ifEmpty { block.fieldLongList("pattern") }
+                emitBlock(
+                    blockId,
+                    "vibrate",
+                    "würde Vibrationsmuster ${pattern.joinToString(",")} ms starten",
+                    numericArguments = pattern,
+                )
             }
             BlockTypes.VARIABLE_SET -> {
                 val variable = block.fieldText("variable").ifBlank { "variable" }
-                val value = evaluateInlineText(block.fieldText("value"))
+                val value = evaluateOptionalValueInput(block, "value")
+                    ?: evaluateInlineText(block.fieldText("value"))
                 variables[variable] = value
                 emitBlock(blockId, block.fieldText("assignmentKind").ifBlank { "set" }.lowercase(), "$variable = ${value.renderDryRun()}")
             }
@@ -175,6 +221,14 @@ private class WorkspaceInterpreter(
         return evaluateExpression(valueBlockId)
     }
 
+    private fun evaluateOptionalValueInput(block: BlockNode, inputName: String): EmscriptValue? {
+        val input = block.valueInputs.firstOrNull { it.name == inputName } ?: return null
+        val connected = input.connection.connectedTo ?: return null
+        val (valueBlockId, _) = WorkspaceGraph.findConnection(document, connected) ?: return null
+        emitEdge(valueBlockId, block.id, edgeKindFromValueInput(inputName))
+        return evaluateExpression(valueBlockId)
+    }
+
     private fun evaluateExpression(blockId: BlockId): EmscriptValue {
         guardStep()
         val block = document.blocks[blockId] ?: return EmscriptValue.NullValue
@@ -189,6 +243,10 @@ private class WorkspaceInterpreter(
             BlockTypes.LITERAL_STRING -> block.fieldText("value").also {
                 emitBlock(blockId, "reporter", it)
             }.let(EmscriptValue::StringValue)
+            BlockTypes.LITERAL_REGION -> listOf("x", "y", "width", "height")
+                .joinToString(prefix = "region(", postfix = ")") { field -> block.fieldNumber(field).renderNumber() }
+                .also { emitBlock(blockId, "reporter", it) }
+                .let(EmscriptValue::StringValue)
             BlockTypes.LOGIC_SCREEN_CONTAINS -> {
                 val text = block.fieldText("text")
                 emitBlock(blockId, "reporter", "würde screenContains(\"$text\") auswerten")
@@ -196,11 +254,13 @@ private class WorkspaceInterpreter(
             }
             BlockTypes.VARIABLE_GET,
             BlockTypes.VARIABLE_VALUE,
-            BlockTypes.VARIABLES_GET -> variableValue(blockId, block.fieldText("variable"))
+            BlockTypes.VARIABLES_GET -> variableValue(blockId, block.variableReferenceId())
             BlockTypes.LOGIC_COMPARE -> evaluateCompare(blockId, block)
             BlockTypes.LOGIC_OPERATE -> evaluateOperate(blockId, block)
             else -> if (block.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX)) {
-                variableValue(blockId, block.fieldText("variable"))
+                variableValue(blockId, block.variableReferenceId())
+            } else if (block.type.startsWith(BlockTypes.EMSCRIPT_COMMAND_PREFIX)) {
+                evaluateCommandExpression(blockId, block)
             } else {
                 emitBlock(blockId, "reporter", "unsupported ${block.type}")
                 EmscriptValue.NullValue
@@ -208,11 +268,53 @@ private class WorkspaceInterpreter(
         }
     }
 
+    private fun evaluateCommandExpression(blockId: BlockId, block: BlockNode): EmscriptValue {
+        val entry = requireNotNull(VisualTaskerCommandCatalog.findByBlockType(block.type)) {
+            "Unknown command block: ${block.type}"
+        }
+        require(entry.canBeUsedAsExpression()) {
+            "Void command '${entry.canonicalName}' cannot be evaluated as an expression"
+        }
+        val arguments = entry.arguments
+            .filter { it.type != de.visualtasker.blockeditor.registry.CommandArgumentType.STATEMENT_BODY }
+            .mapIndexed { index, argument ->
+                val inputName = entry.workspaceInputNameAt(index) ?: argument.name
+                evaluateOptionalValueInput(block, inputName)
+                    ?: argument.defaultValue?.let { defaultValue ->
+                        when (argument.type) {
+                            de.visualtasker.blockeditor.registry.CommandArgumentType.NUMBER,
+                            de.visualtasker.blockeditor.registry.CommandArgumentType.DURATION_MS,
+                            de.visualtasker.blockeditor.registry.CommandArgumentType.FREQUENCY_HZ,
+                            de.visualtasker.blockeditor.registry.CommandArgumentType.PERCENT,
+                            -> EmscriptValue.NumberValue(defaultValue.toDouble())
+                            de.visualtasker.blockeditor.registry.CommandArgumentType.BOOLEAN ->
+                                EmscriptValue.BooleanValue(defaultValue.toBooleanStrict())
+                            else -> EmscriptValue.StringValue(defaultValue)
+                        }
+                    }
+                    ?: error("Missing expression argument '$inputName' for ${entry.canonicalName}")
+            }
+        val value = commandExpressionEvaluator.evaluate(entry, arguments)
+        EmscriptRuntimeTypeSafety.requireMatches(
+            value = value,
+            expectedType = requireNotNull(entry.returnType),
+            context = "Reporter ${entry.canonicalName}",
+        )
+        emitBlock(blockId, "reporter", "${entry.canonicalName} = ${value.renderDryRun()}")
+        return value
+    }
+
     private fun variableValue(blockId: BlockId, variable: String): EmscriptValue {
         val value = variables[variable] ?: EmscriptValue.NullValue
         emitBlock(blockId, "variable", "$variable = ${value.renderDryRun()}")
         return value
     }
+
+    private fun BlockNode.variableReferenceId(): String =
+        fields["variableId"]?.asString()?.takeIf(String::isNotBlank)
+            ?: type.removePrefix(BlockTypes.VARIABLE_REPORTER_PREFIX)
+                .takeIf { it != type && it.isNotBlank() }
+            ?: fieldText("variable")
 
     private fun evaluateCompare(blockId: BlockId, block: BlockNode): EmscriptValue {
         val left = evaluateValueInput(block, "LEFT")
@@ -305,8 +407,10 @@ private class WorkspaceInterpreter(
             ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
         return when (entry?.returnType) {
             "Number" -> EmscriptValue.NumberValue(0.0)
-            "Text" -> EmscriptValue.StringValue("")
-            else -> EmscriptValue.BooleanValue(false)
+            "String", "Text" -> EmscriptValue.StringValue("")
+            "Boolean", "Bool" -> EmscriptValue.BooleanValue(false)
+            null, "Void" -> error("${expression.name} ist kein wertliefernder Ausdruck")
+            else -> error("Unsupported expression return type '${entry.returnType}' for ${entry.canonicalName}")
         }
     }
 
@@ -327,7 +431,12 @@ private class WorkspaceInterpreter(
         }
     }
 
-    private fun emitBlock(blockId: BlockId, kind: String, message: String) {
+    private fun emitBlock(
+        blockId: BlockId,
+        kind: String,
+        message: String,
+        numericArguments: List<Long> = emptyList(),
+    ) {
         val entry = document.blocks[blockId]?.let { block -> VisualTaskerCommandCatalog.findByBlockType(block.type) }
         val gate = entry?.runtime?.liveCapabilityGate
         val descriptor = entry?.toCapabilityDescriptor()
@@ -341,6 +450,7 @@ private class WorkspaceInterpreter(
             pluginOwner = entry?.pluginOwner,
             diagnosticCode = descriptor?.diagnosticCode?.takeIf { kind == "capability" },
             sourceLine = document.blocks[blockId]?.emscriptSourceLine(),
+            numericArguments = numericArguments,
         )
     }
 
@@ -442,7 +552,9 @@ private fun EmscriptValue.asDoubleDryRun(context: String): Double =
         is EmscriptValue.NumberValue -> value
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
-        EmscriptValue.NullValue -> 0.0
+        EmscriptValue.NullValue -> error(
+            "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Number",
+        )
     }
 
 private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
@@ -450,7 +562,9 @@ private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
         is EmscriptValue.BooleanValue -> value
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
-        EmscriptValue.NullValue -> false
+        EmscriptValue.NullValue -> error(
+            "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Bool",
+        )
     }
 
 private fun EmscriptValue.renderDryRun(): String =

@@ -16,7 +16,7 @@ class EmscriptApplyGuardTest {
     fun previewAcceptsValidDraftAndProducesSerializedWorkspace() {
         val result = EmscriptApplyGuard().preview("LET foo = 1")
 
-        assertTrue(result is EmscriptApplyGuardResult.Success)
+        assertTrue(result.toString(), result is EmscriptApplyGuardResult.Success)
         result as EmscriptApplyGuardResult.Success
         assertTrue(result.blockCount >= 2)
         assertTrue(result.serializedWorkspaceJson.contains("foo"))
@@ -37,7 +37,7 @@ class EmscriptApplyGuardTest {
     fun previewAcceptsIntegrationTestDraft() {
         val result = EmscriptApplyGuard().preview(EditorDefaults.integrationTestScript)
 
-        assertTrue(result is EmscriptApplyGuardResult.Success)
+        assertTrue(result.toString(), result is EmscriptApplyGuardResult.Success)
         result as EmscriptApplyGuardResult.Success
         assertTrue(result.blockCount > 20)
         assertTrue(result.summary.contains("Roundtrip-Script-Länge"))

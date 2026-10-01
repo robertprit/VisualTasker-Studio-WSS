@@ -1,0 +1,6 @@
+LET §start: Point = point(10, 20)
+LET §end: Point = point(200, 300)
+LET §route: Path = path([
+    lineSegment(§start, point(80, 100)),
+    cubicBezierSegment(point(80, 100), point(100, 120), point(160, 260), §end)
+])

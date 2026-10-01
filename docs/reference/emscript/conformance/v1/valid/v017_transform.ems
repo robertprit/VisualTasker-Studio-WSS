@@ -1,0 +1,4 @@
+LET §shape: Shape = rectangle(bounds(10, 10, 100, 100))
+LET §handle: OverlayHandle = draw(§shape)
+transform.move(§handle, point(200, 300))
+transform.alpha(§handle, 0.5)

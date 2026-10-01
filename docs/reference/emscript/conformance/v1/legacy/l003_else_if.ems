@@ -1,0 +1,6 @@
+LET §score = 5
+IF §score > 10
+    log("high")
+ELSE IF §score > 0
+    log("positive")
+END IF

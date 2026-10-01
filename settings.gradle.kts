@@ -19,6 +19,7 @@ includeBuild("visualtasker-blockeditor") {
         substitute(module("de.visualtasker.blockeditor:blockeditor-serialization")).using(project(":blockeditor-serialization"))
         substitute(module("de.visualtasker.blockeditor:blockeditor-ir")).using(project(":blockeditor-ir"))
         substitute(module("de.visualtasker.blockeditor:blockeditor-emscript")).using(project(":blockeditor-emscript"))
+        substitute(module("de.visualtasker.emscript:emscript-language-core")).using(project(":emscript-language-core"))
     }
 }
 includeBuild("visualtasker-flowchart") {

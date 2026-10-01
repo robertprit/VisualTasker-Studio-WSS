@@ -1,0 +1,5 @@
+LET §items: List<Number> = [1, 2, 3]
+list.add(§items, 4)
+list.set(§items, 0, 9)
+list.remove(§items, 1)
+LET §first: Number = §items[0]

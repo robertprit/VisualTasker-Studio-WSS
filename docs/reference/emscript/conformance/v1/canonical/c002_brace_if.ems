@@ -1,0 +1,6 @@
+LET §score = 1
+IF §score > 0
+    log("positive")
+ELSE
+    log("other")
+END IF

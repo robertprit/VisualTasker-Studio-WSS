@@ -33,6 +33,17 @@ class VisualAssetCatalogTest {
     }
 
     @Test
+    fun sameAssetCanBindBlockAndFlowNodeWithoutLosingEitherProjection() {
+        val catalog = VisualAssetCatalog()
+            .upsertBinding(VisualAssetBinding("shared-shape", EmaVisualAssetBindingTarget.Block, "control.if"))
+            .upsertBinding(VisualAssetBinding("shared-shape", EmaVisualAssetBindingTarget.FlowNode, "control.if"))
+
+        assertEquals(2, catalog.bindings.size)
+        assertTrue(catalog.bindings.any { it.target == EmaVisualAssetBindingTarget.Block })
+        assertTrue(catalog.bindings.any { it.target == EmaVisualAssetBindingTarget.FlowNode })
+    }
+
+    @Test
     fun persistsCatalogAtomically() {
         val file = Files.createTempDirectory("asset-catalog").resolve("catalog.json").toFile()
         val catalog = VisualAssetCatalog().toggleAssetInToolbox("favorites", "asset-2")

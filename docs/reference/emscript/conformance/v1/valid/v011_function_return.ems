@@ -1,0 +1,11 @@
+FUNCTION add(§a: Number, §b: Number): Number
+    RETURN §a + §b
+END FUNCTION
+
+FUNCTION notify(§message: String): Void
+    log(§message)
+    RETURN
+END FUNCTION
+
+LET §sum: Number = add(2, 3)
+notify("done")

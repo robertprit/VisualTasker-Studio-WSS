@@ -52,18 +52,13 @@ object TaskerRegistration {
     private const val PROVIDER_COL_NAME_ENABLED = "enabled"
     const val PERMISSION_RUN_TASKS = "$TASKER_PACKAGE.PERMISSION_RUN_TASKS"
 
+    internal fun inspectInstallation(context: Context): PackageInstallationInspection =
+        context.packageManager.inspectInstalledPackages(listOf(TASKER_PACKAGE, TASKER_MARKET_PACKAGE))
+
     fun inspect(context: Context): TaskerRegistrationStatus {
         val packageManager = context.packageManager
-        val installedPackage = listOf(TASKER_PACKAGE, TASKER_MARKET_PACKAGE).firstOrNull { packageName ->
-            runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0L))
-                } else {
-                    @Suppress("DEPRECATION")
-                    packageManager.getPackageInfo(packageName, 0)
-                }
-            }.isSuccess
-        }
+        val installation = inspectInstallation(context)
+        val installedPackage = installation.packageName
         val launchable = installedPackage?.let { packageManager.getLaunchIntentForPackage(it) != null } ?: false
         val permissionGranted = context.checkPermission(
             PERMISSION_RUN_TASKS,

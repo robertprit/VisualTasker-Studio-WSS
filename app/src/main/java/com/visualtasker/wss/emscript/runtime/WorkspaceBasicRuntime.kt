@@ -37,7 +37,7 @@ class WorkspaceBasicRuntime(
             )
         }
 
-        return when (val dryRun = dryRunRuntime.run(document)) {
+        return when (val dryRun = dryRunRuntime.run(document, ::evaluateCommandExpression)) {
             is EmscriptDryRunResult.Failure -> dryRun
             is EmscriptDryRunResult.Success -> {
                 val liveEvents = mutableListOf<EmscriptDryRunEvent>()
@@ -83,6 +83,107 @@ class WorkspaceBasicRuntime(
         }
     }
 
+    private fun evaluateCommandExpression(
+        entry: de.visualtasker.blockeditor.registry.CommandCatalogEntry,
+        arguments: List<EmscriptValue>,
+    ): EmscriptValue = when (entry.id) {
+        "clipboard.get" -> EmscriptValue.StringValue(environment.clipboardGet())
+        "system.info" -> EmscriptValue.StringValue(environment.systemInfo())
+        "system.env" -> {
+            val name = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("Env.get erwartet genau einen String-Parameter")
+            EmscriptValue.StringValue(environment.envGet(name))
+        }
+        "file.readText" -> {
+            val path = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("File.readText erwartet genau einen String-Parameter")
+            environment.fileReadText(path)
+                ?.let(EmscriptValue::StringValue)
+                ?: EmscriptValue.NullValue
+        }
+        "system.datastoreGet" -> {
+            val key = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("datastoreGet erwartet genau einen String-Parameter")
+            environment.datastoreGet(key)
+                ?.let(EmscriptValue::StringValue)
+                ?: EmscriptValue.NullValue
+        }
+        "vision.templateCompare" -> {
+            val name = (arguments.getOrNull(0) as? EmscriptValue.StringValue)?.value
+                ?: error("templateCompare erwartet name:String")
+            val regionSource = (arguments.getOrNull(1) as? EmscriptValue.StringValue)?.value
+                ?: error("templateCompare erwartet region:Region")
+            val processing = (arguments.getOrNull(2) as? EmscriptValue.StringValue)?.value
+                ?: "grayscale"
+            val region = parseRuntimeRegion(regionSource)
+                ?: throw EmscriptRuntimeDiagnosticException(
+                    RuntimeQueryDiagnosticCodes.TEMPLATE_REGION_UNAVAILABLE,
+                    "Die Vergleichsregion ist nicht verwendbar.",
+                )
+            val score = environment.templateCompare(name, region, processing)
+            if (!score.isFinite() || score !in 0f..1f) {
+                throw EmscriptRuntimeDiagnosticException(
+                    RuntimeQueryDiagnosticCodes.TEMPLATE_COMPARE_FAILED,
+                    "Der Vergleich lieferte einen ungueltigen Score.",
+                )
+            }
+            environment.log("templateCompare -> VALUE(score=$score)")
+            EmscriptValue.NumberValue(score.toDouble())
+        }
+        "chromeTab.isSupported" -> evaluateProviderBool(
+            commandId = entry.id,
+            result = environment.chromeTabCommand(entry.id, emptyList()),
+            adapterUnavailableCode = RuntimeQueryDiagnosticCodes.CHROME_TAB_ADAPTER_UNAVAILABLE,
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.CHROME_TAB_RESOLUTION_FAILED,
+        )
+        "tasker.isInstalled" -> evaluateProviderBool(
+            commandId = entry.id,
+            result = environment.taskerInstalled(),
+            adapterUnavailableCode = RuntimeQueryDiagnosticCodes.TASKER_ADAPTER_UNAVAILABLE,
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.TASKER_INSTALLATION_CHECK_FAILED,
+        )
+        "shizuku.isInstalled" -> evaluateProviderBool(
+            commandId = entry.id,
+            result = environment.shizukuInstalled(),
+            adapterUnavailableCode = RuntimeQueryDiagnosticCodes.SHIZUKU_ADAPTER_UNAVAILABLE,
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.SHIZUKU_INSTALLATION_CHECK_FAILED,
+        )
+        "shizuku.isAvailable" -> evaluateProviderBool(
+            commandId = entry.id,
+            result = environment.shizukuAvailable(),
+            adapterUnavailableCode = RuntimeQueryDiagnosticCodes.SHIZUKU_ADAPTER_UNAVAILABLE,
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.SHIZUKU_BINDER_CHECK_FAILED,
+        )
+        "termux.isInstalled" -> evaluateProviderBool(
+            commandId = entry.id,
+            result = environment.termuxInstalled(),
+            adapterUnavailableCode = RuntimeQueryDiagnosticCodes.TERMUX_ADAPTER_UNAVAILABLE,
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.TERMUX_INSTALLATION_CHECK_FAILED,
+        )
+        else -> error("No core query evaluator registered for ${entry.id}")
+    }
+
+    private fun evaluateProviderBool(
+        commandId: String,
+        result: RuntimeAdapterResult,
+        adapterUnavailableCode: String,
+        valueUnavailableCode: String,
+    ): EmscriptValue.BooleanValue {
+        if (!result.success) {
+            throw EmscriptRuntimeDiagnosticException(
+                result.diagnosticCode ?: adapterUnavailableCode,
+                result.message.ifBlank { "$commandId adapter unavailable." },
+            )
+        }
+        val value = result.value as? EmscriptValue.BooleanValue
+            ?: throw EmscriptRuntimeDiagnosticException(
+                valueUnavailableCode,
+                "$commandId did not return a Bool value.",
+            )
+        environment.log("$commandId -> VALUE(${value.value})")
+        return value
+    }
+
     private suspend fun executeEvent(document: WorkspaceDocument, event: EmscriptDryRunEvent): LiveExecutionOutcome? {
         val block = event.blockId?.let { document.blocks[de.visualtasker.blockeditor.domain.BlockId(it)] }
         val command = event.command.orEmpty().lowercase()
@@ -112,7 +213,9 @@ class WorkspaceBasicRuntime(
                 LiveExecutionOutcome("beep($hz,$durationMs,$volume) ausgeführt")
             }
             "vibrate" -> {
-                val pattern = block?.fieldLongList("pattern") ?: listOf(80L)
+                val pattern = event.numericArguments.ifEmpty {
+                    block?.fieldLongList("pattern") ?: listOf(80L)
+                }
                 environment.vibrate(pattern)
                 LiveExecutionOutcome("vibrate(${pattern.joinToString(",")}) ausgeführt")
             }
@@ -194,11 +297,11 @@ class WorkspaceBasicRuntime(
             "file.readtext" -> {
                 val path = block.stringArgument(fieldName = "path")
                 val text = environment.fileReadText(path)
-                environment.log("File.readText($path) -> ${text?.length ?: 0} Zeichen")
+                environment.log(text?.let { "File.readText -> VALUE(length=${it.length})" } ?: "File.readText -> ABSENT")
                 if (text != null) {
-                    LiveExecutionOutcome("File.readText($path) ausgeführt")
+                    LiveExecutionOutcome("File.readText -> VALUE(length=${text.length})")
                 } else {
-                    LiveExecutionOutcome("File.readText($path) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
+                    LiveExecutionOutcome("File.readText -> ABSENT")
                 }
             }
             "file.writetext" -> {
@@ -275,17 +378,6 @@ class WorkspaceBasicRuntime(
                     LiveExecutionOutcome("templateDefine($name) fehlgeschlagen", EmscriptDryRunEventSeverity.WARNING)
                 }
             }
-            "templatecompare" -> {
-                val name = block.stringArgument(fieldName = "name").ifBlank { "template" }
-                val region = block?.regionArgument(fieldName = "region") ?: RuntimeAutomationRegion(0, 0, 1, 1)
-                val processing = block.stringArgument(index = 2, fieldName = "processing").ifBlank { "grayscale" }
-                val score = environment.templateCompare(name, region, processing)
-                if (score != null) {
-                    LiveExecutionOutcome("templateCompare($name) = ${"%.1f".format(score * 100f)}%")
-                } else {
-                    LiveExecutionOutcome("templateCompare($name) nicht möglich", EmscriptDryRunEventSeverity.WARNING)
-                }
-            }
             "datastoreput" -> {
                 val key = block.stringArgument(fieldName = "key").ifBlank { "key" }
                 val value = block.stringArgument(index = 1, fieldName = "value").ifBlank { block?.fieldText("value").orEmpty() }
@@ -295,11 +387,11 @@ class WorkspaceBasicRuntime(
             "datastoreget" -> {
                 val key = block.stringArgument(fieldName = "key").ifBlank { "key" }
                 val value = environment.datastoreGet(key)
-                environment.log("datastoreGet($key) -> ${value.orEmpty()}")
+                environment.log(value?.let { "datastoreGet -> VALUE(length=${it.length})" } ?: "datastoreGet -> ABSENT")
                 if (value != null) {
-                    LiveExecutionOutcome("datastoreGet($key) ausgeführt")
+                    LiveExecutionOutcome("datastoreGet -> VALUE(length=${value.length})")
                 } else {
-                    LiveExecutionOutcome("datastoreGet($key) leer", EmscriptDryRunEventSeverity.WARNING)
+                    LiveExecutionOutcome("datastoreGet -> ABSENT")
                 }
             }
             else -> when {
@@ -491,11 +583,47 @@ data class WorkspaceBasicRuntimeEnvironment(
     val markerLoad: (name: String) -> RuntimeAutomationRegion? = { null },
     val markerDelete: (name: String) -> Boolean = { false },
     val templateDefine: (name: String, region: RuntimeAutomationRegion, processing: String) -> Boolean = { _, _, _ -> false },
-    val templateCompare: (name: String, region: RuntimeAutomationRegion, processing: String) -> Float? = { _, _, _ -> null },
+    val templateCompare: (name: String, region: RuntimeAutomationRegion, processing: String) -> Float = { _, _, _ ->
+        throw EmscriptRuntimeDiagnosticException(
+            RuntimeQueryDiagnosticCodes.TEMPLATE_COMPARE_FAILED,
+            "Der Vision-Adapter fuer templateCompare ist nicht verfuegbar.",
+        )
+    },
     val datastorePut: (key: String, value: String) -> Unit = { _, _ -> },
     val datastoreGet: (key: String) -> String? = { null },
-    val chromeTabCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
-        RuntimeAdapterResult(false, "$command benötigt den CustomChromeTab-Adapter.")
+    val chromeTabCommand: (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
+        if (command == "chromeTab.isSupported") {
+            RuntimeAdapterResult.failure(
+                diagnosticCode = RuntimeQueryDiagnosticCodes.CHROME_TAB_ADAPTER_UNAVAILABLE,
+                message = "$command benötigt den CustomChromeTab-Adapter.",
+            )
+        } else {
+            RuntimeAdapterResult(false, "$command benötigt den CustomChromeTab-Adapter.")
+        }
+    },
+    val taskerInstalled: () -> RuntimeAdapterResult = {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_ADAPTER_UNAVAILABLE,
+            message = "tasker.isInstalled benötigt den Tasker-Adapter.",
+        )
+    },
+    val shizukuInstalled: () -> RuntimeAdapterResult = {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.SHIZUKU_ADAPTER_UNAVAILABLE,
+            message = "shizuku.isInstalled benötigt den Shizuku-Adapter.",
+        )
+    },
+    val shizukuAvailable: () -> RuntimeAdapterResult = {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.SHIZUKU_ADAPTER_UNAVAILABLE,
+            message = "shizuku.isAvailable benötigt den Shizuku-Adapter.",
+        )
+    },
+    val termuxInstalled: () -> RuntimeAdapterResult = {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TERMUX_ADAPTER_UNAVAILABLE,
+            message = "termux.isInstalled benötigt den Termux-Adapter.",
+        )
     },
     val taskerCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->
         RuntimeAdapterResult(false, "$command benötigt den Tasker-Adapter.")
@@ -515,7 +643,45 @@ data class RuntimeAdapterResult(
     val success: Boolean,
     val message: String,
     val warning: Boolean = !success,
-)
+    val value: EmscriptValue? = null,
+    val diagnosticCode: String? = null,
+) {
+    init {
+        require(success || value == null) { "A failed adapter result cannot carry a return value." }
+    }
+
+    companion object {
+        fun success(
+            value: EmscriptValue,
+            message: String = "",
+            warning: Boolean = false,
+        ): RuntimeAdapterResult = RuntimeAdapterResult(
+            success = true,
+            message = message,
+            warning = warning,
+            value = value,
+        )
+
+        fun successWithoutValue(
+            message: String = "",
+            warning: Boolean = false,
+        ): RuntimeAdapterResult = RuntimeAdapterResult(
+            success = true,
+            message = message,
+            warning = warning,
+        )
+
+        fun failure(
+            diagnosticCode: String,
+            message: String,
+        ): RuntimeAdapterResult = RuntimeAdapterResult(
+            success = false,
+            message = message,
+            warning = true,
+            diagnosticCode = diagnosticCode,
+        )
+    }
+}
 
 private fun RuntimeAdapterResult.toLiveOutcome(command: String): LiveExecutionOutcome =
     LiveExecutionOutcome(
@@ -534,6 +700,16 @@ data class RuntimeAutomationRegion(
     val width: Int,
     val height: Int,
 )
+
+private fun parseRuntimeRegion(source: String): RuntimeAutomationRegion? {
+    if (!source.trim().matches(Regex("(?i)(region|bbox)\\s*\\(.*\\)"))) return null
+    val values = Regex("-?\\d+(?:\\.\\d+)?")
+        .findAll(source)
+        .mapNotNull { it.value.toDoubleOrNull()?.roundToInt() }
+        .toList()
+    if (values.size != 4 || values[2] <= 0 || values[3] <= 0) return null
+    return RuntimeAutomationRegion(values[0], values[1], values[2], values[3])
+}
 
 data class RuntimeTemplateMatch(
     val name: String,

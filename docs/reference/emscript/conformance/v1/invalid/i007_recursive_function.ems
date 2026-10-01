@@ -1,0 +1,5 @@
+FUNCTION recurse(§value: Number): Number
+    RETURN recurse(§value - 1)
+END FUNCTION
+
+LET §result: Number = recurse(3)

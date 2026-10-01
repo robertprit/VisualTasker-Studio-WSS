@@ -18,6 +18,7 @@ import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CommandArgument
 import de.visualtasker.blockeditor.registry.CommandArgumentType
 import de.visualtasker.blockeditor.registry.CommandCatalogKind
+import de.visualtasker.blockeditor.registry.CommandCatalogRole
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
 import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
@@ -95,7 +96,9 @@ class EmscriptParserSliceTest {
         assertTrue(topIf.elseIfBranches.single().body.any { it is EmscriptIrStatement.If })
         assertTrue(topIf.elseBranch.any { it is EmscriptIrStatement.If })
         assertTrue(loop.body.filterIsInstance<EmscriptIrStatement.If>().single().thenBranch.any { it is EmscriptIrStatement.Beep })
-        assertTrue(loop.body.filterIsInstance<EmscriptIrStatement.If>().single().elseIfBranches.single().body.any { it is EmscriptIrStatement.Vibrate })
+        assertTrue(loop.body.filterIsInstance<EmscriptIrStatement.If>().single().elseIfBranches.single().body.any {
+            it is EmscriptIrStatement.CommandCall && it.command == "vibrate"
+        })
         assertTrue(ir.statements.any { it is EmscriptIrStatement.ClickText })
         assertTrue(ir.statements.any { it is EmscriptIrStatement.Output })
         assertTrue(ir.statements.any { it is EmscriptIrStatement.Wait })
@@ -130,8 +133,10 @@ class EmscriptParserSliceTest {
         assertEquals(EmscriptIrStatement.Output(EmscriptIrExpression.VariableRef("status")), statements[5])
         assertEquals(EmscriptIrStatement.Beep(), statements[6])
         assertEquals(EmscriptIrStatement.Beep(frequency = 880, durationMs = 150, volume = 75), statements[7])
-        assertEquals(EmscriptIrStatement.Vibrate(listOf(80L)), statements[8])
-        assertEquals(EmscriptIrStatement.Vibrate(listOf(0L, 80L, 40L, 120L)), statements[9])
+        assertEquals("vibrate", (statements[8] as EmscriptIrStatement.CommandCall).command)
+        assertEquals(1, (statements[8] as EmscriptIrStatement.CommandCall).expressionArguments.size)
+        assertEquals("vibrate", (statements[9] as EmscriptIrStatement.CommandCall).command)
+        assertEquals(4, (statements[9] as EmscriptIrStatement.CommandCall).expressionArguments.size)
         assertEquals(EmscriptIrStatement.Beep(frequency = 660, durationMs = 50, volume = 40), statements[10])
     }
 
@@ -208,6 +213,31 @@ class EmscriptParserSliceTest {
     }
 
     @Test
+    fun everyImplementedParserBinaryOperatorMapsToStableV1IdentityAndCanonicalSymbol() {
+        val expected = mapOf(
+            EmscriptBinaryOp.OR to ("or" to "||"),
+            EmscriptBinaryOp.AND to ("and" to "&&"),
+            EmscriptBinaryOp.ADD to ("add" to "+"),
+            EmscriptBinaryOp.SUB to ("subtract" to "-"),
+            EmscriptBinaryOp.MUL to ("multiply" to "*"),
+            EmscriptBinaryOp.DIV to ("divide" to "/"),
+            EmscriptBinaryOp.MOD to ("modulo" to "%"),
+            EmscriptBinaryOp.EQ to ("equal" to "=="),
+            EmscriptBinaryOp.NEQ to ("notEqual" to "!="),
+            EmscriptBinaryOp.LT to ("less" to "<"),
+            EmscriptBinaryOp.LTE to ("lessOrEqual" to "<="),
+            EmscriptBinaryOp.GT to ("greater" to ">"),
+            EmscriptBinaryOp.GTE to ("greaterOrEqual" to ">="),
+        )
+
+        assertEquals(EmscriptBinaryOp.entries.toSet(), expected.keys)
+        expected.forEach { (operator, identityAndSymbol) ->
+            assertEquals(identityAndSymbol.first, operator.operatorId.value)
+            assertEquals(identityAndSymbol.second, operator.canonicalSymbol)
+        }
+    }
+
+    @Test
     fun parse_canonicalBraceControlFlow_buildsBranchesAndLoops() {
         val source = """
             set score = 1;
@@ -234,7 +264,10 @@ class EmscriptParserSliceTest {
         assertEquals(1, ifStatement.elseIfBranches.size)
         assertTrue(ifStatement.thenBranch.single() is EmscriptIrStatement.Output)
         assertTrue(ifStatement.elseIfBranches.single().body.single() is EmscriptIrStatement.Beep)
-        assertTrue(ifStatement.elseBranch.single() is EmscriptIrStatement.Vibrate)
+        assertTrue(
+            ifStatement.elseBranch.single() is EmscriptIrStatement.CommandCall &&
+                (ifStatement.elseBranch.single() as EmscriptIrStatement.CommandCall).command == "vibrate",
+        )
         assertTrue(statements[2] is EmscriptIrStatement.Loop)
         assertTrue(statements[3] is EmscriptIrStatement.While)
     }
@@ -268,6 +301,7 @@ class EmscriptParserSliceTest {
     fun parse_expressionCatalogEntries_acceptTypedSamples() {
         val entries = VisualTaskerCommandCatalog.allEntries()
             .filter { it.kind == CommandCatalogKind.REPORTER || it.kind == CommandCatalogKind.OPERATOR }
+            .filter { it.role == CommandCatalogRole.LANGUAGE_COMMAND }
             .filter { it.block != null }
             .sortedBy { it.id }
         val source = entries.joinToString(separator = "\n") { entry ->
@@ -476,7 +510,7 @@ class EmscriptParserSliceTest {
 
         assertEquals(
             """
-            set sum = (5 + 3);
+            let sum = (5 + 3);
             set result = (sum * 2);
             if ((result >= 10)) {
             }
@@ -562,15 +596,15 @@ class EmscriptParserSliceTest {
         assertTrue(document.blocks.values.none { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}tasker.runTask" })
         assertTrue(document.blocks.values.none { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}termux.run" })
         assertTrue(document.blocks.values.none { it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}scrcpy.start" })
-        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Clipboard.set" })
-        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "File.writeText" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "clipboard.set" })
+        assertTrue(irGraph.nodes.any { it.properties["commandName"] == "file.writeText" })
         assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Sys.info" })
         assertTrue(irGraph.nodes.any { it.properties["commandName"] == "Env.get" })
 
         val regenerated = EmscriptGenerator(IrGenerator()).generate(document, scriptName = "catalog-breadth")
         assertTrue(regenerated.contains("log(\"interactive-input-actions-skipped\");"))
-        assertTrue(regenerated.contains("Clipboard.set(\"visualtasker\");"))
-        assertTrue(regenerated.contains("File.writeText(\"core-runtime.txt\",\"hello\");"))
+        assertTrue(regenerated.contains("clipboard.set(\"visualtasker\");"))
+        assertTrue(regenerated.contains("file.writeText(\"core-runtime.txt\",\"hello\");"))
         assertTrue(regenerated.contains("repeat (3) {"))
         assertTrue(regenerated.contains("while ("))
         assertTrue(regenerated.contains("beep("))

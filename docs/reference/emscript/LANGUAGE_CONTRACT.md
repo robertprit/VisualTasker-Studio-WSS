@@ -1,10 +1,14 @@
 # EMScript Language Contract — WSS Reference
 
-> **Status:** Adapted Reference
+> **Status:** Historical adapted reference; superseded for V1 syntax
 >
 > **Origin:** `visualtasker-studio/docs/emscript/v0.1/EMSCRIPT_LANGUAGE_CONTRACT.md`
 >
-> **Authority:** Aktuelle EMScript-Implementierung, aktuelle ADRs und `VISUALTASKER_ARCHITECTURE_CONTRACT.md` haben Vorrang.
+> **Authority:** Der normative Zielvertrag liegt in
+> [`EMSCRIPT_V1_SPEC.md`](EMSCRIPT_V1_SPEC.md) und
+> [`EMSCRIPT_V1_GRAMMAR.ebnf`](EMSCRIPT_V1_GRAMMAR.ebnf). Dieses Dokument
+> bleibt als Pre-Freeze-Migrationsreferenz erhalten. Der aktuelle
+> Implementierungsstand wird separat auditiert.
 
 ## Vertragsidee
 
@@ -12,8 +16,10 @@ EMScript ist eine Projektion derselben Workflow-Semantik, die auch Blockeditor u
 
 ## Kanonische WSS-Syntax
 
-Die normative Stable-V1-Grammatik liegt in
-[`STABLE_V1_GRAMMAR.ebnf`](STABLE_V1_GRAMMAR.ebnf). Der `CommandCatalog`
+Die historische Pre-Freeze-Grammatik liegt in
+[`STABLE_V1_GRAMMAR.ebnf`](STABLE_V1_GRAMMAR.ebnf). Die normative V1-Grammatik
+liegt in [`EMSCRIPT_V1_GRAMMAR.ebnf`](EMSCRIPT_V1_GRAMMAR.ebnf). Der spaetere
+zentrale `CommandDefinition`-Vertrag
 ergaenzt diese Syntax um die gueltigen Command-Namen, Argumenttypen, Defaults
 und Capability-Vertraege. Parser-Akzeptanz und Live-Verfuegbarkeit sind getrennt:
 ein korrektes Plugin-Kommando kann syntaktisch gueltig und dennoch durch einen
@@ -22,7 +28,10 @@ fehlenden Adapter blockiert sein.
 WSS verwendet EMScript als lesbare Script-Projektion des kanonischen
 WorkflowDocuments. Generatoren emittieren nur die folgende kanonische Form:
 
-- Commands sind Funktionsaufrufe: `wait(500)`, `click("OK")`, `beep(1000,200,100)`, `vibrate(80)`.
+- Commands sind Funktionsaufrufe: `wait(500)`, `click("OK")`, `beep(1000,200,100)`, `vibrate(100,200,100,400)`.
+- `vibrate(patternMs: Number...)` verlangt mindestens einen Wert, besitzt keinen
+  Sprachdefault und keine Repeat-Semantik. Ein Wert ist eine Dauer; mehrere
+  Werte sind alternierende Delay-/Vibrationsphasen.
 - Erweiterte Provider-/Plugin-Commands verwenden Namespace und Member:
   `Clipboard.set("value")`, `Tasker.runTask("Name")`, `ChromeTab.open("https://example.org")`.
 - Variablen werden mit `LET name = expr` deklariert und mit `SET name = expr` veraendert.
@@ -92,6 +101,12 @@ Aktuelle Grundtypen:
 - `REGION`: Region-/Marker-Ausdruck, z.B. `region(10,20,240,160)`.
 - `ANY`: strukturierter Platzhalter fuer noch nicht final typisierte Werte.
 
+Nullability ist ein orthogonaler Suffixvertrag: `T?`. `T` darf nach `T?`
+fließen, `T?` aber nicht ohne explizite, noch festzulegende Behandlung nach
+`T`. `Any` verschluckt keine Abwesenheit; nullable Werte verlangen `Any?`.
+`Bool?` ist keine gueltige IF-/WHILE-Bedingung. Ein Source-`null`-Literal,
+implizites Unwrap, Truthiness und Sentinelwerte sind nicht Teil des Vertrags.
+
 ## Stabile Grundregeln aus v0.1
 
 - `LET` deklariert, `SET` veraendert. Beide sind heute kanonische WSS-Keywords.
@@ -99,6 +114,22 @@ Aktuelle Grundtypen:
 - Parser dürfen dokumentierte Legacy-Formen normalisieren.
 - unbekannte, doppelte oder fehlende Argumente müssen deterministisch diagnostiziert werden.
 - Provider-Abwesenheit ist ein expliziter Fehler und kein stilles `false`.
+- Provider-Ausfuehrung und Rueckgabewert sind getrennte Achsen: ein erfolgreicher
+  Bool-Reporter darf `false` liefern, ohne dadurch fehlzuschlagen. Erfolgreiches
+  Void ohne Value und erfolgreiches nullable `NullValue` bleiben unterscheidbar.
+- Provider-Statusabfragen duerfen technische PackageManager-, Binder- oder
+  Permission-Prueffehler nicht als fachliches `false` oder `NullValue`
+  darstellen. `installed` bezeichnet nur Installation; Shizuku `available`
+  bezeichnet den expliziten Vertrag aus Installation, live Binder und erteilter
+  Berechtigung.
+- `tasker.isInstalled()`, `shizuku.isInstalled()` und
+  `termux.isInstalled()` sind nicht-nullbare Bool-Reporter. Nur eine
+  abgeschlossene Paketpruefung ohne Treffer ergibt `false`; technische
+  Paketprueffehler liefern strukturierte Runtime-Diagnosen.
+- `shizuku.isAvailable()` ist ein nicht-nullbarer Bool-Reporter fuer exakt
+  `installed && permissionGranted && binderAlive`. Erfolgreich festgestellte
+  fehlende Voraussetzungen ergeben `false`; technische Paket-, Permission-
+  oder Binder-Prueffehler ergeben unterschiedliche Runtime-Diagnosen.
 - Capability Calls können Side Effects haben; Value Constructors nicht.
 - Contract Status und Implementation Status sind getrennte Aussagen.
 

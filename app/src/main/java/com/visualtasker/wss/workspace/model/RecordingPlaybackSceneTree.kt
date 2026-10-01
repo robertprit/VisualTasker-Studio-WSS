@@ -114,9 +114,7 @@ object RecordingPlaybackSceneTreeProjector {
     private fun A11yNodeSnapshot.toInspectorNode(panelId: String): SceneInspectorNode = playbackNode(
         panelId = panelId,
         id = "a11y:$stableSnapshotNodeId",
-        label = text?.takeIf(String::isNotBlank)
-            ?: contentDescription?.takeIf(String::isNotBlank)
-            ?: className.substringAfterLast('.'),
+        label = inspectorLabel(),
         subtitle = "$className [$left,$top,$right,$bottom]",
         kind = SceneInspectorNodeKind.Element,
         provider = ObservationProvider.Accessibility,
@@ -134,6 +132,17 @@ object RecordingPlaybackSceneTreeProjector {
         },
         children = children.sortedBy(A11yNodeSnapshot::childOrder).map { it.toInspectorNode(panelId) },
     )
+
+    private fun A11yNodeSnapshot.inspectorLabel(): String =
+        sequenceOf(
+            text,
+            contentDescription,
+            viewIdResourceName?.substringAfterLast('/'),
+            className.substringAfterLast('.'),
+        )
+            .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
+            ?: "Element $stableSnapshotNodeId"
 
     private fun providerStatusNode(panelId: String, sceneId: String, label: String, provider: ObservationProvider) = playbackNode(
         panelId, "provider:${provider.name.lowercase()}:$sceneId", label, "nicht aufgezeichnet",
@@ -171,21 +180,24 @@ private fun playbackNode(
     provider: ObservationProvider? = null,
     properties: Map<String, String> = emptyMap(),
     children: List<SceneInspectorNode> = emptyList(),
-): SceneInspectorNode = SceneInspectorNode(
-    id = id,
-    label = label,
-    kind = kind,
-    subtitle = subtitle,
-    provider = provider,
-    properties = properties,
-    payload = WssDragPayload(
-        id = "record-playback:${id.toWssDragIdSegment("node")}",
-        kind = WssDragPayloadKind.InspectorField,
-        label = label,
-        sourcePanelId = panelId,
-        sourcePanelType = PanelType.SceneInspector,
-        tags = setOf("recording", "playback", kind.name.lowercase()),
-        data = properties + mapOf("playbackNodeId" to id),
-    ),
-    children = children,
-)
+): SceneInspectorNode {
+    val normalizedLabel = label.trim().ifEmpty { kind.name }
+    return SceneInspectorNode(
+        id = id,
+        label = normalizedLabel,
+        kind = kind,
+        subtitle = subtitle,
+        provider = provider,
+        properties = properties,
+        payload = WssDragPayload(
+            id = "record-playback:${id.toWssDragIdSegment("node")}",
+            kind = WssDragPayloadKind.InspectorField,
+            label = normalizedLabel,
+            sourcePanelId = panelId,
+            sourcePanelType = PanelType.SceneInspector,
+            tags = setOf("recording", "playback", kind.name.lowercase()),
+            data = properties + mapOf("playbackNodeId" to id),
+        ),
+        children = children,
+    )
+}

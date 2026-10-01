@@ -37,9 +37,11 @@ class EmscriptApplyGuard(
             Validator.validate(imported, effectiveRegistry)
         }
         if (!validation.isValid) {
+            val diagnostic = validation.errors.first()
             return EmscriptApplyGuardResult.Failure(
                 stage = EmscriptApplyGuardStage.PRE_VALIDATE,
-                message = "Pre-Validate fehlgeschlagen: ${validation.errors.first().message}",
+                message = "Pre-Validate fehlgeschlagen: ${diagnostic.message}",
+                diagnosticCode = diagnostic.code,
             )
         }
 
@@ -105,6 +107,7 @@ sealed interface EmscriptApplyGuardResult {
     data class Failure(
         val stage: EmscriptApplyGuardStage,
         val message: String,
+        val diagnosticCode: String? = null,
     ) : EmscriptApplyGuardResult
 }
 

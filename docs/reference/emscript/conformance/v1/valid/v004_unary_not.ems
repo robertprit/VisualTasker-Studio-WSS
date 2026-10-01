@@ -1,0 +1,2 @@
+LET §blocked: Bool = false
+LET §allowed: Bool = !§blocked

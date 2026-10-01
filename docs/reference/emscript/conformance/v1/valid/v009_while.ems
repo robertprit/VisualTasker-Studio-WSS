@@ -1,0 +1,4 @@
+LET §running: Bool = true
+WHILE §running
+    SET §running = false
+END WHILE

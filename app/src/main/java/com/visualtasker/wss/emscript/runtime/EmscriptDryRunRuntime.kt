@@ -8,6 +8,9 @@ import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import de.visualtasker.blockeditor.registry.CommandCapability
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
+import de.visualtasker.emscript.contract.CoreTypes
+import de.visualtasker.emscript.contract.LanguageTypeCompatibility
+import de.visualtasker.emscript.contract.LanguageTypeRef
 
 data class EmscriptDryRunConfig(
     val maxSteps: Int = 2_000,
@@ -34,6 +37,7 @@ data class EmscriptDryRunEvent(
     val pluginOwner: String? = null,
     val diagnosticCode: String? = null,
     val sourceLine: Int? = null,
+    val numericArguments: List<Long> = emptyList(),
 )
 
 sealed interface EmscriptDryRunResult {
@@ -74,6 +78,7 @@ private class Interpreter(
     private val config: EmscriptDryRunConfig,
 ) {
     private val variables = linkedMapOf<String, EmscriptValue>()
+    private val variableTypes = linkedMapOf<String, LanguageTypeRef>()
     private val events = mutableListOf<EmscriptDryRunEvent>()
     private var steps = 0
 
@@ -97,15 +102,41 @@ private class Interpreter(
         guardStep()
         when (statement) {
             is EmscriptIrStatement.CommandCall -> {
-                emitCommand(statement.command, statement.arguments, statement.source?.startLine)
+                if (statement.command.equals("vibrate", ignoreCase = true)) {
+                    val pattern = statement.expressionArguments.mapIndexed { index, expression ->
+                        evaluate(expression).asLong("vibrate Parameter ${index + 1}")
+                    }
+                    emit(
+                        kind = "vibrate",
+                        message = "würde Vibrationsmuster ${pattern.joinToString(",")} ms starten",
+                        sourceLine = statement.source?.startLine,
+                        numericArguments = pattern,
+                    )
+                } else {
+                    emitCommand(statement.command, statement.arguments, statement.source?.startLine)
+                }
             }
             is EmscriptIrStatement.Let -> {
                 val value = evaluate(statement.value)
+                val declaredType = statement.declaredType ?: value.runtimeType()
+                EmscriptRuntimeTypeSafety.requireMatches(
+                    value = value,
+                    expectedType = LanguageTypeCompatibility.sourceName(declaredType),
+                    context = "LET ${statement.variable}",
+                )
                 variables[statement.variable] = value
+                variableTypes[statement.variable] = declaredType
                 emit("let", "${statement.variable} = ${value.render()}", sourceLine = statement.source?.startLine)
             }
             is EmscriptIrStatement.Set -> {
                 val value = evaluate(statement.value)
+                variableTypes[statement.variable]?.let { expected ->
+                    EmscriptRuntimeTypeSafety.requireMatches(
+                        value = value,
+                        expectedType = LanguageTypeCompatibility.sourceName(expected),
+                        context = "SET ${statement.variable}",
+                    )
+                }
                 variables[statement.variable] = value
                 emit("set", "${statement.variable} = ${value.render()}", sourceLine = statement.source?.startLine)
             }
@@ -134,6 +165,7 @@ private class Interpreter(
             }
             is EmscriptIrStatement.While -> {
                 var iterations = 0
+                requireBooleanExpression(statement.condition, "WHILE")
                 while (evaluate(statement.condition).asBoolean("while")) {
                     iterations += 1
                     if (iterations > config.maxLoopIterations) {
@@ -144,6 +176,7 @@ private class Interpreter(
                 }
             }
             is EmscriptIrStatement.If -> {
+                requireBooleanExpression(statement.condition, "IF")
                 when {
                     evaluate(statement.condition).asBoolean("if") -> {
                         emit("if", "THEN", sourceLine = statement.source?.startLine)
@@ -151,6 +184,7 @@ private class Interpreter(
                     }
                     else -> {
                         val elseIf = statement.elseIfBranches.firstOrNull {
+                            requireBooleanExpression(it.condition, "ELSEIF")
                             evaluate(it.condition).asBoolean("elseif")
                         }
                         if (elseIf != null) {
@@ -187,6 +221,15 @@ private class Interpreter(
         }
 
     private fun evaluateFunctionCall(expression: EmscriptIrExpression.FunctionCall): EmscriptValue {
+        if (expression.name.equals("region", ignoreCase = true) || expression.name.equals("bbox", ignoreCase = true)) {
+            val values = expression.arguments.map { evaluate(it).asDouble("region") }
+            require(values.size == 4) { "region erwartet vier Number-Argumente" }
+            return EmscriptValue.StringValue(
+                values.joinToString(prefix = "region(", postfix = ")") { value ->
+                    EmscriptValue.NumberValue(value).render()
+                },
+            )
+        }
         val arguments = expression.arguments.joinToString(",") { evaluate(it).render() }
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
@@ -205,10 +248,27 @@ private class Interpreter(
             capability = gate?.name,
             pluginOwner = entry?.pluginOwner,
         )
-        return when (entry?.returnType) {
-            "Number" -> EmscriptValue.NumberValue(0.0)
-            "Text" -> EmscriptValue.StringValue("")
-            else -> EmscriptValue.BooleanValue(false)
+        val returnType = entry?.returnType
+        if (returnType == null || returnType.equals("Void", ignoreCase = true)) {
+            error("${expression.name} ist kein wertliefernder Ausdruck")
+        }
+        return EmscriptRuntimeTypeSafety.defaultValue(returnType)
+    }
+
+    private fun requireBooleanExpression(expression: EmscriptIrExpression, context: String) {
+        val type = when (expression) {
+            is EmscriptIrExpression.VariableRef -> variableTypes[expression.name]
+            is EmscriptIrExpression.BooleanLiteral,
+            is EmscriptIrExpression.Binary,
+            -> CoreTypes.BOOL.ref
+            is EmscriptIrExpression.FunctionCall -> VisualTaskerCommandCatalog
+                .findByAcceptedName(expression.name)
+                ?.returnType
+                ?.let(LanguageTypeCompatibility::fromWorkspaceName)
+            else -> null
+        }
+        require(type == null || LanguageTypeCompatibility.isAssignable(type, CoreTypes.BOOL.ref)) {
+            "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Bool"
         }
     }
 
@@ -239,12 +299,18 @@ private class Interpreter(
         }
     }
 
-    private fun emit(kind: String, message: String, sourceLine: Int? = null) {
+    private fun emit(
+        kind: String,
+        message: String,
+        sourceLine: Int? = null,
+        numericArguments: List<Long> = emptyList(),
+    ) {
         events += EmscriptDryRunEvent(
             index = events.size + 1,
             kind = kind,
             message = message,
             sourceLine = sourceLine,
+            numericArguments = numericArguments,
         )
     }
 
@@ -302,7 +368,9 @@ private fun EmscriptValue.asDouble(context: String): Double =
         is EmscriptValue.NumberValue -> value
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
-        EmscriptValue.NullValue -> 0.0
+        EmscriptValue.NullValue -> error(
+            "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Number",
+        )
     }
 
 private fun EmscriptValue.asLong(context: String): Long =
@@ -313,7 +381,9 @@ private fun EmscriptValue.asBoolean(context: String): Boolean =
         is EmscriptValue.BooleanValue -> value
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
-        EmscriptValue.NullValue -> false
+        EmscriptValue.NullValue -> error(
+            "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Bool",
+        )
     }
 
 private fun EmscriptValue.render(): String =
@@ -323,3 +393,12 @@ private fun EmscriptValue.render(): String =
         is EmscriptValue.BooleanValue -> value.toString()
         EmscriptValue.NullValue -> "null"
     }
+
+private fun EmscriptValue.runtimeType(): LanguageTypeRef = when (this) {
+    is EmscriptValue.StringValue -> CoreTypes.STRING.ref
+    is EmscriptValue.NumberValue -> CoreTypes.NUMBER.ref
+    is EmscriptValue.BooleanValue -> CoreTypes.BOOL.ref
+    EmscriptValue.NullValue -> error(
+        "NULL_LITERAL_DECISION_REQUIRED: absent besitzt ohne erwarteten Typ keinen ableitbaren Basistyp",
+    )
+}

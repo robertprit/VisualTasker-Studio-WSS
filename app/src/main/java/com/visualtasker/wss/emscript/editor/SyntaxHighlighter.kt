@@ -11,6 +11,15 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
 import de.visualtasker.blockeditor.registry.CommandCatalogKind
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.emscript.contract.EmscriptV1LanguageCore
+import java.util.Locale
+
+internal enum class EmscriptWordKind {
+    CANONICAL_KEYWORD,
+    LEGACY_KEYWORD_ALIAS,
+    COMMAND,
+    IDENTIFIER,
+}
 
 object SyntaxHighlighter {
     data class Palette(
@@ -53,7 +62,16 @@ object SyntaxHighlighter {
         plain = Color(0xFF212121)
     )
 
-    private val commandKeywords =
+    private val canonicalKeywordNames =
+        EmscriptV1LanguageCore.definition.keywords
+            .mapTo(linkedSetOf()) { it.canonical.uppercase(Locale.ROOT) }
+
+    private val legacyKeywordAliasNames =
+        EmscriptV1LanguageCore.definition.keywords
+            .flatMap { it.legacyAliases }
+            .mapTo(linkedSetOf()) { it.uppercase(Locale.ROOT) }
+
+    private val commandNames =
         VisualTaskerCommandCatalog
             .acceptedNamesForKinds(
                 CommandCatalogKind.EVENT,
@@ -62,7 +80,7 @@ object SyntaxHighlighter {
                 CommandCatalogKind.OPERATOR,
                 CommandCatalogKind.VARIABLE,
             )
-            .map { it.uppercase() }
+            .map { it.uppercase(Locale.ROOT) }
             .toSet() + setOf(
         "OPEN", "OPENCT", "WAIT", "LOAD", "ELEMENT", "CLICK", "TYPE", "SCREENSHOT",
         "RECORD", "START", "STOP", "TOGGLE", "BEEP", "VIBRATE", "BACK", "HOME", "START_SCRIPT",
@@ -70,12 +88,6 @@ object SyntaxHighlighter {
         "DOWNLOAD", "FAVORITE", "ACTION", "CLOSE", "BROWSER", "COLOR", "LET", "SET", "CALL",
         "INTEROP", "GOTO", "OUTPUT", "LAUNCH", "OCR", "SWIPE", "INPUT", "SCAN", "CROP", "FIND",
         "REGION", "POINT"
-    )
-
-    private val controlKeywords = setOf(
-        "IF", "ELSE", "ELSEIF", "END", "TO", "STEP", "FUNC", "TRY", "CATCH",
-        "REPEAT", "WHILE", "UNTIL", "BREAK", "CONTINUE", "FOR", "LOOP", "THEN",
-        "ENDIF", "ENDFOR", "ENDLOOP", "ENDWHILE", "ENDUNTIL"
     )
 
     private val operatorTokens = setOf("=", ".", "&&", "||", "!", "==", "!=", "<=", ">=", "+", "-", "*", "/", "<", ">")
@@ -157,17 +169,28 @@ object SyntaxHighlighter {
     }
 
     private fun colorForToken(token: String, palette: Palette): Color {
-        val upper = token.uppercase()
+        val wordKind = wordKind(token)
         return when {
             token.startsWith("\"") && token.endsWith("\"") -> palette.string
-            upper in controlKeywords -> palette.control
-            upper in commandKeywords -> palette.keyword
-            upper in setOf("TRUE", "FALSE", "INFINITE") -> palette.number
+            wordKind == EmscriptWordKind.CANONICAL_KEYWORD ||
+                wordKind == EmscriptWordKind.LEGACY_KEYWORD_ALIAS -> palette.control
+            wordKind == EmscriptWordKind.COMMAND -> palette.keyword
+            token.equals("INFINITE", ignoreCase = true) -> palette.number
             operatorTokens.contains(token) -> palette.operator
             numberRegex.matches(token) -> palette.number
             token.startsWith("#") || token.startsWith(".") || token.startsWith("$") -> palette.parameter
             identifierRegex.matches(token) && token.lowercase() != token.uppercase() -> palette.parameter
             else -> palette.plain
+        }
+    }
+
+    internal fun wordKind(token: String): EmscriptWordKind {
+        val normalized = token.uppercase(Locale.ROOT)
+        return when {
+            normalized in canonicalKeywordNames -> EmscriptWordKind.CANONICAL_KEYWORD
+            normalized in legacyKeywordAliasNames -> EmscriptWordKind.LEGACY_KEYWORD_ALIAS
+            normalized in commandNames -> EmscriptWordKind.COMMAND
+            else -> EmscriptWordKind.IDENTIFIER
         }
     }
 }

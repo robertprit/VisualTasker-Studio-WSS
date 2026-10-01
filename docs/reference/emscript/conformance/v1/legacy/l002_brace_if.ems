@@ -1,0 +1,6 @@
+LET §score = 1
+if (§score > 0) {
+    log("positive");
+} else {
+    log("other");
+}

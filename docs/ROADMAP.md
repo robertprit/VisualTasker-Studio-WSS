@@ -256,7 +256,7 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 - [x] DryRun/WetRun globale Steuerung aus RailTrace/AppTopBar heraus finalisieren und redundante Run-Buttons aus Editor-Panels entfernen.
 - [x] Step-Liste in SideRail fuehren; Panel-Inhalt zeigt Timeline, Progress, Lanes und Step-Inspector.
 - [x] Aktiver Runtime-Step synchronisiert TextEditor-Zeile, BlockEditor-Block, FlowEditor-Node/Kante und Step-Liste ueber denselben Selection-State.
-- [ ] Aktiver Runtime-Step zentriert alle betroffenen Viewports sichtbar ohne Drag-/Connect-Interaktion zu stoeren.
+- [x] Aktiver Runtime-Step zentriert alle betroffenen Viewports sichtbar ohne Drag-/Connect-Interaktion zu stoeren.
 - [x] Activity-/Scene-Band als passive Dauer oberhalb aktiver Event-Lanes darstellen.
 - [x] Fehler, Invalids und Resultate direkt auf Timeline projizieren.
 - [x] Variables-/Observations-Lane ergaenzen.

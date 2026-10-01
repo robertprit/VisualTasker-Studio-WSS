@@ -1,4 +1,6 @@
-(* VisualTasker Studio WSS EMScript Stable V1 *)
+(* Historical pre-freeze VisualTasker Studio WSS EMScript Stable V1.       *)
+(* This file is retained as migration evidence and is NOT normative.       *)
+(* Normative V1 grammar: EMSCRIPT_V1_GRAMMAR.ebnf                          *)
 
 script          = { line } ;
 line            = statement, [ line_end ] | comment, [ line_end ] | line_end ;

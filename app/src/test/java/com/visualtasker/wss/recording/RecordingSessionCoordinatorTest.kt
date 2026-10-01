@@ -63,6 +63,27 @@ class RecordingSessionCoordinatorTest {
     }
 
     @Test
+    fun failedAfterCaptureDoesNotTerminateWholeRecording() = runBlocking {
+        val fixture = fixture(capture(PNG_A))
+        val session = (fixture.coordinator.start("test") as RecordingOperationResult.Success).value
+
+        val failedTap = fixture.coordinator.recordTap(10, 20)
+
+        assertTrue(failedTap is RecordingOperationResult.Failure)
+        assertEquals("TAP_CAPTURE_FAILED", (failedTap as RecordingOperationResult.Failure).code)
+        assertEquals(session.sessionId, fixture.coordinator.activeSessionIdOrNull())
+        assertEquals(
+            RecordingSessionStatus.RECORDING,
+            fixture.store.load(session.sessionId)!!.session.status,
+        )
+        assertEquals(
+            RecordingInteractionStatus.CAPTURE_FAILED,
+            fixture.store.load(session.sessionId)!!.interactions.single().status,
+        )
+        assertTrue(fixture.coordinator.stop() is RecordingOperationResult.Success)
+    }
+
+    @Test
     fun recoveryMarksInterruptedSessionWithoutDroppingData() = runBlocking {
         val fixture = fixture(capture(PNG_A))
         val session = (fixture.coordinator.start("test") as RecordingOperationResult.Success).value

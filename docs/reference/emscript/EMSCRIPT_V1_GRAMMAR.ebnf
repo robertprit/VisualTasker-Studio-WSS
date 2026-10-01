@@ -1,0 +1,131 @@
+(* EMScript v1 normative grammar. Semantic rules are in EMSCRIPT_V1_SPEC.md. *)
+
+program             = separators, { top_level_item, separators } ;
+top_level_item      = function_definition | statement ;
+
+statement           = declaration
+                    | assignment
+                    | call_expression
+                    | if_statement
+                    | repeat_statement
+                    | while_statement
+                    | for_statement
+                    | break_statement
+                    | continue_statement
+                    | return_statement
+                    | directive ;
+
+declaration         = "LET", space, variable, [ ":", spacing, type ], spacing,
+                      "=", spacing, expression ;
+assignment          = "SET", space, variable, spacing, "=", spacing, expression ;
+
+if_statement        = "IF", space, expression, block_end,
+                      statement_block,
+                      { "ELSEIF", space, expression, block_end, statement_block },
+                      [ "ELSE", block_end, statement_block ],
+                      "END", space, "IF" ;
+repeat_statement    = "REPEAT", space, expression, block_end,
+                      statement_block, "END", space, "REPEAT" ;
+while_statement     = "WHILE", space, expression, block_end,
+                      statement_block, "END", space, "WHILE" ;
+for_statement       = "FOR", space, variable, space, "IN", space, expression,
+                      block_end, statement_block, "END", space, "FOR" ;
+break_statement     = "BREAK" ;
+continue_statement  = "CONTINUE" ;
+
+function_definition = "FUNCTION", space, identifier, spacing, "(", spacing,
+                      [ parameter_list ], spacing, ")", spacing, ":", spacing,
+                      return_type, block_end, statement_block,
+                      "END", space, "FUNCTION" ;
+parameter_list      = parameter, { spacing, ",", spacing, parameter } ;
+parameter           = variable, spacing, ":", spacing, type,
+                      [ spacing, "=", spacing, expression ] ;
+return_statement    = "RETURN", [ space, expression ] ;
+return_type         = type | "Void" ;
+
+statement_block     = separators, { statement, separators } ;
+block_end           = spacing, terminator, separators ;
+
+expression          = logical_or ;
+logical_or          = logical_and, { spacing, "||", spacing, logical_and } ;
+logical_and         = equality, { spacing, "&&", spacing, equality } ;
+equality            = comparison,
+                      { spacing, ( "==" | "!=" ), spacing, comparison } ;
+comparison          = additive,
+                      { spacing, ( "<" | "<=" | ">" | ">=" ), spacing, additive } ;
+additive            = multiplicative,
+                      { spacing, ( "+" | "-" ), spacing, multiplicative } ;
+multiplicative      = unary,
+                      { spacing, ( "*" | "/" | "%" ), spacing, unary } ;
+unary               = ( "!" | "-" ), spacing, unary | postfix ;
+postfix             = primary, { spacing, "[", spacing, expression, spacing, "]" } ;
+primary             = literal
+                    | variable
+                    | call_expression
+                    | list_literal
+                    | "(", spacing, expression, spacing, ")" ;
+
+call_expression     = qualified_name, spacing, "(", spacing,
+                      [ argument_list ], spacing, ")" ;
+argument_list       = [ positional_arguments, [ spacing, ",", spacing ] ],
+                      [ named_arguments ] ;
+positional_arguments = expression, { spacing, ",", spacing, expression } ;
+named_arguments     = named_argument, { spacing, ",", spacing, named_argument } ;
+named_argument      = identifier, spacing, "=", spacing, expression ;
+
+directive           = "@", qualified_name,
+                      [ spacing, "(", spacing, [ argument_list ], spacing, ")" ] ;
+
+literal             = number | string | boolean ;
+list_literal        = "[", spacing,
+                      [ expression, { spacing, ",", spacing, expression } ],
+                      spacing, "]" ;
+boolean             = "true" | "false" ;
+number              = digits, [ ".", digits ] ;
+string              = '"', { string_character | escape_sequence }, '"' ;
+string_character    = ? any Unicode scalar except quote, backslash, CR or LF ? ;
+escape_sequence     = "\\", ( "\\" | '"' | "n" | "r" | "t"
+                                    | "u", hex, hex, hex, hex ) ;
+
+type                = non_nullable_type, [ "?" ] ;
+non_nullable_type   = simple_type | list_type ;
+simple_type         = type_identifier ;
+list_type           = "List", spacing, "<", spacing, type, spacing, ">" ;
+type_identifier     = upper_letter, { letter | digit | "_" } ;
+
+variable            = "§", identifier ;
+qualified_name      = identifier, { ".", identifier } ;
+identifier          = ( letter | "_" ), { letter | digit | "_" } ;
+
+separators          = { spacing, ( terminator | comment ), spacing } ;
+terminator          = newline | ";" ;
+comment             = line_comment | block_comment ;
+line_comment        = "//", { ? any character except CR or LF ? } ;
+block_comment       = "/*", { ? any character sequence not containing */ ? }, "*/" ;
+
+spacing             = { " " | "\t" } ;
+space               = ( " " | "\t" ), spacing ;
+newline             = "\n" | "\r\n" ;
+digits              = digit, { digit } ;
+letter              = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H"
+                    | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P"
+                    | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X"
+                    | "Y" | "Z"
+                    | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"
+                    | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p"
+                    | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x"
+                    | "y" | "z" ;
+upper_letter        = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H"
+                    | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P"
+                    | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X"
+                    | "Y" | "Z" ;
+digit               = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7"
+                    | "8" | "9" ;
+hex                 = digit | "A" | "B" | "C" | "D" | "E" | "F"
+                    | "a" | "b" | "c" | "d" | "e" | "f" ;
+
+(* Keywords are case-insensitive on input and uppercase when serialized.     *)
+(* Newlines inside open parentheses or brackets are lexical whitespace.       *)
+(* Comments are lexical whitespace wherever token separation is permitted.   *)
+(* Percent-prefixed names are provider syntax, never local variables.         *)
+(* Semantic constraints such as loop scope and directive pairing are in Spec. *)

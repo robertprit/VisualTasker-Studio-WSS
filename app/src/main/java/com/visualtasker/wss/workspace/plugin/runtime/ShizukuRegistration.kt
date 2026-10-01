@@ -37,6 +37,91 @@ data class ShizukuRegistrationStatus(
         }
 }
 
+internal enum class ShizukuAvailabilityState {
+    NOT_INSTALLED,
+    PERMISSION_NOT_GRANTED,
+    BINDER_NOT_ALIVE,
+    AVAILABLE,
+}
+
+internal enum class ShizukuAvailabilityFailureStage {
+    INSTALLATION,
+    PERMISSION,
+    BINDER,
+}
+
+internal data class ShizukuAvailabilityInspection(
+    val installation: PackageInstallationInspection,
+    val state: ShizukuAvailabilityState? = null,
+    val permissionGranted: Boolean? = null,
+    val binderAlive: Boolean? = null,
+    val uid: Int? = null,
+    val failureStage: ShizukuAvailabilityFailureStage? = null,
+    val failure: Exception? = null,
+) {
+    init {
+        require((state != null) xor (failure != null))
+        require((failureStage == null) == (failure == null))
+    }
+
+    val available: Boolean get() = state == ShizukuAvailabilityState.AVAILABLE
+}
+
+internal fun inspectShizukuAvailability(
+    installation: PackageInstallationInspection,
+    binderProbe: () -> Boolean,
+    permissionProbe: (binderAlive: Boolean) -> Boolean,
+    uidProbe: () -> Int? = { null },
+): ShizukuAvailabilityInspection {
+    installation.failure?.let { error ->
+        return ShizukuAvailabilityInspection(
+            installation = installation,
+            failureStage = ShizukuAvailabilityFailureStage.INSTALLATION,
+            failure = error,
+        )
+    }
+    if (!installation.installed) {
+        return ShizukuAvailabilityInspection(
+            installation = installation,
+            state = ShizukuAvailabilityState.NOT_INSTALLED,
+            permissionGranted = false,
+            binderAlive = false,
+        )
+    }
+
+    val binderAlive = try {
+        binderProbe()
+    } catch (error: Exception) {
+        return ShizukuAvailabilityInspection(
+            installation = installation,
+            failureStage = ShizukuAvailabilityFailureStage.BINDER,
+            failure = error,
+        )
+    }
+    val permissionGranted = try {
+        permissionProbe(binderAlive)
+    } catch (error: Exception) {
+        return ShizukuAvailabilityInspection(
+            installation = installation,
+            binderAlive = binderAlive,
+            failureStage = ShizukuAvailabilityFailureStage.PERMISSION,
+            failure = error,
+        )
+    }
+    val state = when {
+        !permissionGranted -> ShizukuAvailabilityState.PERMISSION_NOT_GRANTED
+        !binderAlive -> ShizukuAvailabilityState.BINDER_NOT_ALIVE
+        else -> ShizukuAvailabilityState.AVAILABLE
+    }
+    return ShizukuAvailabilityInspection(
+        installation = installation,
+        state = state,
+        permissionGranted = permissionGranted,
+        binderAlive = binderAlive,
+        uid = if (state == ShizukuAvailabilityState.AVAILABLE) runCatching(uidProbe).getOrNull() else null,
+    )
+}
+
 data class ShizukuShellResult(
     val exitCode: Int?,
     val output: String,
@@ -55,32 +140,36 @@ data class ShizukuShellResult(
 object ShizukuRegistration {
     private const val REQUEST_CODE = 7401
 
+    internal fun inspectInstallation(context: Context): PackageInstallationInspection =
+        context.packageManager.inspectInstalledPackages(listOf(SHIZUKU_PACKAGE))
+
+    internal fun inspectAvailability(context: Context): ShizukuAvailabilityInspection {
+        val packageManager = context.packageManager
+        return inspectShizukuAvailability(
+            installation = inspectInstallation(context),
+            binderProbe = { Shizuku.pingBinder() },
+            permissionProbe = { binderAlive ->
+                if (binderAlive) {
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                } else {
+                    packageManager.checkPermission(SHIZUKU_PERMISSION, context.packageName) ==
+                        PackageManager.PERMISSION_GRANTED
+                }
+            },
+            uidProbe = { Shizuku.getUid() },
+        )
+    }
+
     fun inspect(context: Context): ShizukuRegistrationStatus {
         val packageManager = context.packageManager
-        val installed = runCatching {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                packageManager.getPackageInfo(SHIZUKU_PACKAGE, PackageManager.PackageInfoFlags.of(0L))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(SHIZUKU_PACKAGE, 0)
-            }
-        }.isSuccess
-        val binderAlive = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
-        val permissionGranted = if (binderAlive) {
-            runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }
-                .getOrDefault(false)
-        } else {
-            packageManager.checkPermission(SHIZUKU_PERMISSION, context.packageName) ==
-                PackageManager.PERMISSION_GRANTED
-        }
-        val uid = if (binderAlive && permissionGranted) runCatching { Shizuku.getUid() }.getOrNull() else null
+        val availability = inspectAvailability(context)
         val launchable = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE) != null
         return ShizukuRegistrationStatus(
-            installed = installed,
-            permissionGranted = permissionGranted,
+            installed = availability.installation.installed,
+            permissionGranted = availability.permissionGranted == true,
             launchable = launchable,
-            binderAlive = binderAlive,
-            uid = uid,
+            binderAlive = availability.binderAlive == true,
+            uid = availability.uid,
         )
     }
 

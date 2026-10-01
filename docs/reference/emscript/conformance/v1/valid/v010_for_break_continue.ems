@@ -1,0 +1,9 @@
+LET §items: List<Number> = [1, 2, 3]
+FOR §item IN §items
+    IF §item == 1
+        CONTINUE
+    ELSEIF §item == 3
+        BREAK
+    END IF
+    log(§item)
+END FOR

@@ -1,0 +1,2 @@
+trace.mark("login-start")
+clickText("Login")

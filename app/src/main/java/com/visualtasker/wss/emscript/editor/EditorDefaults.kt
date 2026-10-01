@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 15
+    const val integrationTestScriptVersion: Int = 17
 
     val sampleScript: String = """
         LET v1 = 1
@@ -30,11 +30,11 @@ object EditorDefaults {
         click("Start")
         screenshot("screenshots/integration-live.png")
         datastorePut("integration.score", "0")
-        datastoreGet("integration.score")
+        LET integrationScoreText:String? = datastoreGet("integration.score")
         markerSave("integrationRegion", region(10, 20, 240, 160), "region", 0.85)
         markerLoad("integrationRegion")
         templateDefine("integrationTemplate", region(10, 20, 240, 160), "grayscale")
-        templateCompare("integrationTemplate", region(10, 20, 240, 160), "grayscale")
+        LET integrationScore:Number = templateCompare("integrationTemplate", region(10, 20, 240, 160), "grayscale")
         findTemplate("integrationTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
 
         rem.flowBreak("Main loop", "right")
@@ -43,7 +43,7 @@ object EditorDefaults {
         LOOP 10
             SET loopIndex = loopIndex + 1
             SET score = score + loopIndex
-            datastorePut("integration.score", score)
+            datastorePut("integration.score", "loop-updated")
             log("loop tick")
             wait(25)
 
@@ -147,23 +147,23 @@ object EditorDefaults {
         log("core-runtime-start")
         wait(50)
         log("interactive-input-actions-skipped")
-        datastorePut("catalog.result", result)
-        datastoreGet("catalog.result")
+        datastorePut("catalog.result", "catalog-ready")
+        LET catalogStoredResult:String? = datastoreGet("catalog.result")
         markerSave("catalogRegion", region(10, 20, 240, 160), "region", 0.85)
         markerLoad("catalogRegion")
         templateDefine("catalogTemplate", region(10, 20, 240, 160), "grayscale")
-        templateCompare("catalogTemplate", region(10, 20, 240, 160), "grayscale")
+        LET catalogScore:Number = templateCompare("catalogTemplate", region(10, 20, 240, 160), "grayscale")
         findTemplate("catalogTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
         Clipboard.set("visualtasker")
-        Clipboard.get()
+        log(Clipboard.get())
         File.writeText("core-runtime.txt", "hello")
-        File.readText("core-runtime.txt")
+        LET catalogFileText:String? = File.readText("core-runtime.txt")
         Cache.clear()
-        Sys.info()
-        Env.get("ANDROID_VERSION")
-        Shizuku.isInstalled()
+        log(Sys.info())
+        log(Env.get("ANDROID_VERSION"))
+        LET catalogShizukuInstalled:Bool = shizuku.isInstalled()
         Shizuku.permissionState()
-        Shizuku.isAvailable()
+        LET catalogShizukuAvailable:Bool = shizuku.isAvailable()
         Shizuku.getUid()
         Shizuku.systemService("package")
         Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
@@ -238,8 +238,8 @@ object EditorDefaults {
         log("nested-stress-start")
         wait(40)
         screenshot("stress-start.png")
-        datastorePut("stress.score", score)
-        datastorePut("stress.phase", phase)
+        datastorePut("stress.score", "initial")
+        datastorePut("stress.phase", "initial")
         markerSave("stressRegion", region(16, 24, 320, 180), "region", 0.82)
         templateDefine("stressTemplate", region(16, 24, 320, 180), "grayscale")
 
@@ -250,7 +250,7 @@ object EditorDefaults {
             SET innerIndex = 0
             SET retryIndex = 0
             SET score = score + outerIndex
-            datastorePut("stress.outer", outerIndex)
+            datastorePut("stress.outer", "outer-updated")
             log("outer tick")
 
             IF score < thresholdLow
@@ -293,12 +293,12 @@ object EditorDefaults {
                 END LOOP
             ELSEIF score < thresholdHigh
                 SET branchScore = score * 2
-                templateCompare("stressTemplate", region(16, 24, 320, 180), "grayscale")
+                LET stressScore:Number = templateCompare("stressTemplate", region(16, 24, 320, 180), "grayscale")
                 log("outer-high")
 
                 IF branchScore >= thresholdHigh
                     SET hitCount = hitCount + 1
-                    datastorePut("stress.hit", hitCount)
+                    datastorePut("stress.hit", "hit-updated")
 
                     LOOP 2
                         SET innerIndex = innerIndex + 1
@@ -357,7 +357,7 @@ object EditorDefaults {
             END IF
         END WHILE
 
-        datastorePut("stress.score", score)
+        datastorePut("stress.score", "complete")
         markerLoad("stressRegion")
         markerDelete("stressRegion")
         screenshot("stress-end.png")
@@ -398,7 +398,7 @@ object EditorDefaults {
         ocr(region(180, 420, 540, 780), 3000)
         findText("VisualTasker", 3000)
         templateDefine("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
-        templateCompare("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
+        LET stableVisionScore:Number = templateCompare("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
         findTemplate("stableVisionTemplate.png", 0.85, 3000, 1, region(180, 420, 540, 780))
         sceneSave("stableVisionScene", "region", region(180, 420, 540, 780), "screenshots/stable-vision.png")
         markerDelete("stableVisionRegion")
@@ -412,26 +412,26 @@ object EditorDefaults {
         swipe([540, 1500, 540, 850], 1)
         screenshot("screenshots/stable-runtime.png")
         Clipboard.set("visualtasker-runtime")
-        Clipboard.get()
+        log(Clipboard.get())
         File.writeText("stable-runtime.txt", "ready")
-        File.readText("stable-runtime.txt")
+        LET runtimeFileText:String? = File.readText("stable-runtime.txt")
         Cache.clear()
-        Sys.info()
-        Env.get("ANDROID_VERSION")
+        log(Sys.info())
+        log(Env.get("ANDROID_VERSION"))
         log("runtime-end")
     """.trimIndent()
 
     val pluginTestScript: String = """
         log("plugin-start")
-        ChromeTab.isSupported()
-        Tasker.isInstalled()
+        LET chromeTabSupported:Bool = chromeTab.isSupported()
+        LET taskerInstalled:Bool = tasker.isInstalled()
         Tasker.lastResult()
         Tasker.error()
-        Shizuku.isInstalled()
+        LET shizukuInstalled:Bool = shizuku.isInstalled()
         Shizuku.permissionState()
-        Shizuku.isAvailable()
+        LET shizukuAvailable:Bool = shizuku.isAvailable()
         Shizuku.getUid()
-        Termux.isInstalled()
+        LET termuxInstalled:Bool = termux.isInstalled()
         Termux.canRunCommands()
         Scrcpy.hostAvailable()
         Scrcpy.devices()

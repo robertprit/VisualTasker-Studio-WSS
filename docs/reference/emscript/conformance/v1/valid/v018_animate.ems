@@ -1,0 +1,4 @@
+LET §shape: Shape = circle(point(100, 100), 20)
+LET §handle: OverlayHandle = draw(§shape)
+LET §route: Path = path(point(100, 100), point(400, 600))
+animate.path(§handle, §route, duration = 1000, easing = "linear")

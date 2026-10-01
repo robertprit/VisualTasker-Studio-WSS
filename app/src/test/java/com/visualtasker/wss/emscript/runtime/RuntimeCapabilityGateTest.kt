@@ -35,12 +35,12 @@ class RuntimeCapabilityGateTest {
             beep(440, 30, 25)
             vibrate(10,20)
             Clipboard.set("ready")
-            Clipboard.get()
+            log(Clipboard.get())
             Cache.clear()
-            Sys.info()
-            Env.get("SDK_INT")
+            log(Sys.info())
+            log(Env.get("SDK_INT"))
             File.writeText("state.txt", "ok")
-            File.readText("state.txt")
+            LET fileValue:String? = File.readText("state.txt")
             """.trimIndent(),
         )
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
@@ -49,7 +49,7 @@ class RuntimeCapabilityGateTest {
 
         assertTrue(report.realRunAllowed)
         val commands = report.capabilities.map { it.command }.toSet()
-        assertTrue(commands.containsAll(setOf("beep", "log", "set", "vibrate", "wait", "Clipboard.set", "Clipboard.get", "Cache.clear", "Sys.info", "Env.get", "File.writeText", "File.readText")))
+        assertTrue(commands.containsAll(setOf("beep", "log", "set", "vibrate", "wait", "clipboard.set", "Clipboard.get", "cache.clear", "Sys.info", "Env.get", "file.writeText", "File.readText")))
         assertTrue(report.capabilities.all { it.status == RuntimeCapabilityStatus.REAL_RUN_READY })
     }
 
@@ -95,15 +95,15 @@ class RuntimeCapabilityGateTest {
     fun deviceAdaptersEnableShizukuAndScrcpyCommandsWhenAvailable() {
         val imported = EmscriptWorkspaceImporter().import(
             """
-            ChromeTab.isSupported()
+            LET chromeTabSupported:Bool = chromeTab.isSupported()
             ChromeTab.open("https://example.com")
-            Shizuku.isAvailable()
+            LET shizukuAvailable:Bool = shizuku.isAvailable()
             Shizuku.systemService("package")
             Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
             Shizuku.shell("cmd package list packages")
             Termux.canRunCommands()
             Termux.shell("echo ok")
-            Tasker.isInstalled()
+            LET taskerInstalled:Bool = tasker.isInstalled()
             Tasker.runTask("VT_TEST", ["alpha", "beta"])
             Tasker.lastResult("run-1")
             Tasker.error("run-1")
@@ -125,15 +125,15 @@ class RuntimeCapabilityGateTest {
         ).inspect(imported.document!!)
         val states = report.capabilities.associate { it.command to it.status }
 
-        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["ChromeTab.isSupported"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["chromeTab.isSupported"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["ChromeTab.open"])
-        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.isAvailable"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["shizuku.isAvailable"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.systemService"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.call"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Shizuku.shell"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Termux.canRunCommands"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Termux.shell"])
-        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.isInstalled"])
+        assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["tasker.isInstalled"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.runTask"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.lastResult"])
         assertEquals(RuntimeCapabilityStatus.REAL_RUN_READY, states["Tasker.error"])

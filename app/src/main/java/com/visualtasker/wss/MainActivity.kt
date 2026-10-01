@@ -17,6 +17,8 @@ import androidx.lifecycle.lifecycleScope
 import com.visualtasker.wss.recording.RecordingSessionRuntime
 import com.visualtasker.wss.ui.theme.MultiPanelTheme
 import com.visualtasker.wss.workspace.model.RecordingEventStore
+import com.visualtasker.wss.workspace.model.M3ShapeMakerBridgeContract
+import com.visualtasker.wss.workspace.model.VisualAssetBridgeInbox
 import com.visualtasker.wss.workspace.ui.WorkspaceScreen
 import kotlinx.coroutines.launch
 
@@ -51,6 +53,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        acceptVisualAssetIntent(intent)
         enableEdgeToEdge()
         lifecycleScope.launch {
             RecordingSessionRuntime.recover(applicationContext)
@@ -89,6 +92,21 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        acceptVisualAssetIntent(intent)
+    }
+
+    private fun acceptVisualAssetIntent(intent: Intent?) {
+        if (intent?.action != M3ShapeMakerBridgeContract.ACTION_IMPORT_VISUAL_ASSET) return
+        val uri = intent.data ?: return
+        runCatching {
+            contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: error("VisualAsset konnte nicht gelesen werden.")
+        }.onSuccess(VisualAssetBridgeInbox::offer)
     }
 
     override fun onDestroy() {

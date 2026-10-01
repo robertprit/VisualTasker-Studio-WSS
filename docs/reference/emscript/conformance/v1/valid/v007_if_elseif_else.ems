@@ -1,0 +1,8 @@
+LET §score: Number = 75
+IF §score >= 100
+    log("high")
+ELSEIF §score >= 50
+    log("medium")
+ELSE
+    log("low")
+END IF

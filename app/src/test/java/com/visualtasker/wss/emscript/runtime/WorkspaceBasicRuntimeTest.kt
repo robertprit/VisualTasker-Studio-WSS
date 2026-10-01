@@ -249,18 +249,18 @@ class WorkspaceBasicRuntimeTest {
         val imported = EmscriptWorkspaceImporter().import(
             """
             Clipboard.set("alpha")
-            Clipboard.get()
+            log(Clipboard.get())
             Cache.clear()
-            Sys.info()
-            Env.get("SDK_INT")
+            log(Sys.info())
+            log(Env.get("SDK_INT"))
             File.writeText("state.txt", "ok")
-            File.readText("state.txt")
+            LET fileValue:String? = File.readText("state.txt")
             """.trimIndent(),
             workspaceId = "workspace-basic-runtime-core",
         )
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
         val calls = mutableListOf<String>()
-        val files = mutableMapOf<String, String>()
+        val files = mutableMapOf("state.txt" to "ok")
         var clipboard = ""
         val runtime = WorkspaceBasicRuntime(
             environment = WorkspaceBasicRuntimeEnvironment(
@@ -286,7 +286,7 @@ class WorkspaceBasicRuntimeTest {
         assertTrue(calls.contains("clipboardSet:alpha"))
         assertTrue(calls.contains("cacheClear"))
         assertTrue(calls.contains("log:system-info"))
-        assertTrue(calls.contains("log:Env.get(SDK_INT) -> env:SDK_INT"))
+        assertTrue(calls.contains("log:env:SDK_INT"))
         assertTrue(calls.contains("fileWrite:state.txt:ok"))
         assertTrue(calls.contains("fileRead:state.txt:ok"))
     }
@@ -296,11 +296,11 @@ class WorkspaceBasicRuntimeTest {
         val imported = EmscriptWorkspaceImporter().import(
             """
             datastorePut("score", "42")
-            datastoreGet("score")
+            LET datastoreValue:String? = datastoreGet("score")
             markerSave("button", region(10, 20, 30, 40), "region", 0.90)
             markerLoad("button")
             templateDefine("buttonTpl", region(10, 20, 30, 40), "grayscale")
-            templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
+            LET templateScore:Number = templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
             findTemplate("buttonTpl.png", 0.8, 1000, 1, region(10, 20, 30, 40))
             markerDelete("button")
             """.trimIndent(),
@@ -310,7 +310,9 @@ class WorkspaceBasicRuntimeTest {
         val calls = mutableListOf<String>()
         val datastore = mutableMapOf<String, String>()
         val markers = mutableMapOf<String, RuntimeAutomationRegion>()
-        val templates = mutableMapOf<String, RuntimeAutomationRegion>()
+        val templates = mutableMapOf(
+            "buttonTpl" to RuntimeAutomationRegion(10, 20, 30, 40),
+        )
         val runtime = WorkspaceBasicRuntime(
             environment = WorkspaceBasicRuntimeEnvironment(
                 delayMs = {},
@@ -337,7 +339,7 @@ class WorkspaceBasicRuntimeTest {
                 },
                 templateCompare = { name, region, processing ->
                     calls += "templateCompare:$name:${region.width}x${region.height}:$processing"
-                    if (templates[name] == region) 0.97f else null
+                    if (templates[name] == region) 0.97f else error("unexpected template region")
                 },
                 findTemplate = { name, threshold, timeoutMs, region ->
                     calls += "findTemplate:$name:$threshold:$timeoutMs:${region?.width}x${region?.height}"
@@ -357,7 +359,7 @@ class WorkspaceBasicRuntimeTest {
 
         val result = runtime.run(imported.document!!)
 
-        assertTrue(result is EmscriptDryRunResult.Success)
+        assertTrue(result.toString(), result is EmscriptDryRunResult.Success)
         assertEquals("42", datastore["score"])
         assertFalse(markers.containsKey("button"))
         assertEquals(RuntimeAutomationRegion(10, 20, 30, 40), templates["buttonTpl"])
@@ -375,9 +377,9 @@ class WorkspaceBasicRuntimeTest {
     fun basicRuntimeDispatchesShizukuAndScrcpyCommandsToAdapters() = runBlocking {
         val imported = EmscriptWorkspaceImporter().import(
             """
-            ChromeTab.isSupported()
+            LET chromeTabSupported:Bool = chromeTab.isSupported()
             ChromeTab.open("https://example.com")
-            Shizuku.isAvailable()
+            LET shizukuAvailable:Bool = shizuku.isAvailable()
             Shizuku.systemService("package")
             Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
             Shizuku.shell("cmd package list packages")
@@ -385,7 +387,7 @@ class WorkspaceBasicRuntimeTest {
             Termux.shell("echo ok")
             Termux.run("/data/data/com.termux/files/usr/bin/ls", "-la")
             Termux.api("battery-status")
-            Tasker.isInstalled()
+            LET taskerInstalled:Bool = tasker.isInstalled()
             Tasker.runTask("VT_TEST", ["alpha", "beta"])
             Scrcpy.hostAvailable()
             Scrcpy.connect("")
@@ -413,7 +415,19 @@ class WorkspaceBasicRuntimeTest {
                 log = {},
                 chromeTabCommand = { command, args ->
                     calls += "chrometab:$command:${args.joinToString("|")}"
-                    RuntimeAdapterResult(true, "$command ok", warning = false)
+                    if (command == "chromeTab.isSupported") {
+                        RuntimeAdapterResult.success(EmscriptValue.BooleanValue(true), "$command ok")
+                    } else {
+                        RuntimeAdapterResult(true, "$command ok", warning = false)
+                    }
+                },
+                taskerInstalled = {
+                    calls += "tasker:tasker.isInstalled:"
+                    RuntimeAdapterResult.success(EmscriptValue.BooleanValue(true), "tasker.isInstalled ok")
+                },
+                shizukuAvailable = {
+                    calls += "shizuku:shizuku.isAvailable:"
+                    RuntimeAdapterResult.success(EmscriptValue.BooleanValue(true), "shizuku.isAvailable ok")
                 },
                 taskerCommand = { command, args ->
                     calls += "tasker:$command:${args.joinToString("|")}"
@@ -437,9 +451,9 @@ class WorkspaceBasicRuntimeTest {
         val result = runtime.run(imported.document!!)
 
         assertTrue(result is EmscriptDryRunResult.Success)
-        assertTrue(calls.any { it.startsWith("chrometab:chrometab.issupported") })
+        assertTrue(calls.any { it.startsWith("chrometab:chromeTab.isSupported") })
         assertTrue(calls.any { it.startsWith("chrometab:chrometab.open") })
-        assertTrue(calls.any { it.startsWith("shizuku:shizuku.isavailable") })
+        assertTrue(calls.any { it.startsWith("shizuku:shizuku.isAvailable") })
         assertTrue(calls.any { it.startsWith("shizuku:shizuku.systemservice") })
         assertTrue(calls.any { it.startsWith("shizuku:shizuku.call") })
         assertTrue(calls.any { it.startsWith("shizuku:shizuku.shell") })
@@ -447,7 +461,7 @@ class WorkspaceBasicRuntimeTest {
         assertTrue(calls.any { it.startsWith("termux:termux.shell") })
         assertTrue(calls.any { it.startsWith("termux:termux.run") })
         assertTrue(calls.any { it.startsWith("termux:termux.api") })
-        assertTrue(calls.any { it.startsWith("tasker:tasker.isinstalled") })
+        assertTrue(calls.any { it.startsWith("tasker:tasker.isInstalled") })
         assertTrue(
             calls.joinToString(),
             calls.any { it.startsWith("tasker:tasker.runtask") && it.contains("VT_TEST") && it.contains("alpha") },

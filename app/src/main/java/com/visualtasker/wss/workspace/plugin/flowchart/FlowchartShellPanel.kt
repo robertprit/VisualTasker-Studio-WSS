@@ -124,6 +124,8 @@ import de.visualtasker.flowchart.layout.FlowLayoutOrientation
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.registry.BlockCategories
+import de.visualtasker.blockeditor.registry.BlockNodePresentationContract
+import de.visualtasker.blockeditor.registry.SemanticPropertyCategory
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
@@ -182,7 +184,6 @@ fun FlowchartShellPanel(
     var miniMapOffset by remember(session.sessionId) { mutableStateOf(Offset.Zero) }
     var previousViewOrientation by remember(session.sessionId) { mutableStateOf(viewOrientation) }
     var externalFocusInitialized by remember(session.sessionId) { mutableStateOf(false) }
-    var runtimeFocusInitialized by remember(session.sessionId) { mutableStateOf(false) }
     var renderViewDocument by remember(session.sessionId) {
         mutableStateOf(session.viewDocument ?: controller.snapshot().view)
     }
@@ -499,15 +500,11 @@ fun FlowchartShellPanel(
         previousViewOrientation = viewOrientation
         replaceVisibleLayout(arrangeMode.layoutConfig(viewOrientation))
     }
-    LaunchedEffect(runtimeSnapshot?.activeNodeId, panelSize) {
+    LaunchedEffect(runtimeSnapshot?.sequence, runtimeSnapshot?.activeNodeId, panelSize) {
         val activeNodeId = runtimeSnapshot?.activeNodeId ?: return@LaunchedEffect
         selectedNodeId = activeNodeId
         selectedEdgeId = null
-        if (!runtimeFocusInitialized) {
-            runtimeFocusInitialized = true
-            return@LaunchedEffect
-        }
-        centerFocusedElement()
+        revealFocusedElement(interactionActive = pendingConnectionStart != null || draggedNodeId != null)
     }
     LaunchedEffect(
         focusedNodeId,
@@ -1192,21 +1189,38 @@ private fun FlowchartNodeInspectorRows(
     onRemoveIfBranch: ((FlowNodeId) -> Unit)?,
 ) {
     val blockType = node.properties.stringValue("blockType") ?: "?"
+    val inspectorProperties = flowchartInspectorProperties(node)
     FlowchartNodeInspectorHeader(
         node = node,
         blockType = blockType,
         onReplaceNodeType = onReplaceNodeType,
     )
-    editableNodeFields(node).forEach { field ->
-        OutlinedTextField(
-            value = field.value,
-            onValueChange = { value -> onUpdateNodeField?.invoke(node.id, field.fieldKey, value) },
-            enabled = onUpdateNodeField != null,
-            singleLine = true,
-            label = { Text(field.label) },
-            textStyle = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.fillMaxWidth(),
+    SemanticPropertyCategory.entries.forEach { category ->
+        val categoryFields = inspectorProperties.filter { it.semanticCategory == category }
+        if (categoryFields.isEmpty()) return@forEach
+        Text(
+            text = category.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFFBDA7FF),
         )
+        categoryFields.forEach { field ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "ID: ${field.semanticPropertyId}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFE9DFF5).copy(alpha = 0.7f),
+                )
+                OutlinedTextField(
+                    value = field.value,
+                    onValueChange = { value -> onUpdateNodeField?.invoke(node.id, field.fieldKey, value) },
+                    enabled = onUpdateNodeField != null,
+                    singleLine = true,
+                    label = { Text(field.label) },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
     if (blockType in setOf(BlockTypes.CONTROL_IF, BlockTypes.CONTROL_IF_ELSE, BlockTypes.CONTROL_IF_ELSEIF_ELSE)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1319,31 +1333,61 @@ private fun String.editorSurface(): FlowchartEditorSurface =
         else -> FlowchartEditorSurface.Unknown
     }
 
-private data class EditableFlowchartNodeField(
+internal data class EditableFlowchartNodeField(
     val label: String,
     val fieldKey: String,
     val value: String,
+    val semanticPropertyId: String,
+    val semanticCategory: SemanticPropertyCategory,
 )
 
-private fun editableNodeFields(node: FlowGraphNode): List<EditableFlowchartNodeField> =
-    listOfNotNull(
-        node.properties.textFor("waitMs")?.let { EditableFlowchartNodeField("Wartezeit ms", "ms", it) },
-        node.properties.textFor("frequency")?.let { EditableFlowchartNodeField("Frequenz", "frequency", it) },
-        node.properties.textFor("durationMs")?.let { EditableFlowchartNodeField("Dauer ms", "durationMs", it) },
-        node.properties.textFor("volume")?.let { EditableFlowchartNodeField("Lautstärke", "volume", it) },
-        node.properties.textFor("pattern")?.let { EditableFlowchartNodeField("Muster", "pattern", it) },
-        node.properties.textFor("message")?.let { EditableFlowchartNodeField("Nachricht", "message", it) },
-        node.properties.textFor("text")?.let { EditableFlowchartNodeField("Text", "text", it) },
-        node.properties.textFor("args")?.let { EditableFlowchartNodeField("Argumente", "args", it) }
-            ?.takeIf { node.properties.stringValue("commandId") == null },
-        node.properties.textFor("operator")?.let { EditableFlowchartNodeField("Operator", "operator", it) },
-        node.properties.textFor("literalNumber")?.let { EditableFlowchartNodeField("Wert", "value", it) },
-        node.properties.textFor("literalString")?.let { EditableFlowchartNodeField("Wert", "value", it) },
-        node.properties.textFor("literalBoolean")?.let { EditableFlowchartNodeField("Wert", "value", it) },
-        node.properties.textFor("variableLabel")?.let { EditableFlowchartNodeField("Variable", "variableLabel", it) },
-    ) + editableCommandArgumentFields(node)
+internal fun flowchartInspectorProperties(node: FlowGraphNode): List<EditableFlowchartNodeField> {
+    val ownerId = node.id.value.removePrefix("block:")
+    val definition = node.properties
+        .stringValue("blockType")
+        ?.let(DefaultBlockRegistry::getDefinition)
+    val definitionFields = definition?.fields.orEmpty().associateBy { it.key }
 
-private fun editableCommandArgumentFields(node: FlowGraphNode): List<EditableFlowchartNodeField> {
+    fun categoryFor(fieldKey: String): SemanticPropertyCategory {
+        val fieldDef = definitionFields[fieldKey]
+        if (fieldDef != null) return BlockNodePresentationContract.fieldCategory(fieldDef)
+        return when (fieldKey) {
+            "displayLabel", "displayMode", "note" -> SemanticPropertyCategory.PRESENTATION
+            "active" -> SemanticPropertyCategory.CONFIG
+            else -> SemanticPropertyCategory.INPUT
+        }
+    }
+
+    fun toField(label: String, fieldKey: String, value: String): EditableFlowchartNodeField {
+        val category = categoryFor(fieldKey)
+        return EditableFlowchartNodeField(
+            label = label,
+            fieldKey = fieldKey,
+            value = value,
+            semanticPropertyId = BlockNodePresentationContract.fieldPropertyId(ownerId, fieldKey),
+            semanticCategory = category,
+        )
+    }
+
+    return listOfNotNull(
+        node.properties.textFor("waitMs")?.let { toField("Wartezeit ms", "ms", it) },
+        node.properties.textFor("frequency")?.let { toField("Frequenz", "frequency", it) },
+        node.properties.textFor("durationMs")?.let { toField("Dauer ms", "durationMs", it) },
+        node.properties.textFor("volume")?.let { toField("Lautstärke", "volume", it) },
+        node.properties.textFor("pattern")?.let { toField("Muster", "pattern", it) },
+        node.properties.textFor("message")?.let { toField("Nachricht", "message", it) },
+        node.properties.textFor("text")?.let { toField("Text", "text", it) },
+        node.properties.textFor("args")?.let { toField("Argumente", "args", it) }
+            ?.takeIf { node.properties.stringValue("commandId") == null },
+        node.properties.textFor("operator")?.let { toField("Operator", "operator", it) },
+        node.properties.textFor("literalNumber")?.let { toField("Wert", "value", it) },
+        node.properties.textFor("literalString")?.let { toField("Wert", "value", it) },
+        node.properties.textFor("literalBoolean")?.let { toField("Wert", "value", it) },
+        node.properties.textFor("variableLabel")?.let { toField("Variable", "variableLabel", it) },
+    ) + editableCommandArgumentFields(node, ownerId)
+}
+
+private fun editableCommandArgumentFields(node: FlowGraphNode, ownerId: String): List<EditableFlowchartNodeField> {
     val commandId = node.properties.stringValue("commandId") ?: return emptyList()
     val command = VisualTaskerCommandCatalog.findById(commandId) ?: return emptyList()
     val rawArgs = splitInspectorArgs(node.properties.textFor("args").orEmpty())
@@ -1354,6 +1398,8 @@ private fun editableCommandArgumentFields(node: FlowGraphNode): List<EditableFlo
                 label = argument.name,
                 fieldKey = "args:$index",
                 value = rawArgs.getOrNull(index) ?: argument.defaultValue.orEmpty(),
+                semanticPropertyId = BlockNodePresentationContract.fieldPropertyId(ownerId, "args:$index"),
+                semanticCategory = SemanticPropertyCategory.INPUT,
             )
         }
 }

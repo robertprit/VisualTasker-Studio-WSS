@@ -12,13 +12,21 @@ import de.visualtasker.blockeditor.domain.VariableScope
 import de.visualtasker.blockeditor.domain.WorkspaceAction
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.WorkspaceReducer
+import de.visualtasker.blockeditor.domain.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.blockeditor.registry.CommandCatalogEntry
 import de.visualtasker.blockeditor.registry.CommandArgumentType
 import de.visualtasker.blockeditor.registry.CommandCatalogKind
+import de.visualtasker.blockeditor.registry.canBeUsedAsExpression
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.blockeditor.registry.WorkspaceValueTypeSystem
+import de.visualtasker.blockeditor.registry.argumentAt
 import de.visualtasker.blockeditor.registry.asFactory
+import de.visualtasker.blockeditor.registry.maximumArgumentCount
+import de.visualtasker.blockeditor.registry.minimumArgumentCount
+import de.visualtasker.blockeditor.registry.workspaceInputNameAt
 
 data class EmscriptImportResult(
     val ir: EmscriptIrScript?,
@@ -156,9 +164,17 @@ private class WorkspaceAssembler(
                 ensureVariable(
                     variableId = statement.variable,
                     defaultValue = expressionToInlineText(statement.value),
-                    declaredType = inferExpressionType(statement.value),
+                    declaredType = statement.declaredType
+                        ?.let(de.visualtasker.emscript.contract.LanguageTypeCompatibility::sourceName)
+                        ?: inferExpressionType(statement.value),
                 )
-                emitSetVariableBlock(statement.variable, statement.value, assignmentKind = "LET")
+                emitSetVariableBlock(
+                    variableId = statement.variable,
+                    value = statement.value,
+                    assignmentKind = "LET",
+                    declaredType = statement.declaredType
+                        ?.let(de.visualtasker.emscript.contract.LanguageTypeCompatibility::sourceName),
+                )
             }
             is EmscriptIrStatement.Set -> {
                 ensureVariable(statement.variable, defaultValue = null)
@@ -172,6 +188,9 @@ private class WorkspaceAssembler(
                 val block = instantiate(blockType)
                 setTextField(block, "command", entry.canonicalName)
                 setTextField(block, "args", statement.arguments)
+                if (statement.expressionArguments.isNotEmpty()) {
+                    connectExpressionArguments(block, statement.expressionArguments)
+                }
                 block
             }
             is EmscriptIrStatement.Wait -> {
@@ -186,7 +205,7 @@ private class WorkspaceAssembler(
             }
             is EmscriptIrStatement.Output -> {
                 val block = instantiate(BlockTypes.DEBUG_LOG)
-                setTextField(block, "message", expressionToOutputText(statement.value))
+                connectExpressionArguments(block, listOf(statement.value))
                 block
             }
             is EmscriptIrStatement.Beep -> {
@@ -271,11 +290,28 @@ private class WorkspaceAssembler(
         variableId: String,
         value: EmscriptIrExpression,
         assignmentKind: String,
+        declaredType: String? = null,
     ): BlockId {
         val block = instantiate(BlockTypes.VARIABLE_SET)
+        val variableLabel = document.variables.variables[variableId]?.name ?: variableId
         setTextField(block, "assignmentKind", assignmentKind)
         setTextField(block, "variable", variableId)
+        setTextField(block, "variableId", variableId)
+        setTextField(block, "variableLabel", variableLabel)
         setTextField(block, "value", expressionToInlineText(value))
+        if (declaredType != null) {
+            val node = requireNotNull(document.blocks[block])
+            document = document.copy(
+                blocks = document.blocks + (
+                    block to node.copy(metadata = node.metadata + ("emscript.declaredType" to declaredType))
+                ),
+            )
+        }
+        connectValueInput(
+            parent = block,
+            inputName = WorkspaceValueTypeSystem.VARIABLE_SET_VALUE_INPUT,
+            child = emitExpression(value),
+        )
         return block
     }
 
@@ -293,11 +329,116 @@ private class WorkspaceAssembler(
         }
     }
 
+    private fun connectExpressionArguments(
+        parent: BlockId,
+        expressions: List<EmscriptIrExpression>,
+    ) {
+        val block = document.blocks[parent] ?: error("Block ${parent.value} fehlt.")
+        val definition = registry.getDefinition(block.type)
+            ?: error("Block-Definition fuer ${parent.value} fehlt.")
+        val entry = VisualTaskerCommandCatalog.findByBlockType(block.type)
+            ?: error("Command-Argumentvertrag fuer ${definition.id} fehlt.")
+        require(expressions.size >= entry.minimumArgumentCount()) {
+            "${definition.id} erwartet mindestens ${entry.minimumArgumentCount()} Expressions, erhalten: ${expressions.size}."
+        }
+        entry.maximumArgumentCount()?.let { maximum ->
+            require(expressions.size <= maximum) {
+                "${definition.id} erwartet maximal $maximum Expressions, erhalten: ${expressions.size}."
+            }
+        }
+        ensureCommandExpressionInputs(parent, entry, expressions.size)
+        expressions.forEachIndexed { index, expression ->
+            val inputName = requireNotNull(entry.workspaceInputNameAt(index))
+            connectCommandExpressionInput(parent, inputName, emitExpression(expression))
+        }
+    }
+
+    private fun ensureCommandExpressionInputs(
+        parent: BlockId,
+        entry: CommandCatalogEntry,
+        count: Int,
+    ) {
+        val block = document.blocks[parent] ?: error("Block ${parent.value} fehlt.")
+        val existing = block.valueInputs.associateBy(ValueInput::name)
+        val requiredInputs = (0 until count).map { index ->
+            val argument = requireNotNull(entry.argumentAt(index))
+            val inputName = requireNotNull(entry.workspaceInputNameAt(index))
+            existing[inputName] ?: ValueInput(
+                name = inputName,
+                connection = Connection(
+                    id = ConnectionId("${block.id.value}:$inputName"),
+                    owner = block.id,
+                    kind = ConnectionKind.ValueInput,
+                    accepts = argument.acceptedTypes,
+                    slotName = inputName,
+                ),
+            )
+        }
+        val retained = block.valueInputs.filterNot { input ->
+            (0 until count).any { index -> entry.workspaceInputNameAt(index) == input.name }
+        }
+        document = document.copy(
+            blocks = document.blocks + (parent to block.copy(valueInputs = retained + requiredInputs)),
+        )
+    }
+
+    /**
+     * Text import must retain a syntactically valid but ill-typed expression until semantic
+     * validation. The reducer's connection guard is intentionally relaxed only while linking;
+     * the declared input contract is restored immediately on the resulting document.
+     */
+    private fun connectCommandExpressionInput(parent: BlockId, inputName: String, child: BlockId) {
+        val parentBlock = document.blocks[parent] ?: error("Block ${parent.value} fehlt.")
+        val inputIndex = parentBlock.valueInputs.indexOfFirst { it.name == inputName }
+        require(inputIndex >= 0) { "Value-Input $inputName fehlt bei ${parent.value}" }
+        val originalInput = parentBlock.valueInputs[inputIndex]
+        val transportInput = originalInput.copy(
+            connection = originalInput.connection.copy(accepts = setOf("Any")),
+        )
+        document = document.copy(
+            blocks = document.blocks + (
+                parent to parentBlock.copy(
+                    valueInputs = parentBlock.valueInputs.toMutableList().apply { set(inputIndex, transportInput) },
+                )
+            ),
+        )
+        connectValueInput(parent, inputName, child)
+        val connectedParent = document.blocks[parent] ?: error("Block ${parent.value} fehlt nach Connect.")
+        val connectedInput = connectedParent.valueInputs[inputIndex]
+        document = document.copy(
+            blocks = document.blocks + (
+                parent to connectedParent.copy(
+                    valueInputs = connectedParent.valueInputs.toMutableList().apply {
+                        set(
+                            inputIndex,
+                            connectedInput.copy(
+                                connection = connectedInput.connection.copy(accepts = originalInput.connection.accepts),
+                            ),
+                        )
+                    },
+                )
+            ),
+        )
+    }
+
     private fun emitFunctionExpression(expression: EmscriptIrExpression.FunctionCall): BlockId {
+        if (expression.name.equals("region", ignoreCase = true) || expression.name.equals("bbox", ignoreCase = true)) {
+            require(expression.arguments.size == 4) { "region erwartet vier Number-Argumente." }
+            val values = expression.arguments.map { argument ->
+                require(argument is EmscriptIrExpression.NumberLiteral) { "region unterstützt nur Number-Literale." }
+                argument.value
+            }
+            return instantiate(BlockTypes.LITERAL_REGION).also { block ->
+                setNumberField(block, "x", values[0])
+                setNumberField(block, "y", values[1])
+                setNumberField(block, "width", values[2])
+                setNumberField(block, "height", values[3])
+            }
+        }
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
             ?: error("Reporter '${expression.name}' ist nicht im Katalog.")
-        if (entry.kind !in setOf(CommandCatalogKind.REPORTER, CommandCatalogKind.OPERATOR)) {
+        if (!entry.canBeUsedAsExpression()) {
             error("'${expression.name}' ist kein Reporter.")
         }
         val blockType = entry.block?.blockType ?: error("Reporter '${expression.name}' hat keinen Block-Typ.")
@@ -306,6 +447,11 @@ private class WorkspaceAssembler(
             .filter { it.type != CommandArgumentType.STATEMENT_BODY }
             .zip(expression.arguments)
             .forEach { (argument, value) ->
+                val input = document.blocks[block]?.valueInputs?.firstOrNull { it.name == argument.name }
+                if (input != null) {
+                    connectCommandExpressionInput(block, argument.name, emitExpression(value))
+                    return@forEach
+                }
                 when (argument.type) {
                     CommandArgumentType.NUMBER,
                     CommandArgumentType.DURATION_MS,
@@ -431,15 +577,15 @@ private class WorkspaceAssembler(
         if (defaultValue.equals("true", ignoreCase = true) || defaultValue.equals("false", ignoreCase = true)) {
             return "Boolean"
         }
-        return "Text"
+        return "String"
     }
 
     private fun inferExpressionType(expression: EmscriptIrExpression): String {
         return when (expression) {
             is EmscriptIrExpression.NumberLiteral -> "Number"
             is EmscriptIrExpression.BooleanLiteral -> "Boolean"
-            is EmscriptIrExpression.StringLiteral -> "Text"
-            is EmscriptIrExpression.VariableRef -> "Any"
+            is EmscriptIrExpression.StringLiteral -> "String"
+            is EmscriptIrExpression.VariableRef -> document.variables.variables[expression.name]?.type ?: "Any"
             is EmscriptIrExpression.FunctionCall -> {
                 val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
                     ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
@@ -481,12 +627,6 @@ private class WorkspaceAssembler(
             else -> expressionToInlineText(expression).toBooleanStrictOrNull() ?: fallback
         }
 
-    private fun expressionToOutputText(expression: EmscriptIrExpression): String =
-        when (expression) {
-            is EmscriptIrExpression.StringLiteral -> expression.value
-            else -> expressionToInlineText(expression)
-        }
-
     private fun expressionToTextArgument(expression: EmscriptIrExpression): String =
         when (expression) {
             is EmscriptIrExpression.StringLiteral -> expression.value
@@ -494,21 +634,7 @@ private class WorkspaceAssembler(
         }
 
     private fun operatorFieldValue(op: EmscriptBinaryOp): String {
-        return when (op) {
-            EmscriptBinaryOp.OR -> "OR"
-            EmscriptBinaryOp.AND -> "AND"
-            EmscriptBinaryOp.ADD -> "ADD"
-            EmscriptBinaryOp.SUB -> "SUB"
-            EmscriptBinaryOp.MUL -> "MUL"
-            EmscriptBinaryOp.DIV -> "DIV"
-            EmscriptBinaryOp.MOD -> "MOD"
-            EmscriptBinaryOp.EQ -> "EQUAL"
-            EmscriptBinaryOp.NEQ -> "NOT_EQUAL"
-            EmscriptBinaryOp.LT -> "LESS"
-            EmscriptBinaryOp.LTE -> "LESS_OR_EQUAL"
-            EmscriptBinaryOp.GT -> "GREATER"
-            EmscriptBinaryOp.GTE -> "GREATER_OR_EQUAL"
-        }
+        return op.operatorId.value
     }
 
     private fun expressionToInlineText(expression: EmscriptIrExpression): String {
@@ -527,21 +653,7 @@ private class WorkspaceAssembler(
     }
 
     private fun inlineOperator(op: EmscriptBinaryOp): String {
-        return when (op) {
-            EmscriptBinaryOp.OR -> "||"
-            EmscriptBinaryOp.AND -> "&&"
-            EmscriptBinaryOp.ADD -> "+"
-            EmscriptBinaryOp.SUB -> "-"
-            EmscriptBinaryOp.MUL -> "*"
-            EmscriptBinaryOp.DIV -> "/"
-            EmscriptBinaryOp.MOD -> "%"
-            EmscriptBinaryOp.EQ -> "=="
-            EmscriptBinaryOp.NEQ -> "!="
-            EmscriptBinaryOp.LT -> "<"
-            EmscriptBinaryOp.LTE -> "<="
-            EmscriptBinaryOp.GT -> ">"
-            EmscriptBinaryOp.GTE -> ">="
-        }
+        return op.canonicalSymbol
     }
 
     private fun connectNext(sourceBlock: BlockId, targetBlock: BlockId) {
@@ -574,6 +686,18 @@ private class WorkspaceAssembler(
         val source = document.blocks[child]?.output?.id
             ?: error("OUTPUT-Verbindung fehlt bei ${child.value}")
         apply(WorkspaceAction.Connect(source = source, target = target))
+        if (document.blocks[parent]?.valueInputs?.firstOrNull { it.name == inputName }
+                ?.connection?.connectedTo == null
+        ) {
+            // Import keeps an invalid candidate graph intact so Validator can emit the typed diagnostic.
+            val parentNode = requireNotNull(document.blocks[parent])
+            val childNode = requireNotNull(document.blocks[child])
+            document = document.copy(
+                blocks = document.blocks +
+                    (parent to parentNode.withConnectionUpdated(target) { it.copy(connectedTo = source) }) +
+                    (child to childNode.withConnectionUpdated(source) { it.copy(connectedTo = target) }),
+            )
+        }
     }
 
     private fun setTextField(blockId: BlockId, key: String, value: String) {

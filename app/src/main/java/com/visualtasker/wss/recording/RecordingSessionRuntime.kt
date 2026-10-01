@@ -59,7 +59,12 @@ object RecordingSessionRuntime {
         val job = scope.launch {
             delay(180)
             when (val result = coordinatorRef.get()?.recordTap(xPx, yPx)) {
-                is RecordingOperationResult.Failure -> Log.e(TAG, "Tap capture failed: ${result.code} ${result.message}", result.cause)
+                is RecordingOperationResult.Failure -> {
+                    if (result.code == "NOT_RECORDING" || result.code == "SESSION_MISSING") {
+                        activeSessionIdRef.set(null)
+                    }
+                    Log.e(TAG, "Tap capture failed: ${result.code} ${result.message}", result.cause)
+                }
                 is RecordingOperationResult.Success -> Log.i(TAG, "Tap ${result.value.interactionId}: ${result.value.status}")
                 null -> Unit
             }
@@ -70,11 +75,14 @@ object RecordingSessionRuntime {
 
     suspend fun stop(): RecordingOperationResult<RecordingSession> {
         val coordinator = coordinatorRef.get()
-            ?: return RecordingOperationResult.Failure("NOT_RECORDING", "No recording session is active.")
+            ?: run {
+                activeSessionIdRef.set(null)
+                return RecordingOperationResult.Failure("NOT_RECORDING", "No recording session is active.")
+            }
         synchronized(pendingTapJobs) { pendingTapJobs.toList() }.joinAll()
         return coordinator.stop().also { result ->
+            activeSessionIdRef.set(null)
             if (result is RecordingOperationResult.Success) {
-                activeSessionIdRef.set(null)
                 RecordingPlaybackRuntime.refresh(appContext(), loadLatestWhenIdle = true)
                 Log.i(TAG, "Session ${result.value.sessionId} completed")
             }
@@ -90,7 +98,15 @@ object RecordingSessionRuntime {
             }
         }
 
-    fun isRecording(): Boolean = activeSessionIdRef.get() != null
+    fun isRecording(): Boolean {
+        val runtimeSessionId = activeSessionIdRef.get() ?: return false
+        val coordinatorSessionId = coordinatorRef.get()?.activeSessionIdOrNull()
+        if (coordinatorSessionId != runtimeSessionId) {
+            activeSessionIdRef.compareAndSet(runtimeSessionId, null)
+            return false
+        }
+        return true
+    }
 
     private val contextRef = AtomicReference<Context?>(null)
 

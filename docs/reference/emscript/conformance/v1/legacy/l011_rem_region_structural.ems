@@ -1,0 +1,3 @@
+rem.region("setup", "facet", "#6750A4")
+LET value = 1
+wait(10)

@@ -1,0 +1,3 @@
+LET §text: String = "line\nquote \" tab\t return\r unicode \u263A slash \\"
+LET §number: Number = -12.5
+LET §enabled: Bool = true

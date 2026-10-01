@@ -164,7 +164,7 @@ class WorkspaceDryRunRuntimeTest {
             """
             findTemplate("button.png", 0.8, 1000)
             markerSave("button", region(10, 20, 30, 40), "region", 0.90)
-            templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
+            LET templateScore:Number = templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
             Termux.shell("echo ok")
             """.trimIndent(),
             workspaceId = "workspace-dry-run-capabilities",
@@ -195,12 +195,12 @@ class WorkspaceDryRunRuntimeTest {
             swipe([120, 640, 120, 220], 1)
             screenshot("screen.png")
             Clipboard.set("alpha")
-            Clipboard.get()
+            log(Clipboard.get())
             Cache.clear()
-            Sys.info()
-            Env.get("SDK_INT")
+            log(Sys.info())
+            log(Env.get("SDK_INT"))
             File.writeText("state.txt", "ok")
-            File.readText("state.txt")
+            LET fileValue:String? = File.readText("state.txt")
             touch(["down", 120, 240, "up"])
             """.trimIndent(),
             workspaceId = "workspace-dry-run-core-catalog",
@@ -218,12 +218,12 @@ class WorkspaceDryRunRuntimeTest {
         assertFalse(capabilityWarnings.any { it.command in setOf("clickPoint", "swipe", "screenshot") })
         assertFalse(capabilityWarnings.any {
             it.command in setOf(
-                "Clipboard.set",
+                "clipboard.set",
                 "Clipboard.get",
-                "Cache.clear",
+                "cache.clear",
                 "Sys.info",
                 "Env.get",
-                "File.writeText",
+                "file.writeText",
                 "File.readText",
             )
         })

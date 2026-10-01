@@ -86,6 +86,7 @@ dependencies {
     implementation("de.visualtasker.blockeditor:blockeditor-validation:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-ir:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-emscript:0.1.0-SNAPSHOT")
+    implementation("de.visualtasker.emscript:emscript-language-core:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.flowchart:flowchart-compose:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.flowchart:flowchart-serialization:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.flowchart:flowchart-validation:0.1.0-SNAPSHOT")

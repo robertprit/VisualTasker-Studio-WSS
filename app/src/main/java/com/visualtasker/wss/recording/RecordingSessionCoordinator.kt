@@ -17,7 +17,10 @@ class RecordingSessionCoordinator(
     private val idGenerator: RecorderIdGenerator = UuidRecorderIdGenerator,
 ) {
     private val writerMutex = Mutex()
+    @Volatile
     private var activeSessionId: String? = null
+
+    fun activeSessionIdOrNull(): String? = activeSessionId
 
     suspend fun start(
         createdBy: String,
@@ -150,18 +153,16 @@ class RecordingSessionCoordinator(
             captureSource.capture()
         } catch (error: Throwable) {
             val failed = pending.copy(status = RecordingInteractionStatus.CAPTURE_FAILED)
-            val partial = record.session.copy(status = RecordingSessionStatus.PARTIAL, failure = "TAP_CAPTURE_FAILED: ${error.message}")
-            runCatching { store.persistFailedInteraction(partial, failed) }
-            activeSessionId = null
+            val recording = record.session.copy(failure = "TAP_CAPTURE_FAILED: ${error.message}")
+            runCatching { store.persistFailedInteraction(recording, failed) }
             return@ioLocked failure("TAP_CAPTURE_FAILED", "After-tap capture failed.", error)
         }
         val stored = try {
             assetStore.putPng(capture.pngBytes)
         } catch (error: Throwable) {
             val failed = pending.copy(status = RecordingInteractionStatus.CAPTURE_FAILED)
-            val partial = record.session.copy(status = RecordingSessionStatus.PARTIAL, failure = "TAP_ASSET_FAILED: ${error.message}")
-            runCatching { store.persistFailedInteraction(partial, failed) }
-            activeSessionId = null
+            val recording = record.session.copy(failure = "TAP_ASSET_FAILED: ${error.message}")
+            runCatching { store.persistFailedInteraction(recording, failed) }
             return@ioLocked failure("TAP_ASSET_FAILED", "After-tap screenshot asset failed.", error)
         }
 
@@ -229,6 +230,17 @@ class RecordingSessionCoordinator(
             activeSessionId = null
             RecordingOperationResult.Success(completed)
         } catch (error: Throwable) {
+            val failedAt = clock.epochMillis()
+            runCatching {
+                store.updateSession(
+                    stopping.copy(
+                        status = RecordingSessionStatus.PARTIAL,
+                        stoppedAtEpochMs = failedAt,
+                        failure = "STOP_FAILED: ${error.message}",
+                    )
+                )
+            }
+            activeSessionId = null
             failure("STOP_FAILED", "Recording session could not be finalized.", error)
         }
     }
@@ -254,11 +266,10 @@ class RecordingSessionCoordinator(
     ) {
         runCatching {
             store.persistFailedInteraction(
-                session.copy(status = RecordingSessionStatus.PARTIAL, failure = message),
+                session.copy(failure = message),
                 interaction.copy(status = RecordingInteractionStatus.CAPTURE_FAILED),
             )
         }
-        activeSessionId = null
     }
 
     private suspend fun <T> ioLocked(block: suspend () -> RecordingOperationResult<T>): RecordingOperationResult<T> =

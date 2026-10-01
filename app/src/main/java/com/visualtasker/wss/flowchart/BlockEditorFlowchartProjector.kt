@@ -189,6 +189,7 @@ object BlockEditorFlowchartProjector {
         BlockTypes.VARIABLE_SET -> FlowSemanticKind(FlowNodeKind.ASSIGNMENT)
         BlockTypes.LITERAL_NUMBER,
         BlockTypes.LITERAL_STRING,
+        BlockTypes.LITERAL_REGION,
         BlockTypes.LITERAL_BOOLEAN,
         -> FlowSemanticKind(FlowNodeKind.INPUT)
         BlockTypes.VARIABLE_GET,
@@ -224,7 +225,10 @@ object BlockEditorFlowchartProjector {
         BlockTypes.ACTION_FIND_TEMPLATE -> genericCommandLabel(block, "findTemplate")
         BlockTypes.DEBUG_LOG -> {
             val message = textField(block, "message").orEmpty()
-            "LOG \"$message\""
+            when {
+                message.isNotBlank() -> "LOG \"$message\""
+                else -> "LOG ${expressionInputLabel(document, block, "value") ?: "value"}"
+            }
         }
         BlockTypes.FEEDBACK_BEEP -> {
             val frequency = numberField(block, "frequency") ?: 1000.0
@@ -274,6 +278,10 @@ object BlockEditorFlowchartProjector {
         }
         BlockTypes.LITERAL_NUMBER -> "NUM ${numberField(block, "value") ?: 0.0}"
         BlockTypes.LITERAL_STRING -> "STR \"${textField(block, "value").orEmpty()}\""
+        BlockTypes.LITERAL_REGION -> "REGION ${stableNumber(numberField(block, "x") ?: 0.0)}, " +
+            "${stableNumber(numberField(block, "y") ?: 0.0)}, " +
+            "${stableNumber(numberField(block, "width") ?: 1.0)} x " +
+            stableNumber(numberField(block, "height") ?: 1.0)
         BlockTypes.LITERAL_BOOLEAN -> "BOOL ${(boolField(block, "value") ?: false).toString().uppercase()}"
         BlockTypes.VARIABLE_GET,
         BlockTypes.VARIABLE_REPORTER,
@@ -305,6 +313,32 @@ object BlockEditorFlowchartProjector {
             "${command.uppercase()} ${args.joinToString(", ") { (_, value) -> value }}"
         }
     }
+
+    private fun expressionInputLabel(
+        document: WorkspaceDocument,
+        block: BlockNode,
+        inputName: String,
+    ): String? {
+        val connected = block.valueInputs.firstOrNull { it.name == inputName }?.connection?.connectedTo ?: return null
+        val childId = WorkspaceGraph.findConnection(document, connected)?.first ?: return null
+        val child = document.blocks[childId] ?: return null
+        return when (child.type) {
+            BlockTypes.LITERAL_STRING -> "\"${textField(child, "value").orEmpty()}\""
+            BlockTypes.LITERAL_NUMBER -> numberField(child, "value")?.let(::stableNumber)
+            BlockTypes.LITERAL_REGION -> "region(" + listOf("x", "y", "width", "height")
+                .joinToString(", ") { key -> stableNumber(numberField(child, key) ?: if (key in setOf("width", "height")) 1.0 else 0.0) } + ")"
+            BlockTypes.LITERAL_BOOLEAN,
+            BlockTypes.LOGIC_BOOLEAN -> (boolField(child, "value") ?: false).toString()
+            else -> if (child.type.startsWith(BlockTypes.VARIABLE_REPORTER_PREFIX)) {
+                variableLabel(child, document, mutableListOf())
+            } else {
+                nodeLabelFor(child, document, mutableListOf())
+            }
+        }
+    }
+
+    private fun stableNumber(value: Double): String =
+        if (value.isFinite() && value % 1.0 == 0.0) value.toLong().toString() else value.toString()
 
     private fun variableLabel(
         block: BlockNode,

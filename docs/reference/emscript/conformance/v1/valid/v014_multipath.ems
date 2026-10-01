@@ -1,0 +1,7 @@
+LET §left: Path = path(point(100, 500), point(100, 100))
+LET §right: Path = path(point(300, 500), point(300, 100))
+LET §gesture: MultiPath = multiPath([
+    pointerPath(§left, duration = 500, delay = 0),
+    pointerPath(§right, duration = 500, delay = 50)
+])
+multiSwipe(§gesture)
