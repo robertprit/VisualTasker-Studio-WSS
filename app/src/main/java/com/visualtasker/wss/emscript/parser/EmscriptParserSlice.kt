@@ -549,10 +549,16 @@ private class Parser(
 
     private fun parseTypeReference(): LanguageTypeRef {
         val type = consume(TokenType.IDENT, "Typname nach ':' erwartet.")
-        val sourceName = type.lexeme + if (match(TokenType.QUESTION)) "?" else ""
-        return requireNotNull(LanguageTypeCompatibility.fromWorkspaceName(sourceName)) {
-            "Unbekannter Typ '$sourceName'."
+        val baseType = if (type.lexeme.equals("List", ignoreCase = true) && match(TokenType.LT)) {
+            val elementType = parseTypeReference()
+            consume(TokenType.GT, "'>' nach List-Elementtyp erwartet.")
+            LanguageTypeRef.ListOf(elementType)
+        } else {
+            requireNotNull(LanguageTypeCompatibility.fromWorkspaceName(type.lexeme)) {
+                "Unbekannter Typ '${type.lexeme}'."
+            }
         }
+        return if (match(TokenType.QUESTION)) LanguageTypeRef.Nullable(baseType) else baseType
     }
 
     private fun parseSet(start: Token): EmscriptIrStatement.Set {

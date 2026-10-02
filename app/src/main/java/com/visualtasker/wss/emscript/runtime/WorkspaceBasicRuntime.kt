@@ -5,6 +5,7 @@ import de.visualtasker.blockeditor.domain.FieldValue
 import de.visualtasker.blockeditor.domain.WorkspaceDocument
 import de.visualtasker.blockeditor.domain.asString
 import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.emscript.contract.ProviderTypes
 import kotlin.math.roundToInt
 
 class WorkspaceBasicRuntime(
@@ -173,6 +174,19 @@ class WorkspaceBasicRuntime(
                 result = environment.taskerGetVariable(name),
                 valueUnavailableCode = RuntimeQueryDiagnosticCodes.TASKER_RESULT_INVALID,
             ) { it is EmscriptValue.StringValue || it === EmscriptValue.NullValue }
+        }
+        "tasker.getVariables" -> {
+            require(arguments.size <= 1) { "tasker.getVariables erwartet höchstens pattern:String" }
+            val pattern = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.taskerGetVariables(pattern),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.TASKER_RESULT_INVALID,
+            ) { value ->
+                value is EmscriptValue.ListValue &&
+                    value.elementType == ProviderTypes.TASKER_VARIABLE.ref &&
+                    value.values.all { it is EmscriptValue.TaskerVariableValue }
+            }
         }
         "shizuku.getUid" -> evaluateProviderValue(
             commandId = entry.id,
@@ -701,6 +715,12 @@ data class WorkspaceBasicRuntimeEnvironment(
         RuntimeAdapterResult.failure(
             diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_ADAPTER_UNAVAILABLE,
             message = "tasker.getVariable benötigt den Tasker-Adapter.",
+        )
+    },
+    val taskerGetVariables: (pattern: String?) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_ADAPTER_UNAVAILABLE,
+            message = "tasker.getVariables benötigt den Tasker-Adapter.",
         )
     },
     val shizukuGetUid: () -> RuntimeAdapterResult = {

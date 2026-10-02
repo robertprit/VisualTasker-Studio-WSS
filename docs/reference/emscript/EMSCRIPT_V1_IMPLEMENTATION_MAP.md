@@ -748,3 +748,26 @@ aliases while serialization writes canonical lower-case provider names.
 `D_QUERY_RETURN` is 6, bridge inventory remains 127 and `NATIVE_V1` remains 3.
 The detailed contract is
 `EMSCRIPT_V1_SCALAR_PROVIDER_QUERY_CONVERGENCE.md`.
+
+## M1B-3X Tasker Collection Query Convergence
+
+M1B-3X migrates
+`tasker.getVariables(pattern?): List<TaskerVariable>` to the generic reporter
+and `IrExpression.CommandCall` path. The command reuses the Tasker variable
+snapshot established by M1B-3W and maps each provider entry to the immutable
+EMScript domain value `TaskerVariableValue(name, value)`.
+
+The generic runtime `ListValue` retains its element type and ordered values.
+A successful query always returns a list, including an empty list when no
+variable matches. Adapter, installation, snapshot and invalid-result failures
+remain structured diagnostics and never become `NullValue`, `noValue` or an
+empty-list sentinel.
+
+The static return type is exactly `List<TaskerVariable>` and is incompatible
+with `String`, `Number` and `Bool` without an explicit conversion. The former
+`Tasker.getVariables` spelling remains an import alias; serialization writes
+the canonical lower-case command name.
+
+`D_QUERY_RETURN` is 5, bridge inventory remains 127 and `NATIVE_V1` remains 3.
+The detailed contract is
+`EMSCRIPT_V1_TASKER_COLLECTION_QUERY_CONVERGENCE.md`.

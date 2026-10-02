@@ -3,6 +3,7 @@ package com.visualtasker.wss.emscript.runtime
 import de.visualtasker.emscript.contract.CoreTypes
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.emscript.contract.LanguageTypeRef
+import de.visualtasker.emscript.contract.ProviderTypes
 
 internal object EmscriptRuntimeTypeSafety {
     const val NULLABLE_VALUE_IN_NONNULL_CONTEXT = "NULLABLE_VALUE_IN_NONNULL_CONTEXT"
@@ -32,6 +33,7 @@ internal object EmscriptRuntimeTypeSafety {
             CoreTypes.STRING.ref -> EmscriptValue.StringValue("")
             CoreTypes.NUMBER.ref -> EmscriptValue.NumberValue(0.0)
             CoreTypes.BOOL.ref -> EmscriptValue.BooleanValue(false)
+            is LanguageTypeRef.ListOf -> EmscriptValue.ListValue(expected.elementType, emptyList())
             else -> error("Unsupported expression return type '$expectedType'")
         }
     }
@@ -40,6 +42,8 @@ internal object EmscriptRuntimeTypeSafety {
         is EmscriptValue.StringValue -> CoreTypes.STRING.ref
         is EmscriptValue.NumberValue -> CoreTypes.NUMBER.ref
         is EmscriptValue.BooleanValue -> CoreTypes.BOOL.ref
+        is EmscriptValue.TaskerVariableValue -> ProviderTypes.TASKER_VARIABLE.ref
+        is EmscriptValue.ListValue -> LanguageTypeRef.ListOf(value.elementType)
         EmscriptValue.NullValue -> error("Absent values require an expected nullable type")
     }
 }

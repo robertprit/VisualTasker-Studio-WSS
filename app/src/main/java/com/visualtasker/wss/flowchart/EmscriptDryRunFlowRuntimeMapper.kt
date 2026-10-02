@@ -220,6 +220,8 @@ object EmscriptDryRunFlowRuntimeMapper {
         is EmscriptValue.NumberValue -> if (value.isFinite() && value % 1.0 == 0.0) value.toLong().toString() else value.toString()
         is EmscriptValue.StringValue -> value
         is EmscriptValue.BooleanValue -> value.toString()
+        is EmscriptValue.TaskerVariableValue -> "${name}=$value"
+        is EmscriptValue.ListValue -> values.joinToString(prefix = "[", postfix = "]") { it.renderRuntimeValue() }
         EmscriptValue.NullValue -> "null"
     }
 }

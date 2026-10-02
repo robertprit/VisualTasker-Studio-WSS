@@ -1,8 +1,8 @@
 # EMScript v1 Command Bridge Report
 
-Stand: 2026-10-01
-Phase: M1B-3W Scalar Provider Query Convergence
-Status: seventeen queries migrated; six query return conflicts remain
+Stand: 2026-10-02
+Phase: M1B-3X Tasker Collection Query Convergence
+Status: eighteen queries migrated; five query return conflicts remain
 
 ## Inventory
 
@@ -10,14 +10,14 @@ Status: seventeen queries migrated; six query return conflicts remain
 | --- | ---: |
 | Catalog entries | 127 |
 | Unique canonical names, case-insensitive | 124 |
-| Declared aliases | 86 |
+| Declared aliases | 87 |
 | Alias/canonical collisions | 1 |
 | Provider-owned entries | 87 |
 | Query projections | 26 |
 | Native V1 definitions | 3 |
 | CLEAN | 22 |
-| NORMALIZABLE | 63 |
-| CONFLICT | 42 |
+| NORMALIZABLE | 64 |
+| CONFLICT | 41 |
 | UNMAPPABLE | 0 |
 | Live status LIVE_CONFIRMED | 29 |
 | Live status LIVE_PROVIDER_DEPENDENT | 71 |
@@ -115,7 +115,7 @@ Each legacy entry is analyzed exactly once. `event.start`, `action.wait` and `fe
 | `tasker.cancel` | `Tasker.cancel` | `tasker.cancel` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `tasker.getVariable` | `tasker.getVariable` | `tasker.getVariable` | QUERY | String? -> String? | CANONICAL | CONFLICT | LOSSLESS | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>DEFAULT_SOURCE_CONFLICT<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `tasker.clearVariable` | `Tasker.clearVariable` | `tasker.clearVariable` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>DEFAULT_SOURCE_CONFLICT<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
-| `tasker.getVariables` | `Tasker.getVariables` | `tasker.getVariables` | QUERY | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>MISSING_RETURN_TYPE<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>QUERY_RETURNS_VOID |
+| `tasker.getVariables` | `tasker.getVariables` | `tasker.getVariables` | QUERY | List<TaskerVariable> -> List<TaskerVariable> | CANONICAL | CANONICAL | LOSSLESS | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `tasker.lastResult` | `Tasker.lastResult` | `tasker.lastResult` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `tasker.error` | `Tasker.error` | `tasker.error` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `tasker.action` | `Tasker.action` | `tasker.action` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
@@ -211,7 +211,6 @@ Current lookup lowercases input and returns the first candidate. The bridge repo
 | chromeTab | `ChromeTab.validateRelationship` | lowerCamelCase namespace | `chromeTab.validateRelationship` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | tasker | `Tasker.cancel` | lowerCamelCase namespace | `tasker.cancel` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | tasker | `Tasker.clearVariable` | lowerCamelCase namespace | `tasker.clearVariable` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
-| tasker | `Tasker.getVariables` | lowerCamelCase namespace | `tasker.getVariables` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | tasker | `Tasker.lastResult` | lowerCamelCase namespace | `tasker.lastResult` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | tasker | `Tasker.error` | lowerCamelCase namespace | `tasker.error` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | tasker | `Tasker.action` | lowerCamelCase namespace | `tasker.action` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
@@ -256,7 +255,7 @@ Current lookup lowercases input and returns the first candidate. The bridge repo
 | Input | `click`, `swipe`, `clickPoint`, `touch` | operation+target | clickText | true | HIGH | Coordinate click and text click require separate signatures. |
 | Feedback | `beep`, `vibrate` | verb | unchanged | false | HIGH | Names are consistent; vibrate signature is not. |
 | File/Storage | `datastorePut`, `datastoreGet`, `File.readText`, `file.writeText`, `Clipboard.get`, `clipboard.set`, `cache.clear`, `Sys.info`, `Env.get` | lowerCamel namespace | namespace case only | true | HIGH | Uppercase legacy namespace segments violate V1 naming. |
-| Provider namespaces | `markerSave`, `markerLoad`, `markerDelete`, `templateDefine`, `templateCompare`, `ChromeTab.open`, `ChromeTab.unbind`, `Tasker.runTask`, `Tasker.setVariable`, `Tasker.emitEvent`, `Shizuku.exec`, `Shizuku.shell`, `Termux.run`, `Termux.shell`, `Termux.api`, `Scrcpy.start`, `Scrcpy.stop`, `Scrcpy.touch`, `Chart.create`, `Chart.show`, `Chart.export`, `rem.region`, `rem.variableBulk`, `rem.expressionCapsule`, `rem.flowBreak`, `rem.offPageOut`, `rem.offPageIn`, `rem.group`, `rem.layoutHint`, `chromeTab.isSupported`, `ChromeTab.bind`, `ChromeTab.create`, `ChromeTab.mayLaunchUrl`, `ChromeTab.requestPostMessageChannel`, `ChromeTab.postMessage`, `ChromeTab.validateRelationship`, `tasker.isInstalled`, `tasker.isEnabled`, `Tasker.cancel`, `tasker.getVariable`, `Tasker.clearVariable`, `Tasker.getVariables`, `Tasker.lastResult`, `Tasker.error`, `Tasker.action`, `Tasker.pluginAction`, `Tasker.profileEnable`, `Tasker.profileDisable`, `Tasker.profileToggle`, `Tasker.profileState`, `shizuku.isInstalled`, `shizuku.isAvailable`, `shizuku.getUid`, `Shizuku.permissionState`, `Shizuku.requestPermission`, `Shizuku.bindUserService`, `Shizuku.unbindUserService`, `Shizuku.systemService`, `Shizuku.call`, `termux.isInstalled`, `Termux.canRunCommands`, `Termux.writeStdin`, `Termux.cancel`, `termux.get`, `Scrcpy.hostAvailable`, `Scrcpy.devices`, `Scrcpy.connect`, `Scrcpy.disconnect`, `scrcpy.isRunning`, `scrcpy.get`, `Scrcpy.key`, `Scrcpy.text`, `Scrcpy.scroll`, `Scrcpy.setClipboard`, `Scrcpy.setScreenPower`, `Scrcpy.rotate`, `Chart.hide`, `Chart.remove`, `Chart.exists`, `Chart.setData`, `Chart.setOptions`, `Chart.add`, `Chart.update`, `Chart.removeData`, `Chart.clear`, `Chart.get`, `Chart.capture` | lowerCamel provider.operation | namespace case only | true | HIGH | Provider identity must be separate from pluginOwner. |
+| Provider namespaces | `markerSave`, `markerLoad`, `markerDelete`, `templateDefine`, `templateCompare`, `ChromeTab.open`, `ChromeTab.unbind`, `Tasker.runTask`, `Tasker.setVariable`, `Tasker.emitEvent`, `Shizuku.exec`, `Shizuku.shell`, `Termux.run`, `Termux.shell`, `Termux.api`, `Scrcpy.start`, `Scrcpy.stop`, `Scrcpy.touch`, `Chart.create`, `Chart.show`, `Chart.export`, `rem.region`, `rem.variableBulk`, `rem.expressionCapsule`, `rem.flowBreak`, `rem.offPageOut`, `rem.offPageIn`, `rem.group`, `rem.layoutHint`, `chromeTab.isSupported`, `ChromeTab.bind`, `ChromeTab.create`, `ChromeTab.mayLaunchUrl`, `ChromeTab.requestPostMessageChannel`, `ChromeTab.postMessage`, `ChromeTab.validateRelationship`, `tasker.isInstalled`, `tasker.isEnabled`, `Tasker.cancel`, `tasker.getVariable`, `Tasker.clearVariable`, `tasker.getVariables`, `Tasker.lastResult`, `Tasker.error`, `Tasker.action`, `Tasker.pluginAction`, `Tasker.profileEnable`, `Tasker.profileDisable`, `Tasker.profileToggle`, `Tasker.profileState`, `shizuku.isInstalled`, `shizuku.isAvailable`, `shizuku.getUid`, `Shizuku.permissionState`, `Shizuku.requestPermission`, `Shizuku.bindUserService`, `Shizuku.unbindUserService`, `Shizuku.systemService`, `Shizuku.call`, `termux.isInstalled`, `Termux.canRunCommands`, `Termux.writeStdin`, `Termux.cancel`, `termux.get`, `Scrcpy.hostAvailable`, `Scrcpy.devices`, `Scrcpy.connect`, `Scrcpy.disconnect`, `scrcpy.isRunning`, `scrcpy.get`, `Scrcpy.key`, `Scrcpy.text`, `Scrcpy.scroll`, `Scrcpy.setClipboard`, `Scrcpy.setScreenPower`, `Scrcpy.rotate`, `Chart.hide`, `Chart.remove`, `Chart.exists`, `Chart.setData`, `Chart.setOptions`, `Chart.add`, `Chart.update`, `Chart.removeData`, `Chart.clear`, `Chart.get`, `Chart.capture` | lowerCamel provider.operation | namespace case only | true | HIGH | Provider identity must be separate from pluginOwner. |
 
 `findTemplate` is **NORMALIZABLE** to `templateFind`; `findTemplate` remains a required legacy alias. This is supported by the existing siblings `templateDefine` and `templateCompare`.
 
@@ -292,21 +291,21 @@ The duplicate is a semantic conflict, not a display-only duplicate. A V1 naming 
 | `clipboard.get` | REPORTER | String | text/value | binding:emscript.command.clipboard.get | String | WorkspaceBasicRuntime obtains clipboard text. | HIGH |
 | `system.info` | REPORTER | String | text/value | binding:emscript.command.system.info | String | WorkspaceBasicRuntime obtains system information text. | HIGH |
 | `system.env` | REPORTER | String | String | binding:emscript.command.system.env | String | WorkspaceBasicRuntime obtains an environment value. | HIGH |
-| `variable.get` | VARIABLE | Any | Any | binding:variable.get | Any | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
+| `variable.get` | VARIABLE | Any | Any | binding:variable.get | Any | Catalog declares the concrete typed reporter return Any. | HIGH |
 | `logic.screenContains` | REPORTER | Boolean | Boolean | binding:logic.screenContains | Boolean | Reporter has Boolean return type and is evaluated as a condition. | HIGH |
-| `logic.boolean` | REPORTER | Boolean | Boolean | binding:logic.boolean | Boolean | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
+| `logic.boolean` | REPORTER | Boolean | Boolean | binding:logic.boolean | Boolean | Catalog declares the concrete typed reporter return Boolean. | HIGH |
 | `chromeTab.isSupported` | REPORTER | Bool | provider result/error | binding:emscript.command.chromeTab.isSupported | Bool | WorkspaceBasicRuntime obtains a typed Bool payload from the Custom Tabs adapter; failures use diagnostics. | HIGH |
-| `tasker.isInstalled` | REPORTER | Bool | provider result/error | binding:emscript.command.tasker.isInstalled | Bool | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `tasker.isEnabled` | REPORTER | Bool | provider result/error | binding:emscript.command.tasker.isEnabled | Bool | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `tasker.getVariable` | REPORTER | String? | provider result/error | binding:emscript.command.tasker.getVariable | String? | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `tasker.getVariables` | STATEMENT | Void/unspecified | provider result/error | binding:emscript.command.tasker.getVariables | NEEDS_DECISION | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | MEDIUM |
-| `shizuku.isInstalled` | REPORTER | Bool | provider result/error | binding:emscript.command.shizuku.isInstalled | Bool | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `shizuku.isAvailable` | REPORTER | Bool | provider result/error | binding:emscript.command.shizuku.isAvailable | Bool | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `shizuku.getUid` | REPORTER | Number? | provider result/error | binding:emscript.command.shizuku.getUid | Number? | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `termux.isInstalled` | REPORTER | Bool | provider result/error | binding:emscript.command.termux.isInstalled | Bool | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `termux.get` | REPORTER | String? | provider result/error | binding:emscript.command.termux.get | String? | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `scrcpy.isRunning` | REPORTER | Bool | provider result/error | binding:emscript.command.scrcpy.isRunning | Bool | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
-| `scrcpy.get` | REPORTER | String? | provider result/error | binding:emscript.command.scrcpy.get | String? | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | HIGH |
+| `tasker.isInstalled` | REPORTER | Bool | provider result/error | binding:emscript.command.tasker.isInstalled | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
+| `tasker.isEnabled` | REPORTER | Bool | provider result/error | binding:emscript.command.tasker.isEnabled | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
+| `tasker.getVariable` | REPORTER | String? | provider result/error | binding:emscript.command.tasker.getVariable | String? | Catalog declares the concrete typed reporter return String?. | HIGH |
+| `tasker.getVariables` | REPORTER | List<TaskerVariable> | provider result/error | binding:emscript.command.tasker.getVariables | List<TaskerVariable> | Catalog declares the concrete typed reporter return List<TaskerVariable>. | HIGH |
+| `shizuku.isInstalled` | REPORTER | Bool | provider result/error | binding:emscript.command.shizuku.isInstalled | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
+| `shizuku.isAvailable` | REPORTER | Bool | provider result/error | binding:emscript.command.shizuku.isAvailable | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
+| `shizuku.getUid` | REPORTER | Number? | provider result/error | binding:emscript.command.shizuku.getUid | Number? | Catalog declares the concrete typed reporter return Number?. | HIGH |
+| `termux.isInstalled` | REPORTER | Bool | provider result/error | binding:emscript.command.termux.isInstalled | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
+| `termux.get` | REPORTER | String? | provider result/error | binding:emscript.command.termux.get | String? | Catalog declares the concrete typed reporter return String?. | HIGH |
+| `scrcpy.isRunning` | REPORTER | Bool | provider result/error | binding:emscript.command.scrcpy.isRunning | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
+| `scrcpy.get` | REPORTER | String? | provider result/error | binding:emscript.command.scrcpy.get | String? | Catalog declares the concrete typed reporter return String?. | HIGH |
 | `chart.exists` | STATEMENT | Void/unspecified | unknown | binding:emscript.command.chart.exists | NEEDS_DECISION | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | MEDIUM |
 | `chart.get` | STATEMENT | Void/unspecified | unknown | binding:emscript.command.chart.get | NEEDS_DECISION | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | MEDIUM |
 
@@ -318,14 +317,14 @@ M1B-3U migrated `shizuku.isAvailable` as non-null Bool through the generic `Runt
 
 ## M1B-3W Scalar Provider Query Convergence
 
-The current `D_QUERY_RETURN` inventory contains 6 language commands. M1B-3W adds typed reporter contracts for `tasker.isEnabled`, `tasker.getVariable`, `shizuku.getUid`, `termux.get`, `scrcpy.isRunning` and `scrcpy.get`; the remaining entries stay statement-shaped.
+The current `D_QUERY_RETURN` inventory contains 5 language commands. M1B-3W adds typed reporter contracts for `tasker.isEnabled`, `tasker.getVariable`, `shizuku.getUid`, `termux.get`, `scrcpy.isRunning` and `scrcpy.get`; the remaining entries stay statement-shaped.
 
 | Class | Count |
 | --- | ---: |
 | A_NULLABLE_SCALAR_READY | 0 |
 | B_NONNULL_SCALAR_READY | 0 |
 | C_STRUCTURED_RESULT_TYPE | 2 |
-| D_RUNTIME_RESULT_GAP | 4 |
+| D_RUNTIME_RESULT_GAP | 3 |
 | E_PROVIDER_CONTRACT_GAP | 0 |
 | F_SENTINEL_OR_ERROR_COLLISION | 0 |
 | G_LANGUAGE_SEMANTICS_GAP | 0 |
@@ -336,11 +335,14 @@ The current `D_QUERY_RETURN` inventory contains 6 language commands. M1B-3W adds
 | `action.findTemplate` | RuntimeTemplateMatch? | ImageMatch? | C_STRUCTURED_RESULT_TYPE | typed value observed | no | HIGH |
 | `vision.findText` | no runtime query result | TextMatch? | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 | `vision.markerLoad` | RuntimeAutomationRegion? | Marker? | C_STRUCTURED_RESULT_TYPE | typed value observed | no | HIGH |
-| `tasker.getVariables` | no runtime query result | List<TaskerVariable> | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 | `chart.exists` | no runtime query result | Bool | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 | `chart.get` | no runtime query result | ChartSnapshot? | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 
 Provider-local inspections now preserve VALUE, ABSENT, legitimate false/empty/zero results and technical FAILURE as separate outcomes. No collection, perception or chart query is migrated by M1B-3W.
+
+## M1B-3X Tasker Collection Query Convergence
+
+`tasker.getVariables(pattern?): List<TaskerVariable>` now uses the existing Tasker receiver snapshot and generic reporter/CommandCall projection. A successful query always returns an ordered list; no matches is an empty list, while provider and snapshot failures remain diagnostics.
 
 ## Default Value Audit
 
@@ -715,10 +717,10 @@ The groups are exclusive and ordered by the first architectural blocker: project
 | A_SAFE_GENERIC | 8 |
 | B_NAMING_NORMALIZATION | 4 |
 | C_TYPE_CONFLICT | 1 |
-| D_QUERY_RETURN | 6 |
+| D_QUERY_RETURN | 5 |
 | E_CONTROL_STRUCTURE | 5 |
 | F_OPERATOR_OR_LITERAL_MODEL | 6 |
-| G_PROVIDER_DEPENDENT | 80 |
+| G_PROVIDER_DEPENDENT | 81 |
 | H_PROJECTION | 11 |
 | I_RUNTIME_DISPATCH_CONFLICT | 3 |
 | TOTAL_REMAINING | 124 |

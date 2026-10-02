@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 18
+    const val integrationTestScriptVersion: Int = 19
 
     val sampleScript: String = """
         LET v1 = 1
@@ -167,6 +167,7 @@ object EditorDefaults {
         LET catalogShizukuUid:Number? = shizuku.getUid()
         LET catalogTaskerEnabled:Bool = tasker.isEnabled()
         LET catalogTaskerValue:String? = tasker.getVariable("%VT_TEST")
+        LET catalogTaskerVariables:List<TaskerVariable> = tasker.getVariables("%VT_*")
         LET catalogTermuxSummary:String? = termux.get("summary")
         LET catalogScrcpyRunning:Bool = scrcpy.isRunning()
         LET catalogScrcpyState:String? = scrcpy.get("state")
@@ -432,6 +433,7 @@ object EditorDefaults {
         LET taskerInstalled:Bool = tasker.isInstalled()
         LET taskerEnabled:Bool = tasker.isEnabled()
         LET taskerTestValue:String? = tasker.getVariable("%VT_TEST")
+        LET taskerVariables:List<TaskerVariable> = tasker.getVariables("%VT_*")
         Tasker.lastResult()
         Tasker.error()
         LET shizukuInstalled:Bool = shizuku.isInstalled()

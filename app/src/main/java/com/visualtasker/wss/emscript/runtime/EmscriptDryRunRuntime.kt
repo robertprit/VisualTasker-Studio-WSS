@@ -11,6 +11,8 @@ import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 import de.visualtasker.emscript.contract.CoreTypes
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.emscript.contract.LanguageTypeRef
+import de.visualtasker.emscript.contract.ProviderTypes
+import java.util.Collections
 
 data class EmscriptDryRunConfig(
     val maxSteps: Int = 2_000,
@@ -56,6 +58,31 @@ sealed interface EmscriptValue {
     data class NumberValue(val value: Double) : EmscriptValue
     data class StringValue(val value: String) : EmscriptValue
     data class BooleanValue(val value: Boolean) : EmscriptValue
+    data class TaskerVariableValue(val name: String, val value: String) : EmscriptValue {
+        init {
+            require(name.isNotBlank()) { "Tasker variable name must not be blank." }
+        }
+    }
+    class ListValue(
+        val elementType: LanguageTypeRef,
+        values: List<EmscriptValue>,
+    ) : EmscriptValue {
+        val values: List<EmscriptValue> = Collections.unmodifiableList(ArrayList(values))
+
+        init {
+            val expectedType = LanguageTypeCompatibility.sourceName(elementType)
+            require(this.values.all { EmscriptRuntimeTypeSafety.matches(it, expectedType) }) {
+                "ListValue contains an element incompatible with $expectedType."
+            }
+        }
+
+        override fun equals(other: Any?): Boolean =
+            other is ListValue && elementType == other.elementType && values == other.values
+
+        override fun hashCode(): Int = 31 * elementType.hashCode() + values.hashCode()
+
+        override fun toString(): String = "ListValue(elementType=$elementType, values=$values)"
+    }
     data object NullValue : EmscriptValue
 }
 
@@ -368,6 +395,9 @@ private fun EmscriptValue.asDouble(context: String): Double =
         is EmscriptValue.NumberValue -> value
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
+        is EmscriptValue.ListValue,
+        is EmscriptValue.TaskerVariableValue,
+        -> error("$context erwartet Number")
         EmscriptValue.NullValue -> error(
             "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Number",
         )
@@ -381,6 +411,9 @@ private fun EmscriptValue.asBoolean(context: String): Boolean =
         is EmscriptValue.BooleanValue -> value
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
+        is EmscriptValue.ListValue,
+        is EmscriptValue.TaskerVariableValue,
+        -> error("$context erwartet Bool")
         EmscriptValue.NullValue -> error(
             "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Bool",
         )
@@ -391,6 +424,8 @@ private fun EmscriptValue.render(): String =
         is EmscriptValue.NumberValue -> if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
         is EmscriptValue.StringValue -> value
         is EmscriptValue.BooleanValue -> value.toString()
+        is EmscriptValue.TaskerVariableValue -> "${name}=$value"
+        is EmscriptValue.ListValue -> values.joinToString(prefix = "[", postfix = "]") { it.render() }
         EmscriptValue.NullValue -> "null"
     }
 
@@ -398,6 +433,8 @@ private fun EmscriptValue.runtimeType(): LanguageTypeRef = when (this) {
     is EmscriptValue.StringValue -> CoreTypes.STRING.ref
     is EmscriptValue.NumberValue -> CoreTypes.NUMBER.ref
     is EmscriptValue.BooleanValue -> CoreTypes.BOOL.ref
+    is EmscriptValue.TaskerVariableValue -> ProviderTypes.TASKER_VARIABLE.ref
+    is EmscriptValue.ListValue -> LanguageTypeRef.ListOf(elementType)
     EmscriptValue.NullValue -> error(
         "NULL_LITERAL_DECISION_REQUIRED: absent besitzt ohne erwarteten Typ keinen ableitbaren Basistyp",
     )

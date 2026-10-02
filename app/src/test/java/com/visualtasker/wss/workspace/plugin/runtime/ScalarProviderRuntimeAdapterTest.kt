@@ -101,6 +101,55 @@ class ScalarProviderRuntimeAdapterTest {
     }
 
     @Test
+    fun `Tasker collection query filters and sorts the shared snapshot`() {
+        val result = queryTaskerVariables(
+            snapshot = linkedMapOf(
+                "%Zulu" to "3",
+                "%Alpha" to "1",
+                "%Beta" to "",
+            ),
+            pattern = "%*a",
+        )
+
+        assertNull(result.failure)
+        assertEquals(listOf("%Alpha", "%Beta"), result.variables.map { it.name })
+        assertEquals(listOf("1", ""), result.variables.map { it.value })
+        assertEquals(emptyList<TaskerVariableSnapshot>(), queryTaskerVariables(mapOf("%A" to "1"), "%Missing*").variables)
+    }
+
+    @Test
+    fun `Tasker collection adapter keeps empty list values and failures distinct`() {
+        val empty = TaskerVariablesQueryResult().toVariablesAdapterResult()
+        assertTrue(empty.success)
+        val emptyList = empty.value as EmscriptValue.ListValue
+        assertTrue(emptyList.values.isEmpty())
+
+        val values = TaskerVariablesQueryResult(
+            variables = listOf(
+                TaskerVariableSnapshot("%A", ""),
+                TaskerVariableSnapshot("%B", "2"),
+            ),
+        ).toVariablesAdapterResult()
+        assertEquals(
+            listOf(
+                EmscriptValue.TaskerVariableValue("%A", ""),
+                EmscriptValue.TaskerVariableValue("%B", "2"),
+            ),
+            (values.value as EmscriptValue.ListValue).values,
+        )
+
+        val invalidSnapshot = queryTaskerVariables(mapOf("%A" to 1), null).toVariablesAdapterResult()
+        assertFalse(invalidSnapshot.success)
+        assertEquals(RuntimeQueryDiagnosticCodes.TASKER_VARIABLE_QUERY_FAILED, invalidSnapshot.diagnosticCode)
+
+        val missingProvider = taskerVariablesAdapterResult(PackageInstallationInspection(installed = false)) {
+            TaskerVariablesQueryResult()
+        }
+        assertFalse(missingProvider.success)
+        assertEquals(RuntimeQueryDiagnosticCodes.TASKER_NOT_INSTALLED, missingProvider.diagnosticCode)
+    }
+
+    @Test
     fun `Shizuku UID keeps zero absent invalid and failure distinct`() {
         assertEquals(EmscriptValue.NumberValue(2000.0), shizukuInspection(uid = 2000).toUidAdapterResult().value)
         assertEquals(EmscriptValue.NumberValue(0.0), shizukuInspection(uid = 0).toUidAdapterResult().value)

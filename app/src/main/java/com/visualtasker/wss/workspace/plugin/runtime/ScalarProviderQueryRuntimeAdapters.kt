@@ -3,6 +3,7 @@ package com.visualtasker.wss.workspace.plugin.runtime
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
 import com.visualtasker.wss.emscript.runtime.RuntimeAdapterResult
 import com.visualtasker.wss.emscript.runtime.RuntimeQueryDiagnosticCodes
+import de.visualtasker.emscript.contract.ProviderTypes
 
 internal fun TaskerEnabledInspection.toEnabledAdapterResult(): RuntimeAdapterResult {
     failure?.let { error ->
@@ -55,6 +56,48 @@ internal fun taskerVariableAdapterResult(
         )
     }
     return query().toVariableAdapterResult()
+}
+
+internal fun TaskerVariablesQueryResult.toVariablesAdapterResult(): RuntimeAdapterResult {
+    failure?.let { error ->
+        return RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_VARIABLE_QUERY_FAILED,
+            message = "tasker.getVariables failed: ${error.message ?: error::class.java.simpleName}",
+        )
+    }
+    return try {
+        val values = variables.map { variable ->
+            EmscriptValue.TaskerVariableValue(name = variable.name, value = variable.value)
+        }
+        RuntimeAdapterResult.success(
+            value = EmscriptValue.ListValue(ProviderTypes.TASKER_VARIABLE.ref, values),
+            message = "tasker.getVariables -> ${values.size} VALUE(s)",
+        )
+    } catch (error: Exception) {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_RESULT_INVALID,
+            message = "tasker.getVariables returned an invalid result: ${error.message ?: error::class.java.simpleName}",
+        )
+    }
+}
+
+internal fun taskerVariablesAdapterResult(
+    installation: PackageInstallationInspection,
+    query: () -> TaskerVariablesQueryResult,
+): RuntimeAdapterResult {
+    installation.failure?.let { error ->
+        return RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_INSTALLATION_CHECK_FAILED,
+            message = "tasker.getVariables installation check failed: ${error.message ?: error::class.java.simpleName}",
+        )
+    }
+    if (!installation.installed) {
+        return RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_NOT_INSTALLED,
+            message = "tasker.getVariables requires an installed Tasker provider.",
+        )
+    }
+    return query().toVariablesAdapterResult()
 }
 
 internal fun ShizukuAvailabilityInspection.toUidAdapterResult(): RuntimeAdapterResult {

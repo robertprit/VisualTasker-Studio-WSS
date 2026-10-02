@@ -481,6 +481,7 @@ import com.visualtasker.wss.workspace.plugin.runtime.TaskerRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerVariableSnapshotStore
 import com.visualtasker.wss.workspace.plugin.runtime.TermuxRegistration
 import com.visualtasker.wss.workspace.plugin.runtime.taskerVariableAdapterResult
+import com.visualtasker.wss.workspace.plugin.runtime.taskerVariablesAdapterResult
 import com.visualtasker.wss.workspace.plugin.runtime.toAvailabilityAdapterResult
 import com.visualtasker.wss.workspace.plugin.runtime.toEnabledAdapterResult
 import com.visualtasker.wss.workspace.plugin.runtime.toGetAdapterResult
@@ -1623,6 +1624,11 @@ fun WorkspaceScreen(
                         TaskerVariableSnapshotStore.query(context, name)
                     }
                 },
+                taskerGetVariables = { pattern ->
+                    taskerVariablesAdapterResult(TaskerRegistration.inspectInstallation(context)) {
+                        TaskerVariableSnapshotStore.queryAll(context, pattern)
+                    }
+                },
                 shizukuGetUid = {
                     ShizukuRegistration.inspectAvailability(context).toUidAdapterResult()
                 },
@@ -1646,6 +1652,11 @@ fun WorkspaceScreen(
                             TaskerRegistration.inspectInstallation(context),
                         ) {
                             TaskerVariableSnapshotStore.query(context, args.firstOrNull().orEmpty())
+                        }
+                        "tasker.getvariables" -> taskerVariablesAdapterResult(
+                            TaskerRegistration.inspectInstallation(context),
+                        ) {
+                            TaskerVariableSnapshotStore.queryAll(context, args.firstOrNull())
                         }
                         "tasker.lastresult" -> {
                             val runId = args.firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
@@ -1682,7 +1693,6 @@ fun WorkspaceScreen(
                             RuntimeAdapterResult(result.success, result.message, warning = !result.success)
                         }
                         "tasker.clearvariable",
-                        "tasker.getvariables",
                         "tasker.pluginaction",
                         "tasker.profileenable",
                         "tasker.profiledisable",

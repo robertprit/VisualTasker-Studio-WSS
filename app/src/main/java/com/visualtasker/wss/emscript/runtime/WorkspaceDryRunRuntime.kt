@@ -552,6 +552,9 @@ private fun EmscriptValue.asDoubleDryRun(context: String): Double =
         is EmscriptValue.NumberValue -> value
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
+        is EmscriptValue.ListValue,
+        is EmscriptValue.TaskerVariableValue,
+        -> error("$context erwartet Number")
         EmscriptValue.NullValue -> error(
             "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Number",
         )
@@ -562,6 +565,9 @@ private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
         is EmscriptValue.BooleanValue -> value
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
+        is EmscriptValue.ListValue,
+        is EmscriptValue.TaskerVariableValue,
+        -> error("$context erwartet Bool")
         EmscriptValue.NullValue -> error(
             "${EmscriptRuntimeTypeSafety.NULLABLE_VALUE_IN_NONNULL_CONTEXT}: $context erwartet Bool",
         )
@@ -572,6 +578,8 @@ private fun EmscriptValue.renderDryRun(): String =
         is EmscriptValue.NumberValue -> value.renderNumber()
         is EmscriptValue.StringValue -> value
         is EmscriptValue.BooleanValue -> value.toString()
+        is EmscriptValue.TaskerVariableValue -> "${name}=$value"
+        is EmscriptValue.ListValue -> values.joinToString(prefix = "[", postfix = "]") { it.renderDryRun() }
         EmscriptValue.NullValue -> "null"
     }
 
