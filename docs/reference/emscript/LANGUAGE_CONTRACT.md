@@ -130,6 +130,13 @@ implizites Unwrap, Truthiness und Sentinelwerte sind nicht Teil des Vertrags.
   `installed && permissionGranted && binderAlive`. Erfolgreich festgestellte
   fehlende Voraussetzungen ergeben `false`; technische Paket-, Permission-
   oder Binder-Prueffehler ergeben unterschiedliche Runtime-Diagnosen.
+- `tasker.isEnabled()` und `scrcpy.isRunning()` sind nicht-nullbare
+  Bool-Reporter. Tasker-Installation ist nicht Tasker-Enabled; USB-/ADB-
+  Bereitschaft ist nicht scrcpy-Sessionstatus.
+- `tasker.getVariable(...)`, `termux.get(...)` und `scrcpy.get(...)` liefern
+  `String?`; `shizuku.getUid()` liefert `Number?`. Ein erfolgreiches
+  `NullValue` bezeichnet fachliche Abwesenheit, waehrend leere Strings und UID
+  `0` echte Werte bleiben. Technische Prueffehler liefern Diagnostics.
 - Capability Calls können Side Effects haben; Value Constructors nicht.
 - Contract Status und Implementation Status sind getrennte Aussagen.
 

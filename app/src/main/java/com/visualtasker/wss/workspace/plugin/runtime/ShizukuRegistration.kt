@@ -48,6 +48,7 @@ internal enum class ShizukuAvailabilityFailureStage {
     INSTALLATION,
     PERMISSION,
     BINDER,
+    UID,
 }
 
 internal data class ShizukuAvailabilityInspection(
@@ -56,6 +57,7 @@ internal data class ShizukuAvailabilityInspection(
     val permissionGranted: Boolean? = null,
     val binderAlive: Boolean? = null,
     val uid: Int? = null,
+    val uidFailure: Exception? = null,
     val failureStage: ShizukuAvailabilityFailureStage? = null,
     val failure: Exception? = null,
 ) {
@@ -113,12 +115,22 @@ internal fun inspectShizukuAvailability(
         !binderAlive -> ShizukuAvailabilityState.BINDER_NOT_ALIVE
         else -> ShizukuAvailabilityState.AVAILABLE
     }
+    val uidResult = if (state == ShizukuAvailabilityState.AVAILABLE) {
+        try {
+            uidProbe() to null
+        } catch (error: Exception) {
+            null to error
+        }
+    } else {
+        null to null
+    }
     return ShizukuAvailabilityInspection(
         installation = installation,
         state = state,
         permissionGranted = permissionGranted,
         binderAlive = binderAlive,
-        uid = if (state == ShizukuAvailabilityState.AVAILABLE) runCatching(uidProbe).getOrNull() else null,
+        uid = uidResult.first,
+        uidFailure = uidResult.second,
     )
 }
 

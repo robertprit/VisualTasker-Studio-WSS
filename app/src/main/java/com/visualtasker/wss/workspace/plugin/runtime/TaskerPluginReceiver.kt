@@ -15,6 +15,7 @@ class TaskerPluginReceiver : BroadcastReceiver() {
         )
         val appContext = context.applicationContext
         val settings = TaskerPluginSettings.load(appContext)
+        TaskerVariableSnapshotStore.update(appContext, action.variables)
         val session = TaskerPluginSessionStore.record(appContext, action)
         if (settings.recordToRailTrace) {
             RecordingEventStore.recordExternalEvent(

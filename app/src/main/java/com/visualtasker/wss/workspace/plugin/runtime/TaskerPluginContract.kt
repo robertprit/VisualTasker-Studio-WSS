@@ -18,6 +18,7 @@ object TaskerPluginContract {
     const val KEY_RUN_ID = "com.visualtasker.wss.tasker.RUN_ID"
     const val KEY_STATUS = "com.visualtasker.wss.tasker.STATUS"
     const val KEY_EVENT_SLOT = "com.visualtasker.wss.tasker.EVENT_SLOT"
+    const val KEY_VARIABLES = "com.visualtasker.wss.tasker.VARIABLES"
 
     const val COMMAND_RECORD_EVENT = "record_event"
     const val COMMAND_OPEN_WORKSPACE = "open_workspace"
@@ -51,6 +52,7 @@ object TaskerPluginContract {
         runId: String = "",
         status: String = "received",
         eventSlot: String = "slot_1",
+        variables: Map<String, String> = emptyMap(),
     ): Bundle = Bundle().apply {
         putString(KEY_COMMAND, command)
         putString(KEY_EVENT_NAME, eventName)
@@ -60,6 +62,7 @@ object TaskerPluginContract {
         putString(KEY_RUN_ID, runId)
         putString(KEY_STATUS, status)
         putString(KEY_EVENT_SLOT, eventSlot)
+        putString(KEY_VARIABLES, encodeVariables(variables))
     }
 
     fun blurb(bundle: Bundle): String {
@@ -89,6 +92,32 @@ object TaskerPluginContract {
     }
 
     fun newRunId(): String = "tasker-${UUID.randomUUID()}"
+
+    internal fun encodeVariables(variables: Map<String, String>): String =
+        variables.entries.joinToString("\n") { (name, value) ->
+            "${name.replace("\\", "\\\\").replace("=", "\\=")}=${value.replace("\\", "\\\\").replace("\n", "\\n")}"
+        }
+
+    internal fun decodeVariables(raw: String): Map<String, String> = buildMap {
+        raw.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+            var escaped = false
+            val separator = line.indexOfFirst { char ->
+                if (escaped) {
+                    escaped = false
+                    false
+                } else if (char == '\\') {
+                    escaped = true
+                    false
+                } else {
+                    char == '='
+                }
+            }
+            if (separator <= 0) return@forEach
+            val name = line.substring(0, separator).replace("\\=", "=").replace("\\\\", "\\")
+            val value = line.substring(separator + 1).replace("\\n", "\n").replace("\\\\", "\\")
+            put(name.normalizedTaskerVariableName(), value)
+        }
+    }
 }
 
 data class TaskerPluginAction(
@@ -100,6 +129,7 @@ data class TaskerPluginAction(
     val runId: String,
     val status: String,
     val eventSlot: String,
+    val variables: Map<String, String> = emptyMap(),
 ) {
     val attributes: Map<String, String>
         get() = buildMap {
@@ -111,6 +141,7 @@ data class TaskerPluginAction(
             put("eventSlot", eventSlot)
             if (workspace.isNotBlank()) put("workspace", workspace)
             if (script.isNotBlank()) put("script", script)
+            variables.forEach { (name, value) -> put("variable:$name", value) }
         }
 }
 
@@ -127,6 +158,7 @@ object TaskerPluginBundleParser {
                 TaskerPluginContract.KEY_RUN_ID to source.getString(TaskerPluginContract.KEY_RUN_ID).orEmpty(),
                 TaskerPluginContract.KEY_STATUS to source.getString(TaskerPluginContract.KEY_STATUS).orEmpty(),
                 TaskerPluginContract.KEY_EVENT_SLOT to source.getString(TaskerPluginContract.KEY_EVENT_SLOT).orEmpty(),
+                TaskerPluginContract.KEY_VARIABLES to source.getString(TaskerPluginContract.KEY_VARIABLES).orEmpty(),
             ),
         )
     }
@@ -149,6 +181,7 @@ object TaskerPluginBundleParser {
                 .ifBlank { "received" },
             eventSlot = values[TaskerPluginContract.KEY_EVENT_SLOT].orEmpty()
                 .ifBlank { "slot_1" },
+            variables = TaskerPluginContract.decodeVariables(values[TaskerPluginContract.KEY_VARIABLES].orEmpty()),
         )
     }
 }

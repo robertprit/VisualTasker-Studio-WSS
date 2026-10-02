@@ -107,11 +107,11 @@ class NullableTypeInfrastructureTest {
     }
 
     @Test
-    fun nullableCoreQueriesTemplateCompareAndChromeTabLeaveSixteenDQueryReturnEntries() {
+    fun nullableCoreQueriesAndScalarProvidersLeaveSixDQueryReturnEntries() {
         val decisions = QueryReturnContractAudit.ALL
         val bridge = LegacyCommandDefinitionBridge().analyze()
-        assertEquals(12, decisions.size)
-        assertEquals(12, QueryReturnContractAudit.currentDQueryIds(bridge).size)
+        assertEquals(6, decisions.size)
+        assertEquals(6, QueryReturnContractAudit.currentDQueryIds(bridge).size)
         listOf("clipboard.get", "system.info", "system.env").forEach { id ->
             assertEquals("String", VisualTaskerCommandCatalog.findById(id)?.returnType)
         }

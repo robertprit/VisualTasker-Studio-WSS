@@ -473,12 +473,19 @@ import com.visualtasker.wss.workspace.plugin.runtime.PluginReadinessState
 import com.visualtasker.wss.workspace.plugin.runtime.PluginRuntimeReadiness
 import com.visualtasker.wss.workspace.plugin.runtime.PackageInstallationInspection
 import com.visualtasker.wss.workspace.plugin.runtime.ShizukuRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.ScrcpySessionStore
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginContract
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginSettings
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerPluginSessionStore
 import com.visualtasker.wss.workspace.plugin.runtime.TaskerRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.TaskerVariableSnapshotStore
 import com.visualtasker.wss.workspace.plugin.runtime.TermuxRegistration
+import com.visualtasker.wss.workspace.plugin.runtime.taskerVariableAdapterResult
 import com.visualtasker.wss.workspace.plugin.runtime.toAvailabilityAdapterResult
+import com.visualtasker.wss.workspace.plugin.runtime.toEnabledAdapterResult
+import com.visualtasker.wss.workspace.plugin.runtime.toGetAdapterResult
+import com.visualtasker.wss.workspace.plugin.runtime.toIsRunningAdapterResult
+import com.visualtasker.wss.workspace.plugin.runtime.toUidAdapterResult
 import com.visualtasker.wss.workspace.vt2vt.VT2VT_MESSAGE_FORMAT
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionState
 import com.visualtasker.wss.workspace.vt2vt.Vt2VtConnectionManager
@@ -1608,14 +1615,37 @@ fun WorkspaceScreen(
                         diagnosticCode = RuntimeQueryDiagnosticCodes.TERMUX_INSTALLATION_CHECK_FAILED,
                     )
                 },
+                taskerIsEnabled = {
+                    TaskerRegistration.inspectEnabled(context).toEnabledAdapterResult()
+                },
+                taskerGetVariable = { name ->
+                    taskerVariableAdapterResult(TaskerRegistration.inspectInstallation(context)) {
+                        TaskerVariableSnapshotStore.query(context, name)
+                    }
+                },
+                shizukuGetUid = {
+                    ShizukuRegistration.inspectAvailability(context).toUidAdapterResult()
+                },
+                termuxGet = { key ->
+                    TermuxRegistration.inspectStatus(context).toGetAdapterResult(key)
+                },
+                scrcpyIsRunning = { serial ->
+                    ScrcpySessionStore.inspect(context, serial).toIsRunningAdapterResult()
+                },
+                scrcpyGet = { key ->
+                    ScrcpySessionStore.inspect(context).toGetAdapterResult(key)
+                },
                 taskerCommand = { command, args ->
                     when (command) {
                         "tasker.isinstalled" -> TaskerRegistration.inspectInstallation(context).toInstalledAdapterResult(
                             commandId = "tasker.isInstalled",
                             diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_INSTALLATION_CHECK_FAILED,
                         )
-                        "tasker.isenabled" -> TaskerRegistration.inspect(context).let { status ->
-                            RuntimeAdapterResult(status.available, "Tasker.isEnabled = ${status.available}; ${status.summary}", warning = !status.available)
+                        "tasker.isenabled" -> TaskerRegistration.inspectEnabled(context).toEnabledAdapterResult()
+                        "tasker.getvariable" -> taskerVariableAdapterResult(
+                            TaskerRegistration.inspectInstallation(context),
+                        ) {
+                            TaskerVariableSnapshotStore.query(context, args.firstOrNull().orEmpty())
                         }
                         "tasker.lastresult" -> {
                             val runId = args.firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
@@ -1651,7 +1681,6 @@ fun WorkspaceScreen(
                             )
                             RuntimeAdapterResult(result.success, result.message, warning = !result.success)
                         }
-                        "tasker.getvariable",
                         "tasker.clearvariable",
                         "tasker.getvariables",
                         "tasker.pluginaction",
@@ -1684,9 +1713,7 @@ fun WorkspaceScreen(
                             if (!requested) context.safeStartActivity(ShizukuRegistration.settingsIntent(status))
                             RuntimeAdapterResult(status.available, if (requested) "Shizuku Permission angefragt" else "Shizuku Permission/Settings geöffnet")
                         }
-                        "shizuku.getuid" -> ShizukuRegistration.inspect(context).let { status ->
-                            RuntimeAdapterResult(status.available, "Shizuku.getUid = ${status.uid ?: -1}")
-                        }
+                        "shizuku.getuid" -> ShizukuRegistration.inspectAvailability(context).toUidAdapterResult()
                         "shizuku.exec",
                         "shizuku.shell",
                         -> {
@@ -1755,19 +1782,8 @@ fun WorkspaceScreen(
                         "termux.canruncommands" -> TermuxRegistration.inspect(context).let { status ->
                             RuntimeAdapterResult(status.canRunCommands, "Termux.canRunCommands = ${status.canRunCommands}; ${status.summary}")
                         }
-                        "termux.get" -> {
-                            val status = TermuxRegistration.inspect(context)
-                            val key = args.firstOrNull().orEmpty()
-                            val value = when (key.lowercase()) {
-                                "installed" -> status.installed.toString()
-                                "apiinstalled" -> status.apiInstalled.toString()
-                                "canruncommands" -> status.canRunCommands.toString()
-                                "permission" -> if (status.runCommandPermissionGranted) "granted" else "missing"
-                                "summary", "" -> status.summary
-                                else -> ""
-                            }
-                            RuntimeAdapterResult(true, "Termux.get($key) = $value", warning = false)
-                        }
+                        "termux.get" -> TermuxRegistration.inspectStatus(context)
+                            .toGetAdapterResult(args.firstOrNull().orEmpty())
                         "termux.shell" -> {
                             val commandLine = args.firstOrNull().orEmpty()
                             val result = TermuxRegistration.runCommand(
@@ -1813,14 +1829,34 @@ fun WorkspaceScreen(
                     when (command) {
                         "scrcpy.hostavailable" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy.hostAvailable = ${status.bridgeReady}; ${status.summary}")
                         "scrcpy.devices" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy.devices via USB/ADB: ${status.connectedPeripheralCount}")
-                        "scrcpy.connect",
-                        "scrcpy.start",
-                        -> RuntimeAdapterResult(status.bridgeReady, "scrcpy USB/ADB Bridge ${if (status.bridgeReady) "bereit" else "nicht bereit"}: ${endpoint.host}:${endpoint.port}")
+                        "scrcpy.connect" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy USB/ADB Bridge ${if (status.bridgeReady) "bereit" else "nicht bereit"}: ${endpoint.host}:${endpoint.port}")
+                        "scrcpy.start" -> if (status.bridgeReady) {
+                            val session = ScrcpySessionStore.markRunning(
+                                context = context,
+                                serial = args.firstOrNull().orEmpty(),
+                                transport = status.transport.name,
+                                host = endpoint.host,
+                                port = endpoint.port,
+                            )
+                            RuntimeAdapterResult.successWithoutValue("scrcpy session ${session.sessionId} gestartet")
+                        } else {
+                            RuntimeAdapterResult.failure(
+                                RuntimeQueryDiagnosticCodes.SCRCPY_SESSION_CHECK_FAILED,
+                                "scrcpy session kann ohne bereite USB/ADB Bridge nicht gestartet werden.",
+                            )
+                        }
                         "scrcpy.disconnect",
                         "scrcpy.stop",
-                        -> RuntimeAdapterResult(true, "scrcpy Bridge-Session lokal freigegeben", warning = false)
-                        "scrcpy.isrunning" -> RuntimeAdapterResult(status.bridgeReady, "scrcpy.isRunning = ${status.bridgeReady}")
-                        "scrcpy.get" -> RuntimeAdapterResult(true, "scrcpy.get(${args.firstOrNull().orEmpty()}) = ${status.summary}", warning = false)
+                        -> {
+                            ScrcpySessionStore.clear(context)
+                            RuntimeAdapterResult.successWithoutValue("scrcpy session lokal freigegeben")
+                        }
+                        "scrcpy.isrunning" -> ScrcpySessionStore
+                            .inspect(context, args.firstOrNull())
+                            .toIsRunningAdapterResult()
+                        "scrcpy.get" -> ScrcpySessionStore
+                            .inspect(context)
+                            .toGetAdapterResult(args.firstOrNull().orEmpty())
                         "scrcpy.key",
                         "scrcpy.text",
                         "scrcpy.scroll",

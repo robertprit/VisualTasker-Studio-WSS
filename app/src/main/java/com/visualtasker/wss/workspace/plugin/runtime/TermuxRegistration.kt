@@ -39,6 +39,15 @@ data class TermuxRegistrationStatus(
         }
 }
 
+internal data class TermuxStatusInspection(
+    val status: TermuxRegistrationStatus? = null,
+    val failure: Exception? = null,
+) {
+    init {
+        require((status != null) xor (failure != null))
+    }
+}
+
 data class TermuxCommandRequest(
     val path: String,
     val arguments: List<String> = emptyList(),
@@ -74,6 +83,28 @@ object TermuxRegistration {
             runCommandPermissionGranted = permissionGranted,
             launchable = launchable,
         )
+    }
+
+    internal fun inspectStatus(context: Context): TermuxStatusInspection {
+        val installation = inspectInstallation(context)
+        installation.failure?.let { return TermuxStatusInspection(failure = it) }
+        val apiInstallation = context.packageManager.inspectInstalledPackages(listOf(TERMUX_API_PACKAGE))
+        apiInstallation.failure?.let { return TermuxStatusInspection(failure = it) }
+        return try {
+            TermuxStatusInspection(
+                status = TermuxRegistrationStatus(
+                    installed = installation.installed,
+                    apiInstalled = apiInstallation.installed,
+                    runCommandPermissionGranted = context.packageManager.checkPermission(
+                        TERMUX_RUN_COMMAND_PERMISSION,
+                        context.packageName,
+                    ) == PackageManager.PERMISSION_GRANTED,
+                    launchable = context.packageManager.getLaunchIntentForPackage(TERMUX_PACKAGE) != null,
+                ),
+            )
+        } catch (error: Exception) {
+            TermuxStatusInspection(failure = error)
+        }
     }
 
     fun buildShellRequest(commandLine: String, background: Boolean = false): TermuxCommandRequest =

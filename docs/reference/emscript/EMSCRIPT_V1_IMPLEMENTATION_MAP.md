@@ -728,3 +728,23 @@ diagnostics and cannot become `false`. The uppercase namespace spelling remains
 an import alias. `D_QUERY_RETURN` is 12, bridge inventory remains 127 and
 `NATIVE_V1` remains 3. The detailed contract is
 `EMSCRIPT_V1_SHIZUKU_AVAILABILITY_CONVERGENCE.md`.
+
+## M1B-3W Scalar Provider Query Convergence
+
+M1B-3W migrates `tasker.isEnabled(): Bool`,
+`tasker.getVariable(...): String?`, `shizuku.getUid(): Number?`,
+`termux.get(...): String?`, `scrcpy.isRunning(): Bool` and
+`scrcpy.get(...): String?`. All six use the generic reporter,
+`IrExpression.CommandCall`, `RuntimeAdapterResult` and existing scalar
+`EmscriptValue` variants; no provider-specific expression type is introduced.
+
+Provider-local inspections preserve VALUE, ABSENT, legitimate false, empty
+String and zero results, and technical FAILURE as separate states. Tasker
+enabled state is read independently from installation, Shizuku UID no longer
+uses a negative sentinel, Termux keys are frozen, and scrcpy session state is
+separate from USB/ADB readiness. Legacy namespace spellings remain read
+aliases while serialization writes canonical lower-case provider names.
+
+`D_QUERY_RETURN` is 6, bridge inventory remains 127 and `NATIVE_V1` remains 3.
+The detailed contract is
+`EMSCRIPT_V1_SCALAR_PROVIDER_QUERY_CONVERGENCE.md`.

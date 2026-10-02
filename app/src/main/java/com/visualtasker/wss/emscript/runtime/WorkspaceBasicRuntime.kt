@@ -160,7 +160,73 @@ class WorkspaceBasicRuntime(
             adapterUnavailableCode = RuntimeQueryDiagnosticCodes.TERMUX_ADAPTER_UNAVAILABLE,
             valueUnavailableCode = RuntimeQueryDiagnosticCodes.TERMUX_INSTALLATION_CHECK_FAILED,
         )
+        "tasker.isEnabled" -> evaluateProviderValue(
+            commandId = entry.id,
+            result = environment.taskerIsEnabled(),
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.TASKER_RESULT_INVALID,
+        ) { it is EmscriptValue.BooleanValue }
+        "tasker.getVariable" -> {
+            val name = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("tasker.getVariable erwartet name:String")
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.taskerGetVariable(name),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.TASKER_RESULT_INVALID,
+            ) { it is EmscriptValue.StringValue || it === EmscriptValue.NullValue }
+        }
+        "shizuku.getUid" -> evaluateProviderValue(
+            commandId = entry.id,
+            result = environment.shizukuGetUid(),
+            valueUnavailableCode = RuntimeQueryDiagnosticCodes.SHIZUKU_UID_QUERY_FAILED,
+        ) { it is EmscriptValue.NumberValue || it === EmscriptValue.NullValue }
+        "termux.get" -> {
+            val key = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("termux.get erwartet key:String")
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.termuxGet(key),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.TERMUX_STATUS_CHECK_FAILED,
+            ) { it is EmscriptValue.StringValue || it === EmscriptValue.NullValue }
+        }
+        "scrcpy.isRunning" -> {
+            val serial = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.scrcpyIsRunning(serial),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.SCRCPY_RESULT_INVALID,
+            ) { it is EmscriptValue.BooleanValue }
+        }
+        "scrcpy.get" -> {
+            val key = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("scrcpy.get erwartet key:String")
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.scrcpyGet(key),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.SCRCPY_RESULT_INVALID,
+            ) { it is EmscriptValue.StringValue || it === EmscriptValue.NullValue }
+        }
         else -> error("No core query evaluator registered for ${entry.id}")
+    }
+
+    private fun evaluateProviderValue(
+        commandId: String,
+        result: RuntimeAdapterResult,
+        valueUnavailableCode: String,
+        accepts: (EmscriptValue) -> Boolean,
+    ): EmscriptValue {
+        if (!result.success) {
+            throw EmscriptRuntimeDiagnosticException(
+                result.diagnosticCode ?: valueUnavailableCode,
+                result.message.ifBlank { "$commandId query failed." },
+            )
+        }
+        val value = result.value?.takeIf(accepts)
+            ?: throw EmscriptRuntimeDiagnosticException(
+                valueUnavailableCode,
+                "$commandId returned an incompatible or missing value.",
+            )
+        environment.log("$commandId -> ${if (value === EmscriptValue.NullValue) "ABSENT" else "VALUE"}")
+        return value
     }
 
     private fun evaluateProviderBool(
@@ -623,6 +689,42 @@ data class WorkspaceBasicRuntimeEnvironment(
         RuntimeAdapterResult.failure(
             diagnosticCode = RuntimeQueryDiagnosticCodes.TERMUX_ADAPTER_UNAVAILABLE,
             message = "termux.isInstalled benötigt den Termux-Adapter.",
+        )
+    },
+    val taskerIsEnabled: () -> RuntimeAdapterResult = {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_ADAPTER_UNAVAILABLE,
+            message = "tasker.isEnabled benötigt den Tasker-Adapter.",
+        )
+    },
+    val taskerGetVariable: (name: String) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TASKER_ADAPTER_UNAVAILABLE,
+            message = "tasker.getVariable benötigt den Tasker-Adapter.",
+        )
+    },
+    val shizukuGetUid: () -> RuntimeAdapterResult = {
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.SHIZUKU_ADAPTER_UNAVAILABLE,
+            message = "shizuku.getUid benötigt den Shizuku-Adapter.",
+        )
+    },
+    val termuxGet: (key: String) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.TERMUX_ADAPTER_UNAVAILABLE,
+            message = "termux.get benötigt den Termux-Adapter.",
+        )
+    },
+    val scrcpyIsRunning: (serial: String?) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.SCRCPY_ADAPTER_UNAVAILABLE,
+            message = "scrcpy.isRunning benötigt den scrcpy-Adapter.",
+        )
+    },
+    val scrcpyGet: (key: String) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.SCRCPY_ADAPTER_UNAVAILABLE,
+            message = "scrcpy.get benötigt den scrcpy-Adapter.",
         )
     },
     val taskerCommand: suspend (command: String, args: List<String>) -> RuntimeAdapterResult = { command, _ ->

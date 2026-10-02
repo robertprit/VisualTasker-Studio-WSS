@@ -13,6 +13,8 @@ internal fun ShizukuAvailabilityInspection.toAvailabilityAdapterResult(): Runtim
                 RuntimeQueryDiagnosticCodes.SHIZUKU_PERMISSION_CHECK_FAILED
             ShizukuAvailabilityFailureStage.BINDER ->
                 RuntimeQueryDiagnosticCodes.SHIZUKU_BINDER_CHECK_FAILED
+            ShizukuAvailabilityFailureStage.UID ->
+                RuntimeQueryDiagnosticCodes.SHIZUKU_UID_QUERY_FAILED
             null -> RuntimeQueryDiagnosticCodes.SHIZUKU_BINDER_CHECK_FAILED
         }
         return RuntimeAdapterResult.failure(

@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 17
+    const val integrationTestScriptVersion: Int = 18
 
     val sampleScript: String = """
         LET v1 = 1
@@ -164,7 +164,12 @@ object EditorDefaults {
         LET catalogShizukuInstalled:Bool = shizuku.isInstalled()
         Shizuku.permissionState()
         LET catalogShizukuAvailable:Bool = shizuku.isAvailable()
-        Shizuku.getUid()
+        LET catalogShizukuUid:Number? = shizuku.getUid()
+        LET catalogTaskerEnabled:Bool = tasker.isEnabled()
+        LET catalogTaskerValue:String? = tasker.getVariable("%VT_TEST")
+        LET catalogTermuxSummary:String? = termux.get("summary")
+        LET catalogScrcpyRunning:Bool = scrcpy.isRunning()
+        LET catalogScrcpyState:String? = scrcpy.get("state")
         Shizuku.systemService("package")
         Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
         Shizuku.shell("id")
@@ -425,16 +430,21 @@ object EditorDefaults {
         log("plugin-start")
         LET chromeTabSupported:Bool = chromeTab.isSupported()
         LET taskerInstalled:Bool = tasker.isInstalled()
+        LET taskerEnabled:Bool = tasker.isEnabled()
+        LET taskerTestValue:String? = tasker.getVariable("%VT_TEST")
         Tasker.lastResult()
         Tasker.error()
         LET shizukuInstalled:Bool = shizuku.isInstalled()
         Shizuku.permissionState()
         LET shizukuAvailable:Bool = shizuku.isAvailable()
-        Shizuku.getUid()
+        LET shizukuUid:Number? = shizuku.getUid()
         LET termuxInstalled:Bool = termux.isInstalled()
+        LET termuxSummary:String? = termux.get("summary")
         Termux.canRunCommands()
         Scrcpy.hostAvailable()
         Scrcpy.devices()
+        LET scrcpyRunning:Bool = scrcpy.isRunning()
+        LET scrcpyState:String? = scrcpy.get("state")
         ChromeTab.open("https://example.com")
         Tasker.runTask("VT WSS Demo Echo", ["stable-v1"])
         Shizuku.shell("id")

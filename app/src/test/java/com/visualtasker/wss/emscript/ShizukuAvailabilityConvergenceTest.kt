@@ -110,9 +110,9 @@ class ShizukuAvailabilityConvergenceTest {
     @Test
     fun `audit removes only Shizuku availability in 3U`() {
         assertEquals(setOf(COMMAND_ID), QueryReturnContractAudit.MIGRATED_M1B_3U)
-        assertEquals(12, QueryReturnContractAudit.ALL.size)
+        assertEquals(6, QueryReturnContractAudit.ALL.size)
         assertTrue(QueryReturnContractAudit.ALL.none { it.stableId == COMMAND_ID })
-        assertTrue(QueryReturnContractAudit.ALL.any { it.stableId == "shizuku.getUid" })
+        assertTrue(QueryReturnContractAudit.MIGRATED_M1B_3W.contains("shizuku.getUid"))
     }
 
     private fun runtimeDocument() = (guard.preview(

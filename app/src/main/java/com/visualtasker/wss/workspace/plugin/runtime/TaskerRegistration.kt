@@ -36,6 +36,25 @@ data class TaskerRegistrationStatus(
         }
 }
 
+internal data class TaskerEnabledInspection(
+    val installed: Boolean? = null,
+    val enabled: Boolean? = null,
+    val failure: Exception? = null,
+) {
+    init {
+        require(failure != null || (installed != null && enabled != null))
+    }
+}
+
+internal data class TaskerPreferenceInspection(
+    val value: Boolean? = null,
+    val failure: Exception? = null,
+) {
+    init {
+        require((value != null) xor (failure != null))
+    }
+}
+
 object TaskerRegistration {
     private const val ACTION_TASK = "$TASKER_PACKAGE.ACTION_TASK"
     private const val ACTION_OPEN_PREFS = "$TASKER_PACKAGE.ACTION_OPEN_PREFS"
@@ -86,6 +105,17 @@ object TaskerRegistration {
             externalAccessAllowed = taskerPrefSet(context, PROVIDER_COL_NAME_EXTERNAL_ACCESS),
             receiverAvailable = receiverAvailable,
         )
+    }
+
+    internal fun inspectEnabled(context: Context): TaskerEnabledInspection {
+        val installation = inspectInstallation(context)
+        installation.failure?.let { return TaskerEnabledInspection(failure = it) }
+        if (!installation.installed) {
+            return TaskerEnabledInspection(installed = false, enabled = false)
+        }
+        val preference = inspectPreference(context, PROVIDER_COL_NAME_ENABLED)
+        preference.failure?.let { return TaskerEnabledInspection(installed = true, failure = it) }
+        return TaskerEnabledInspection(installed = true, enabled = preference.value)
     }
 
     fun runTask(
@@ -157,7 +187,10 @@ object TaskerRegistration {
     }
 
     private fun taskerPrefSet(context: Context, column: String): Boolean? =
-        runCatching {
+        inspectPreference(context, column).value
+
+    private fun inspectPreference(context: Context, column: String): TaskerPreferenceInspection =
+        try {
             context.contentResolver.query(
                 Uri.parse(TASKER_PREFS_URI),
                 arrayOf(column),
@@ -165,13 +198,18 @@ object TaskerRegistration {
                 null,
                 null,
             )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    cursor.getString(0).equals("true", ignoreCase = true)
-                } else {
-                    null
+                if (!cursor.moveToFirst()) {
+                    return TaskerPreferenceInspection(failure = IllegalStateException("Tasker preference row missing"))
                 }
-            }
-        }.getOrNull()
+                when (val raw = cursor.getString(0)?.trim()?.lowercase()) {
+                    "true", "1" -> TaskerPreferenceInspection(value = true)
+                    "false", "0" -> TaskerPreferenceInspection(value = false)
+                    else -> TaskerPreferenceInspection(failure = IllegalStateException("Invalid Tasker preference value: $raw"))
+                }
+            } ?: TaskerPreferenceInspection(failure = IllegalStateException("Tasker preference provider unavailable"))
+        } catch (error: Exception) {
+            TaskerPreferenceInspection(failure = error)
+        }
 
     private fun String.ensureTaskerLocalVariableName(): String {
         val clean = trim().trim('"')

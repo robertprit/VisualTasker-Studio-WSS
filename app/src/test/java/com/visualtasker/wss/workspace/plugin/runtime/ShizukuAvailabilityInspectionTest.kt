@@ -66,6 +66,23 @@ class ShizukuAvailabilityInspectionTest {
     }
 
     @Test
+    fun `UID failure does not change availability but remains query failure provenance`() {
+        val inspection = inspectShizukuAvailability(
+            installation = installation(),
+            binderProbe = { true },
+            permissionProbe = { true },
+            uidProbe = { throw IllegalStateException("uid service") },
+        )
+
+        assertTrue(inspection.available)
+        assertTrue(inspection.uidFailure is IllegalStateException)
+        assertEquals(EmscriptValue.BooleanValue(true), inspection.toAvailabilityAdapterResult().value)
+        val uidResult = inspection.toUidAdapterResult()
+        assertFalse(uidResult.success)
+        assertEquals(RuntimeQueryDiagnosticCodes.SHIZUKU_UID_QUERY_FAILED, uidResult.diagnosticCode)
+    }
+
+    @Test
     fun `installation failure remains a structured failure`() {
         val result = inspectShizukuAvailability(
             installation = installation(
