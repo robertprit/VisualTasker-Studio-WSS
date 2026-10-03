@@ -159,9 +159,9 @@ class TemplateCompareConvergenceTest {
     @Test
     fun `query audit removes only template compare from D query return`() {
         assertEquals(setOf("vision.templateCompare"), QueryReturnContractAudit.MIGRATED_M1B_3P)
-        assertEquals(5, QueryReturnContractAudit.ALL.size)
+        assertEquals(2, QueryReturnContractAudit.ALL.size)
         assertTrue(QueryReturnContractAudit.ALL.none { it.stableId == "vision.templateCompare" })
-        assertTrue(QueryReturnContractAudit.ALL.any { it.stableId == "action.findTemplate" })
+        assertTrue(QueryReturnContractAudit.ALL.none { it.stableId == "action.findTemplate" })
     }
 
     private fun singleScoreDocument() = (guard.preview(

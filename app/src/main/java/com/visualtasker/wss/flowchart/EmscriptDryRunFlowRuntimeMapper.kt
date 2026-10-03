@@ -222,6 +222,9 @@ object EmscriptDryRunFlowRuntimeMapper {
         is EmscriptValue.BooleanValue -> value.toString()
         is EmscriptValue.TaskerVariableValue -> "${name}=$value"
         is EmscriptValue.ListValue -> values.joinToString(prefix = "[", postfix = "]") { it.renderRuntimeValue() }
+        is EmscriptValue.ImageMatchValue -> "ImageMatch($templateId,$score)"
+        is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
+        is EmscriptValue.MarkerValue -> "Marker($markerId)"
         EmscriptValue.NullValue -> "null"
     }
 }

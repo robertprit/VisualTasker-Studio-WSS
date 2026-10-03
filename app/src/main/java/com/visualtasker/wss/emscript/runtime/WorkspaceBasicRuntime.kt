@@ -131,6 +131,51 @@ class WorkspaceBasicRuntime(
             environment.log("templateCompare -> VALUE(score=$score)")
             EmscriptValue.NumberValue(score.toDouble())
         }
+        "action.findTemplate" -> {
+            val name = (arguments.getOrNull(0) as? EmscriptValue.StringValue)?.value
+                ?: error("findTemplate erwartet imagePath:String")
+            val threshold = (arguments.getOrNull(1) as? EmscriptValue.NumberValue)?.value
+                ?: error("findTemplate erwartet threshold:Number")
+            val timeoutMs = (arguments.getOrNull(2) as? EmscriptValue.NumberValue)?.value?.toLong()
+                ?: error("findTemplate erwartet timeoutMs:Number")
+            val searchRegion = (arguments.getOrNull(4) as? EmscriptValue.StringValue)
+                ?.value
+                ?.takeIf(String::isNotBlank)
+                ?.let(::parseRuntimeRegion)
+                ?: if ((arguments.getOrNull(4) as? EmscriptValue.StringValue)?.value.isNullOrBlank()) {
+                    null
+                } else {
+                    throw EmscriptRuntimeDiagnosticException(
+                        RuntimeQueryDiagnosticCodes.VISION_RESULT_INVALID,
+                        "findTemplate erhielt eine ungueltige Suchregion.",
+                    )
+                }
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.findTemplate(name, threshold, timeoutMs, searchRegion),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.VISION_RESULT_INVALID,
+            ) { it is EmscriptValue.ImageMatchValue || it === EmscriptValue.NullValue }
+        }
+        "vision.findText" -> {
+            val text = (arguments.getOrNull(0) as? EmscriptValue.StringValue)?.value
+                ?: error("findText erwartet text:String")
+            val timeoutMs = (arguments.getOrNull(1) as? EmscriptValue.NumberValue)?.value?.toLong()
+                ?: error("findText erwartet timeoutMs:Number")
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.findText(text, timeoutMs),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.VISION_RESULT_INVALID,
+            ) { it is EmscriptValue.TextMatchValue || it === EmscriptValue.NullValue }
+        }
+        "vision.markerLoad" -> {
+            val name = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("markerLoad erwartet name:String")
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.markerLoad(name),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.MARKER_DECODE_FAILED,
+            ) { it is EmscriptValue.MarkerValue || it === EmscriptValue.NullValue }
+        }
         "chromeTab.isSupported" -> evaluateProviderBool(
             commandId = entry.id,
             result = environment.chromeTabCommand(entry.id, emptyList()),
@@ -412,12 +457,7 @@ class WorkspaceBasicRuntime(
                         ?: 3000.0
                     ).toLong().coerceAtLeast(0L)
                 val region = block?.regionArgumentOrNull("searchRegion")
-                val match = environment.findTemplate(name, threshold, timeoutMs, region)
-                if (match != null && match.score >= threshold) {
-                    LiveExecutionOutcome("findTemplate($name) = ${"%.1f".format(match.score * 100f)}%")
-                } else {
-                    LiveExecutionOutcome("findTemplate($name) nicht gefunden", EmscriptDryRunEventSeverity.WARNING)
-                }
+                environment.findTemplate(name, threshold.toDouble(), timeoutMs, region).toLiveOutcome("findTemplate")
             }
             "markersave" -> {
                 val name = block.stringArgument(fieldName = "name").ifBlank { "marker" }
@@ -433,12 +473,7 @@ class WorkspaceBasicRuntime(
             }
             "markerload" -> {
                 val name = block.stringArgument(fieldName = "name").ifBlank { "marker" }
-                val loaded = environment.markerLoad(name)
-                if (loaded != null) {
-                    LiveExecutionOutcome("markerLoad($name) ausgeführt: ${loaded.width}x${loaded.height}")
-                } else {
-                    LiveExecutionOutcome("markerLoad($name) nicht gefunden", EmscriptDryRunEventSeverity.WARNING)
-                }
+                environment.markerLoad(name).toLiveOutcome("markerLoad")
             }
             "markerdelete" -> {
                 val name = block.stringArgument(fieldName = "name").ifBlank { "marker" }
@@ -658,9 +693,25 @@ data class WorkspaceBasicRuntimeEnvironment(
     val fileReadText: (String) -> String? = { null },
     val fileWriteText: (path: String, text: String) -> Boolean = { _, _ -> false },
     val screenshot: suspend (path: String) -> Boolean = { false },
-    val findTemplate: (name: String, threshold: Float, timeoutMs: Long, searchRegion: RuntimeAutomationRegion?) -> RuntimeTemplateMatch? = { _, _, _, _ -> null },
+    val findTemplate: (name: String, threshold: Double, timeoutMs: Long, searchRegion: RuntimeAutomationRegion?) -> RuntimeAdapterResult = { _, _, _, _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.VISION_ADAPTER_UNAVAILABLE,
+            message = "action.findTemplate benötigt den Vision-Adapter.",
+        )
+    },
+    val findText: (text: String, timeoutMs: Long) -> RuntimeAdapterResult = { _, _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.VISION_ADAPTER_UNAVAILABLE,
+            message = "vision.findText benötigt den Vision-Adapter.",
+        )
+    },
     val markerSave: (name: String, region: RuntimeAutomationRegion, mode: String, threshold: Float) -> Boolean = { _, _, _, _ -> false },
-    val markerLoad: (name: String) -> RuntimeAutomationRegion? = { null },
+    val markerLoad: (name: String) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.MARKER_REPOSITORY_UNAVAILABLE,
+            message = "vision.markerLoad benötigt das Marker-Repository.",
+        )
+    },
     val markerDelete: (name: String) -> Boolean = { false },
     val templateDefine: (name: String, region: RuntimeAutomationRegion, processing: String) -> Boolean = { _, _, _ -> false },
     val templateCompare: (name: String, region: RuntimeAutomationRegion, processing: String) -> Float = { _, _, _ ->
@@ -832,9 +883,3 @@ private fun parseRuntimeRegion(source: String): RuntimeAutomationRegion? {
     if (values.size != 4 || values[2] <= 0 || values[3] <= 0) return null
     return RuntimeAutomationRegion(values[0], values[1], values[2], values[3])
 }
-
-data class RuntimeTemplateMatch(
-    val name: String,
-    val region: RuntimeAutomationRegion,
-    val score: Float,
-)

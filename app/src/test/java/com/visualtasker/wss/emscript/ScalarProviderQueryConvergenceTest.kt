@@ -49,7 +49,7 @@ class ScalarProviderQueryConvergenceTest {
             assertFalse(block.hasNext)
         }
         assertEquals(cases.mapTo(linkedSetOf()) { it.id }, QueryReturnContractAudit.MIGRATED_M1B_3W)
-        assertEquals(5, QueryReturnContractAudit.ALL.size)
+        assertEquals(2, QueryReturnContractAudit.ALL.size)
     }
 
     @Test

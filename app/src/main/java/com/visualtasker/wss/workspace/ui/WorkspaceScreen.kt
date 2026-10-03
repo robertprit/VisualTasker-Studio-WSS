@@ -287,6 +287,10 @@ import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.EmscriptCoordinateSpace
+import com.visualtasker.wss.emscript.runtime.EmscriptPathValue
+import com.visualtasker.wss.emscript.runtime.EmscriptPointValue
+import com.visualtasker.wss.emscript.runtime.EmscriptRegionValue
 import com.visualtasker.wss.emscript.runtime.ExecutionMode
 import com.visualtasker.wss.emscript.runtime.RuntimeAdapterResult
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
@@ -304,7 +308,8 @@ import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.RuntimeAutomationRegion
-import com.visualtasker.wss.emscript.runtime.RuntimeTemplateMatch
+import com.visualtasker.wss.emscript.runtime.RuntimeTextMatchCandidate
+import com.visualtasker.wss.emscript.runtime.TextMatchQueryRuntime
 import com.visualtasker.wss.emscript.runtime.dryRunEventIndexOrNull
 import com.visualtasker.wss.emscript.runtime.traceSummary
 import com.visualtasker.wss.emscript.runtime.toRailTraceSteps
@@ -397,6 +402,8 @@ import com.visualtasker.wss.workspace.model.VisualUiMemorySurfaceProjection
 import com.visualtasker.wss.workspace.model.VisualUiMemorySurfaceProjector
 import com.visualtasker.wss.workspace.model.VisualUiMemorySuggestion
 import com.visualtasker.wss.workspace.model.CoordinateSpaceKind
+import com.visualtasker.wss.workspace.model.ObservationKind
+import com.visualtasker.wss.workspace.model.ObservationProvider
 import com.visualtasker.wss.workspace.model.WorldObservation
 import com.visualtasker.wss.workspace.model.WorldviewDataProjector
 import com.visualtasker.wss.workspace.model.WorldviewDocument
@@ -1364,35 +1371,92 @@ fun WorkspaceScreen(
                             it.matchesRuntimeTemplateName(name)
                     }
                     if (marker == null) {
-                        null
+                        RuntimeAdapterResult.failure(
+                            diagnosticCode = RuntimeQueryDiagnosticCodes.TEMPLATE_RESOURCE_UNAVAILABLE,
+                            message = "Template '$name' ist nicht verfuegbar.",
+                        )
                     } else {
                         val assets = loadScreenshotCanvasAssets(context)
-                        val liveAsset = assets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId } ?: assets.firstOrNull()
-                        val referenceAsset = assets.firstOrNull { it.id == marker.assetId } ?: liveAsset
+                        val liveAsset = assets.firstOrNull { it.id == workspaceCanvasState.selectedAssetId }
+                            ?: assets.firstOrNull()
                         val liveBitmap = liveAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
-                        val referenceBitmap = referenceAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
-                        val liveRegion = searchRegion?.toScreenshotRegion() ?: marker.region
-                        val score = compareScreenshotRegions(
-                            liveBitmap = liveBitmap,
-                            liveRegion = liveRegion,
-                            liveMode = marker.processingMode,
-                            referenceBitmap = referenceBitmap,
-                            referenceRegion = marker.region,
-                            referenceMode = marker.processingMode,
-                        )
-                        workspaceCanvasState.referenceMarkerId = marker.id
-                        workspaceCanvasState.selectedSavedMarkerId = marker.id
-                        workspaceCanvasState.selectedRegion = liveRegion
-                        workspaceCanvasState.visualTestScore = score
-                        score
-                            ?.takeIf { it >= threshold }
-                            ?.let {
-                                RuntimeTemplateMatch(
-                                    name = marker.label,
-                                    region = liveRegion.toRuntimeRegion(),
-                                    score = it,
+                        if (liveBitmap == null) {
+                            RuntimeAdapterResult.failure(
+                                diagnosticCode = RuntimeQueryDiagnosticCodes.VISION_CAPTURE_FAILED,
+                                message = "Die aktuelle Bildschirmaufnahme konnte nicht geladen werden.",
+                            )
+                        } else {
+                            val referenceAsset = assets.firstOrNull { it.id == marker.assetId }
+                            val referenceBitmap = referenceAsset?.file?.absolutePath?.let(::decodeScreenshotBitmap)
+                            if (referenceBitmap == null) {
+                                RuntimeAdapterResult.failure(
+                                    diagnosticCode = RuntimeQueryDiagnosticCodes.TEMPLATE_RESOURCE_UNAVAILABLE,
+                                    message = "Das Referenzbild fuer Template '${marker.label}' konnte nicht geladen werden.",
+                                )
+                            } else {
+                                val liveRegion = searchRegion?.toScreenshotRegion() ?: marker.region
+                                val score = runCatching {
+                                    compareScreenshotRegions(
+                                        liveBitmap = liveBitmap,
+                                        liveRegion = liveRegion,
+                                        liveMode = marker.processingMode,
+                                        referenceBitmap = referenceBitmap,
+                                        referenceRegion = marker.region,
+                                        referenceMode = marker.processingMode,
+                                    )
+                                }.getOrNull()
+                                workspaceCanvasState.referenceMarkerId = marker.id
+                                workspaceCanvasState.selectedSavedMarkerId = marker.id
+                                workspaceCanvasState.selectedRegion = liveRegion
+                                workspaceCanvasState.visualTestScore = score
+                                when {
+                                    score == null || !score.isFinite() || score !in 0f..1f -> RuntimeAdapterResult.failure(
+                                        diagnosticCode = RuntimeQueryDiagnosticCodes.TEMPLATE_MATCH_FAILED,
+                                        message = "Der Template-Vergleich lieferte kein gueltiges Ergebnis.",
+                                    )
+                                    score < threshold -> RuntimeAdapterResult.success(
+                                        value = EmscriptValue.NullValue,
+                                        message = "action.findTemplate -> ABSENT",
+                                    )
+                                    else -> RuntimeAdapterResult.success(
+                                        value = EmscriptValue.ImageMatchValue(
+                                            templateId = marker.id,
+                                            label = marker.label,
+                                            region = liveRegion.toEmscriptRegionValue(),
+                                            score = score.toDouble(),
+                                        ),
+                                        message = "action.findTemplate -> VALUE(score=$score)",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                findText = { text, _ ->
+                    runCatching {
+                        val candidates = workspaceCanvasState.vision.observations
+                            .asSequence()
+                            .filter { it.provider == ObservationProvider.Ocr && it.kind == ObservationKind.Text }
+                            .mapNotNull { observation ->
+                                val observedText = observation.properties["text"]?.takeIf(String::isNotBlank)
+                                    ?: return@mapNotNull null
+                                val bounds = observation.bounds ?: return@mapNotNull null
+                                RuntimeTextMatchCandidate(
+                                    stableId = observation.id,
+                                    text = observedText,
+                                    region = bounds.toEmscriptRegionValue(),
+                                    confidence = observation.confidence.toDouble(),
+                                    source = observation.properties["source"] ?: observation.provider.name,
+                                    observedAtEpochMs = observation.observedAtEpochMs,
                                 )
                             }
+                            .toList()
+                        TextMatchQueryRuntime.findBest(text, candidates)
+                    }.getOrElse { error ->
+                        RuntimeAdapterResult.failure(
+                            diagnosticCode = RuntimeQueryDiagnosticCodes.VISION_RESULT_INVALID,
+                            message = error.message ?: "OCR-Beobachtungen konnten nicht ausgewertet werden.",
+                        )
                     }
                 },
                 markerSave = { name, region, mode, threshold ->
@@ -1431,14 +1495,40 @@ fun WorkspaceScreen(
                 },
                 markerLoad = { name ->
                     val marker = workspaceCanvasState.savedMarkers.firstOrNull { it.label.equals(name, ignoreCase = true) || it.id == name }
-                    if (marker != null) {
+                    if (marker == null) {
+                        RuntimeAdapterResult.success(
+                            value = EmscriptValue.NullValue,
+                            message = "vision.markerLoad -> ABSENT",
+                        )
+                    } else runCatching {
                         workspaceCanvasState.selectedSavedMarkerId = marker.id
                         workspaceCanvasState.selectedAssetId = marker.assetId ?: workspaceCanvasState.selectedAssetId
                         workspaceCanvasState.selectedRegion = marker.region
                         workspaceCanvasState.selectedPath = marker.path
                         workspaceCanvasState.markerMode = marker.markerMode
-                    }
-                    marker?.region?.toRuntimeRegion()
+                        EmscriptValue.MarkerValue(
+                            markerId = marker.id,
+                            label = marker.label,
+                            region = marker.region.toEmscriptRegionValue(),
+                            path = marker.path?.toEmscriptPathValue(),
+                            mode = marker.markerMode.name.lowercase(Locale.ROOT),
+                            assetId = marker.assetId?.takeIf(String::isNotBlank),
+                            threshold = marker.threshold.toDouble(),
+                        )
+                    }.fold(
+                        onSuccess = { value ->
+                            RuntimeAdapterResult.success(
+                                value = value,
+                                message = "vision.markerLoad -> VALUE(id=${value.markerId})",
+                            )
+                        },
+                        onFailure = { error ->
+                            RuntimeAdapterResult.failure(
+                                diagnosticCode = RuntimeQueryDiagnosticCodes.MARKER_DECODE_FAILED,
+                                message = error.message ?: "Der Marker '$name' ist ungueltig.",
+                            )
+                        },
+                    )
                 },
                 markerDelete = { name ->
                     val before = workspaceCanvasState.savedMarkers.size
@@ -11597,6 +11687,35 @@ private fun ScreenshotCanvasRegion.toRuntimeRegion(): RuntimeAutomationRegion =
         y = y,
         width = width.coerceAtLeast(1),
         height = height.coerceAtLeast(1),
+    )
+
+private fun ScreenshotCanvasRegion.toEmscriptRegionValue(): EmscriptRegionValue =
+    EmscriptRegionValue(
+        x = x.toDouble(),
+        y = y.toDouble(),
+        width = width.toDouble(),
+        height = height.toDouble(),
+        coordinateSpace = EmscriptCoordinateSpace.PIXEL,
+    )
+
+private fun WorldviewRect.toEmscriptRegionValue(): EmscriptRegionValue =
+    EmscriptRegionValue(
+        x = left.toDouble(),
+        y = top.toDouble(),
+        width = (right - left).toDouble(),
+        height = (bottom - top).toDouble(),
+        coordinateSpace = if (coordinateSpace.kind == CoordinateSpaceKind.Normalized) {
+            EmscriptCoordinateSpace.NORMALIZED
+        } else {
+            EmscriptCoordinateSpace.PIXEL
+        },
+    )
+
+private fun ScreenshotCanvasBezier.toEmscriptPathValue(): EmscriptPathValue =
+    EmscriptPathValue(
+        start = EmscriptPointValue(startX.toDouble(), startY.toDouble(), EmscriptCoordinateSpace.PIXEL),
+        control = EmscriptPointValue(controlX.toDouble(), controlY.toDouble(), EmscriptCoordinateSpace.PIXEL),
+        end = EmscriptPointValue(endX.toDouble(), endY.toDouble(), EmscriptCoordinateSpace.PIXEL),
     )
 
 private fun ScreenshotCanvasSavedMarker.matchesRuntimeTemplateName(raw: String): Boolean {

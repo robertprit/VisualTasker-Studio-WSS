@@ -1,8 +1,8 @@
 # EMScript v1 Command Bridge Report
 
-Stand: 2026-10-02
-Phase: M1B-3X Tasker Collection Query Convergence
-Status: eighteen queries migrated; five query return conflicts remain
+Stand: 2026-10-03
+Phase: M1B-3Y Perception Domain Value Convergence
+Status: twenty-one queries migrated; two chart query return conflicts remain
 
 ## Inventory
 
@@ -12,17 +12,17 @@ Status: eighteen queries migrated; five query return conflicts remain
 | Unique canonical names, case-insensitive | 124 |
 | Declared aliases | 87 |
 | Alias/canonical collisions | 1 |
-| Provider-owned entries | 87 |
+| Provider-owned entries | 89 |
 | Query projections | 26 |
 | Native V1 definitions | 3 |
 | CLEAN | 22 |
-| NORMALIZABLE | 64 |
-| CONFLICT | 41 |
+| NORMALIZABLE | 66 |
+| CONFLICT | 39 |
 | UNMAPPABLE | 0 |
 | Live status LIVE_CONFIRMED | 29 |
-| Live status LIVE_PROVIDER_DEPENDENT | 71 |
+| Live status LIVE_PROVIDER_DEPENDENT | 72 |
 | Live status DRY_RUN_ONLY | 1 |
-| Live status CATALOG_ONLY | 4 |
+| Live status CATALOG_ONLY | 3 |
 | Live status NO_DISPATCH | 22 |
 | Live status UNKNOWN | 0 |
 
@@ -37,16 +37,16 @@ Each legacy entry is analyzed exactly once. `event.start`, `action.wait` and `fe
 | `event.start` | `onStart` | `onStart` | EVENT | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | CLEAN | none |
 | `action.wait` | `wait` | `wait` | ACTION | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | CLEAN | none |
 | `action.clickText` | `click` | `clickText` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>SIGNATURE_CONFLICT |
-| `action.findTemplate` | `findTemplate` | `templateFind` | QUERY | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | DEFAULT_SOURCE_CONFLICT<br>DEFAULT_SOURCE_CONFLICT<br>LEGACY_ALIAS_REQUIRED<br>MISSING_RETURN_TYPE<br>NAMING_FAMILY_OUTLIER<br>QUERY_RETURNS_VOID |
+| `action.findTemplate` | `findTemplate` | `templateFind` | QUERY | ImageMatch? -> legacy.imageMatch? | NEEDS_NORMALIZATION | CONFLICT | LOSSLESS | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>DEFAULT_SOURCE_CONFLICT<br>DEFAULT_SOURCE_CONFLICT<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `action.swipe` | `swipe` | `swipe` | ACTION | Void/unspecified -> Void | CANONICAL | CONFLICT | NOT_APPLICABLE | NORMALIZABLE | UNTYPED_DEFAULT<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER<br>UNTYPED_PARAMETER |
 | `input.clickPoint` | `clickPoint` | `clickPoint` | ACTION | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | CLEAN | none |
 | `input.touch` | `touch` | `touch` | ACTION | Void/unspecified -> Void | CANONICAL | CONTRACT_DECIDED | NOT_APPLICABLE | NORMALIZABLE | UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
 | `vision.screenshot` | `screenshot` | `screenshot` | ACTION | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | CLEAN | none |
 | `vision.ocr` | `ocr` | `ocr` | ACTION | Void/unspecified -> Void | CANONICAL | CONFLICT | NOT_APPLICABLE | CONFLICT | DEFAULT_SOURCE_CONFLICT<br>LIVE_FLAG_WITHOUT_DISPATCH |
-| `vision.findText` | `findText` | `findText` | QUERY | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | CONFLICT | LIVE_FLAG_WITHOUT_DISPATCH<br>MISSING_RETURN_TYPE<br>QUERY_RETURNS_VOID |
+| `vision.findText` | `findText` | `findText` | QUERY | TextMatch? -> legacy.textMatch? | CANONICAL | CANONICAL | LOSSLESS | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `vision.highlight` | `highlight` | `highlight` | ACTION | Void/unspecified -> Void | CANONICAL | CONFLICT | NOT_APPLICABLE | CONFLICT | DEFAULT_SOURCE_CONFLICT<br>LIVE_FLAG_WITHOUT_DISPATCH |
 | `vision.markerSave` | `markerSave` | `markerSave` | ACTION | Void/unspecified -> Void | CANONICAL | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>DEFAULT_SOURCE_CONFLICT<br>PLUGIN_OWNER_NOT_PROVIDER |
-| `vision.markerLoad` | `markerLoad` | `markerLoad` | QUERY | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>MISSING_RETURN_TYPE<br>PLUGIN_OWNER_NOT_PROVIDER<br>QUERY_RETURNS_VOID |
+| `vision.markerLoad` | `markerLoad` | `markerLoad` | QUERY | Marker? -> legacy.marker? | CANONICAL | CANONICAL | LOSSLESS | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `vision.markerDelete` | `markerDelete` | `markerDelete` | ACTION | Void/unspecified -> Void | CANONICAL | CANONICAL | NOT_APPLICABLE | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `vision.templateDefine` | `templateDefine` | `templateDefine` | ACTION | Void/unspecified -> Void | CANONICAL | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>DEFAULT_SOURCE_CONFLICT<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `vision.templateCompare` | `templateCompare` | `templateCompare` | QUERY | Number -> Number | CANONICAL | CONFLICT | LOSSLESS | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>DEFAULT_SOURCE_CONFLICT<br>PLUGIN_OWNER_NOT_PROVIDER |
@@ -255,7 +255,7 @@ Current lookup lowercases input and returns the first candidate. The bridge repo
 | Input | `click`, `swipe`, `clickPoint`, `touch` | operation+target | clickText | true | HIGH | Coordinate click and text click require separate signatures. |
 | Feedback | `beep`, `vibrate` | verb | unchanged | false | HIGH | Names are consistent; vibrate signature is not. |
 | File/Storage | `datastorePut`, `datastoreGet`, `File.readText`, `file.writeText`, `Clipboard.get`, `clipboard.set`, `cache.clear`, `Sys.info`, `Env.get` | lowerCamel namespace | namespace case only | true | HIGH | Uppercase legacy namespace segments violate V1 naming. |
-| Provider namespaces | `markerSave`, `markerLoad`, `markerDelete`, `templateDefine`, `templateCompare`, `ChromeTab.open`, `ChromeTab.unbind`, `Tasker.runTask`, `Tasker.setVariable`, `Tasker.emitEvent`, `Shizuku.exec`, `Shizuku.shell`, `Termux.run`, `Termux.shell`, `Termux.api`, `Scrcpy.start`, `Scrcpy.stop`, `Scrcpy.touch`, `Chart.create`, `Chart.show`, `Chart.export`, `rem.region`, `rem.variableBulk`, `rem.expressionCapsule`, `rem.flowBreak`, `rem.offPageOut`, `rem.offPageIn`, `rem.group`, `rem.layoutHint`, `chromeTab.isSupported`, `ChromeTab.bind`, `ChromeTab.create`, `ChromeTab.mayLaunchUrl`, `ChromeTab.requestPostMessageChannel`, `ChromeTab.postMessage`, `ChromeTab.validateRelationship`, `tasker.isInstalled`, `tasker.isEnabled`, `Tasker.cancel`, `tasker.getVariable`, `Tasker.clearVariable`, `tasker.getVariables`, `Tasker.lastResult`, `Tasker.error`, `Tasker.action`, `Tasker.pluginAction`, `Tasker.profileEnable`, `Tasker.profileDisable`, `Tasker.profileToggle`, `Tasker.profileState`, `shizuku.isInstalled`, `shizuku.isAvailable`, `shizuku.getUid`, `Shizuku.permissionState`, `Shizuku.requestPermission`, `Shizuku.bindUserService`, `Shizuku.unbindUserService`, `Shizuku.systemService`, `Shizuku.call`, `termux.isInstalled`, `Termux.canRunCommands`, `Termux.writeStdin`, `Termux.cancel`, `termux.get`, `Scrcpy.hostAvailable`, `Scrcpy.devices`, `Scrcpy.connect`, `Scrcpy.disconnect`, `scrcpy.isRunning`, `scrcpy.get`, `Scrcpy.key`, `Scrcpy.text`, `Scrcpy.scroll`, `Scrcpy.setClipboard`, `Scrcpy.setScreenPower`, `Scrcpy.rotate`, `Chart.hide`, `Chart.remove`, `Chart.exists`, `Chart.setData`, `Chart.setOptions`, `Chart.add`, `Chart.update`, `Chart.removeData`, `Chart.clear`, `Chart.get`, `Chart.capture` | lowerCamel provider.operation | namespace case only | true | HIGH | Provider identity must be separate from pluginOwner. |
+| Provider namespaces | `findTemplate`, `findText`, `markerSave`, `markerLoad`, `markerDelete`, `templateDefine`, `templateCompare`, `ChromeTab.open`, `ChromeTab.unbind`, `Tasker.runTask`, `Tasker.setVariable`, `Tasker.emitEvent`, `Shizuku.exec`, `Shizuku.shell`, `Termux.run`, `Termux.shell`, `Termux.api`, `Scrcpy.start`, `Scrcpy.stop`, `Scrcpy.touch`, `Chart.create`, `Chart.show`, `Chart.export`, `rem.region`, `rem.variableBulk`, `rem.expressionCapsule`, `rem.flowBreak`, `rem.offPageOut`, `rem.offPageIn`, `rem.group`, `rem.layoutHint`, `chromeTab.isSupported`, `ChromeTab.bind`, `ChromeTab.create`, `ChromeTab.mayLaunchUrl`, `ChromeTab.requestPostMessageChannel`, `ChromeTab.postMessage`, `ChromeTab.validateRelationship`, `tasker.isInstalled`, `tasker.isEnabled`, `Tasker.cancel`, `tasker.getVariable`, `Tasker.clearVariable`, `tasker.getVariables`, `Tasker.lastResult`, `Tasker.error`, `Tasker.action`, `Tasker.pluginAction`, `Tasker.profileEnable`, `Tasker.profileDisable`, `Tasker.profileToggle`, `Tasker.profileState`, `shizuku.isInstalled`, `shizuku.isAvailable`, `shizuku.getUid`, `Shizuku.permissionState`, `Shizuku.requestPermission`, `Shizuku.bindUserService`, `Shizuku.unbindUserService`, `Shizuku.systemService`, `Shizuku.call`, `termux.isInstalled`, `Termux.canRunCommands`, `Termux.writeStdin`, `Termux.cancel`, `termux.get`, `Scrcpy.hostAvailable`, `Scrcpy.devices`, `Scrcpy.connect`, `Scrcpy.disconnect`, `scrcpy.isRunning`, `scrcpy.get`, `Scrcpy.key`, `Scrcpy.text`, `Scrcpy.scroll`, `Scrcpy.setClipboard`, `Scrcpy.setScreenPower`, `Scrcpy.rotate`, `Chart.hide`, `Chart.remove`, `Chart.exists`, `Chart.setData`, `Chart.setOptions`, `Chart.add`, `Chart.update`, `Chart.removeData`, `Chart.clear`, `Chart.get`, `Chart.capture` | lowerCamel provider.operation | namespace case only | true | HIGH | Provider identity must be separate from pluginOwner. |
 
 `findTemplate` is **NORMALIZABLE** to `templateFind`; `findTemplate` remains a required legacy alias. This is supported by the existing siblings `templateDefine` and `templateCompare`.
 
@@ -282,9 +282,9 @@ The duplicate is a semantic conflict, not a display-only duplicate. A V1 naming 
 
 | Command | Kind | Current return | Runtime result | Block output | Proposed return | Evidence | Confidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `action.findTemplate` | STATEMENT | Void/unspecified | template match with score | binding:action.findTemplate | NEEDS_DECISION | Runtime returns a template match with score; block is currently statement-shaped. | MEDIUM |
-| `vision.findText` | STATEMENT | Void/unspecified | catalog metadata only | binding:emscript.command.vision.findText | NEEDS_DECISION | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | MEDIUM |
-| `vision.markerLoad` | STATEMENT | Void/unspecified | saved marker/region | binding:emscript.command.vision.markerLoad | NEEDS_DECISION | WorkspaceBasicRuntime obtains a nullable saved marker/region. | MEDIUM |
+| `action.findTemplate` | REPORTER | ImageMatch? | ImageMatchValue or NullValue | binding:emscript.command.action.findTemplate | ImageMatch? | WorkspaceBasicRuntime transports ImageMatchValue or NullValue through the generic command reporter. | HIGH |
+| `vision.findText` | REPORTER | TextMatch? | TextMatchValue or NullValue | binding:emscript.command.vision.findText | TextMatch? | WorkspaceBasicRuntime transports the best TextMatchValue or NullValue through the generic command reporter. | HIGH |
+| `vision.markerLoad` | REPORTER | Marker? | MarkerValue or NullValue | binding:emscript.command.vision.markerLoad | Marker? | WorkspaceBasicRuntime transports MarkerValue with stable identity or NullValue through the generic command reporter. | HIGH |
 | `vision.templateCompare` | REPORTER | Number | numeric score | binding:emscript.command.vision.templateCompare | Number | WorkspaceBasicRuntime obtains a non-null numeric score from templateCompare; failures use diagnostics. | HIGH |
 | `system.datastoreGet` | REPORTER | String? | text/value | binding:emscript.command.system.datastoreGet | String? | WorkspaceBasicRuntime obtains a nullable datastore value. | HIGH |
 | `file.readText` | REPORTER | String? | text/value | binding:emscript.command.file.readText | String? | WorkspaceBasicRuntime obtains nullable file text. | HIGH |
@@ -317,14 +317,14 @@ M1B-3U migrated `shizuku.isAvailable` as non-null Bool through the generic `Runt
 
 ## M1B-3W Scalar Provider Query Convergence
 
-The current `D_QUERY_RETURN` inventory contains 5 language commands. M1B-3W adds typed reporter contracts for `tasker.isEnabled`, `tasker.getVariable`, `shizuku.getUid`, `termux.get`, `scrcpy.isRunning` and `scrcpy.get`; the remaining entries stay statement-shaped.
+The current `D_QUERY_RETURN` inventory contains 2 language commands. M1B-3W added typed scalar reporter contracts, M1B-3X added the Tasker collection reporter and M1B-3Y added the three perception domain reporters. Only the two chart entries remain statement-shaped.
 
 | Class | Count |
 | --- | ---: |
 | A_NULLABLE_SCALAR_READY | 0 |
 | B_NONNULL_SCALAR_READY | 0 |
-| C_STRUCTURED_RESULT_TYPE | 2 |
-| D_RUNTIME_RESULT_GAP | 3 |
+| C_STRUCTURED_RESULT_TYPE | 0 |
+| D_RUNTIME_RESULT_GAP | 2 |
 | E_PROVIDER_CONTRACT_GAP | 0 |
 | F_SENTINEL_OR_ERROR_COLLISION | 0 |
 | G_LANGUAGE_SEMANTICS_GAP | 0 |
@@ -332,9 +332,6 @@ The current `D_QUERY_RETURN` inventory contains 5 language commands. M1B-3W adds
 
 | Stable ID | Observed runtime | Proposed V1 | Class | Runtime | Provider | Risk |
 | --- | --- | --- | --- | --- | --- | --- |
-| `action.findTemplate` | RuntimeTemplateMatch? | ImageMatch? | C_STRUCTURED_RESULT_TYPE | typed value observed | no | HIGH |
-| `vision.findText` | no runtime query result | TextMatch? | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
-| `vision.markerLoad` | RuntimeAutomationRegion? | Marker? | C_STRUCTURED_RESULT_TYPE | typed value observed | no | HIGH |
 | `chart.exists` | no runtime query result | Bool | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 | `chart.get` | no runtime query result | ChartSnapshot? | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 
@@ -343,6 +340,10 @@ Provider-local inspections now preserve VALUE, ABSENT, legitimate false/empty/ze
 ## M1B-3X Tasker Collection Query Convergence
 
 `tasker.getVariables(pattern?): List<TaskerVariable>` now uses the existing Tasker receiver snapshot and generic reporter/CommandCall projection. A successful query always returns an ordered list; no matches is an empty list, while provider and snapshot failures remain diagnostics.
+
+## M1B-3Y Perception Domain Value Convergence
+
+`action.findTemplate(...): ImageMatch?`, `vision.findText(...): TextMatch?` and `vision.markerLoad(...): Marker?` now use immutable EMScript domain values and generic reporter/CommandCall projection. Completed no-match/no-resource queries return `NullValue`; capture, engine, repository and decode failures remain diagnostics. Only `chart.exists` and `chart.get` remain in `D_QUERY_RETURN`.
 
 ## Default Value Audit
 
@@ -531,13 +532,13 @@ Catalog declares `TEXT`; parser accepts an expression and runtime renders the re
 | Command | Capability | pluginOwner | Observed adapter | Provider candidate | Conflict |
 | --- | --- | --- | --- | --- | --- |
 | `action.clickText` | A11Y | `visualtasker.core` | A concrete evaluator or WorkspaceBasicRuntime branch exists for action.clickText. | `provider.accessibility` | none |
-| `action.findTemplate` | VISION | `visualtasker.core` | A concrete evaluator or WorkspaceBasicRuntime branch exists for action.findTemplate. | `provider.vision` | none |
+| `action.findTemplate` | VISION | `visualtasker.vision` | A concrete evaluator or WorkspaceBasicRuntime branch exists for action.findTemplate. | `provider.vision` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `action.swipe` | A11Y | `visualtasker.core` | A concrete evaluator or WorkspaceBasicRuntime branch exists for action.swipe. | `provider.accessibility` | none |
 | `input.clickPoint` | A11Y | `visualtasker.core` | A concrete evaluator or WorkspaceBasicRuntime branch exists for input.clickPoint. | `provider.accessibility` | none |
 | `input.touch` | A11Y | `visualtasker.core` | Catalog explicitly marks liveImplemented=false. | `provider.accessibility` | none |
 | `vision.screenshot` | SCREEN_CAPTURE | `visualtasker.core` | A concrete evaluator or WorkspaceBasicRuntime branch exists for vision.screenshot. | `provider.screenCapture` | none |
 | `vision.ocr` | VISION | `visualtasker.core` | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. | `provider.vision` | none |
-| `vision.findText` | VISION | `visualtasker.core` | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. | `provider.vision` | none |
+| `vision.findText` | VISION | `visualtasker.vision` | A concrete evaluator or WorkspaceBasicRuntime branch exists for vision.findText. | `provider.vision` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `vision.highlight` | VISION | `visualtasker.core` | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. | `provider.vision` | none |
 | `vision.markerSave` | VISION | `visualtasker.vision` | A concrete evaluator or WorkspaceBasicRuntime branch exists for vision.markerSave. | `provider.vision` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `vision.markerLoad` | VISION | `visualtasker.vision` | A concrete evaluator or WorkspaceBasicRuntime branch exists for vision.markerLoad. | `provider.vision` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
@@ -637,7 +638,6 @@ Catalog declares `TEXT`; parser accepts an expression and runtime renders the re
 | Command | Catalog flag | Classification | Evidence |
 | --- | --- | --- | --- |
 | `vision.ocr` | true | CATALOG_ONLY | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. |
-| `vision.findText` | true | CATALOG_ONLY | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. |
 | `vision.highlight` | true | CATALOG_ONLY | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. |
 | `scene.save` | true | CATALOG_ONLY | Catalog declares runtime metadata, but no explicit live dispatch branch was confirmed. |
 | `chart.create` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
@@ -706,7 +706,7 @@ Command identity and source spelling are independent. The catalog keeps each sta
 | `clipboard.set` | `Clipboard.set` | `clipboard.set` | `Clipboard.set`: read V1.x, remove >= V2 | RESOLVED_WITH_LEGACY_ALIAS | CLEAN / NONE |
 | `cache.clear` | `Cache.clear` | `cache.clear` | `Cache.clear`: read V1.x, remove >= V2 | RESOLVED_WITH_LEGACY_ALIAS | CLEAN / NONE |
 
-`action.findTemplate` remains `NEEDS_NORMALIZATION` toward `templateFind`, but is outside the exclusive three-entry group because its independent domain-default and query-return contracts remain unresolved. M1B-3A does not change it.
+`action.findTemplate` remains `NEEDS_NORMALIZATION` toward `templateFind` for naming/default-source reasons. Its query-return contract was independently resolved by M1B-3Y; M1B-3A itself does not change runtime semantics.
 
 ## M1B-3 Remaining-Entry Groups
 
@@ -717,10 +717,10 @@ The groups are exclusive and ordered by the first architectural blocker: project
 | A_SAFE_GENERIC | 8 |
 | B_NAMING_NORMALIZATION | 4 |
 | C_TYPE_CONFLICT | 1 |
-| D_QUERY_RETURN | 5 |
+| D_QUERY_RETURN | 2 |
 | E_CONTROL_STRUCTURE | 5 |
 | F_OPERATOR_OR_LITERAL_MODEL | 6 |
-| G_PROVIDER_DEPENDENT | 81 |
+| G_PROVIDER_DEPENDENT | 84 |
 | H_PROJECTION | 11 |
 | I_RUNTIME_DISPATCH_CONFLICT | 3 |
 | TOTAL_REMAINING | 124 |

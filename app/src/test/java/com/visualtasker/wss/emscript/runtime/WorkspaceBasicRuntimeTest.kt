@@ -298,10 +298,10 @@ class WorkspaceBasicRuntimeTest {
             datastorePut("score", "42")
             LET datastoreValue:String? = datastoreGet("score")
             markerSave("button", region(10, 20, 30, 40), "region", 0.90)
-            markerLoad("button")
+            LET loadedMarker:Marker? = markerLoad("button")
             templateDefine("buttonTpl", region(10, 20, 30, 40), "grayscale")
             LET templateScore:Number = templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
-            findTemplate("buttonTpl.png", 0.8, 1000, 1, region(10, 20, 30, 40))
+            LET foundTemplate:ImageMatch? = findTemplate("buttonTpl.png", 0.8, 1000, 1, region(10, 20, 30, 40))
             markerDelete("button")
             """.trimIndent(),
             workspaceId = "workspace-basic-runtime-datastore-marker",
@@ -326,7 +326,25 @@ class WorkspaceBasicRuntimeTest {
                 },
                 markerLoad = { name ->
                     calls += "markerLoad:$name"
-                    markers[name]
+                    RuntimeAdapterResult.success(
+                        markers[name]?.let { region ->
+                            EmscriptValue.MarkerValue(
+                                markerId = name,
+                                label = name,
+                                region = EmscriptRegionValue(
+                                    x = region.x.toDouble(),
+                                    y = region.y.toDouble(),
+                                    width = region.width.toDouble(),
+                                    height = region.height.toDouble(),
+                                    coordinateSpace = EmscriptCoordinateSpace.PIXEL,
+                                ),
+                                path = null,
+                                mode = "region",
+                                assetId = null,
+                                threshold = 0.9,
+                            )
+                        } ?: EmscriptValue.NullValue,
+                    )
                 },
                 markerDelete = { name ->
                     calls += "markerDelete:$name"
@@ -344,7 +362,22 @@ class WorkspaceBasicRuntimeTest {
                 findTemplate = { name, threshold, timeoutMs, region ->
                     calls += "findTemplate:$name:$threshold:$timeoutMs:${region?.width}x${region?.height}"
                     templates[name.substringBeforeLast('.')]
-                        ?.let { RuntimeTemplateMatch(name, it, 0.96f) }
+                        ?.let { matchRegion ->
+                            RuntimeAdapterResult.success(
+                                EmscriptValue.ImageMatchValue(
+                                    templateId = name,
+                                    label = name.substringBeforeLast('.'),
+                                    region = EmscriptRegionValue(
+                                        x = matchRegion.x.toDouble(),
+                                        y = matchRegion.y.toDouble(),
+                                        width = matchRegion.width.toDouble(),
+                                        height = matchRegion.height.toDouble(),
+                                        coordinateSpace = EmscriptCoordinateSpace.PIXEL,
+                                    ),
+                                    score = 0.96,
+                                ),
+                            )
+                        } ?: RuntimeAdapterResult.success(EmscriptValue.NullValue)
                 },
                 datastorePut = { key, value ->
                     calls += "datastorePut:$key:$value"
@@ -363,6 +396,9 @@ class WorkspaceBasicRuntimeTest {
         assertEquals("42", datastore["score"])
         assertFalse(markers.containsKey("button"))
         assertEquals(RuntimeAutomationRegion(10, 20, 30, 40), templates["buttonTpl"])
+        result as EmscriptDryRunResult.Success
+        assertTrue(result.variables["loadedMarker"] === EmscriptValue.NullValue)
+        assertTrue(result.variables["foundTemplate"] is EmscriptValue.ImageMatchValue)
         assertTrue(calls.contains("datastorePut:score:42"))
         assertTrue(calls.contains("datastoreGet:score"))
         assertTrue(calls.any { it.startsWith("markerSave:button:30x40") })

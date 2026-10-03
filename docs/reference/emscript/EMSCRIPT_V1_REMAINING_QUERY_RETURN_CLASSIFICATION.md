@@ -1,11 +1,11 @@
 # EMScript v1 M1B-3V Remaining Query Return Classification
 
 Stand: 2026-10-01
-Status: historical 3V audit; scalar and Tasker collection queries migrated through M1B-3X
+Status: historical 3V audit; scalar, Tasker collection and perception queries migrated through M1B-3Y
 
 ## Repository Truth
 
-M1B-3V derived exactly 12 D_QUERY_RETURN conflicts. Post-3X, seven provider queries are typed reporters and five conflicts remain. Command Catalog remains 127 and NATIVE_V1 remains 3.
+M1B-3V derived exactly 12 D_QUERY_RETURN conflicts. Post-3Y, ten provider queries are typed reporters and two chart conflicts remain. Command Catalog remains 127 and NATIVE_V1 remains 3.
 
 ## Decision Summary
 
@@ -283,4 +283,4 @@ Expected reductions are 6 + 1 + 3 + 2 = 12; successful completion leaves D_QUERY
 
 ## Infrastructure Gap Summary
 
-RuntimeAdapterResult, scalar EmscriptValue variants, NullValue, ListValue, TaskerVariableValue, nullable/list type compatibility, generic CommandCall and generic reporter projection are sufficient through M1B-3X. The remaining minimal additions are ImageMatchValue, TextMatchValue, MarkerValue and ChartSnapshotValue plus provider result contracts. No special expression class is required.
+RuntimeAdapterResult, scalar EmscriptValue variants, NullValue, ListValue, TaskerVariableValue, ImageMatchValue, TextMatchValue, MarkerValue, nullable/list/domain type compatibility, generic CommandCall and generic reporter projection are sufficient through M1B-3Y. The only remaining structured addition is ChartSnapshotValue plus its repository contract. No special expression class is required.

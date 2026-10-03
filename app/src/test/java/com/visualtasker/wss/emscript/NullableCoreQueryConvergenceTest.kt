@@ -44,7 +44,7 @@ class NullableCoreQueryConvergenceTest {
             assertFalse(block.hasPrevious)
             assertFalse(block.hasNext)
         }
-        assertEquals(5, QueryReturnContractAudit.ALL.size)
+        assertEquals(2, QueryReturnContractAudit.ALL.size)
     }
 
     @Test

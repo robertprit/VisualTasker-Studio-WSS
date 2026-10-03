@@ -9,6 +9,7 @@ import de.visualtasker.blockeditor.registry.CommandCapability
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 import de.visualtasker.emscript.contract.CoreTypes
+import de.visualtasker.emscript.contract.DomainTypes
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.emscript.contract.LanguageTypeRef
 import de.visualtasker.emscript.contract.ProviderTypes
@@ -54,6 +55,59 @@ sealed interface EmscriptDryRunResult {
     ) : EmscriptDryRunResult
 }
 
+enum class EmscriptCoordinateSpace {
+    PIXEL,
+    NORMALIZED,
+}
+
+data class EmscriptPointValue(
+    val x: Double,
+    val y: Double,
+    val coordinateSpace: EmscriptCoordinateSpace,
+) {
+    init {
+        require(x.isFinite() && y.isFinite()) { "Point coordinates must be finite." }
+        require(x >= 0.0 && y >= 0.0) { "Point coordinates must not be negative." }
+        if (coordinateSpace == EmscriptCoordinateSpace.NORMALIZED) {
+            require(x <= 1.0 && y <= 1.0) { "Normalized point coordinates must stay in 0..1." }
+        }
+    }
+}
+
+data class EmscriptRegionValue(
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double,
+    val coordinateSpace: EmscriptCoordinateSpace,
+) {
+    init {
+        require(x.isFinite() && y.isFinite() && width.isFinite() && height.isFinite()) {
+            "Region coordinates must be finite."
+        }
+        require(x >= 0.0 && y >= 0.0 && width > 0.0 && height > 0.0) {
+            "Region coordinates must describe a non-empty positive area."
+        }
+        if (coordinateSpace == EmscriptCoordinateSpace.NORMALIZED) {
+            require(x + width <= 1.0 && y + height <= 1.0) {
+                "Normalized regions must stay in 0..1."
+            }
+        }
+    }
+}
+
+data class EmscriptPathValue(
+    val start: EmscriptPointValue,
+    val control: EmscriptPointValue,
+    val end: EmscriptPointValue,
+) {
+    init {
+        require(start.coordinateSpace == control.coordinateSpace && control.coordinateSpace == end.coordinateSpace) {
+            "Path points must use one coordinate space."
+        }
+    }
+}
+
 sealed interface EmscriptValue {
     data class NumberValue(val value: Double) : EmscriptValue
     data class StringValue(val value: String) : EmscriptValue
@@ -61,6 +115,49 @@ sealed interface EmscriptValue {
     data class TaskerVariableValue(val name: String, val value: String) : EmscriptValue {
         init {
             require(name.isNotBlank()) { "Tasker variable name must not be blank." }
+        }
+    }
+    data class ImageMatchValue(
+        val templateId: String,
+        val label: String,
+        val region: EmscriptRegionValue,
+        val score: Double,
+    ) : EmscriptValue {
+        init {
+            require(templateId.isNotBlank()) { "ImageMatch templateId must not be blank." }
+            require(label.isNotBlank()) { "ImageMatch label must not be blank." }
+            require(score.isFinite() && score in 0.0..1.0) { "ImageMatch score must stay in 0..1." }
+        }
+    }
+    data class TextMatchValue(
+        val text: String,
+        val region: EmscriptRegionValue,
+        val confidence: Double,
+        val source: String,
+    ) : EmscriptValue {
+        init {
+            require(text.isNotBlank()) { "TextMatch text must not be blank." }
+            require(source.isNotBlank()) { "TextMatch source must not be blank." }
+            require(confidence.isFinite() && confidence in 0.0..1.0) {
+                "TextMatch confidence must stay in 0..1."
+            }
+        }
+    }
+    data class MarkerValue(
+        val markerId: String,
+        val label: String,
+        val region: EmscriptRegionValue,
+        val path: EmscriptPathValue?,
+        val mode: String,
+        val assetId: String?,
+        val threshold: Double,
+    ) : EmscriptValue {
+        init {
+            require(markerId.isNotBlank()) { "Marker id must not be blank." }
+            require(label.isNotBlank()) { "Marker label must not be blank." }
+            require(mode.isNotBlank()) { "Marker mode must not be blank." }
+            require(assetId == null || assetId.isNotBlank()) { "Marker assetId must be null or nonblank." }
+            require(threshold.isFinite() && threshold in 0.0..1.0) { "Marker threshold must stay in 0..1." }
         }
     }
     class ListValue(
@@ -396,6 +493,9 @@ private fun EmscriptValue.asDouble(context: String): Double =
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
         is EmscriptValue.ListValue,
+        is EmscriptValue.ImageMatchValue,
+        is EmscriptValue.TextMatchValue,
+        is EmscriptValue.MarkerValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Number")
         EmscriptValue.NullValue -> error(
@@ -412,6 +512,9 @@ private fun EmscriptValue.asBoolean(context: String): Boolean =
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
         is EmscriptValue.ListValue,
+        is EmscriptValue.ImageMatchValue,
+        is EmscriptValue.TextMatchValue,
+        is EmscriptValue.MarkerValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Bool")
         EmscriptValue.NullValue -> error(
@@ -426,6 +529,9 @@ private fun EmscriptValue.render(): String =
         is EmscriptValue.BooleanValue -> value.toString()
         is EmscriptValue.TaskerVariableValue -> "${name}=$value"
         is EmscriptValue.ListValue -> values.joinToString(prefix = "[", postfix = "]") { it.render() }
+        is EmscriptValue.ImageMatchValue -> "ImageMatch($templateId,$score)"
+        is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
+        is EmscriptValue.MarkerValue -> "Marker($markerId)"
         EmscriptValue.NullValue -> "null"
     }
 
@@ -435,6 +541,9 @@ private fun EmscriptValue.runtimeType(): LanguageTypeRef = when (this) {
     is EmscriptValue.BooleanValue -> CoreTypes.BOOL.ref
     is EmscriptValue.TaskerVariableValue -> ProviderTypes.TASKER_VARIABLE.ref
     is EmscriptValue.ListValue -> LanguageTypeRef.ListOf(elementType)
+    is EmscriptValue.ImageMatchValue -> DomainTypes.IMAGE_MATCH.ref
+    is EmscriptValue.TextMatchValue -> DomainTypes.TEXT_MATCH.ref
+    is EmscriptValue.MarkerValue -> DomainTypes.MARKER.ref
     EmscriptValue.NullValue -> error(
         "NULL_LITERAL_DECISION_REQUIRED: absent besitzt ohne erwarteten Typ keinen ableitbaren Basistyp",
     )

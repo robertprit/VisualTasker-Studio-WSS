@@ -162,7 +162,7 @@ class WorkspaceDryRunRuntimeTest {
     fun dryRunMarksOnlyMissingWorkspaceCatalogAdaptersAsCapabilityWarnings() {
         val imported = EmscriptWorkspaceImporter().import(
             """
-            findTemplate("button.png", 0.8, 1000)
+            LET templateMatch:ImageMatch? = findTemplate("button.png", 0.8, 1000)
             markerSave("button", region(10, 20, 30, 40), "region", 0.90)
             LET templateScore:Number = templateCompare("buttonTpl", region(10, 20, 30, 40), "grayscale")
             Termux.shell("echo ok")

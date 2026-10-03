@@ -110,7 +110,7 @@ class ShizukuAvailabilityConvergenceTest {
     @Test
     fun `audit removes only Shizuku availability in 3U`() {
         assertEquals(setOf(COMMAND_ID), QueryReturnContractAudit.MIGRATED_M1B_3U)
-        assertEquals(5, QueryReturnContractAudit.ALL.size)
+        assertEquals(2, QueryReturnContractAudit.ALL.size)
         assertTrue(QueryReturnContractAudit.ALL.none { it.stableId == COMMAND_ID })
         assertTrue(QueryReturnContractAudit.MIGRATED_M1B_3W.contains("shizuku.getUid"))
     }

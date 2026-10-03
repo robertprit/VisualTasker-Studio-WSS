@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 19
+    const val integrationTestScriptVersion: Int = 20
 
     val sampleScript: String = """
         LET v1 = 1
@@ -32,10 +32,10 @@ object EditorDefaults {
         datastorePut("integration.score", "0")
         LET integrationScoreText:String? = datastoreGet("integration.score")
         markerSave("integrationRegion", region(10, 20, 240, 160), "region", 0.85)
-        markerLoad("integrationRegion")
+        LET integrationMarker:Marker? = markerLoad("integrationRegion")
         templateDefine("integrationTemplate", region(10, 20, 240, 160), "grayscale")
         LET integrationScore:Number = templateCompare("integrationTemplate", region(10, 20, 240, 160), "grayscale")
-        findTemplate("integrationTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
+        LET integrationMatch:ImageMatch? = findTemplate("integrationTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
 
         rem.flowBreak("Main loop", "right")
         rem.group("Main loop", true)
@@ -150,10 +150,10 @@ object EditorDefaults {
         datastorePut("catalog.result", "catalog-ready")
         LET catalogStoredResult:String? = datastoreGet("catalog.result")
         markerSave("catalogRegion", region(10, 20, 240, 160), "region", 0.85)
-        markerLoad("catalogRegion")
+        LET catalogMarker:Marker? = markerLoad("catalogRegion")
         templateDefine("catalogTemplate", region(10, 20, 240, 160), "grayscale")
         LET catalogScore:Number = templateCompare("catalogTemplate", region(10, 20, 240, 160), "grayscale")
-        findTemplate("catalogTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
+        LET catalogMatch:ImageMatch? = findTemplate("catalogTemplate.png", 0.80, 1000, 1, region(10, 20, 240, 160))
         Clipboard.set("visualtasker")
         log(Clipboard.get())
         File.writeText("core-runtime.txt", "hello")
@@ -364,7 +364,7 @@ object EditorDefaults {
         END WHILE
 
         datastorePut("stress.score", "complete")
-        markerLoad("stressRegion")
+        LET stressMarker:Marker? = markerLoad("stressRegion")
         markerDelete("stressRegion")
         screenshot("stress-end.png")
         log("nested-stress-end")
@@ -399,13 +399,13 @@ object EditorDefaults {
         log("vision-start")
         screenshot("screenshots/stable-vision.png")
         markerSave("stableVisionRegion", region(180, 420, 540, 780), "region", 0.85)
-        markerLoad("stableVisionRegion")
+        LET stableVisionMarker:Marker? = markerLoad("stableVisionRegion")
         highlight(region(180, 420, 540, 780))
         ocr(region(180, 420, 540, 780), 3000)
-        findText("VisualTasker", 3000)
+        LET stableTextMatch:TextMatch? = findText("VisualTasker", 3000)
         templateDefine("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
         LET stableVisionScore:Number = templateCompare("stableVisionTemplate", region(180, 420, 540, 780), "grayscale")
-        findTemplate("stableVisionTemplate.png", 0.85, 3000, 1, region(180, 420, 540, 780))
+        LET stableImageMatch:ImageMatch? = findTemplate("stableVisionTemplate.png", 0.85, 3000, 1, region(180, 420, 540, 780))
         sceneSave("stableVisionScene", "region", region(180, 420, 540, 780), "screenshots/stable-vision.png")
         markerDelete("stableVisionRegion")
         log("vision-end")

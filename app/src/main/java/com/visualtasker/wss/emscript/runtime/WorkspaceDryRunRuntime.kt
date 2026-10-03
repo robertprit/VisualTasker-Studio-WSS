@@ -405,13 +405,11 @@ private class WorkspaceInterpreter(
     private fun evaluateParsedFunctionCall(expression: EmscriptIrExpression.FunctionCall): EmscriptValue {
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
-        return when (entry?.returnType) {
-            "Number" -> EmscriptValue.NumberValue(0.0)
-            "String", "Text" -> EmscriptValue.StringValue("")
-            "Boolean", "Bool" -> EmscriptValue.BooleanValue(false)
-            null, "Void" -> error("${expression.name} ist kein wertliefernder Ausdruck")
-            else -> error("Unsupported expression return type '${entry.returnType}' for ${entry.canonicalName}")
+        val returnType = entry?.returnType
+        if (returnType == null || returnType.equals("Void", ignoreCase = true)) {
+            error("${expression.name} ist kein wertliefernder Ausdruck")
         }
+        return EmscriptRuntimeTypeSafety.defaultValue(returnType)
     }
 
     private fun edgeKindFromNext(sourceId: BlockId): String =
@@ -553,6 +551,9 @@ private fun EmscriptValue.asDoubleDryRun(context: String): Double =
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
         is EmscriptValue.ListValue,
+        is EmscriptValue.ImageMatchValue,
+        is EmscriptValue.TextMatchValue,
+        is EmscriptValue.MarkerValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Number")
         EmscriptValue.NullValue -> error(
@@ -566,6 +567,9 @@ private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
         is EmscriptValue.ListValue,
+        is EmscriptValue.ImageMatchValue,
+        is EmscriptValue.TextMatchValue,
+        is EmscriptValue.MarkerValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Bool")
         EmscriptValue.NullValue -> error(
@@ -580,6 +584,9 @@ private fun EmscriptValue.renderDryRun(): String =
         is EmscriptValue.BooleanValue -> value.toString()
         is EmscriptValue.TaskerVariableValue -> "${name}=$value"
         is EmscriptValue.ListValue -> values.joinToString(prefix = "[", postfix = "]") { it.renderDryRun() }
+        is EmscriptValue.ImageMatchValue -> "ImageMatch($templateId,$score)"
+        is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
+        is EmscriptValue.MarkerValue -> "Marker($markerId)"
         EmscriptValue.NullValue -> "null"
     }
 

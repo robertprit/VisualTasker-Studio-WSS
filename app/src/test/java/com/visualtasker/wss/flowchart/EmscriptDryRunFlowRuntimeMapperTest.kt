@@ -192,7 +192,7 @@ class EmscriptDryRunFlowRuntimeMapperTest {
     fun mapsCapabilityWarningsToRuntimeDiagnostics() {
         val imported = EmscriptWorkspaceImporter().import(
             """
-            findTemplate("button.png", 0.8, 1000)
+            LET templateMatch:ImageMatch? = findTemplate("button.png", 0.8, 1000)
             Termux.shell("echo ok")
             """.trimIndent(),
             workspaceId = "runtime-flowchart-capabilities",
@@ -221,8 +221,9 @@ class EmscriptDryRunFlowRuntimeMapperTest {
             it["severity"] == "INFO" &&
                 it["command"] == "findTemplate" &&
                 it["capability"] == "VISION" &&
-                it["pluginOwner"] == "visualtasker.core"
+                it["pluginOwner"] == "visualtasker.vision"
         })
+        assertEquals("null", snapshot.runtimeVariables()["templateMatch"])
         assertTrue(runtimeEvents.any {
             it["severity"] == "WARNING" &&
             it["command"] == "Termux.shell" &&

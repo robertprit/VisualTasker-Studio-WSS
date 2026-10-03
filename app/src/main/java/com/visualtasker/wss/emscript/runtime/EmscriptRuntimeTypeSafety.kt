@@ -1,6 +1,7 @@
 package com.visualtasker.wss.emscript.runtime
 
 import de.visualtasker.emscript.contract.CoreTypes
+import de.visualtasker.emscript.contract.DomainTypes
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.emscript.contract.LanguageTypeRef
 import de.visualtasker.emscript.contract.ProviderTypes
@@ -44,6 +45,9 @@ internal object EmscriptRuntimeTypeSafety {
         is EmscriptValue.BooleanValue -> CoreTypes.BOOL.ref
         is EmscriptValue.TaskerVariableValue -> ProviderTypes.TASKER_VARIABLE.ref
         is EmscriptValue.ListValue -> LanguageTypeRef.ListOf(value.elementType)
+        is EmscriptValue.ImageMatchValue -> DomainTypes.IMAGE_MATCH.ref
+        is EmscriptValue.TextMatchValue -> DomainTypes.TEXT_MATCH.ref
+        is EmscriptValue.MarkerValue -> DomainTypes.MARKER.ref
         EmscriptValue.NullValue -> error("Absent values require an expected nullable type")
     }
 }
