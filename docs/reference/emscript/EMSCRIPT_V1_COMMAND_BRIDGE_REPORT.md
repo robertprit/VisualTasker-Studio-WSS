@@ -10,20 +10,20 @@ Status: twenty-one queries migrated; two chart query return conflicts remain
 | --- | ---: |
 | Catalog entries | 127 |
 | Unique canonical names, case-insensitive | 124 |
-| Declared aliases | 87 |
+| Declared aliases | 89 |
 | Alias/canonical collisions | 1 |
 | Provider-owned entries | 89 |
 | Query projections | 26 |
 | Native V1 definitions | 3 |
 | CLEAN | 22 |
-| NORMALIZABLE | 66 |
-| CONFLICT | 39 |
+| NORMALIZABLE | 68 |
+| CONFLICT | 37 |
 | UNMAPPABLE | 0 |
 | Live status LIVE_CONFIRMED | 29 |
-| Live status LIVE_PROVIDER_DEPENDENT | 72 |
+| Live status LIVE_PROVIDER_DEPENDENT | 74 |
 | Live status DRY_RUN_ONLY | 1 |
 | Live status CATALOG_ONLY | 3 |
-| Live status NO_DISPATCH | 22 |
+| Live status NO_DISPATCH | 20 |
 | Live status UNKNOWN | 0 |
 
 ## Bridge Contract
@@ -152,14 +152,14 @@ Each legacy entry is analyzed exactly once. `event.start`, `action.wait` and `fe
 | `scrcpy.rotate` | `Scrcpy.rotate` | `scrcpy.rotate` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.hide` | `Chart.hide` | `chart.hide` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.remove` | `Chart.remove` | `chart.remove` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
-| `chart.exists` | `Chart.exists` | `chart.exists` | QUERY | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>MISSING_RETURN_TYPE<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>QUERY_RETURNS_VOID |
+| `chart.exists` | `chart.exists` | `chart.exists` | QUERY | Bool -> Bool | CANONICAL | CANONICAL | LOSSLESS | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.setData` | `Chart.setData` | `chart.setData` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
 | `chart.setOptions` | `Chart.setOptions` | `chart.setOptions` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
 | `chart.add` | `Chart.add` | `chart.add` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
 | `chart.update` | `Chart.update` | `chart.update` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
 | `chart.removeData` | `Chart.removeData` | `chart.removeData` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CONFLICT | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>UNTYPED_DEFAULT<br>UNTYPED_PARAMETER |
 | `chart.clear` | `Chart.clear` | `chart.clear` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
-| `chart.get` | `Chart.get` | `chart.get` | QUERY | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>MISSING_RETURN_TYPE<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER<br>QUERY_RETURNS_VOID |
+| `chart.get` | `chart.get` | `chart.get` | QUERY | ChartSnapshot? -> legacy.chartSnapshot? | CANONICAL | CANONICAL | LOSSLESS | NORMALIZABLE | CAPABILITY_PROVIDER_MIXED<br>PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.capture` | `Chart.capture` | `chart.capture` | ACTION | Void/unspecified -> Void | NEEDS_NORMALIZATION | CANONICAL | NOT_APPLICABLE | CONFLICT | CAPABILITY_PROVIDER_MIXED<br>LEGACY_ALIAS_REQUIRED<br>LIVE_FLAG_WITHOUT_DISPATCH<br>NAMING_FAMILY_OUTLIER<br>NON_CANONICAL_NAME<br>PLUGIN_OWNER_NOT_PROVIDER |
 
 ## Duplicate Canonical Names
@@ -240,14 +240,12 @@ Current lookup lowercases input and returns the first candidate. The bridge repo
 | scrcpy | `Scrcpy.rotate` | lowerCamelCase namespace | `scrcpy.rotate` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.hide` | lowerCamelCase namespace | `chart.hide` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.remove` | lowerCamelCase namespace | `chart.remove` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
-| chart | `Chart.exists` | lowerCamelCase namespace | `chart.exists` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.setData` | lowerCamelCase namespace | `chart.setData` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.setOptions` | lowerCamelCase namespace | `chart.setOptions` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.add` | lowerCamelCase namespace | `chart.add` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.update` | lowerCamelCase namespace | `chart.update` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.removeData` | lowerCamelCase namespace | `chart.removeData` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.clear` | lowerCamelCase namespace | `chart.clear` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
-| chart | `Chart.get` | lowerCamelCase namespace | `chart.get` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | chart | `Chart.capture` | lowerCamelCase namespace | `chart.capture` | true | HIGH | V1 qualified command names require lowerCamelCase namespace segments. |
 | Marker | `markerSave`, `markerLoad`, `markerDelete` | marker+operation | unchanged | false | HIGH | Consistent sibling family. |
 | Scene | `sceneSave` | scene+operation | unchanged | false | MEDIUM | Current family has one member. |
@@ -255,7 +253,7 @@ Current lookup lowercases input and returns the first candidate. The bridge repo
 | Input | `click`, `swipe`, `clickPoint`, `touch` | operation+target | clickText | true | HIGH | Coordinate click and text click require separate signatures. |
 | Feedback | `beep`, `vibrate` | verb | unchanged | false | HIGH | Names are consistent; vibrate signature is not. |
 | File/Storage | `datastorePut`, `datastoreGet`, `File.readText`, `file.writeText`, `Clipboard.get`, `clipboard.set`, `cache.clear`, `Sys.info`, `Env.get` | lowerCamel namespace | namespace case only | true | HIGH | Uppercase legacy namespace segments violate V1 naming. |
-| Provider namespaces | `findTemplate`, `findText`, `markerSave`, `markerLoad`, `markerDelete`, `templateDefine`, `templateCompare`, `ChromeTab.open`, `ChromeTab.unbind`, `Tasker.runTask`, `Tasker.setVariable`, `Tasker.emitEvent`, `Shizuku.exec`, `Shizuku.shell`, `Termux.run`, `Termux.shell`, `Termux.api`, `Scrcpy.start`, `Scrcpy.stop`, `Scrcpy.touch`, `Chart.create`, `Chart.show`, `Chart.export`, `rem.region`, `rem.variableBulk`, `rem.expressionCapsule`, `rem.flowBreak`, `rem.offPageOut`, `rem.offPageIn`, `rem.group`, `rem.layoutHint`, `chromeTab.isSupported`, `ChromeTab.bind`, `ChromeTab.create`, `ChromeTab.mayLaunchUrl`, `ChromeTab.requestPostMessageChannel`, `ChromeTab.postMessage`, `ChromeTab.validateRelationship`, `tasker.isInstalled`, `tasker.isEnabled`, `Tasker.cancel`, `tasker.getVariable`, `Tasker.clearVariable`, `tasker.getVariables`, `Tasker.lastResult`, `Tasker.error`, `Tasker.action`, `Tasker.pluginAction`, `Tasker.profileEnable`, `Tasker.profileDisable`, `Tasker.profileToggle`, `Tasker.profileState`, `shizuku.isInstalled`, `shizuku.isAvailable`, `shizuku.getUid`, `Shizuku.permissionState`, `Shizuku.requestPermission`, `Shizuku.bindUserService`, `Shizuku.unbindUserService`, `Shizuku.systemService`, `Shizuku.call`, `termux.isInstalled`, `Termux.canRunCommands`, `Termux.writeStdin`, `Termux.cancel`, `termux.get`, `Scrcpy.hostAvailable`, `Scrcpy.devices`, `Scrcpy.connect`, `Scrcpy.disconnect`, `scrcpy.isRunning`, `scrcpy.get`, `Scrcpy.key`, `Scrcpy.text`, `Scrcpy.scroll`, `Scrcpy.setClipboard`, `Scrcpy.setScreenPower`, `Scrcpy.rotate`, `Chart.hide`, `Chart.remove`, `Chart.exists`, `Chart.setData`, `Chart.setOptions`, `Chart.add`, `Chart.update`, `Chart.removeData`, `Chart.clear`, `Chart.get`, `Chart.capture` | lowerCamel provider.operation | namespace case only | true | HIGH | Provider identity must be separate from pluginOwner. |
+| Provider namespaces | `findTemplate`, `findText`, `markerSave`, `markerLoad`, `markerDelete`, `templateDefine`, `templateCompare`, `ChromeTab.open`, `ChromeTab.unbind`, `Tasker.runTask`, `Tasker.setVariable`, `Tasker.emitEvent`, `Shizuku.exec`, `Shizuku.shell`, `Termux.run`, `Termux.shell`, `Termux.api`, `Scrcpy.start`, `Scrcpy.stop`, `Scrcpy.touch`, `Chart.create`, `Chart.show`, `Chart.export`, `rem.region`, `rem.variableBulk`, `rem.expressionCapsule`, `rem.flowBreak`, `rem.offPageOut`, `rem.offPageIn`, `rem.group`, `rem.layoutHint`, `chromeTab.isSupported`, `ChromeTab.bind`, `ChromeTab.create`, `ChromeTab.mayLaunchUrl`, `ChromeTab.requestPostMessageChannel`, `ChromeTab.postMessage`, `ChromeTab.validateRelationship`, `tasker.isInstalled`, `tasker.isEnabled`, `Tasker.cancel`, `tasker.getVariable`, `Tasker.clearVariable`, `tasker.getVariables`, `Tasker.lastResult`, `Tasker.error`, `Tasker.action`, `Tasker.pluginAction`, `Tasker.profileEnable`, `Tasker.profileDisable`, `Tasker.profileToggle`, `Tasker.profileState`, `shizuku.isInstalled`, `shizuku.isAvailable`, `shizuku.getUid`, `Shizuku.permissionState`, `Shizuku.requestPermission`, `Shizuku.bindUserService`, `Shizuku.unbindUserService`, `Shizuku.systemService`, `Shizuku.call`, `termux.isInstalled`, `Termux.canRunCommands`, `Termux.writeStdin`, `Termux.cancel`, `termux.get`, `Scrcpy.hostAvailable`, `Scrcpy.devices`, `Scrcpy.connect`, `Scrcpy.disconnect`, `scrcpy.isRunning`, `scrcpy.get`, `Scrcpy.key`, `Scrcpy.text`, `Scrcpy.scroll`, `Scrcpy.setClipboard`, `Scrcpy.setScreenPower`, `Scrcpy.rotate`, `Chart.hide`, `Chart.remove`, `chart.exists`, `Chart.setData`, `Chart.setOptions`, `Chart.add`, `Chart.update`, `Chart.removeData`, `Chart.clear`, `chart.get`, `Chart.capture` | lowerCamel provider.operation | namespace case only | true | HIGH | Provider identity must be separate from pluginOwner. |
 
 `findTemplate` is **NORMALIZABLE** to `templateFind`; `findTemplate` remains a required legacy alias. This is supported by the existing siblings `templateDefine` and `templateCompare`.
 
@@ -306,8 +304,8 @@ The duplicate is a semantic conflict, not a display-only duplicate. A V1 naming 
 | `termux.get` | REPORTER | String? | provider result/error | binding:emscript.command.termux.get | String? | Catalog declares the concrete typed reporter return String?. | HIGH |
 | `scrcpy.isRunning` | REPORTER | Bool | provider result/error | binding:emscript.command.scrcpy.isRunning | Bool | Catalog declares the concrete typed reporter return Bool. | HIGH |
 | `scrcpy.get` | REPORTER | String? | provider result/error | binding:emscript.command.scrcpy.get | String? | Catalog declares the concrete typed reporter return String?. | HIGH |
-| `chart.exists` | STATEMENT | Void/unspecified | unknown | binding:emscript.command.chart.exists | NEEDS_DECISION | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | MEDIUM |
-| `chart.get` | STATEMENT | Void/unspecified | unknown | binding:emscript.command.chart.get | NEEDS_DECISION | Name and SCREEN_READ side effect indicate value semantics; concrete result type is not declared. | MEDIUM |
+| `chart.exists` | REPORTER | Bool | BooleanValue | binding:emscript.command.chart.exists | Bool | WorkspaceBasicRuntime maps one chart repository lookup to a typed Bool; lookup failures remain diagnostics. | HIGH |
+| `chart.get` | REPORTER | ChartSnapshot? | ChartSnapshotValue or NullValue | binding:emscript.command.chart.get | ChartSnapshot? | WorkspaceBasicRuntime transports an immutable ChartSnapshotValue or NullValue through the generic command reporter. | HIGH |
 
 Entries reported as `NEEDS_DECISION` remain Void in the proposed bridge definition so the conflict cannot be mistaken for an invented return type.
 
@@ -317,14 +315,14 @@ M1B-3U migrated `shizuku.isAvailable` as non-null Bool through the generic `Runt
 
 ## M1B-3W Scalar Provider Query Convergence
 
-The current `D_QUERY_RETURN` inventory contains 2 language commands. M1B-3W added typed scalar reporter contracts, M1B-3X added the Tasker collection reporter and M1B-3Y added the three perception domain reporters. Only the two chart entries remain statement-shaped.
+The current `D_QUERY_RETURN` inventory contains 0 language commands. M1B-3W added typed scalar reporters, M1B-3X the Tasker collection reporter, M1B-3Y the perception domain reporters, and M1B-3Z the two chart reporters.
 
 | Class | Count |
 | --- | ---: |
 | A_NULLABLE_SCALAR_READY | 0 |
 | B_NONNULL_SCALAR_READY | 0 |
 | C_STRUCTURED_RESULT_TYPE | 0 |
-| D_RUNTIME_RESULT_GAP | 2 |
+| D_RUNTIME_RESULT_GAP | 0 |
 | E_PROVIDER_CONTRACT_GAP | 0 |
 | F_SENTINEL_OR_ERROR_COLLISION | 0 |
 | G_LANGUAGE_SEMANTICS_GAP | 0 |
@@ -332,10 +330,8 @@ The current `D_QUERY_RETURN` inventory contains 2 language commands. M1B-3W adde
 
 | Stable ID | Observed runtime | Proposed V1 | Class | Runtime | Provider | Risk |
 | --- | --- | --- | --- | --- | --- | --- |
-| `chart.exists` | no runtime query result | Bool | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
-| `chart.get` | no runtime query result | ChartSnapshot? | D_RUNTIME_RESULT_GAP | gap | yes | BLOCKED |
 
-Provider-local inspections now preserve VALUE, ABSENT, legitimate false/empty/zero results and technical FAILURE as separate outcomes. No collection, perception or chart query is migrated by M1B-3W.
+Provider-local inspections preserve VALUE, ABSENT, legitimate false/empty/zero results and technical FAILURE as separate outcomes.
 
 ## M1B-3X Tasker Collection Query Convergence
 
@@ -344,6 +340,10 @@ Provider-local inspections now preserve VALUE, ABSENT, legitimate false/empty/ze
 ## M1B-3Y Perception Domain Value Convergence
 
 `action.findTemplate(...): ImageMatch?`, `vision.findText(...): TextMatch?` and `vision.markerLoad(...): Marker?` now use immutable EMScript domain values and generic reporter/CommandCall projection. Completed no-match/no-resource queries return `NullValue`; capture, engine, repository and decode failures remain diagnostics. Only `chart.exists` and `chart.get` remain in `D_QUERY_RETURN`.
+
+## M1B-3Z Chart Domain Value Convergence
+
+`chart.exists(...): Bool` and `chart.get(...): ChartSnapshot?` now share one repository lookup contract. Missing resources map to false/`NullValue`; repository and decode failures remain diagnostics. `ChartSnapshotValue` is immutable and no runtime/UI handle crosses the EMScript boundary. `D_QUERY_RETURN` is zero.
 
 ## Default Value Audit
 
@@ -619,14 +619,14 @@ Catalog declares `TEXT`; parser accepts an expression and runtime renders the re
 | `scrcpy.rotate` | SCRCPY | `visualtasker.scrcpy` | WorkspaceBasicRuntime dispatches the namespace to an environment adapter; availability is external. | `provider.scrcpy` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.hide` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.remove` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
-| `chart.exists` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
+| `chart.exists` | CHARTS | `visualtasker.charts` | A concrete evaluator or WorkspaceBasicRuntime branch exists for chart.exists. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.setData` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.setOptions` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.add` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.update` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.removeData` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.clear` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
-| `chart.get` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
+| `chart.get` | CHARTS | `visualtasker.charts` | A concrete evaluator or WorkspaceBasicRuntime branch exists for chart.get. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 | `chart.capture` | CHARTS | `visualtasker.charts` | No Chart namespace branch exists in WorkspaceBasicRuntime. | `provider.charts` | CAPABILITY_PROVIDER_MIXED, PLUGIN_OWNER_NOT_PROVIDER |
 
 ## Live Dispatch Audit
@@ -653,14 +653,12 @@ Catalog declares `TEXT`; parser accepts an expression and runtime renders the re
 | `rem.layoutHint` | true | NO_DISPATCH | REM entries are consumed as visual metadata and have no WorkspaceBasicRuntime dispatch branch. |
 | `chart.hide` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.remove` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
-| `chart.exists` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.setData` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.setOptions` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.add` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.update` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.removeData` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.clear` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
-| `chart.get` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 | `chart.capture` | true | NO_DISPATCH | No Chart namespace branch exists in WorkspaceBasicRuntime. |
 
 ## Projection Commands
@@ -717,10 +715,10 @@ The groups are exclusive and ordered by the first architectural blocker: project
 | A_SAFE_GENERIC | 8 |
 | B_NAMING_NORMALIZATION | 4 |
 | C_TYPE_CONFLICT | 1 |
-| D_QUERY_RETURN | 2 |
+| D_QUERY_RETURN | 0 |
 | E_CONTROL_STRUCTURE | 5 |
 | F_OPERATOR_OR_LITERAL_MODEL | 6 |
-| G_PROVIDER_DEPENDENT | 84 |
+| G_PROVIDER_DEPENDENT | 86 |
 | H_PROJECTION | 11 |
 | I_RUNTIME_DISPATCH_CONFLICT | 3 |
 | TOTAL_REMAINING | 124 |

@@ -174,7 +174,7 @@ class ChromeTabSupportedConvergenceTest {
     @Test
     fun `chrome tab support remains outside D query return after later migrations`() {
         assertEquals(setOf("chromeTab.isSupported"), QueryReturnContractAudit.MIGRATED_M1B_3R)
-        assertEquals(2, QueryReturnContractAudit.ALL.size)
+        assertTrue(QueryReturnContractAudit.ALL.isEmpty())
         assertTrue(QueryReturnContractAudit.ALL.none { it.stableId == "chromeTab.isSupported" })
         assertTrue(QueryReturnContractAudit.MIGRATED_M1B_3T.containsAll(
             listOf("tasker.isInstalled", "shizuku.isInstalled", "termux.isInstalled"),

@@ -144,7 +144,7 @@ class InstalledProviderBoolConvergenceTest {
     @Test
     fun `audit removes exactly the three installed queries and keeps Shizuku availability`() {
         assertEquals(commands.mapTo(linkedSetOf()) { it.id }, QueryReturnContractAudit.MIGRATED_M1B_3T)
-        assertEquals(2, QueryReturnContractAudit.ALL.size)
+        assertTrue(QueryReturnContractAudit.ALL.isEmpty())
         assertTrue(commands.none { provider -> QueryReturnContractAudit.ALL.any { it.stableId == provider.id } })
         assertEquals(setOf("shizuku.isAvailable"), QueryReturnContractAudit.MIGRATED_M1B_3U)
     }

@@ -48,6 +48,7 @@ internal object EmscriptRuntimeTypeSafety {
         is EmscriptValue.ImageMatchValue -> DomainTypes.IMAGE_MATCH.ref
         is EmscriptValue.TextMatchValue -> DomainTypes.TEXT_MATCH.ref
         is EmscriptValue.MarkerValue -> DomainTypes.MARKER.ref
+        is EmscriptValue.ChartSnapshotValue -> DomainTypes.CHART_SNAPSHOT.ref
         EmscriptValue.NullValue -> error("Absent values require an expected nullable type")
     }
 }

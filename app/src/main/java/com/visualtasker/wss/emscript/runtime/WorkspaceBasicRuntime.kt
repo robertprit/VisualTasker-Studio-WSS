@@ -176,6 +176,35 @@ class WorkspaceBasicRuntime(
                 valueUnavailableCode = RuntimeQueryDiagnosticCodes.MARKER_DECODE_FAILED,
             ) { it is EmscriptValue.MarkerValue || it === EmscriptValue.NullValue }
         }
+        "chart.exists" -> {
+            val id = (arguments.singleOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("chart.exists erwartet id:String")
+            val lookup = evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.chartLookup(id),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.CHART_RESULT_INVALID,
+            ) { it is EmscriptValue.ChartSnapshotValue || it === EmscriptValue.NullValue }
+            EmscriptValue.BooleanValue(lookup is EmscriptValue.ChartSnapshotValue).also { value ->
+                environment.log("chart.exists -> VALUE(${value.value})")
+            }
+        }
+        "chart.get" -> {
+            require(arguments.size in 1..2) { "chart.get erwartet id:String und optional key:String" }
+            val id = (arguments.firstOrNull() as? EmscriptValue.StringValue)?.value
+                ?: error("chart.get erwartet id:String")
+            val legacyKey = (arguments.getOrNull(1) as? EmscriptValue.StringValue)?.value.orEmpty()
+            if (legacyKey.isNotBlank()) {
+                throw EmscriptRuntimeDiagnosticException(
+                    RuntimeQueryDiagnosticCodes.CHART_RESULT_INVALID,
+                    "chart.get key ist nur ein Legacy-Importparameter; Property Access ist nicht Teil dieses Slices.",
+                )
+            }
+            evaluateProviderValue(
+                commandId = entry.id,
+                result = environment.chartLookup(id),
+                valueUnavailableCode = RuntimeQueryDiagnosticCodes.CHART_RESULT_INVALID,
+            ) { it is EmscriptValue.ChartSnapshotValue || it === EmscriptValue.NullValue }
+        }
         "chromeTab.isSupported" -> evaluateProviderBool(
             commandId = entry.id,
             result = environment.chromeTabCommand(entry.id, emptyList()),
@@ -710,6 +739,12 @@ data class WorkspaceBasicRuntimeEnvironment(
         RuntimeAdapterResult.failure(
             diagnosticCode = RuntimeQueryDiagnosticCodes.MARKER_REPOSITORY_UNAVAILABLE,
             message = "vision.markerLoad benötigt das Marker-Repository.",
+        )
+    },
+    val chartLookup: (id: String) -> RuntimeAdapterResult = { _ ->
+        RuntimeAdapterResult.failure(
+            diagnosticCode = RuntimeQueryDiagnosticCodes.CHART_REPOSITORY_UNAVAILABLE,
+            message = "chart.exists/chart.get benötigen ein Chart-Repository.",
         )
     },
     val markerDelete: (name: String) -> Boolean = { false },

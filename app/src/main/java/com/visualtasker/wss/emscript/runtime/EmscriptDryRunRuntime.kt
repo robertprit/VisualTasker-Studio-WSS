@@ -160,6 +160,85 @@ sealed interface EmscriptValue {
             require(threshold.isFinite() && threshold in 0.0..1.0) { "Marker threshold must stay in 0..1." }
         }
     }
+    class ChartSnapshotValue private constructor(
+        private val state: ChartSnapshotState,
+    ) : EmscriptValue {
+        val id: String get() = state.id
+        val title: String get() = state.title
+        val kind: String get() = state.kind
+        val series: List<ChartSeriesSnapshot> get() = state.series
+        val candles: List<ChartCandleSnapshot> get() = state.candles
+        val boxPlots: List<ChartBoxPlotSnapshot> get() = state.boxPlots
+        val heatmapCells: List<ChartHeatmapCellSnapshot> get() = state.heatmapCells
+        val histogramBinCount: Int get() = state.histogramBinCount
+        val bubbles: List<ChartBubbleSnapshot> get() = state.bubbles
+        val vennSets: List<ChartVennSetSnapshot> get() = state.vennSets
+        val vennOverlaps: List<ChartVennOverlapSnapshot> get() = state.vennOverlaps
+        val mosaicCells: List<ChartMosaicCellSnapshot> get() = state.mosaicCells
+        val gaugeValue: Double? get() = state.gaugeValue
+        val gaugeMinimum: Double get() = state.gaugeMinimum
+        val gaugeMaximum: Double get() = state.gaugeMaximum
+        val ganttTasks: List<ChartGanttTaskSnapshot> get() = state.ganttTasks
+        val radarSeries: List<ChartRadarSeriesSnapshot> get() = state.radarSeries
+        val diagramNodes: List<ChartDiagramNodeSnapshot> get() = state.diagramNodes
+        val diagramEdges: List<ChartDiagramEdgeSnapshot> get() = state.diagramEdges
+        val options: ChartSnapshotOptions get() = state.options
+
+        override fun equals(other: Any?): Boolean =
+            other is ChartSnapshotValue && state == other.state
+
+        override fun hashCode(): Int = state.hashCode()
+
+        override fun toString(): String = "ChartSnapshotValue(id=$id, title=$title, kind=$kind)"
+
+        companion object {
+            fun create(
+                id: String,
+                title: String,
+                kind: String,
+                series: List<ChartSeriesSnapshot> = emptyList(),
+                candles: List<ChartCandleSnapshot> = emptyList(),
+                boxPlots: List<ChartBoxPlotSnapshot> = emptyList(),
+                heatmapCells: List<ChartHeatmapCellSnapshot> = emptyList(),
+                histogramBinCount: Int = 10,
+                bubbles: List<ChartBubbleSnapshot> = emptyList(),
+                vennSets: List<ChartVennSetSnapshot> = emptyList(),
+                vennOverlaps: List<ChartVennOverlapSnapshot> = emptyList(),
+                mosaicCells: List<ChartMosaicCellSnapshot> = emptyList(),
+                gaugeValue: Double? = null,
+                gaugeMinimum: Double = 0.0,
+                gaugeMaximum: Double = 100.0,
+                ganttTasks: List<ChartGanttTaskSnapshot> = emptyList(),
+                radarSeries: List<ChartRadarSeriesSnapshot> = emptyList(),
+                diagramNodes: List<ChartDiagramNodeSnapshot> = emptyList(),
+                diagramEdges: List<ChartDiagramEdgeSnapshot> = emptyList(),
+                options: ChartSnapshotOptions = ChartSnapshotOptions(),
+            ): ChartSnapshotValue = ChartSnapshotValue(
+                ChartSnapshotState.create(
+                    id = id,
+                    title = title,
+                    kind = kind,
+                    series = series,
+                    candles = candles,
+                    boxPlots = boxPlots,
+                    heatmapCells = heatmapCells,
+                    histogramBinCount = histogramBinCount,
+                    bubbles = bubbles,
+                    vennSets = vennSets,
+                    vennOverlaps = vennOverlaps,
+                    mosaicCells = mosaicCells,
+                    gaugeValue = gaugeValue,
+                    gaugeMinimum = gaugeMinimum,
+                    gaugeMaximum = gaugeMaximum,
+                    ganttTasks = ganttTasks,
+                    radarSeries = radarSeries,
+                    diagramNodes = diagramNodes,
+                    diagramEdges = diagramEdges,
+                    options = options,
+                ),
+            )
+        }
+    }
     class ListValue(
         val elementType: LanguageTypeRef,
         values: List<EmscriptValue>,
@@ -496,6 +575,7 @@ private fun EmscriptValue.asDouble(context: String): Double =
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
+        is EmscriptValue.ChartSnapshotValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Number")
         EmscriptValue.NullValue -> error(
@@ -515,6 +595,7 @@ private fun EmscriptValue.asBoolean(context: String): Boolean =
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
+        is EmscriptValue.ChartSnapshotValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Bool")
         EmscriptValue.NullValue -> error(
@@ -532,6 +613,7 @@ private fun EmscriptValue.render(): String =
         is EmscriptValue.ImageMatchValue -> "ImageMatch($templateId,$score)"
         is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
         is EmscriptValue.MarkerValue -> "Marker($markerId)"
+        is EmscriptValue.ChartSnapshotValue -> "ChartSnapshot($id,$kind)"
         EmscriptValue.NullValue -> "null"
     }
 
@@ -544,6 +626,7 @@ private fun EmscriptValue.runtimeType(): LanguageTypeRef = when (this) {
     is EmscriptValue.ImageMatchValue -> DomainTypes.IMAGE_MATCH.ref
     is EmscriptValue.TextMatchValue -> DomainTypes.TEXT_MATCH.ref
     is EmscriptValue.MarkerValue -> DomainTypes.MARKER.ref
+    is EmscriptValue.ChartSnapshotValue -> DomainTypes.CHART_SNAPSHOT.ref
     EmscriptValue.NullValue -> error(
         "NULL_LITERAL_DECISION_REQUIRED: absent besitzt ohne erwarteten Typ keinen ableitbaren Basistyp",
     )

@@ -107,11 +107,11 @@ class NullableTypeInfrastructureTest {
     }
 
     @Test
-    fun nullableCoreQueriesProvidersCollectionsAndPerceptionLeaveTwoDQueryReturnEntries() {
+    fun nullableCoreQueriesProvidersCollectionsPerceptionAndChartsCloseDQueryReturn() {
         val decisions = QueryReturnContractAudit.ALL
         val bridge = LegacyCommandDefinitionBridge().analyze()
-        assertEquals(2, decisions.size)
-        assertEquals(2, QueryReturnContractAudit.currentDQueryIds(bridge).size)
+        assertTrue(decisions.isEmpty())
+        assertTrue(QueryReturnContractAudit.currentDQueryIds(bridge).isEmpty())
         listOf("clipboard.get", "system.info", "system.env").forEach { id ->
             assertEquals("String", VisualTaskerCommandCatalog.findById(id)?.returnType)
         }

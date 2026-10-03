@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.editor
 
 object EditorDefaults {
-    const val integrationTestScriptVersion: Int = 20
+    const val integrationTestScriptVersion: Int = 21
 
     val sampleScript: String = """
         LET v1 = 1
@@ -171,6 +171,8 @@ object EditorDefaults {
         LET catalogTermuxSummary:String? = termux.get("summary")
         LET catalogScrcpyRunning:Bool = scrcpy.isRunning()
         LET catalogScrcpyState:String? = scrcpy.get("state")
+        LET catalogChartExists:Bool = chart.exists("wss-demo-line")
+        LET catalogChartSnapshot:ChartSnapshot? = chart.get("wss-demo-line")
         Shizuku.systemService("package")
         Shizuku.call("package", "1", ["s16", "com.visualtasker.wss"])
         Shizuku.shell("id")

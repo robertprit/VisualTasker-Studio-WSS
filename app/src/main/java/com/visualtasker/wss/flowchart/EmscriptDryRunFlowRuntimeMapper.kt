@@ -225,6 +225,7 @@ object EmscriptDryRunFlowRuntimeMapper {
         is EmscriptValue.ImageMatchValue -> "ImageMatch($templateId,$score)"
         is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
         is EmscriptValue.MarkerValue -> "Marker($markerId)"
+        is EmscriptValue.ChartSnapshotValue -> "ChartSnapshot($id,$kind)"
         EmscriptValue.NullValue -> "null"
     }
 }

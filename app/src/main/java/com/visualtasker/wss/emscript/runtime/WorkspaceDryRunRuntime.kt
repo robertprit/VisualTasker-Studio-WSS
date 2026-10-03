@@ -554,6 +554,7 @@ private fun EmscriptValue.asDoubleDryRun(context: String): Double =
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
+        is EmscriptValue.ChartSnapshotValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Number")
         EmscriptValue.NullValue -> error(
@@ -570,6 +571,7 @@ private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
+        is EmscriptValue.ChartSnapshotValue,
         is EmscriptValue.TaskerVariableValue,
         -> error("$context erwartet Bool")
         EmscriptValue.NullValue -> error(
@@ -587,6 +589,7 @@ private fun EmscriptValue.renderDryRun(): String =
         is EmscriptValue.ImageMatchValue -> "ImageMatch($templateId,$score)"
         is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
         is EmscriptValue.MarkerValue -> "Marker($markerId)"
+        is EmscriptValue.ChartSnapshotValue -> "ChartSnapshot($id,$kind)"
         EmscriptValue.NullValue -> "null"
     }
 
