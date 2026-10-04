@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript
 
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes

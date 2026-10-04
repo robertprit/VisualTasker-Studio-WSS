@@ -1,18 +1,18 @@
 package com.visualtasker.wss.emscript.parser
 
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.Connection
-import de.visualtasker.blockeditor.domain.ConnectionId
-import de.visualtasker.blockeditor.domain.ConnectionKind
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.StatementInput
-import de.visualtasker.blockeditor.domain.ValueInput
-import de.visualtasker.blockeditor.domain.VariableDefinition
-import de.visualtasker.blockeditor.domain.VariableScope
-import de.visualtasker.blockeditor.domain.WorkspaceAction
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.WorkspaceReducer
-import de.visualtasker.blockeditor.domain.withConnectionUpdated
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.Connection
+import de.visualtasker.workflow.core.ConnectionId
+import de.visualtasker.workflow.core.ConnectionKind
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.StatementInput
+import de.visualtasker.workflow.core.ValueInput
+import de.visualtasker.workflow.core.VariableDefinition
+import de.visualtasker.workflow.core.VariableScope
+import de.visualtasker.workflow.core.WorkspaceAction
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceReducer
+import de.visualtasker.workflow.core.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry
 import de.visualtasker.blockeditor.registry.CommandArgumentType
@@ -792,7 +792,7 @@ private class WorkspaceAssembler(
         return this
     }
 
-    private fun de.visualtasker.blockeditor.domain.BlockNode.statementInput(name: String): StatementInput =
+    private fun de.visualtasker.workflow.core.BlockNode.statementInput(name: String): StatementInput =
         statementInputs.find { it.name == name } ?: StatementInput(
             name = name,
             connection = Connection(

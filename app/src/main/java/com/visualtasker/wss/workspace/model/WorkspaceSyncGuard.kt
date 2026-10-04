@@ -5,25 +5,25 @@ import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.ir.validateIntegrity
 import de.visualtasker.blockeditor.ir.validateSemantics
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 
 class WorkspaceSyncGuard {
     fun inspect(serializedJson: String): WorkspaceSyncGuardReport {
-        val decoded = WorkspaceSerializer.decode(serializedJson)
+        val decoded = WorkflowSerializer.decode(serializedJson)
         val document = when (decoded) {
-            is WorkspaceDecodeResult.Decoded -> decoded.document
-            is WorkspaceDecodeResult.Malformed -> return WorkspaceSyncGuardReport(
+            is WorkflowDecodeResult.Decoded -> decoded.document
+            is WorkflowDecodeResult.Malformed -> return WorkspaceSyncGuardReport(
                 isValid = false,
                 messages = listOf("Workspace JSON ist fehlerhaft: ${decoded.reason}"),
             )
-            is WorkspaceDecodeResult.UnsupportedSchema -> return WorkspaceSyncGuardReport(
+            is WorkflowDecodeResult.UnsupportedSchema -> return WorkspaceSyncGuardReport(
                 isValid = false,
                 messages = listOf("Workspace Schema wird nicht unterstützt: ${decoded.version}"),
             )
         }
         val messages = mutableListOf<String>()
-        val normalized = runCatching { WorkspaceSerializer.serialize(document) }
+        val normalized = runCatching { WorkflowSerializer.serialize(document) }
             .getOrElse { error ->
                 return WorkspaceSyncGuardReport(
                     isValid = false,

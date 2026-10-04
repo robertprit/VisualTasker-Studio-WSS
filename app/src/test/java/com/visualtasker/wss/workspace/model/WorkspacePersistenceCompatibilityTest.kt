@@ -2,8 +2,8 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowNodeView
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.flowchart.domain.FlowSurfaceId
@@ -21,8 +21,8 @@ class WorkspacePersistenceCompatibilityTest {
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
         val original = WorkspaceWorkflowState.fromDocument(imported.document!!, "test")
 
-        val workspaceJson = WorkspaceSerializer.serialize(original.document)
-        val restoredWorkspace = WorkspaceSerializer.decode(workspaceJson) as WorkspaceDecodeResult.Decoded
+        val workspaceJson = WorkflowSerializer.serialize(original.document)
+        val restoredWorkspace = WorkflowSerializer.decode(workspaceJson) as WorkflowDecodeResult.Decoded
         val restoredState = WorkspaceWorkflowState.fromDocument(restoredWorkspace.document, "restart")
         assertEquals(original.document, restoredState.document)
         assertEquals(original.irGraph.nodes.map { it.id }, restoredState.irGraph.nodes.map { it.id })

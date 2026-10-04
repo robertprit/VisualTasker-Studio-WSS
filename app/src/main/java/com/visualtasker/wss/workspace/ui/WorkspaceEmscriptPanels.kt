@@ -61,7 +61,7 @@ import com.visualtasker.wss.logging.StudioLogStore
 import com.visualtasker.wss.logging.StudioLogSourceTarget
 import com.visualtasker.wss.ui.theme.M3EColors
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowRuntimeSnapshot
 
 internal const val EMSCRIPT_STATUS_READ_ONLY_PROJECTION = "READ_ONLY_PROJECTION"
@@ -100,7 +100,7 @@ internal fun EmscriptTextEditorPanel(
     fun buildApplyPreview(): String? {
         val manual = session.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
             ?: return null
-        val currentDocument = runCatching { WorkspaceSerializer.deserialize(workspaceJson) }.getOrNull()
+        val currentDocument = runCatching { WorkflowSerializer.deserialize(workspaceJson) }.getOrNull()
         return when (val preview = applyGuard.preview(
             manual.content,
             workspaceId = "workflow-main",
@@ -514,5 +514,5 @@ internal fun DebugInfoPanel(
 
 internal fun generateEmscriptProjection(workspaceJson: String): Result<String> =
     runCatching {
-        EmscriptGenerator().generate(WorkspaceSerializer.deserialize(workspaceJson))
+        EmscriptGenerator().generate(WorkflowSerializer.deserialize(workspaceJson))
     }

@@ -37,7 +37,7 @@ import de.visualtasker.blockeditor.registry.CommandCatalogKind
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -183,7 +183,7 @@ class ChartDomainValueConvergenceTest {
         assertFalse(generated, generated.contains("Chart.get"))
         assertTrue(guard.preview(generated) is EmscriptApplyGuardResult.Success)
 
-        val decoded = WorkspaceSerializer.deserialize(WorkspaceSerializer.serialize(document))
+        val decoded = WorkflowSerializer.deserialize(WorkflowSerializer.serialize(document))
         assertEquals(document.blocks.keys, decoded.blocks.keys)
     }
 

@@ -1,15 +1,15 @@
 package com.visualtasker.wss.emscript.runtime
 
-import de.visualtasker.blockeditor.domain.ArithmeticOperator
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.domain.CompareOperator
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.NormalizedOperator
-import de.visualtasker.blockeditor.domain.OperatorNormalization
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
-import de.visualtasker.blockeditor.domain.asString
+import de.visualtasker.workflow.core.ArithmeticOperator
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.core.CompareOperator
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.NormalizedOperator
+import de.visualtasker.workflow.core.OperatorNormalization
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceGraph
+import de.visualtasker.workflow.core.asString
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog

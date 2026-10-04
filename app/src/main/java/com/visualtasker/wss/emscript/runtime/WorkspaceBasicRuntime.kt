@@ -1,9 +1,9 @@
 package com.visualtasker.wss.emscript.runtime
 
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.asString
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.asString
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.emscript.contract.ProviderTypes
 import kotlin.math.roundToInt
@@ -339,7 +339,7 @@ class WorkspaceBasicRuntime(
     }
 
     private suspend fun executeEvent(document: WorkspaceDocument, event: EmscriptDryRunEvent): LiveExecutionOutcome? {
-        val block = event.blockId?.let { document.blocks[de.visualtasker.blockeditor.domain.BlockId(it)] }
+        val block = event.blockId?.let { document.blocks[de.visualtasker.workflow.core.BlockId(it)] }
         val command = event.command.orEmpty().lowercase()
         return when (event.kind) {
             "wait" -> {

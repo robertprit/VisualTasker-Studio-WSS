@@ -3,15 +3,15 @@ package com.visualtasker.wss.emscript
 import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrStatement
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.LegacyTouchClassification
 import de.visualtasker.blockeditor.registry.LegacyTouchStructuralClassifier
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,8 +44,8 @@ class LegacyTouchStructuralRoundtripTest {
             }
             assertEquals(FieldValue.Text(fixture.normalizedRawArgument), commandBlock.fields["args"])
 
-            val serialized = WorkspaceSerializer.serialize(imported.document)
-            val decoded = (WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded).document
+            val serialized = WorkflowSerializer.serialize(imported.document)
+            val decoded = (WorkflowSerializer.decode(serialized) as WorkflowDecodeResult.Decoded).document
             val irCall = IrGenerator().generate(decoded).statements.last() as IrStatement.CommandCall
             assertEquals("touch", irCall.command)
             assertEquals(fixture.normalizedRawArgument, irCall.arguments)

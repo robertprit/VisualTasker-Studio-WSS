@@ -8,8 +8,8 @@ import com.visualtasker.wss.visual.semantics.VisualRole
 import com.visualtasker.wss.visual.semantics.VisualSemanticAdapter
 import com.visualtasker.wss.visual.semantics.VisualSemanticState
 import com.visualtasker.wss.visual.semantics.VisualValidation
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CommandCatalogKind

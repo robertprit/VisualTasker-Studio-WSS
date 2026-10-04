@@ -2,11 +2,11 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.flowchart.FlowchartProjectionResult
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 
 data class WorkspaceWorkflowState(
     val document: WorkspaceDocument,
@@ -26,7 +26,7 @@ data class WorkspaceWorkflowState(
             mutationSource: String = WORKFLOW_SOURCE_INITIAL,
             resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
-            val document = WorkspaceSerializer.deserialize(serializedJson)
+            val document = WorkflowSerializer.deserialize(serializedJson)
             return fromDocument(document, mutationSource, resources)
         }
 
@@ -35,7 +35,7 @@ data class WorkspaceWorkflowState(
             mutationSource: String,
             resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
-            val normalizedJson = WorkspaceSerializer.serialize(document)
+            val normalizedJson = WorkflowSerializer.serialize(document)
             val irGraph = IrGraphGenerator().generate(document)
             return WorkspaceWorkflowState(
                 document = document,

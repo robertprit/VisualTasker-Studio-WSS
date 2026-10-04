@@ -181,11 +181,11 @@ import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.BlockRegistry
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.WorkspaceGraph
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.blockeditor.validation.ValidationError
 import de.visualtasker.blockeditor.validation.Validator
 import de.visualtasker.flowchart.compose.FlowchartHost
@@ -285,7 +285,7 @@ fun MainScreen(
     val initialBlockEditorDocument = remember(uiPrefs) {
         val persisted = uiPrefs.getString("blockeditor_workspace_json", null)
         persisted
-            ?.let { runCatching { WorkspaceSerializer.deserialize(it) }.getOrNull() }
+            ?.let { runCatching { WorkflowSerializer.deserialize(it) }.getOrNull() }
             ?: WorkspaceBootstrap.starter()
     }
     val initialEmscriptDraft = remember(uiPrefs) {
@@ -447,7 +447,7 @@ fun MainScreen(
         object : BlockEditorHostCallbacks {
             override fun onWorkspaceDocumentChanged(serializedJson: String) {
                 uiPrefs.edit().putString("blockeditor_workspace_json", serializedJson).apply()
-                runCatching { WorkspaceSerializer.deserialize(serializedJson) }
+                runCatching { WorkflowSerializer.deserialize(serializedJson) }
                     .onSuccess { doc ->
                         val previousStatus = flowchartProjectionStatus
                         latestBlockEditorDocument = doc
@@ -1682,7 +1682,7 @@ private fun computeStructureDiff(
 
 private fun connectedValueSummary(
     document: WorkspaceDocument,
-    blockId: de.visualtasker.blockeditor.domain.BlockId,
+    blockId: de.visualtasker.workflow.core.BlockId,
     inputName: String,
     registry: BlockRegistry,
 ): String? {

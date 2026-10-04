@@ -6,7 +6,7 @@ import com.visualtasker.wss.visual.semantics.VisualContext
 import com.visualtasker.wss.visual.semantics.VisualFocus
 import com.visualtasker.wss.visual.semantics.VisualRole
 import com.visualtasker.wss.visual.semantics.VisualValidation
-import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.asFactory
@@ -49,7 +49,7 @@ class BlockEditorVisualAdaptersTest {
         assertEquals(VisualActivity.Running, state.activity)
     }
 
-    private fun de.visualtasker.blockeditor.domain.BlockNode.visualRole(): VisualRole =
+    private fun de.visualtasker.workflow.core.BlockNode.visualRole(): VisualRole =
         BlockEditorBlockVisualAdapter.map(
             BlockEditorVisualSubject(this),
             VisualContext(projection = ProjectionKind.BlockEditor),

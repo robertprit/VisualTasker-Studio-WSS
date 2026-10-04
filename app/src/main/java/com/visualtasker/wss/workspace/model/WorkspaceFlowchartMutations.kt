@@ -1,22 +1,22 @@
 package com.visualtasker.wss.workspace.model
 
-import de.visualtasker.blockeditor.domain.WorkspaceAction
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.domain.Connection
-import de.visualtasker.blockeditor.domain.ConnectionId
-import de.visualtasker.blockeditor.domain.ConnectionKind
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.StatementInput
-import de.visualtasker.blockeditor.domain.ValueInput
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
-import de.visualtasker.blockeditor.domain.WorkspacePoint
-import de.visualtasker.blockeditor.domain.WorkspaceReducer
-import de.visualtasker.blockeditor.domain.allConnections
-import de.visualtasker.blockeditor.domain.newBlockId
-import de.visualtasker.blockeditor.domain.rootOffset
-import de.visualtasker.blockeditor.domain.withConnectionUpdated
+import de.visualtasker.workflow.core.WorkspaceAction
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.core.Connection
+import de.visualtasker.workflow.core.ConnectionId
+import de.visualtasker.workflow.core.ConnectionKind
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.StatementInput
+import de.visualtasker.workflow.core.ValueInput
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceGraph
+import de.visualtasker.workflow.core.WorkspacePoint
+import de.visualtasker.workflow.core.WorkspaceReducer
+import de.visualtasker.workflow.core.allConnections
+import de.visualtasker.workflow.core.newBlockId
+import de.visualtasker.workflow.core.rootOffset
+import de.visualtasker.workflow.core.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
@@ -575,10 +575,10 @@ fun syncRootPositionsFromFlowchartView(
     return updated
 }
 
-fun FlowNodeId.toWorkspaceBlockId(): de.visualtasker.blockeditor.domain.BlockId? {
+fun FlowNodeId.toWorkspaceBlockId(): de.visualtasker.workflow.core.BlockId? {
     val value = value.removePrefix(FLOW_BLOCK_NODE_PREFIX)
     if (value == this.value || value.isBlank()) return null
-    return de.visualtasker.blockeditor.domain.BlockId(value)
+    return de.visualtasker.workflow.core.BlockId(value)
 }
 
 private fun defaultStatementSlotName(sourceBlockType: String, kind: FlowEdgeKind): String? =

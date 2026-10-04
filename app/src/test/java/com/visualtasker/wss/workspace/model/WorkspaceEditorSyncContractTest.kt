@@ -2,7 +2,7 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
-import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.flowchart.domain.FlowNodeId
 import org.junit.Assert.assertEquals

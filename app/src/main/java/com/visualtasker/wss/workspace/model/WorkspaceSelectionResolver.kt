@@ -1,8 +1,8 @@
 package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.WorkspaceDocument
 
 object WorkspaceSelectionResolver {
     fun sourceLines(
@@ -55,7 +55,7 @@ object WorkspaceSelectionResolver {
                 (sourceLines[block.id] ?: block.metadata[SOURCE_LINE_KEY]?.toIntOrNull()) == sourceLine
             }
             .sortedWith(
-                compareByDescending<de.visualtasker.blockeditor.domain.BlockNode> {
+                compareByDescending<de.visualtasker.workflow.core.BlockNode> {
                     it.previous != null || it.next != null || it.statementInputs.isNotEmpty()
                 }.thenBy { it.output != null }
                     .thenBy { it.type }

@@ -79,6 +79,7 @@ dependencies {
     implementation("dev.rikka.shizuku:aidl:13.1.5")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("de.visualtasker.workflow:workflow-core:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-compose:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-domain:0.1.0-SNAPSHOT")
     implementation("de.visualtasker.blockeditor:blockeditor-registry:0.1.0-SNAPSHOT")

@@ -2,7 +2,7 @@ package com.visualtasker.wss.emscript
 
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
-import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrExpression
 import de.visualtasker.blockeditor.ir.IrGenerator

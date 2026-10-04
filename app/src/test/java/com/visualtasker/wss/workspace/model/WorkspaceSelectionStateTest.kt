@@ -1,6 +1,6 @@
 package com.visualtasker.wss.workspace.model
 
-import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowNodeId
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult

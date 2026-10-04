@@ -531,7 +531,7 @@ import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
 import de.visualtasker.blockeditor.compose.theme.setBlockCategoryColorOverride
-import de.visualtasker.blockeditor.domain.BlockId
+import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.blockeditor.compose.render.BlockVisualPathProvider
 import de.visualtasker.blockeditor.compose.render.BlockVisualPathResult
 import de.visualtasker.flowchart.compose.FlowchartNodeShapeProvider
@@ -545,8 +545,8 @@ import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
@@ -2298,7 +2298,7 @@ fun WorkspaceScreen(
         val result = applyFlowchartWorkspaceMutation(workflowState.document, mutation)
         if (result.applied) {
             applyWorkspaceJsonChange(
-                WorkspaceSerializer.serialize(result.document),
+                WorkflowSerializer.serialize(result.document),
                 "$WORKFLOW_SOURCE_FLOWCHART_PREFIX$sourceSuffix"
             )
         }
@@ -3250,7 +3250,7 @@ fun WorkspaceScreen(
                 val result = WssDropEffectApplier.applyToWorkspaceDocument(workflowState.document, effect)
                 if (result.applied) {
                     applyWorkspaceJsonChange(
-                        WorkspaceSerializer.serialize(result.document),
+                        WorkflowSerializer.serialize(result.document),
                         "wss-drag:${effect.kind.name.lowercase()}:${result.definitionId}"
                     )
                     studioLogStore.append(
@@ -3691,7 +3691,7 @@ fun WorkspaceScreen(
                 },
                 onClearProject = {
                     applyWorkspaceJsonChange(
-                        WorkspaceSerializer.serialize(WorkspaceBootstrap.starter()),
+                        WorkflowSerializer.serialize(WorkspaceBootstrap.starter()),
                         "workspace:project-clear"
                     )
                     emscriptSession = emscriptSession.updateGeneratedFromBlocks("// Leerer Workspace")
@@ -14005,7 +14005,7 @@ private fun BlockEditorPanel(
         onSessionReady(session)
     }
     LaunchedEffect(session, workflowState.revision, workflowState.mutationSource, focusedBlockId) {
-        val current = WorkspaceSerializer.serialize(session.controller.document)
+        val current = WorkflowSerializer.serialize(session.controller.document)
         if (
             workflowState.mutationSource != sessionSource &&
             current != workflowState.serializedJson
@@ -14043,7 +14043,7 @@ private fun BlockEditorPanel(
     LaunchedEffect(session, onWorkspaceJsonChange) {
         snapshotFlow { session.controller.document }
             .collect { document ->
-                onWorkspaceJsonChange(WorkspaceSerializer.serialize(document), sessionSource)
+                onWorkspaceJsonChange(WorkflowSerializer.serialize(document), sessionSource)
             }
     }
     LaunchedEffect(session, onBlockSelected) {
@@ -15329,14 +15329,14 @@ private fun loadBlockEditorWorkspaceJson(
     }
     return persisted
         ?.let {
-            when (val decoded = WorkspaceSerializer.decode(it)) {
-                is WorkspaceDecodeResult.Decoded -> WorkspaceSerializer.serialize(decoded.document)
-                is WorkspaceDecodeResult.Malformed -> importAndPersistIntegrationWorkspace(uiPrefs)
-                is WorkspaceDecodeResult.UnsupportedSchema -> importAndPersistIntegrationWorkspace(uiPrefs)
+            when (val decoded = WorkflowSerializer.decode(it)) {
+                is WorkflowDecodeResult.Decoded -> WorkflowSerializer.serialize(decoded.document)
+                is WorkflowDecodeResult.Malformed -> importAndPersistIntegrationWorkspace(uiPrefs)
+                is WorkflowDecodeResult.UnsupportedSchema -> importAndPersistIntegrationWorkspace(uiPrefs)
             }
         }
         ?: importAndPersistIntegrationWorkspace(uiPrefs)
-        ?: WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
+        ?: WorkflowSerializer.serialize(WorkspaceBootstrap.starter())
 }
 
 private fun loadInitialTextEditorDraft(
@@ -15360,7 +15360,7 @@ private fun importAndPersistIntegrationWorkspace(
     .import(EditorDefaults.commandCatalogBreadthTestScript, workspaceId = "workflow-main")
     .document
     ?.let { document ->
-        val serialized = WorkspaceSerializer.serialize(document)
+        val serialized = WorkflowSerializer.serialize(document)
         uiPrefs.edit()
             .putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, serialized)
             .putInt(BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)

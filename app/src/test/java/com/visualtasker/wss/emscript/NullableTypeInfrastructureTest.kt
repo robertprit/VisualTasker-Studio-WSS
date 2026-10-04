@@ -17,7 +17,7 @@ import de.visualtasker.blockeditor.registry.QueryReturnContractAudit
 import de.visualtasker.blockeditor.registry.LegacyCommandDefinitionBridge
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,7 +41,7 @@ class NullableTypeInfrastructureTest {
         val document = result.importedDocument
         assertEquals("String?", document.variables.variables.getValue("value").type)
         assertTrue(result.serializedWorkspaceJson.contains("String?"))
-        assertEquals("String?", WorkspaceSerializer.deserialize(result.serializedWorkspaceJson)
+        assertEquals("String?", WorkflowSerializer.deserialize(result.serializedWorkspaceJson)
             .variables.variables.getValue("value").type)
 
         val registry = CompositeBlockRegistry().apply {

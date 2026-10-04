@@ -3,8 +3,8 @@ package com.visualtasker.wss.emscript
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
-import de.visualtasker.blockeditor.domain.asString
+import de.visualtasker.workflow.core.WorkspaceGraph
+import de.visualtasker.workflow.core.asString
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrExpression
 import de.visualtasker.blockeditor.ir.IrGenerator
@@ -13,8 +13,8 @@ import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.SemanticPropertyCategory
 import de.visualtasker.blockeditor.registry.BlockNodePresentationContract
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -94,7 +94,7 @@ class LogExpressionRoundtripTest {
             .document!!
         val originalLog = original.blocks.values.single { it.type == BlockTypes.DEBUG_LOG }
         val originalInput = originalLog.valueInputs.single { it.name == "value" }.connection
-        val decoded = (WorkspaceSerializer.decode(WorkspaceSerializer.serialize(original)) as WorkspaceDecodeResult.Decoded).document
+        val decoded = (WorkflowSerializer.decode(WorkflowSerializer.serialize(original)) as WorkflowDecodeResult.Decoded).document
         val decodedLog = decoded.blocks.getValue(originalLog.id)
         val decodedInput = decodedLog.valueInputs.single { it.name == "value" }.connection
 
@@ -122,7 +122,7 @@ class LogExpressionRoundtripTest {
     private fun importAndSerialize(source: String) = importer.import(source, workspaceId = "log-roundtrip")
         .also { assertTrue(it.issues.joinToString { issue -> issue.message }, it.isSuccess) }
         .document!!
-        .let(WorkspaceSerializer::serialize)
-        .let { WorkspaceSerializer.decode(it) as WorkspaceDecodeResult.Decoded }
+        .let(WorkflowSerializer::serialize)
+        .let { WorkflowSerializer.decode(it) as WorkflowDecodeResult.Decoded }
         .document
 }

@@ -3,7 +3,7 @@ package com.visualtasker.wss.emscript
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardStage
-import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
@@ -96,7 +96,7 @@ class VariableAssignmentTypecheckTest {
         assertFalse(document.blocks.values.any { it.type == BlockTypes.VARIABLE_GET })
     }
 
-    private fun de.visualtasker.blockeditor.domain.WorkspaceDocument.registryWithVariables() =
+    private fun de.visualtasker.workflow.core.WorkspaceDocument.registryWithVariables() =
         CompositeBlockRegistry().apply {
             variables.variables.values.forEach { register(VariableReporterFactory.create(it)) }
         }

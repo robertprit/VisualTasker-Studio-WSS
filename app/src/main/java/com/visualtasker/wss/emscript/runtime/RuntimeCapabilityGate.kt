@@ -1,6 +1,6 @@
 package com.visualtasker.wss.emscript.runtime
 
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.registry.CommandCapability
 import de.visualtasker.blockeditor.registry.CommandCapabilityDescriptor
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry

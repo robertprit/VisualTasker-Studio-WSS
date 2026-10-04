@@ -1,10 +1,10 @@
 package com.visualtasker.wss.workspace.model
 
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.WorkspaceAction
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.WorkspaceReducer
-import de.visualtasker.blockeditor.domain.rootOffset
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceAction
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.WorkspaceReducer
+import de.visualtasker.workflow.core.rootOffset
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory

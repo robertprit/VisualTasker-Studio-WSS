@@ -3,8 +3,8 @@ package com.visualtasker.wss.emscript
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardStage
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
-import de.visualtasker.blockeditor.domain.asString
+import de.visualtasker.workflow.core.WorkspaceGraph
+import de.visualtasker.workflow.core.asString
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrExpression
 import de.visualtasker.blockeditor.ir.IrGenerator
@@ -110,7 +110,7 @@ class DatastorePutStringContractTest {
         assertEquals("EMSCRIPT_ARGUMENT_TYPE_MISMATCH", mismatch.code)
     }
 
-    private fun de.visualtasker.blockeditor.domain.WorkspaceDocument.registryWithVariables() =
+    private fun de.visualtasker.workflow.core.WorkspaceDocument.registryWithVariables() =
         CompositeBlockRegistry().apply {
             variables.variables.values.forEach { register(VariableReporterFactory.create(it)) }
         }

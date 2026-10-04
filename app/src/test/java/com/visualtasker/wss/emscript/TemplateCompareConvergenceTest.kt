@@ -20,7 +20,7 @@ import de.visualtasker.blockeditor.registry.QueryReturnContractAudit
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
 import de.visualtasker.blockeditor.registry.WorkspaceValueTypeSystem
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -91,7 +91,7 @@ class TemplateCompareConvergenceTest {
         assertTrue(generated, generated.contains("templateCompare(\"button\", region(10, 20, 30, 40))"))
         assertTrue(guard.preview(generated) is EmscriptApplyGuardResult.Success)
 
-        val decoded = WorkspaceSerializer.deserialize(WorkspaceSerializer.serialize(document))
+        val decoded = WorkflowSerializer.deserialize(WorkflowSerializer.serialize(document))
         assertEquals(document.blocks.keys, decoded.blocks.keys)
         assertEquals(
             reporters.map { it.id }.toSet(),

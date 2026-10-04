@@ -3,13 +3,13 @@ package com.visualtasker.wss.emscript.apply
 import com.visualtasker.wss.emscript.parser.EmscriptParseIssue
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.workspace.model.WorkspaceIdentityReconciler
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.blockeditor.validation.Validator
 
 class EmscriptApplyGuard(
@@ -61,7 +61,7 @@ class EmscriptApplyGuard(
 
         return EmscriptApplyGuardResult.Success(
             importedDocument = imported,
-            serializedWorkspaceJson = WorkspaceSerializer.serialize(imported),
+            serializedWorkspaceJson = WorkflowSerializer.serialize(imported),
             blockCount = imported.blocks.size,
             rootCount = imported.rootBlocks.size,
             variableCount = imported.variables.variables.size,

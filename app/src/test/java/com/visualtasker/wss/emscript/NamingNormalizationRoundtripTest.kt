@@ -2,15 +2,15 @@ package com.visualtasker.wss.emscript
 
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.flowchart.BlockEditorFlowchartProjector
-import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.EmscriptV1NamingNormalizations
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import org.junit.Assert.assertEquals
@@ -64,8 +64,8 @@ class NamingNormalizationRoundtripTest {
                 val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "naming-${case.stableId}-$index")
                 assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
                 val document = imported.document!!
-                val serialized = WorkspaceSerializer.serialize(document)
-                val decoded = (WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded).document
+                val serialized = WorkflowSerializer.serialize(document)
+                val decoded = (WorkflowSerializer.decode(serialized) as WorkflowDecodeResult.Decoded).document
                 val generated = EmscriptGenerator(IrGenerator()).generate(decoded, scriptName = case.stableId)
                 assertEquals(case.canonicalOutput, generated)
                 assertFalse(generated.contains(case.legacySource.substringBefore('(')))

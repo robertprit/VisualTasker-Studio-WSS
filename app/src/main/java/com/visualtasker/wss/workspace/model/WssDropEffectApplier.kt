@@ -1,6 +1,6 @@
 package com.visualtasker.wss.workspace.model
 
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry

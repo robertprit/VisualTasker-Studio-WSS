@@ -1,12 +1,12 @@
 package com.visualtasker.wss.flowchart
 
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.NormalizedOperator
-import de.visualtasker.blockeditor.domain.OperatorNormalization
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.NormalizedOperator
+import de.visualtasker.workflow.core.OperatorNormalization
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
@@ -263,11 +263,11 @@ object BlockEditorFlowchartProjector {
         BlockTypes.LOGIC_OPERATE -> {
             when (val normalized = OperatorNormalization.normalize(operatorRawValue(block))) {
                 is NormalizedOperator.Arithmetic -> when (normalized.value) {
-                    de.visualtasker.blockeditor.domain.ArithmeticOperator.ADD -> "ADD"
-                    de.visualtasker.blockeditor.domain.ArithmeticOperator.SUB -> "SUB"
-                    de.visualtasker.blockeditor.domain.ArithmeticOperator.MUL -> "MUL"
-                    de.visualtasker.blockeditor.domain.ArithmeticOperator.DIV -> "DIV"
-                    de.visualtasker.blockeditor.domain.ArithmeticOperator.MOD -> "MOD"
+                    de.visualtasker.workflow.core.ArithmeticOperator.ADD -> "ADD"
+                    de.visualtasker.workflow.core.ArithmeticOperator.SUB -> "SUB"
+                    de.visualtasker.workflow.core.ArithmeticOperator.MUL -> "MUL"
+                    de.visualtasker.workflow.core.ArithmeticOperator.DIV -> "DIV"
+                    de.visualtasker.workflow.core.ArithmeticOperator.MOD -> "MOD"
                 }
                 is NormalizedOperator.Compare -> "COMPARE ${normalized.value.symbol}"
                 null -> {
@@ -473,7 +473,7 @@ object BlockEditorFlowchartProjector {
             )
         )
 
-    private fun normalizeCompareOperator(block: BlockNode): de.visualtasker.blockeditor.domain.CompareOperator? {
+    private fun normalizeCompareOperator(block: BlockNode): de.visualtasker.workflow.core.CompareOperator? {
         return when (val normalized = OperatorNormalization.normalize(operatorRawValue(block))) {
             is NormalizedOperator.Compare -> normalized.value
             else -> null

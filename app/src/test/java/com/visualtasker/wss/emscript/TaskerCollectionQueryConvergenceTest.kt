@@ -15,7 +15,7 @@ import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrStatement
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.emscript.contract.ProviderTypes
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -76,7 +76,7 @@ class TaskerCollectionQueryConvergenceTest {
         assertFalse(generated, generated.contains("Tasker.getVariables"))
         assertTrue(guard.preview(generated) is EmscriptApplyGuardResult.Success)
 
-        val decoded = WorkspaceSerializer.deserialize(WorkspaceSerializer.serialize(preview.importedDocument))
+        val decoded = WorkflowSerializer.deserialize(WorkflowSerializer.serialize(preview.importedDocument))
         assertEquals("List<TaskerVariable>", decoded.variables.variables.getValue("vars").type)
     }
 

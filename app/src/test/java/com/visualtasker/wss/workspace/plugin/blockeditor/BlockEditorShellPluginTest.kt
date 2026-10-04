@@ -10,12 +10,12 @@ import com.visualtasker.wss.workspace.plugin.ShellPluginSessionId
 import com.visualtasker.wss.workspace.plugin.ShellSaveAcknowledgmentResult
 import com.visualtasker.wss.workspace.plugin.WorkspaceShellPluginHostCoordinator
 import com.visualtasker.wss.workspace.plugin.defaultWorkspaceShellPluginRegistry
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.blockeditor.serialization.WORKSPACE_SCHEMA_VERSION
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -42,7 +42,7 @@ class BlockEditorShellPluginTest {
     fun documentMutationsBecomeDirtyAndSaveAcknowledgmentCleansSession() {
         val host = RecordingShellPluginHostAdapter()
         val session = BlockEditorShellPlugin().createEditorSession(
-            sampleInput(content = WorkspaceSerializer.serialize(WorkspaceBootstrap.empty())),
+            sampleInput(content = WorkflowSerializer.serialize(WorkspaceBootstrap.empty())),
             host
         ) as BlockEditorShellEditorSession
 
@@ -63,7 +63,7 @@ class BlockEditorShellPluginTest {
     @Test
     fun staleSaveAcknowledgmentDoesNotCleanDirtySession() {
         val session = BlockEditorShellPlugin().createEditorSession(
-            sampleInput(content = WorkspaceSerializer.serialize(WorkspaceBootstrap.empty())),
+            sampleInput(content = WorkflowSerializer.serialize(WorkspaceBootstrap.empty())),
             RecordingShellPluginHostAdapter()
         ) as BlockEditorShellEditorSession
 
@@ -99,7 +99,7 @@ class BlockEditorShellPluginTest {
 
     @Test
     fun openingLegacyWorkspaceWithoutSchemaReportsMigrationDiagnostic() {
-        val legacyJson = WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
+        val legacyJson = WorkflowSerializer.serialize(WorkspaceBootstrap.starter())
             .replace(""""schemaVersion":$WORKSPACE_SCHEMA_VERSION,""", "")
         val host = RecordingShellPluginHostAdapter()
 
@@ -119,8 +119,8 @@ class BlockEditorShellPluginTest {
             id = BlockId("plugin-block"),
             type = "plugin.custom.missing",
         )
-        val content = WorkspaceSerializer.serialize(
-            de.visualtasker.blockeditor.domain.WorkspaceDocument(
+        val content = WorkflowSerializer.serialize(
+            de.visualtasker.workflow.core.WorkspaceDocument(
                 id = "missing-plugin",
                 blocks = mapOf(pluginBlock.id to pluginBlock),
                 rootBlocks = listOf(pluginBlock.id),
@@ -154,7 +154,7 @@ class BlockEditorShellPluginTest {
     }
 
     private fun sampleInput(
-        content: String = WorkspaceSerializer.serialize(WorkspaceBootstrap.starter())
+        content: String = WorkflowSerializer.serialize(WorkspaceBootstrap.starter())
     ): ShellEditorInput =
         ShellEditorInput(
             sessionId = ShellPluginSessionId("session-1"),

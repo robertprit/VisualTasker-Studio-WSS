@@ -23,9 +23,12 @@ import de.visualtasker.blockeditor.compose.host.BlockEditorController
 import de.visualtasker.blockeditor.compose.host.BlockEditorHostCallbacks
 import de.visualtasker.blockeditor.compose.host.BlockEditorRuntimeState
 import de.visualtasker.blockeditor.compose.host.BlockEditorRuntimeStatus
+import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowDefinitionResolver
+import de.visualtasker.workflow.serialization.WorkflowDefinitionShape
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.blockeditor.validation.ValidationError
 import de.visualtasker.blockeditor.validation.Validator
 
@@ -87,11 +90,11 @@ class BlockEditorShellEditorSession(
         }
         documentId = input.documentId
         formatId = input.formatId
-        val decoded = WorkspaceSerializer.decode(input.content)
+        val decoded = WorkflowSerializer.decode(input.content, BLOCK_EDITOR_DEFINITION_RESOLVER)
         val document = when (decoded) {
-            is WorkspaceDecodeResult.Decoded -> decoded.document
-            is WorkspaceDecodeResult.Malformed -> throw IllegalArgumentException(decoded.reason)
-            is WorkspaceDecodeResult.UnsupportedSchema -> throw IllegalArgumentException(
+            is WorkflowDecodeResult.Decoded -> decoded.document
+            is WorkflowDecodeResult.Malformed -> throw IllegalArgumentException(decoded.reason)
+            is WorkflowDecodeResult.UnsupportedSchema -> throw IllegalArgumentException(
                 decoded.diagnostics.firstOrNull()?.message ?: "Unsupported workspace schema."
             )
         }
@@ -101,7 +104,7 @@ class BlockEditorShellEditorSession(
                 ShellValidationResult(decoded.diagnostics.map { it.message })
             )
         }
-        persistedContent = WorkspaceSerializer.serialize(document)
+        persistedContent = WorkflowSerializer.serialize(document)
         dirtyState = ShellDirtyState.CLEAN
         hostServices.reportDirtyState(sessionId, dirtyState)
         controller = BlockEditorController(
@@ -126,11 +129,11 @@ class BlockEditorShellEditorSession(
         }
         documentId = input.documentId
         formatId = input.formatId
-        val decoded = WorkspaceSerializer.decode(input.content)
+        val decoded = WorkflowSerializer.decode(input.content, BLOCK_EDITOR_DEFINITION_RESOLVER)
         val document = when (decoded) {
-            is WorkspaceDecodeResult.Decoded -> decoded.document
-            is WorkspaceDecodeResult.Malformed -> throw IllegalArgumentException(decoded.reason)
-            is WorkspaceDecodeResult.UnsupportedSchema -> throw IllegalArgumentException(
+            is WorkflowDecodeResult.Decoded -> decoded.document
+            is WorkflowDecodeResult.Malformed -> throw IllegalArgumentException(decoded.reason)
+            is WorkflowDecodeResult.UnsupportedSchema -> throw IllegalArgumentException(
                 decoded.diagnostics.firstOrNull()?.message ?: "Unsupported workspace schema."
             )
         }
@@ -140,7 +143,7 @@ class BlockEditorShellEditorSession(
                 ShellValidationResult(decoded.diagnostics.map { it.message })
             )
         }
-        persistedContent = WorkspaceSerializer.serialize(document)
+        persistedContent = WorkflowSerializer.serialize(document)
         updateDirtyState(ShellDirtyState.CLEAN)
         controller.replaceWorkspaceDocument(
             newDocument = document,
@@ -265,13 +268,13 @@ class BlockEditorShellEditorSession(
         }
 
     private fun currentSerializedDocument(): String =
-        WorkspaceSerializer.serialize(controller.document)
+        WorkflowSerializer.serialize(controller.document)
 
     private fun normalize(raw: String): String =
-        when (val decoded = WorkspaceSerializer.decode(raw)) {
-            is WorkspaceDecodeResult.Decoded -> WorkspaceSerializer.serialize(decoded.document)
-            is WorkspaceDecodeResult.Malformed -> raw
-            is WorkspaceDecodeResult.UnsupportedSchema -> raw
+        when (val decoded = WorkflowSerializer.decode(raw, BLOCK_EDITOR_DEFINITION_RESOLVER)) {
+            is WorkflowDecodeResult.Decoded -> WorkflowSerializer.serialize(decoded.document)
+            is WorkflowDecodeResult.Malformed -> raw
+            is WorkflowDecodeResult.UnsupportedSchema -> raw
         }
 
     private fun updateDirtyState(next: ShellDirtyState) {
@@ -288,3 +291,12 @@ private fun logBlockShell(message: String) {
 }
 
 private const val BLOCK_SHELL_LOG_TAG = "VTWSS/BlockShell"
+
+private val BLOCK_EDITOR_DEFINITION_RESOLVER = WorkflowDefinitionResolver { type ->
+    DefaultBlockRegistry.getDefinition(type)?.let { definition ->
+        WorkflowDefinitionShape(
+            valueInputs = definition.valueInputs.mapTo(linkedSetOf()) { it.name },
+            statementInputs = definition.statementInputs.mapTo(linkedSetOf()) { it.name },
+        )
+    }
+}

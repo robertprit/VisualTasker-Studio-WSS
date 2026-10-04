@@ -5,8 +5,8 @@ import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import de.visualtasker.blockeditor.ir.IrGraphEdgeKind
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
-import de.visualtasker.blockeditor.domain.WorkspacePoint as BlockWorkspacePoint
+import de.visualtasker.workflow.serialization.WorkflowSerializer
+import de.visualtasker.workflow.core.WorkspacePoint as BlockWorkspacePoint
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,7 +21,7 @@ class WorkspaceWorkflowStateTest {
             mutationSource = "test"
         )
 
-        assertEquals(WorkspaceSerializer.serialize(document), state.serializedJson)
+        assertEquals(WorkflowSerializer.serialize(document), state.serializedJson)
         assertTrue(state.emscriptProjection.isSuccess)
         assertEquals(document.rootBlocks.size, state.document.rootBlocks.size)
         assertTrue(state.flowchartProjection.graph.nodes.isNotEmpty())

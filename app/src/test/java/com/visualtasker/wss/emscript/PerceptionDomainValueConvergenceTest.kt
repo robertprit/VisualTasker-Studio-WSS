@@ -22,7 +22,7 @@ import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -122,7 +122,7 @@ class PerceptionDomainValueConvergenceTest {
         assertFalse(generated, generated.contains("FIND_TEMPLATE"))
         assertTrue(guard.preview(generated) is EmscriptApplyGuardResult.Success)
 
-        val decoded = WorkspaceSerializer.deserialize(WorkspaceSerializer.serialize(document))
+        val decoded = WorkflowSerializer.deserialize(WorkflowSerializer.serialize(document))
         assertEquals(document.blocks.keys, decoded.blocks.keys)
         assertEquals(
             commandBlocks.associate { it.id to it.metadata[VisualTaskerCommandCatalog.METADATA_COMMAND_ID] },

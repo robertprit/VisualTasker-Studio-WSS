@@ -6,7 +6,7 @@ import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
-import de.visualtasker.blockeditor.domain.FieldValue
+import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
@@ -159,7 +159,7 @@ class VibrateSignatureConvergenceTest {
         assertTrue(generated, generated.contains("vibrate(80);"))
     }
 
-    private fun de.visualtasker.blockeditor.domain.WorkspaceDocument.registryWithVariables(): BlockRegistry =
+    private fun de.visualtasker.workflow.core.WorkspaceDocument.registryWithVariables(): BlockRegistry =
         CompositeBlockRegistry().apply {
             variables.variables.values.forEach { register(VariableReporterFactory.create(it)) }
         }

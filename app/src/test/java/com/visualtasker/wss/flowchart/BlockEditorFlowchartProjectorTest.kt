@@ -2,20 +2,20 @@ package com.visualtasker.wss.flowchart
 
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.FieldValue
-import de.visualtasker.blockeditor.domain.VariableDefinition
-import de.visualtasker.blockeditor.domain.VariableScope
-import de.visualtasker.blockeditor.domain.WorkspaceAction
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.WorkspaceReducer
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.VariableDefinition
+import de.visualtasker.workflow.core.VariableScope
+import de.visualtasker.workflow.core.WorkspaceAction
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceReducer
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.registry.asFactory
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeKind
 import de.visualtasker.flowchart.domain.FlowSemanticValue
@@ -80,8 +80,8 @@ class BlockEditorFlowchartProjectorTest {
     @Test
     fun saveLoadRoundtrip_keepsFlowchartSemanticsStable() {
         val workspace = buildReferenceWorkspace()
-        val saved = WorkspaceSerializer.serialize(workspace)
-        val loaded = WorkspaceSerializer.deserialize(saved)
+        val saved = WorkflowSerializer.serialize(workspace)
+        val loaded = WorkflowSerializer.deserialize(saved)
         val first = BlockEditorFlowchartProjector.project(workspace).graph
         val second = BlockEditorFlowchartProjector.project(loaded).graph
 
@@ -244,7 +244,7 @@ class BlockEditorFlowchartProjectorTest {
         document: WorkspaceDocument,
         blockId: BlockId,
         key: String,
-    ): de.visualtasker.blockeditor.domain.ConnectionId {
+    ): de.visualtasker.workflow.core.ConnectionId {
         val block = document.blocks.getValue(blockId)
         return when (key) {
             "previous" -> block.previous!!.id

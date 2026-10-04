@@ -7,7 +7,7 @@ import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.isBasicRuntimeReady
 import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
-import de.visualtasker.blockeditor.domain.WorkspaceGraph
+import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
@@ -20,8 +20,8 @@ import de.visualtasker.blockeditor.registry.CommandArgumentType
 import de.visualtasker.blockeditor.registry.CommandCatalogKind
 import de.visualtasker.blockeditor.registry.CommandCatalogRole
 import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.serialization.WorkspaceDecodeResult
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.serialization.WorkflowDecodeResult
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowExecutionKind
 import de.visualtasker.flowchart.domain.FlowNodeKind
@@ -572,8 +572,8 @@ class EmscriptParserSliceTest {
 
         val imported = EmscriptWorkspaceImporter().import(source)
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
-        val serialized = WorkspaceSerializer.serialize(imported.document!!)
-        val decoded = WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded
+        val serialized = WorkflowSerializer.serialize(imported.document!!)
+        val decoded = WorkflowSerializer.decode(serialized) as WorkflowDecodeResult.Decoded
         val document = decoded.document
         val irGraph = IrGraphGenerator().generate(document)
         val flowchart = IrGraphFlowchartProjector.project(irGraph).graph
@@ -671,8 +671,8 @@ class EmscriptParserSliceTest {
         val imported = EmscriptWorkspaceImporter().import(source, workspaceId = "nested-flow-stress")
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
         val document = imported.document!!
-        val serialized = WorkspaceSerializer.serialize(document)
-        val decoded = WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded
+        val serialized = WorkflowSerializer.serialize(document)
+        val decoded = WorkflowSerializer.decode(serialized) as WorkflowDecodeResult.Decoded
         val irGraph = IrGraphGenerator().generate(decoded.document)
         val flowchart = IrGraphFlowchartProjector.project(irGraph).graph
         val regenerated = EmscriptGenerator(IrGenerator()).generate(decoded.document, scriptName = "nested-flow-stress")
@@ -821,8 +821,8 @@ class EmscriptParserSliceTest {
         val imported = EmscriptWorkspaceImporter().import(EditorDefaults.integrationTestScript)
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
 
-        val serialized = WorkspaceSerializer.serialize(imported.document!!)
-        val decoded = WorkspaceSerializer.decode(serialized) as WorkspaceDecodeResult.Decoded
+        val serialized = WorkflowSerializer.serialize(imported.document!!)
+        val decoded = WorkflowSerializer.decode(serialized) as WorkflowDecodeResult.Decoded
         val document = decoded.document
         val irGraph = IrGraphGenerator().generate(document)
         val flowchart = IrGraphFlowchartProjector.project(irGraph).graph

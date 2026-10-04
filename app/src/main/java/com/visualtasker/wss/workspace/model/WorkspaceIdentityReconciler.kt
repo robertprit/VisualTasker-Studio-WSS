@@ -1,11 +1,11 @@
 package com.visualtasker.wss.workspace.model
 
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.domain.Connection
-import de.visualtasker.blockeditor.domain.ConnectionId
-import de.visualtasker.blockeditor.domain.WorkspaceDocument
-import de.visualtasker.blockeditor.domain.allConnections
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.core.Connection
+import de.visualtasker.workflow.core.ConnectionId
+import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.allConnections
 
 /** Preserves semantic block identities when an EMScript draft is parsed again. */
 object WorkspaceIdentityReconciler {

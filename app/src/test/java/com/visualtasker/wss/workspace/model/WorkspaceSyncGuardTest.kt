@@ -2,9 +2,9 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.domain.BlockId
-import de.visualtasker.blockeditor.domain.BlockNode
-import de.visualtasker.blockeditor.serialization.WorkspaceSerializer
+import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockNode
+import de.visualtasker.workflow.serialization.WorkflowSerializer
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,7 +15,7 @@ class WorkspaceSyncGuardTest {
         val imported = EmscriptWorkspaceImporter().import(EditorDefaults.integrationTestScript)
         assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
 
-        val report = WorkspaceSyncGuard().inspect(WorkspaceSerializer.serialize(imported.document!!))
+        val report = WorkspaceSyncGuard().inspect(WorkflowSerializer.serialize(imported.document!!))
 
         assertTrue(report.messages.joinToString(), report.isValid)
         assertTrue(report.messages.any { it.contains("EMScript-Projektion OK") })
@@ -42,7 +42,7 @@ class WorkspaceSyncGuardTest {
             rootBlocks = imported.document!!.rootBlocks + brokenBlockId,
         )
 
-        val report = WorkspaceSyncGuard().inspect(WorkspaceSerializer.serialize(broken))
+        val report = WorkspaceSyncGuard().inspect(WorkflowSerializer.serialize(broken))
 
         assertFalse(report.messages.joinToString(), report.isValid)
         assertTrue(report.messages.joinToString(), report.messages.any { it.contains("UNKNOWN_BLOCK_TYPE") })

@@ -3,7 +3,7 @@ package com.visualtasker.wss.emscript.apply
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.workspace.model.WorkspaceSelectionResolver
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
-import de.visualtasker.blockeditor.domain.allConnections
+import de.visualtasker.workflow.core.allConnections
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.flowchart.domain.FlowNodeId
 import de.visualtasker.flowchart.layout.FlowLayoutEngine
