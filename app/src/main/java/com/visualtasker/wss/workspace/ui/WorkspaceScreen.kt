@@ -528,6 +528,7 @@ import com.visualtasker.wss.visual.interaction.EditorActionDescriptor
 import com.visualtasker.wss.visual.interaction.EditorActionId
 import com.visualtasker.wss.visual.interaction.EditorProjection
 import de.visualtasker.blockeditor.compose.host.BlockPaletteInsertMode
+import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
 import de.visualtasker.blockeditor.compose.icons.CategoryIcons
 import de.visualtasker.blockeditor.compose.theme.defaultBlockCategoryColor
 import de.visualtasker.blockeditor.compose.theme.setBlockCategoryColorOverride
@@ -2076,6 +2077,7 @@ fun WorkspaceScreen(
     val logConsoleState = remember { LogConsoleUiState() }
     val emscriptApplyGuard = remember { EmscriptApplyGuard() }
     fun replaceWorkflowStateFromJson(updated: String, source: String) {
+        BlockEditorDropTrace.markActive("HOST_WORKSPACE_REPLACE_ENTER", "source=$source")
         val previousSelection = workspaceSelectionState
         val previousProjectedScript = workflowState.emscriptProjection.getOrNull()
         val nextWorkflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
@@ -2092,10 +2094,20 @@ fun WorkspaceScreen(
             workspaceDryRunStepIndex = 0
         }
         uiPrefs.edit().putString(BLOCKEDITOR_WORKSPACE_PREF_KEY, workflowState.serializedJson).apply()
+        BlockEditorDropTrace.markActive(
+            "HOST_WORKSPACE_REPLACE_RETURN",
+            "revision=${workflowState.revision} blocks=${workflowState.document.blocks.size}",
+        )
     }
     val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
+        BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_ENTER", "source=$source")
         if (updated != workflowState.serializedJson) {
+            BlockEditorDropTrace.markActive("HOST_SYNC_GUARD_ENTER")
             val syncReport = workspaceSyncGuard.inspect(updated)
+            BlockEditorDropTrace.markActive(
+                "HOST_SYNC_GUARD_RETURN",
+                "valid=${syncReport.isValid} diagnostics=${syncReport.messages.size}",
+            )
             if (!syncReport.isValid) {
                 studioLogStore.append(
                     level = StudioLogLevel.ERROR,
@@ -2105,12 +2117,18 @@ fun WorkspaceScreen(
                     documentRevision = workflowState.revision.toLong(),
                     groupKey = "workspace:sync-guard:$source"
                 )
+                BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_RETURN", "result=rejected")
                 return@applyWorkspaceJsonChange
             }
+            BlockEditorDropTrace.markActive("HOST_GLOBAL_HISTORY_ENTER")
             if (!WorkspaceMutationSourcePolicy.coalesces(source, lastWorkspaceChangeSource)) {
                 workspaceUndoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
             }
             workspaceRedoStack.clear()
+            BlockEditorDropTrace.markActive(
+                "HOST_GLOBAL_HISTORY_RETURN",
+                "undo=${workspaceUndoStack.size} redo=${workspaceRedoStack.size}",
+            )
             replaceWorkflowStateFromJson(updated, source)
             lastWorkspaceChangeSource = source
             val normalized = workflowState.serializedJson
@@ -2123,6 +2141,7 @@ fun WorkspaceScreen(
                 groupKey = "workspace:workflow-updated:$source"
             )
         }
+        BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_RETURN", "result=appliedOrUnchanged")
     }
     LaunchedEffect(
         vt2vtSnapshot.remoteWorkspaceMirror?.checksum,
@@ -2438,10 +2457,28 @@ fun WorkspaceScreen(
     val latestEmscriptProjected = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
     val latestEmscriptGenerationFailure = workflowState.emscriptProjection.exceptionOrNull()?.message
     val visibleEmscriptDraft = currentManualEmscriptDraft()
+    val sourceMappingCache = remember { WorkspaceSelectionResolver.SourceMappingCache() }
+    BlockEditorDropTrace.markActive(
+        "HOST_ROOT_SOURCE_LINES_ENTER",
+        "revision=${workflowState.revision} blocks=${workflowState.document.blocks.size}",
+    )
     val workspaceSourceLines = remember(workflowState.revision, latestEmscriptProjected, visibleEmscriptDraft) {
-        WorkspaceSelectionResolver.sourceLines(workflowState.document, latestEmscriptProjected) +
-            WorkspaceSelectionResolver.derivedSourceLines(workflowState.document, visibleEmscriptDraft)
+        WorkspaceSelectionResolver.sourceLines(
+            workflowState.document,
+            latestEmscriptProjected,
+            traceLabel = "PROJECTED",
+            cache = sourceMappingCache,
+        ) + WorkspaceSelectionResolver.derivedSourceLines(
+            workflowState.document,
+            visibleEmscriptDraft,
+            traceLabel = "DRAFT",
+            cache = sourceMappingCache,
+        )
     }
+    BlockEditorDropTrace.markActive(
+        "HOST_ROOT_SOURCE_LINES_RETURN",
+        "entries=${workspaceSourceLines.size}",
+    )
     fun dryRunEventCount(result: EmscriptDryRunResult?): Int = when (result) {
         is EmscriptDryRunResult.Success -> result.events.size
         is EmscriptDryRunResult.Failure -> result.events.size
@@ -3608,6 +3645,7 @@ fun WorkspaceScreen(
         )
     }
 
+    BlockEditorDropTrace.markActive("HOST_ROOT_COMPOSITION_ENTER")
     CompositionLocalProvider(LocalDensity provides scaledDensity) {
         Box(
             modifier = Modifier
@@ -3715,6 +3753,10 @@ fun WorkspaceScreen(
                     .zIndex(900_000f)
             )
 
+        BlockEditorDropTrace.markActive(
+            "HOST_PANEL_LOOP_ENTER",
+            "visible=${panels.count { !it.minimized }} total=${panels.size}",
+        )
         panels.sortedBy { it.zIndex }.forEach { panel ->
             if (panel.minimized) {
                 panelDropBounds.remove(panel.id)
@@ -4204,6 +4246,10 @@ fun WorkspaceScreen(
                             )
                         }
                 ) {
+                    BlockEditorDropTrace.markActive(
+                        "HOST_PANEL_${panel.id}_${panel.type}_ENTER",
+                        "z=${panel.zIndex}",
+                    )
                     WorkspacePanelContent(
                         panel = panel,
                         steps = projectedSteps,
@@ -4447,9 +4493,13 @@ fun WorkspaceScreen(
                         },
                         onWorkspaceJsonChange = applyWorkspaceJsonChange
                     )
+                    BlockEditorDropTrace.markActive(
+                        "HOST_PANEL_${panel.id}_${panel.type}_RETURN",
+                    )
                 }
             }
         }
+        BlockEditorDropTrace.markActive("HOST_PANEL_LOOP_RETURN")
 
         val activeDragPayload = activeWssDragPayload
         val activeDragPosition = activeWssDragPosition
@@ -14043,7 +14093,19 @@ private fun BlockEditorPanel(
     LaunchedEffect(session, onWorkspaceJsonChange) {
         snapshotFlow { session.controller.document }
             .collect { document ->
-                onWorkspaceJsonChange(WorkflowSerializer.serialize(document), sessionSource)
+                BlockEditorDropTrace.markRevision(
+                    document.version,
+                    "HOST_DOCUMENT_OBSERVED",
+                    "source=$sessionSource",
+                )
+                BlockEditorDropTrace.markRevision(document.version, "HOST_OBSERVER_SERIALIZATION_ENTER")
+                val serialized = WorkflowSerializer.serialize(document)
+                BlockEditorDropTrace.markRevision(
+                    document.version,
+                    "HOST_OBSERVER_SERIALIZATION_RETURN",
+                    "bytes=${serialized.toByteArray(Charsets.UTF_8).size}",
+                )
+                onWorkspaceJsonChange(serialized, sessionSource)
             }
     }
     LaunchedEffect(session, onBlockSelected) {

@@ -11,7 +11,10 @@ import de.visualtasker.workflow.core.VariableDefinition
 import de.visualtasker.workflow.core.VariableScope
 import de.visualtasker.workflow.core.WorkspaceAction
 import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.WorkspaceGraph
+import de.visualtasker.workflow.core.WorkspacePoint
 import de.visualtasker.workflow.core.WorkspaceReducer
+import de.visualtasker.workflow.core.newBlockId
 import de.visualtasker.workflow.core.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CommandCatalogEntry
@@ -27,30 +30,85 @@ import de.visualtasker.blockeditor.registry.asFactory
 import de.visualtasker.blockeditor.registry.maximumArgumentCount
 import de.visualtasker.blockeditor.registry.minimumArgumentCount
 import de.visualtasker.blockeditor.registry.workspaceInputNameAt
+import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
 
 data class EmscriptImportResult(
     val ir: EmscriptIrScript?,
     val document: WorkspaceDocument?,
     val issues: List<EmscriptParseIssue>,
+    val assemblyMetrics: WorkspaceAssemblyMetrics? = null,
 ) {
     val isSuccess: Boolean
         get() = ir != null && document != null && issues.isEmpty()
 }
 
+data class WorkspaceAssemblyMetrics(
+    val mode: WorkspaceAssemblyMode,
+    val reducerCalls: Int,
+    val bulkObjectsConstructed: Int,
+    val publicationCount: Int,
+    val actionCounts: Map<String, Int>,
+    val durationNanos: Long,
+)
+
+enum class WorkspaceAssemblyMode {
+    BULK,
+    LEGACY_SEQUENTIAL,
+}
+
 class EmscriptWorkspaceImporter(
     private val parser: EmscriptParserSlice = EmscriptParserSlice(),
+    private val assemblyMode: WorkspaceAssemblyMode = WorkspaceAssemblyMode.BULK,
 ) {
-    fun import(script: String, workspaceId: String = "emscript-import"): EmscriptImportResult {
+    fun import(
+        script: String,
+        workspaceId: String = "emscript-import",
+        traceLabel: String? = null,
+    ): EmscriptImportResult {
+        traceLabel?.let { BlockEditorDropTrace.markActive("${it}_PARSER_ENTER") }
         val parsed = parser.parse(script)
+        traceLabel?.let {
+            BlockEditorDropTrace.markActive(
+                "${it}_PARSER_RETURN",
+                "statements=${parsed.ir?.statements?.size ?: 0} issues=${parsed.issues.size}",
+            )
+        }
         val ir = parsed.ir ?: return EmscriptImportResult(
             ir = null,
             document = null,
             issues = parsed.issues,
         )
         return runCatching {
-            val assembler = WorkspaceAssembler(workspaceId, EmscriptSourceLineCursor(script))
+            val assembler = WorkspaceAssembler(
+                workspaceId = workspaceId,
+                sourceLines = EmscriptSourceLineCursor(script),
+                mode = assemblyMode,
+            )
+            traceLabel?.let { BlockEditorDropTrace.markActive("${it}_ASSEMBLER_ENTER") }
+            val assemblyStartedAt = System.nanoTime()
             val document = assembler.build(ir, EmscriptEditorFacetScanner.scan(script))
-            EmscriptImportResult(ir = ir, document = document, issues = emptyList())
+            val assemblyDurationNanos = System.nanoTime() - assemblyStartedAt
+            traceLabel?.let {
+                BlockEditorDropTrace.markActive(
+                    "${it}_ASSEMBLER_RETURN",
+                    "blocks=${document.blocks.size} reducerCalls=${assembler.reducerCalls} " +
+                        "bulkObjects=${assembler.bulkObjectsConstructed} publications=1 mode=$assemblyMode " +
+                        "durationMs=${assemblyDurationNanos / 1_000_000.0}",
+                )
+            }
+            EmscriptImportResult(
+                ir = ir,
+                document = document,
+                issues = emptyList(),
+                assemblyMetrics = WorkspaceAssemblyMetrics(
+                    mode = assemblyMode,
+                    reducerCalls = assembler.reducerCalls,
+                    bulkObjectsConstructed = assembler.bulkObjectsConstructed,
+                    publicationCount = 1,
+                    actionCounts = assembler.actionCounts.toMap(),
+                    durationNanos = assemblyDurationNanos,
+                ),
+            )
         }.getOrElse { error ->
             EmscriptImportResult(
                 ir = ir,
@@ -107,10 +165,16 @@ private class EmscriptSourceLineCursor(script: String) {
 private class WorkspaceAssembler(
     workspaceId: String,
     private val sourceLines: EmscriptSourceLineCursor,
+    private val mode: WorkspaceAssemblyMode,
 ) {
     private val registry = CompositeBlockRegistry()
     private var document = WorkspaceDocument(id = workspaceId)
     private var currentSourceLocation: EmscriptSourceLocation? = null
+    var reducerCalls: Int = 0
+        private set
+    var bulkObjectsConstructed: Int = 0
+        private set
+    val actionCounts: MutableMap<String, Int> = linkedMapOf()
 
     fun build(ir: EmscriptIrScript, facets: List<EmscriptGroupFacet> = emptyList()): WorkspaceDocument {
         val startBlock = instantiate(BlockTypes.EVENT_START)
@@ -804,7 +868,79 @@ private class WorkspaceAssembler(
         )
 
     private fun apply(action: WorkspaceAction) {
-        document = WorkspaceReducer.reduce(document, action, registry.asFactory())
+        val actionName = action::class.simpleName ?: "Unknown"
+        actionCounts[actionName] = actionCounts.getOrDefault(actionName, 0) + 1
+        if (mode == WorkspaceAssemblyMode.LEGACY_SEQUENTIAL) {
+            reducerCalls += 1
+            document = WorkspaceReducer.reduce(document, action, registry.asFactory())
+            return
+        }
+        applyBulk(action)
+    }
+
+    private fun applyBulk(action: WorkspaceAction) {
+        when (action) {
+            is WorkspaceAction.InstantiateBlock -> {
+                val id = newBlockId()
+                val block = registry.asFactory().create(action.definitionId, id)
+                    ?: error("Block ${action.definitionId} konnte nicht instanziert werden.")
+                document = document.copy(
+                    version = document.version + 1,
+                    blocks = document.blocks + (id to block),
+                    rootBlocks = document.rootBlocks + id,
+                    rootPositions = document.rootPositions + (id to WorkspacePoint(action.x, action.y)),
+                )
+                bulkObjectsConstructed += 1
+            }
+            is WorkspaceAction.UpdateField -> {
+                val block = document.blocks[action.blockId] ?: return
+                document = document.copy(
+                    version = document.version + 1,
+                    blocks = document.blocks + (
+                        action.blockId to block.copy(fields = block.fields + (action.key to action.value))
+                    ),
+                )
+            }
+            is WorkspaceAction.CreateVariable -> {
+                if (action.variable.id in document.variables.variables) return
+                val variable = action.variable.copy(
+                    name = action.variable.name.trim(),
+                    type = action.variable.type.trim(),
+                )
+                document = document.copy(
+                    version = document.version + 1,
+                    variables = document.variables.copy(
+                        variables = document.variables.variables + (variable.id to variable),
+                    ),
+                )
+                bulkObjectsConstructed += 1
+            }
+            is WorkspaceAction.Connect -> connectBulk(action.source, action.target)
+            else -> error("Workspace-Import unterstützt keine Bulk-Aktion ${action::class.simpleName}.")
+        }
+    }
+
+    private fun connectBulk(sourceId: ConnectionId, targetId: ConnectionId) {
+        val (sourceBlockId, source) = WorkspaceGraph.findConnection(document, sourceId)
+            ?: error("Source-Verbindung ${sourceId.value} fehlt.")
+        val (targetBlockId, target) = WorkspaceGraph.findConnection(document, targetId)
+            ?: error("Target-Verbindung ${targetId.value} fehlt.")
+        val removeRoot = when (source.kind to target.kind) {
+            ConnectionKind.Next to ConnectionKind.Previous -> targetBlockId
+            ConnectionKind.Output to ConnectionKind.ValueInput -> sourceBlockId
+            ConnectionKind.StatementInput to ConnectionKind.Previous -> targetBlockId
+            else -> error("Nicht unterstützte Import-Verbindung ${source.kind} -> ${target.kind}.")
+        }
+        val sourceBlock = document.blocks.getValue(sourceBlockId)
+        val targetBlock = document.blocks.getValue(targetBlockId)
+        document = document.copy(
+            version = document.version + 1,
+            blocks = document.blocks +
+                (sourceBlockId to sourceBlock.withConnectionUpdated(sourceId) { it.copy(connectedTo = targetId) }) +
+                (targetBlockId to targetBlock.withConnectionUpdated(targetId) { it.copy(connectedTo = sourceId) }),
+            rootBlocks = document.rootBlocks.filterNot { it == removeRoot },
+            rootPositions = document.rootPositions - removeRoot,
+        )
     }
 }
 

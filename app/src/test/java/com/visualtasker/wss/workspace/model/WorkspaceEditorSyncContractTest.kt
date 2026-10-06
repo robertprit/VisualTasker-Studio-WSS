@@ -3,6 +3,7 @@ package com.visualtasker.wss.workspace.model
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.WorkspacePoint
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.flowchart.domain.FlowNodeId
 import org.junit.Assert.assertEquals
@@ -159,5 +160,51 @@ class WorkspaceEditorSyncContractTest {
 
         assertFalse(invalid is EmscriptApplyGuardResult.Success)
         assertTrue(valid.importedDocument.blocks.isNotEmpty())
+    }
+
+    @Test
+    fun sourceMappingCacheReusesExactSourceAcrossPresentationOnlyChanges() {
+        val document = (EmscriptApplyGuard().preview(script) as EmscriptApplyGuardResult.Success).importedDocument
+        val cache = WorkspaceSelectionResolver.SourceMappingCache()
+
+        val first = WorkspaceSelectionResolver.sourceLines(document, script, cache = cache)
+        val moved = document.copy(
+            version = document.version + 1,
+            rootPositions = document.rootPositions +
+                (document.rootBlocks.first() to WorkspacePoint(900f, 700f)),
+        )
+        val second = WorkspaceSelectionResolver.sourceLines(moved, script, cache = cache)
+
+        assertEquals(first, second)
+        assertEquals(1, cache.misses)
+        assertEquals(1, cache.hits)
+    }
+
+    @Test
+    fun sourceMappingCacheInvalidatesWhenExactSourceChanges() {
+        val document = (EmscriptApplyGuard().preview(script) as EmscriptApplyGuardResult.Success).importedDocument
+        val cache = WorkspaceSelectionResolver.SourceMappingCache()
+
+        WorkspaceSelectionResolver.sourceLines(document, script, cache = cache)
+        WorkspaceSelectionResolver.sourceLines(
+            document,
+            script.replace("click(\"Login\")", "click(\"Continue\")"),
+            cache = cache,
+        )
+
+        assertEquals(2, cache.misses)
+        assertEquals(0, cache.hits)
+    }
+
+    @Test
+    fun projectedAndDraftMappingShareOneDerivedImportForSameSource() {
+        val document = (EmscriptApplyGuard().preview(script) as EmscriptApplyGuardResult.Success).importedDocument
+        val cache = WorkspaceSelectionResolver.SourceMappingCache()
+
+        WorkspaceSelectionResolver.sourceLines(document, script, cache = cache)
+        WorkspaceSelectionResolver.derivedSourceLines(document, script, cache = cache)
+
+        assertEquals(1, cache.misses)
+        assertEquals(1, cache.hits)
     }
 }

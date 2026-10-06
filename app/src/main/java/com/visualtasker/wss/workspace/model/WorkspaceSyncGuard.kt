@@ -1,6 +1,7 @@
 package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
+import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.ir.validateIntegrity
@@ -10,6 +11,7 @@ import de.visualtasker.workflow.serialization.WorkflowSerializer
 
 class WorkspaceSyncGuard {
     fun inspect(serializedJson: String): WorkspaceSyncGuardReport {
+        BlockEditorDropTrace.markActive("SYNC_GUARD_DESERIALIZE_ENTER")
         val decoded = WorkflowSerializer.decode(serializedJson)
         val document = when (decoded) {
             is WorkflowDecodeResult.Decoded -> decoded.document
@@ -22,7 +24,9 @@ class WorkspaceSyncGuard {
                 messages = listOf("Workspace Schema wird nicht unterstützt: ${decoded.version}"),
             )
         }
+        BlockEditorDropTrace.markActive("SYNC_GUARD_DESERIALIZE_RETURN", "blocks=${document.blocks.size}")
         val messages = mutableListOf<String>()
+        BlockEditorDropTrace.markActive("SYNC_GUARD_NORMALIZE_ENTER")
         val normalized = runCatching { WorkflowSerializer.serialize(document) }
             .getOrElse { error ->
                 return WorkspaceSyncGuardReport(
@@ -30,29 +34,53 @@ class WorkspaceSyncGuard {
                     messages = listOf("Workspace Serialisierung fehlgeschlagen: ${error.message ?: "unknown"}"),
                 )
             }
+        BlockEditorDropTrace.markActive(
+            "SYNC_GUARD_NORMALIZE_RETURN",
+            "bytes=${normalized.toByteArray(Charsets.UTF_8).size}",
+        )
         if (normalized.isBlank()) {
             return WorkspaceSyncGuardReport(
                 isValid = false,
                 messages = listOf("Workspace Serialisierung ist leer."),
             )
         }
+        BlockEditorDropTrace.markActive("SYNC_GUARD_EMSCRIPT_ENTER")
         val emscript = runCatching { EmscriptGenerator().generate(document) }
+        BlockEditorDropTrace.markActive(
+            "SYNC_GUARD_EMSCRIPT_RETURN",
+            "success=${emscript.isSuccess} chars=${emscript.getOrNull()?.length ?: 0}",
+        )
         if (emscript.isFailure) {
             messages += "EMScript-Projektion fehlgeschlagen: ${emscript.exceptionOrNull()?.message ?: "unknown"}"
         } else {
             messages += "EMScript-Projektion OK (${emscript.getOrDefault("").length} Zeichen)."
         }
+        BlockEditorDropTrace.markActive("SYNC_GUARD_EMSCRIPT_REPARSE_ENTER")
         val emscriptReparse = emscript.getOrNull()?.let { generated -> EmscriptParserSlice().parse(generated) }
+        BlockEditorDropTrace.markActive(
+            "SYNC_GUARD_EMSCRIPT_REPARSE_RETURN",
+            "success=${emscriptReparse?.isSuccess}",
+        )
         when {
             emscriptReparse == null -> Unit
             emscriptReparse.isSuccess -> messages += "EMScript-Reparse OK."
             else -> messages += "EMScript-Reparse fehlgeschlagen: ${emscriptReparse.issues.joinToString { issue -> "${issue.line}:${issue.column} ${issue.message}" }}"
         }
+        BlockEditorDropTrace.markActive("SYNC_GUARD_IR_ENTER")
         val irGraph = runCatching { IrGraphGenerator().generate(document) }
+        BlockEditorDropTrace.markActive(
+            "SYNC_GUARD_IR_RETURN",
+            "success=${irGraph.isSuccess} nodes=${irGraph.getOrNull()?.nodes?.size ?: 0}",
+        )
+        BlockEditorDropTrace.markActive("SYNC_GUARD_IR_VALIDATION_ENTER")
         val irDiagnostics = irGraph
             .getOrNull()
             ?.let { graph -> graph.diagnostics + graph.validateIntegrity() + graph.validateSemantics() }
             .orEmpty()
+        BlockEditorDropTrace.markActive(
+            "SYNC_GUARD_IR_VALIDATION_RETURN",
+            "diagnostics=${irDiagnostics.size}",
+        )
         if (irGraph.isFailure) {
             messages += "IR-Graph-Erzeugung fehlgeschlagen: ${irGraph.exceptionOrNull()?.message ?: "unknown"}"
         } else {
@@ -61,9 +89,14 @@ class WorkspaceSyncGuard {
                 messages += "${diagnostic.code}: ${diagnostic.message}"
             }
         }
+        BlockEditorDropTrace.markActive("SYNC_GUARD_FLOWCHART_ENTER")
         val flowchart = runCatching {
             com.visualtasker.wss.flowchart.IrGraphFlowchartProjector.project(irGraph.getOrThrow())
         }
+        BlockEditorDropTrace.markActive(
+            "SYNC_GUARD_FLOWCHART_RETURN",
+            "success=${flowchart.isSuccess} nodes=${flowchart.getOrNull()?.graph?.nodes?.size ?: 0}",
+        )
         if (flowchart.isFailure) {
             messages += "Flowchart-Projektion fehlgeschlagen: ${flowchart.exceptionOrNull()?.message ?: "unknown"}"
         } else {

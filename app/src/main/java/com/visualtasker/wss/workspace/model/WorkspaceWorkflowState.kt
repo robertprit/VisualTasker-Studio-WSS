@@ -4,6 +4,7 @@ import com.visualtasker.wss.flowchart.FlowchartProjectionResult
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
+import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
 import de.visualtasker.blockeditor.ir.IrGraph
 import de.visualtasker.blockeditor.ir.IrGraphGenerator
 import de.visualtasker.workflow.serialization.WorkflowSerializer
@@ -26,7 +27,12 @@ data class WorkspaceWorkflowState(
             mutationSource: String = WORKFLOW_SOURCE_INITIAL,
             resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
+            BlockEditorDropTrace.markActive("HOST_STATE_DESERIALIZE_ENTER")
             val document = WorkflowSerializer.deserialize(serializedJson)
+            BlockEditorDropTrace.markActive(
+                "HOST_STATE_DESERIALIZE_RETURN",
+                "blocks=${document.blocks.size}",
+            )
             return fromDocument(document, mutationSource, resources)
         }
 
@@ -35,14 +41,36 @@ data class WorkspaceWorkflowState(
             mutationSource: String,
             resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
+            BlockEditorDropTrace.markActive("HOST_STATE_NORMALIZE_SERIALIZE_ENTER")
             val normalizedJson = WorkflowSerializer.serialize(document)
+            BlockEditorDropTrace.markActive(
+                "HOST_STATE_NORMALIZE_SERIALIZE_RETURN",
+                "bytes=${normalizedJson.toByteArray(Charsets.UTF_8).size}",
+            )
+            BlockEditorDropTrace.markActive("HOST_STATE_IR_GENERATION_ENTER")
             val irGraph = IrGraphGenerator().generate(document)
+            BlockEditorDropTrace.markActive(
+                "HOST_STATE_IR_GENERATION_RETURN",
+                "nodes=${irGraph.nodes.size} edges=${irGraph.edges.size}",
+            )
+            BlockEditorDropTrace.markActive("HOST_STATE_EMSCRIPT_GENERATION_ENTER")
+            val emscriptProjection = runCatching { EmscriptGenerator().generate(document) }
+            BlockEditorDropTrace.markActive(
+                "HOST_STATE_EMSCRIPT_GENERATION_RETURN",
+                "success=${emscriptProjection.isSuccess} chars=${emscriptProjection.getOrNull()?.length ?: 0}",
+            )
+            BlockEditorDropTrace.markActive("HOST_STATE_FLOWCHART_PROJECTION_ENTER")
+            val flowchartProjection = IrGraphFlowchartProjector.project(irGraph)
+            BlockEditorDropTrace.markActive(
+                "HOST_STATE_FLOWCHART_PROJECTION_RETURN",
+                "nodes=${flowchartProjection.graph.nodes.size} edges=${flowchartProjection.graph.edges.size}",
+            )
             return WorkspaceWorkflowState(
                 document = document,
                 serializedJson = normalizedJson,
                 irGraph = irGraph,
-                emscriptProjection = runCatching { EmscriptGenerator().generate(document) },
-                flowchartProjection = IrGraphFlowchartProjector.project(irGraph),
+                emscriptProjection = emscriptProjection,
+                flowchartProjection = flowchartProjection,
                 resources = resources,
                 worldview = WorldviewDocument.fromResources(resources),
                 mutationSource = mutationSource,

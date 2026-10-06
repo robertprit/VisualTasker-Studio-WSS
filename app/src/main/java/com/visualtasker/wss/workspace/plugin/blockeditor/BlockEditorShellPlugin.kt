@@ -23,6 +23,7 @@ import de.visualtasker.blockeditor.compose.host.BlockEditorController
 import de.visualtasker.blockeditor.compose.host.BlockEditorHostCallbacks
 import de.visualtasker.blockeditor.compose.host.BlockEditorRuntimeState
 import de.visualtasker.blockeditor.compose.host.BlockEditorRuntimeStatus
+import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.workflow.serialization.WorkflowDecodeResult
@@ -214,13 +215,20 @@ class BlockEditorShellEditorSession(
     private fun callbacks(): BlockEditorHostCallbacks =
         object : BlockEditorHostCallbacks {
             override fun onWorkspaceDocumentChanged(serializedJson: String) {
+                BlockEditorDropTrace.markActive(
+                    "HOST_DIRTY_NORMALIZE_ENTER",
+                    "bytes=${serializedJson.toByteArray(Charsets.UTF_8).size}",
+                )
                 val normalized = normalize(serializedJson)
+                BlockEditorDropTrace.markActive("HOST_DIRTY_NORMALIZE_RETURN")
                 val nextDirtyState = if (normalized == persistedContent) {
                     ShellDirtyState.CLEAN
                 } else {
                     ShellDirtyState.DIRTY
                 }
+                BlockEditorDropTrace.markActive("HOST_DIRTY_STATE_ENTER", "state=$nextDirtyState")
                 updateDirtyState(nextDirtyState)
+                BlockEditorDropTrace.markActive("HOST_DIRTY_STATE_RETURN", "state=$dirtyState")
             }
 
             override fun onEmscriptDraftChanged(emscript: String) {
