@@ -8,13 +8,13 @@ import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
-import de.visualtasker.blockeditor.validation.TypeMismatch
-import de.visualtasker.blockeditor.validation.Validator
+import de.visualtasker.workflow.semantics.validation.TypeMismatch
+import de.visualtasker.workflow.semantics.validation.Validator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

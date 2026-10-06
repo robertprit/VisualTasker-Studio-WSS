@@ -30,8 +30,8 @@ import de.visualtasker.workflow.serialization.WorkflowDecodeResult
 import de.visualtasker.workflow.serialization.WorkflowDefinitionResolver
 import de.visualtasker.workflow.serialization.WorkflowDefinitionShape
 import de.visualtasker.workflow.serialization.WorkflowSerializer
-import de.visualtasker.blockeditor.validation.ValidationError
-import de.visualtasker.blockeditor.validation.Validator
+import de.visualtasker.workflow.semantics.validation.ValidationError
+import de.visualtasker.workflow.semantics.validation.Validator
 
 class BlockEditorShellPlugin : ShellEditorPlugin {
     override val pluginId: ShellPluginId = ShellPluginId(PLUGIN_ID)

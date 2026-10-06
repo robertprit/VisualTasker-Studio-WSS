@@ -2,7 +2,7 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
-import de.visualtasker.blockeditor.ir.IrGraphEdgeKind
+import de.visualtasker.workflow.semantics.ir.IrGraphEdgeKind
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.workflow.serialization.WorkflowSerializer

@@ -10,13 +10,13 @@ import com.visualtasker.wss.emscript.runtime.RuntimeQueryDiagnosticCodes
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
-import de.visualtasker.blockeditor.registry.CommandCatalogKind
+import de.visualtasker.workflow.semantics.ir.IrGenerator
+import de.visualtasker.workflow.semantics.CommandCatalogKind
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.QueryReturnContractAudit
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

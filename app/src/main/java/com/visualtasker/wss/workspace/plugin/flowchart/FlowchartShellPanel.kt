@@ -128,8 +128,8 @@ import de.visualtasker.blockeditor.registry.BlockNodePresentationContract
 import de.visualtasker.blockeditor.registry.SemanticPropertyCategory
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.toCapabilityDescriptor
 import kotlin.math.roundToInt
 
 @Composable
@@ -1392,7 +1392,7 @@ private fun editableCommandArgumentFields(node: FlowGraphNode, ownerId: String):
     val command = VisualTaskerCommandCatalog.findById(commandId) ?: return emptyList()
     val rawArgs = splitInspectorArgs(node.properties.textFor("args").orEmpty())
     return command.arguments
-        .filter { it.type != de.visualtasker.blockeditor.registry.CommandArgumentType.STATEMENT_BODY }
+        .filter { it.type != de.visualtasker.workflow.semantics.CommandArgumentType.STATEMENT_BODY }
         .mapIndexed { index, argument ->
             EditableFlowchartNodeField(
                 label = argument.name,

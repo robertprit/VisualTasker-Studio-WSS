@@ -7,7 +7,7 @@ import com.visualtasker.wss.emscript.runtime.ExecutionMode
 import com.visualtasker.wss.emscript.runtime.ExecutionRunId
 import com.visualtasker.wss.emscript.runtime.ExecutionSourceKind
 import com.visualtasker.wss.emscript.runtime.toExecutionTrace
-import de.visualtasker.blockeditor.ir.IrGraph
+import de.visualtasker.workflow.semantics.ir.IrGraph
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowEdgeId

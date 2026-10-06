@@ -1,13 +1,13 @@
 package com.visualtasker.wss.flowchart
 
-import de.visualtasker.blockeditor.ir.IrGraph
-import de.visualtasker.blockeditor.ir.IrGraphEdgeKind
-import de.visualtasker.blockeditor.ir.IrGraphFacet
-import de.visualtasker.blockeditor.ir.IrGraphFacetKind
-import de.visualtasker.blockeditor.ir.IrGraphNodeKind
-import de.visualtasker.blockeditor.ir.IrGraphSourceRef
-import de.visualtasker.blockeditor.ir.validateIntegrity
-import de.visualtasker.blockeditor.ir.validateSemantics
+import de.visualtasker.workflow.semantics.ir.IrGraph
+import de.visualtasker.workflow.semantics.ir.IrGraphEdgeKind
+import de.visualtasker.workflow.semantics.ir.IrGraphFacet
+import de.visualtasker.workflow.semantics.ir.IrGraphFacetKind
+import de.visualtasker.workflow.semantics.ir.IrGraphNodeKind
+import de.visualtasker.workflow.semantics.ir.IrGraphSourceRef
+import de.visualtasker.workflow.semantics.ir.validateIntegrity
+import de.visualtasker.workflow.semantics.ir.validateSemantics
 import de.visualtasker.flowchart.domain.FlowDiagnosticId
 import de.visualtasker.flowchart.domain.FlowDiagnosticSeverity
 import de.visualtasker.flowchart.domain.FlowDocumentId
@@ -320,10 +320,10 @@ object IrGraphFlowchartProjector {
     private fun branchTerminalNodeId(
         graph: IrGraph,
         scopeId: String,
-        bodyEntryNodeId: de.visualtasker.blockeditor.ir.IrGraphNodeId?,
-        outgoingBySource: Map<de.visualtasker.blockeditor.ir.IrGraphNodeId, List<de.visualtasker.blockeditor.ir.IrGraphEdge>>,
-        nodeIds: Set<de.visualtasker.blockeditor.ir.IrGraphNodeId>,
-    ): de.visualtasker.blockeditor.ir.IrGraphNodeId? {
+        bodyEntryNodeId: de.visualtasker.workflow.semantics.ir.IrGraphNodeId?,
+        outgoingBySource: Map<de.visualtasker.workflow.semantics.ir.IrGraphNodeId, List<de.visualtasker.workflow.semantics.ir.IrGraphEdge>>,
+        nodeIds: Set<de.visualtasker.workflow.semantics.ir.IrGraphNodeId>,
+    ): de.visualtasker.workflow.semantics.ir.IrGraphNodeId? {
         val scoped = graph.nodes
             .filter { scopeId in it.scopePath }
             .map { it.id }
@@ -512,7 +512,7 @@ object IrGraphFlowchartProjector {
             }
         )
 
-    private fun sourceExtension(source: de.visualtasker.blockeditor.ir.IrGraphSourceRef): FlowSemanticValue =
+    private fun sourceExtension(source: de.visualtasker.workflow.semantics.ir.IrGraphSourceRef): FlowSemanticValue =
         FlowSemanticValue.ObjectValue(
             buildMap {
                 put("workspaceId", FlowSemanticValue.StringValue(source.workspaceId))

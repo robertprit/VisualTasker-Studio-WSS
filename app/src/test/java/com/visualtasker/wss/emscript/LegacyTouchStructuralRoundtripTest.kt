@@ -5,8 +5,8 @@ import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
-import de.visualtasker.blockeditor.ir.IrStatement
+import de.visualtasker.workflow.semantics.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrStatement
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.LegacyTouchClassification
 import de.visualtasker.blockeditor.registry.LegacyTouchStructuralClassifier

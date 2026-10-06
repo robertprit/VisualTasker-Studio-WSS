@@ -12,8 +12,8 @@ import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.workflow.core.BlockNode
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
-import de.visualtasker.blockeditor.registry.CommandCatalogKind
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.CommandCatalogKind
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 
 data class BlockEditorVisualSubject(
     val block: BlockNode,

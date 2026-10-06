@@ -1,6 +1,7 @@
 package com.visualtasker.wss.emscript.parser
 
 import de.visualtasker.workflow.core.BlockId
+import de.visualtasker.workflow.core.BlockFactory
 import de.visualtasker.workflow.core.Connection
 import de.visualtasker.workflow.core.ConnectionId
 import de.visualtasker.workflow.core.ConnectionKind
@@ -16,21 +17,20 @@ import de.visualtasker.workflow.core.WorkspacePoint
 import de.visualtasker.workflow.core.WorkspaceReducer
 import de.visualtasker.workflow.core.newBlockId
 import de.visualtasker.workflow.core.withConnectionUpdated
-import de.visualtasker.blockeditor.registry.BlockTypes
-import de.visualtasker.blockeditor.registry.CommandCatalogEntry
-import de.visualtasker.blockeditor.registry.CommandArgumentType
-import de.visualtasker.blockeditor.registry.CommandCatalogKind
-import de.visualtasker.blockeditor.registry.canBeUsedAsExpression
-import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
-import de.visualtasker.blockeditor.registry.VariableReporterFactory
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.WorkspaceValueTypeSystem
-import de.visualtasker.blockeditor.registry.argumentAt
-import de.visualtasker.blockeditor.registry.asFactory
-import de.visualtasker.blockeditor.registry.maximumArgumentCount
-import de.visualtasker.blockeditor.registry.minimumArgumentCount
-import de.visualtasker.blockeditor.registry.workspaceInputNameAt
-import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
+import de.visualtasker.workflow.semantics.WorkflowElementTypes as BlockTypes
+import de.visualtasker.workflow.semantics.CommandCatalogEntry
+import de.visualtasker.workflow.semantics.CommandArgumentType
+import de.visualtasker.workflow.semantics.CommandCatalogKind
+import de.visualtasker.workflow.semantics.canBeUsedAsExpression
+import de.visualtasker.workflow.semantics.DefaultWorkflowSemanticDefinitions
+import de.visualtasker.workflow.semantics.WorkflowSemanticDefinition
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.WorkspaceValueTypeSystem
+import de.visualtasker.workflow.semantics.argumentAt
+import de.visualtasker.workflow.semantics.createNode
+import de.visualtasker.workflow.semantics.maximumArgumentCount
+import de.visualtasker.workflow.semantics.minimumArgumentCount
+import de.visualtasker.workflow.semantics.workspaceInputNameAt
 
 data class EmscriptImportResult(
     val ir: EmscriptIrScript?,
@@ -65,10 +65,10 @@ class EmscriptWorkspaceImporter(
         workspaceId: String = "emscript-import",
         traceLabel: String? = null,
     ): EmscriptImportResult {
-        traceLabel?.let { BlockEditorDropTrace.markActive("${it}_PARSER_ENTER") }
+        traceLabel?.let { EmscriptImportTrace.mark("${it}_PARSER_ENTER") }
         val parsed = parser.parse(script)
         traceLabel?.let {
-            BlockEditorDropTrace.markActive(
+            EmscriptImportTrace.mark(
                 "${it}_PARSER_RETURN",
                 "statements=${parsed.ir?.statements?.size ?: 0} issues=${parsed.issues.size}",
             )
@@ -84,12 +84,12 @@ class EmscriptWorkspaceImporter(
                 sourceLines = EmscriptSourceLineCursor(script),
                 mode = assemblyMode,
             )
-            traceLabel?.let { BlockEditorDropTrace.markActive("${it}_ASSEMBLER_ENTER") }
+            traceLabel?.let { EmscriptImportTrace.mark("${it}_ASSEMBLER_ENTER") }
             val assemblyStartedAt = System.nanoTime()
             val document = assembler.build(ir, EmscriptEditorFacetScanner.scan(script))
             val assemblyDurationNanos = System.nanoTime() - assemblyStartedAt
             traceLabel?.let {
-                BlockEditorDropTrace.markActive(
+                EmscriptImportTrace.mark(
                     "${it}_ASSEMBLER_RETURN",
                     "blocks=${document.blocks.size} reducerCalls=${assembler.reducerCalls} " +
                         "bulkObjects=${assembler.bulkObjectsConstructed} publications=1 mode=$assemblyMode " +
@@ -167,8 +167,16 @@ private class WorkspaceAssembler(
     private val sourceLines: EmscriptSourceLineCursor,
     private val mode: WorkspaceAssemblyMode,
 ) {
-    private val registry = CompositeBlockRegistry()
     private var document = WorkspaceDocument(id = workspaceId)
+    private val factory = BlockFactory { definitionId, id ->
+        semanticDefinition(definitionId)?.createNode(
+            id = id,
+            outputTypeOverride = definitionId
+                .removePrefix(BlockTypes.VARIABLE_REPORTER_PREFIX)
+                .takeIf { it != definitionId }
+                ?.let { variableId -> document.variables.variables[variableId]?.type },
+        )
+    }
     private var currentSourceLocation: EmscriptSourceLocation? = null
     var reducerCalls: Int = 0
         private set
@@ -245,8 +253,8 @@ private class WorkspaceAssembler(
                 emitSetVariableBlock(statement.variable, statement.value, assignmentKind = "SET")
             }
             is EmscriptIrStatement.CommandCall -> {
-                val entry = de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog.findByCanonicalName(statement.command)
-                    ?: de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog.findByAcceptedName(statement.command)
+                val entry = de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog.findByCanonicalName(statement.command)
+                    ?: de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog.findByAcceptedName(statement.command)
                     ?: error("Kommando '${statement.command}' ist nicht im Katalog.")
                 val blockType = entry.block?.blockType ?: error("Kommando '${statement.command}' hat keinen Block-Typ.")
                 val block = instantiate(blockType)
@@ -398,16 +406,16 @@ private class WorkspaceAssembler(
         expressions: List<EmscriptIrExpression>,
     ) {
         val block = document.blocks[parent] ?: error("Block ${parent.value} fehlt.")
-        val definition = registry.getDefinition(block.type)
+        val definition = semanticDefinition(block.type)
             ?: error("Block-Definition fuer ${parent.value} fehlt.")
         val entry = VisualTaskerCommandCatalog.findByBlockType(block.type)
-            ?: error("Command-Argumentvertrag fuer ${definition.id} fehlt.")
+            ?: error("Command-Argumentvertrag fuer ${definition.type} fehlt.")
         require(expressions.size >= entry.minimumArgumentCount()) {
-            "${definition.id} erwartet mindestens ${entry.minimumArgumentCount()} Expressions, erhalten: ${expressions.size}."
+            "${definition.type} erwartet mindestens ${entry.minimumArgumentCount()} Expressions, erhalten: ${expressions.size}."
         }
         entry.maximumArgumentCount()?.let { maximum ->
             require(expressions.size <= maximum) {
-                "${definition.id} erwartet maximal $maximum Expressions, erhalten: ${expressions.size}."
+                "${definition.type} erwartet maximal $maximum Expressions, erhalten: ${expressions.size}."
             }
         }
         ensureCommandExpressionInputs(parent, entry, expressions.size)
@@ -609,7 +617,7 @@ private class WorkspaceAssembler(
     }
 
     private fun emitVariableReporter(variableId: String): BlockId {
-        val reporterType = VariableReporterFactory.reporterId(variableId)
+        val reporterType = BlockTypes.VARIABLE_REPORTER_PREFIX + variableId
         val block = instantiate(reporterType)
         val variableLabel = document.variables.variables[variableId]?.name ?: variableId
         setTextField(block, "variableId", variableId)
@@ -632,7 +640,6 @@ private class WorkspaceAssembler(
             defaultValue = defaultValue,
         )
         apply(WorkspaceAction.CreateVariable(definition))
-        registry.register(VariableReporterFactory.create(definition))
     }
 
     private fun inferType(defaultValue: String?): String {
@@ -872,7 +879,7 @@ private class WorkspaceAssembler(
         actionCounts[actionName] = actionCounts.getOrDefault(actionName, 0) + 1
         if (mode == WorkspaceAssemblyMode.LEGACY_SEQUENTIAL) {
             reducerCalls += 1
-            document = WorkspaceReducer.reduce(document, action, registry.asFactory())
+            document = WorkspaceReducer.reduce(document, action, factory)
             return
         }
         applyBulk(action)
@@ -882,7 +889,7 @@ private class WorkspaceAssembler(
         when (action) {
             is WorkspaceAction.InstantiateBlock -> {
                 val id = newBlockId()
-                val block = registry.asFactory().create(action.definitionId, id)
+                val block = factory.create(action.definitionId, id)
                     ?: error("Block ${action.definitionId} konnte nicht instanziert werden.")
                 document = document.copy(
                     version = document.version + 1,
@@ -941,6 +948,18 @@ private class WorkspaceAssembler(
             rootBlocks = document.rootBlocks.filterNot { it == removeRoot },
             rootPositions = document.rootPositions - removeRoot,
         )
+    }
+
+    private fun semanticDefinition(type: String): WorkflowSemanticDefinition? =
+        DefaultWorkflowSemanticDefinitions.semanticDefinition(type)
+}
+
+internal object EmscriptImportTrace {
+    @Volatile
+    var listener: ((String) -> Unit)? = null
+
+    fun mark(event: String, detail: String = "") {
+        listener?.invoke(if (detail.isBlank()) event else "$event $detail")
     }
 }
 

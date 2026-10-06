@@ -3,9 +3,9 @@ package com.visualtasker.wss.emscript
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.workflow.core.FieldValue
-import de.visualtasker.blockeditor.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

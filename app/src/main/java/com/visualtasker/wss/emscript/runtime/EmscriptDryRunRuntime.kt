@@ -5,9 +5,9 @@ import com.visualtasker.wss.emscript.parser.EmscriptIrExpression
 import com.visualtasker.wss.emscript.parser.EmscriptIrScript
 import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
-import de.visualtasker.blockeditor.registry.CommandCapability
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
+import de.visualtasker.workflow.semantics.CommandCapability
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.toCapabilityDescriptor
 import de.visualtasker.emscript.contract.CoreTypes
 import de.visualtasker.emscript.contract.DomainTypes
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility

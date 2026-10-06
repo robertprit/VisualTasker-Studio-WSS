@@ -8,7 +8,7 @@ import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.workflow.core.WorkspaceAction
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.core.WorkspaceReducer
-import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.workflow.semantics.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap

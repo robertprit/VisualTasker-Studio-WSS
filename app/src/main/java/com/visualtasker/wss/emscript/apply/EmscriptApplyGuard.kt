@@ -5,12 +5,12 @@ import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.workspace.model.WorkspaceIdentityReconciler
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.workflow.serialization.WorkflowSerializer
-import de.visualtasker.blockeditor.validation.Validator
+import de.visualtasker.workflow.semantics.validation.Validator
 
 class EmscriptApplyGuard(
     private val importer: EmscriptWorkspaceImporter = EmscriptWorkspaceImporter(),

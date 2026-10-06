@@ -186,8 +186,8 @@ import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.serialization.WorkflowSerializer
-import de.visualtasker.blockeditor.validation.ValidationError
-import de.visualtasker.blockeditor.validation.Validator
+import de.visualtasker.workflow.semantics.validation.ValidationError
+import de.visualtasker.workflow.semantics.validation.Validator
 import de.visualtasker.flowchart.compose.FlowchartHost
 import de.visualtasker.flowchart.compose.FlowchartHostCallbacks
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
@@ -201,7 +201,7 @@ import de.visualtasker.flowchart.domain.FlowSurfaceId
 import de.visualtasker.flowchart.interaction.FlowchartController
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrGenerator
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch

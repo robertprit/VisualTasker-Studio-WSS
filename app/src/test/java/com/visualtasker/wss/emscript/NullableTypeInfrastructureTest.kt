@@ -9,14 +9,14 @@ import com.visualtasker.wss.emscript.runtime.EmscriptDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.EmscriptRuntimeTypeSafety
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.NullableQuerySemanticsAudit
 import de.visualtasker.blockeditor.registry.QueryReturnContractAudit
 import de.visualtasker.blockeditor.registry.LegacyCommandDefinitionBridge
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import org.junit.Assert.assertEquals

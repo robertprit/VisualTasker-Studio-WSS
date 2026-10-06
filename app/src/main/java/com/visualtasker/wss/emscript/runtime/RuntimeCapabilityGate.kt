@@ -1,11 +1,11 @@
 package com.visualtasker.wss.emscript.runtime
 
 import de.visualtasker.workflow.core.WorkspaceDocument
-import de.visualtasker.blockeditor.registry.CommandCapability
-import de.visualtasker.blockeditor.registry.CommandCapabilityDescriptor
-import de.visualtasker.blockeditor.registry.CommandCatalogEntry
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
+import de.visualtasker.workflow.semantics.CommandCapability
+import de.visualtasker.workflow.semantics.CommandCapabilityDescriptor
+import de.visualtasker.workflow.semantics.CommandCatalogEntry
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.toCapabilityDescriptor
 
 class RuntimeCapabilityGate(
     private val realRunCapabilities: Set<CommandCapability> = BasicRealRunCapabilities,

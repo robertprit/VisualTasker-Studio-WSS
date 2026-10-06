@@ -6,9 +6,9 @@ import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.workflow.core.asString
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrExpression
-import de.visualtasker.blockeditor.ir.IrGenerator
-import de.visualtasker.blockeditor.ir.IrStatement
+import de.visualtasker.workflow.semantics.ir.IrExpression
+import de.visualtasker.workflow.semantics.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrStatement
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.SemanticPropertyCategory

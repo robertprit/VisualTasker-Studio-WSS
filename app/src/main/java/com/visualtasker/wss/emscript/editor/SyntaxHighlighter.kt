@@ -9,8 +9,8 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
-import de.visualtasker.blockeditor.registry.CommandCatalogKind
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.CommandCatalogKind
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 import de.visualtasker.emscript.contract.EmscriptV1LanguageCore
 import java.util.Locale
 

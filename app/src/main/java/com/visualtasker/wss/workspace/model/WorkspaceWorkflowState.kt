@@ -5,8 +5,8 @@ import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
-import de.visualtasker.blockeditor.ir.IrGraph
-import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.workflow.semantics.ir.IrGraph
+import de.visualtasker.workflow.semantics.ir.IrGraphGenerator
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 
 data class WorkspaceWorkflowState(

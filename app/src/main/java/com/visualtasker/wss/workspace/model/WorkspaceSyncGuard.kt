@@ -3,9 +3,9 @@ package com.visualtasker.wss.workspace.model
 import com.visualtasker.wss.emscript.parser.EmscriptParserSlice
 import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGraphGenerator
-import de.visualtasker.blockeditor.ir.validateIntegrity
-import de.visualtasker.blockeditor.ir.validateSemantics
+import de.visualtasker.workflow.semantics.ir.IrGraphGenerator
+import de.visualtasker.workflow.semantics.ir.validateIntegrity
+import de.visualtasker.workflow.semantics.ir.validateSemantics
 import de.visualtasker.workflow.serialization.WorkflowDecodeResult
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 

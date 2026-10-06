@@ -539,10 +539,10 @@ import de.visualtasker.flowchart.compose.FlowchartNodeShapeProvider
 import de.visualtasker.blockeditor.registry.BlockDefinition
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockTypes
-import de.visualtasker.blockeditor.registry.CommandCapability
-import de.visualtasker.blockeditor.registry.CommandCapabilityDescriptor
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
+import de.visualtasker.workflow.semantics.CommandCapability
+import de.visualtasker.workflow.semantics.CommandCapabilityDescriptor
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.toCapabilityDescriptor
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats

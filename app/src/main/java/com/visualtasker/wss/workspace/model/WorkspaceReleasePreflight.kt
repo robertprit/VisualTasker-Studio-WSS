@@ -2,7 +2,7 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityGate
 import com.visualtasker.wss.emscript.runtime.RuntimeCapabilityStatus
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 
 enum class WorkspacePreflightSeverity {
     INFO,

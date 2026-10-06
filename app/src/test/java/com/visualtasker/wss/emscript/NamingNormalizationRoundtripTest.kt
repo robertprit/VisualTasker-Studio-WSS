@@ -4,11 +4,11 @@ import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.flowchart.BlockEditorFlowchartProjector
 import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGenerator
-import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.workflow.semantics.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrGraphGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
-import de.visualtasker.blockeditor.registry.EmscriptV1NamingNormalizations
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.EmscriptV1NamingNormalizations
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 import de.visualtasker.workflow.serialization.WorkflowDecodeResult
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.flowchart.domain.FlowNodeKind

@@ -2,10 +2,10 @@ package com.visualtasker.wss.flowchart
 
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunEvent
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
-import de.visualtasker.blockeditor.ir.IrGraph
-import de.visualtasker.blockeditor.ir.IrGraphEdgeId
-import de.visualtasker.blockeditor.ir.IrGraphEdgeKind
-import de.visualtasker.blockeditor.ir.IrGraphNodeId
+import de.visualtasker.workflow.semantics.ir.IrGraph
+import de.visualtasker.workflow.semantics.ir.IrGraphEdgeId
+import de.visualtasker.workflow.semantics.ir.IrGraphEdgeKind
+import de.visualtasker.workflow.semantics.ir.IrGraphNodeId
 import de.visualtasker.flowchart.domain.FlowRuntimeNodeState
 
 data class IrGraphRuntimeSnapshot(

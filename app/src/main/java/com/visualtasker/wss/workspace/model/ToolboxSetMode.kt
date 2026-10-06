@@ -2,7 +2,7 @@ package com.visualtasker.wss.workspace.model
 
 import de.visualtasker.blockeditor.registry.BlockCategories
 import de.visualtasker.blockeditor.registry.BlockDefinition
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 
 enum class ToolboxSetMode(val displayName: String) {
     Standard("Standard"),

@@ -1,14 +1,14 @@
 package com.visualtasker.wss.emscript.parser
 
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.CommandCatalogKind
-import de.visualtasker.blockeditor.registry.canBeUsedAsExpression
-import de.visualtasker.blockeditor.registry.CommandArgument
-import de.visualtasker.blockeditor.registry.CommandArgumentType
-import de.visualtasker.blockeditor.registry.CommandCatalogEntry
-import de.visualtasker.blockeditor.registry.argumentAt
-import de.visualtasker.blockeditor.registry.maximumArgumentCount
-import de.visualtasker.blockeditor.registry.minimumArgumentCount
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.CommandCatalogKind
+import de.visualtasker.workflow.semantics.canBeUsedAsExpression
+import de.visualtasker.workflow.semantics.CommandArgument
+import de.visualtasker.workflow.semantics.CommandArgumentType
+import de.visualtasker.workflow.semantics.CommandCatalogEntry
+import de.visualtasker.workflow.semantics.argumentAt
+import de.visualtasker.workflow.semantics.maximumArgumentCount
+import de.visualtasker.workflow.semantics.minimumArgumentCount
 import de.visualtasker.emscript.contract.EmscriptV1OperatorIds
 import de.visualtasker.emscript.contract.EmscriptV1Operators
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility

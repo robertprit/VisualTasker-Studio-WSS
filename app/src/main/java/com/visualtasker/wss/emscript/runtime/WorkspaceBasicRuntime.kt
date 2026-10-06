@@ -4,7 +4,7 @@ import de.visualtasker.workflow.core.BlockNode
 import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.core.asString
-import de.visualtasker.blockeditor.registry.BlockTypes
+import de.visualtasker.workflow.semantics.WorkflowElementTypes as BlockTypes
 import de.visualtasker.emscript.contract.ProviderTypes
 import kotlin.math.roundToInt
 
@@ -85,7 +85,7 @@ class WorkspaceBasicRuntime(
     }
 
     private fun evaluateCommandExpression(
-        entry: de.visualtasker.blockeditor.registry.CommandCatalogEntry,
+        entry: de.visualtasker.workflow.semantics.CommandCatalogEntry,
         arguments: List<EmscriptValue>,
     ): EmscriptValue = when (entry.id) {
         "clipboard.get" -> EmscriptValue.StringValue(environment.clipboardGet())

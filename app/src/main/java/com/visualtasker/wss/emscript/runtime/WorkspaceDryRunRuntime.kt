@@ -10,12 +10,12 @@ import de.visualtasker.workflow.core.OperatorNormalization
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.workflow.core.asString
-import de.visualtasker.blockeditor.registry.BlockTypes
-import de.visualtasker.blockeditor.registry.CommandCatalogEntry
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
-import de.visualtasker.blockeditor.registry.canBeUsedAsExpression
-import de.visualtasker.blockeditor.registry.workspaceInputNameAt
-import de.visualtasker.blockeditor.registry.toCapabilityDescriptor
+import de.visualtasker.workflow.semantics.WorkflowElementTypes as BlockTypes
+import de.visualtasker.workflow.semantics.CommandCatalogEntry
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.canBeUsedAsExpression
+import de.visualtasker.workflow.semantics.workspaceInputNameAt
+import de.visualtasker.workflow.semantics.toCapabilityDescriptor
 import com.visualtasker.wss.emscript.parser.EmscriptBinaryOp
 import com.visualtasker.wss.emscript.parser.EmscriptIrExpression
 import com.visualtasker.wss.emscript.parser.EmscriptIrStatement
@@ -276,18 +276,18 @@ private class WorkspaceInterpreter(
             "Void command '${entry.canonicalName}' cannot be evaluated as an expression"
         }
         val arguments = entry.arguments
-            .filter { it.type != de.visualtasker.blockeditor.registry.CommandArgumentType.STATEMENT_BODY }
+            .filter { it.type != de.visualtasker.workflow.semantics.CommandArgumentType.STATEMENT_BODY }
             .mapIndexed { index, argument ->
                 val inputName = entry.workspaceInputNameAt(index) ?: argument.name
                 evaluateOptionalValueInput(block, inputName)
                     ?: argument.defaultValue?.let { defaultValue ->
                         when (argument.type) {
-                            de.visualtasker.blockeditor.registry.CommandArgumentType.NUMBER,
-                            de.visualtasker.blockeditor.registry.CommandArgumentType.DURATION_MS,
-                            de.visualtasker.blockeditor.registry.CommandArgumentType.FREQUENCY_HZ,
-                            de.visualtasker.blockeditor.registry.CommandArgumentType.PERCENT,
+                            de.visualtasker.workflow.semantics.CommandArgumentType.NUMBER,
+                            de.visualtasker.workflow.semantics.CommandArgumentType.DURATION_MS,
+                            de.visualtasker.workflow.semantics.CommandArgumentType.FREQUENCY_HZ,
+                            de.visualtasker.workflow.semantics.CommandArgumentType.PERCENT,
                             -> EmscriptValue.NumberValue(defaultValue.toDouble())
-                            de.visualtasker.blockeditor.registry.CommandArgumentType.BOOLEAN ->
+                            de.visualtasker.workflow.semantics.CommandArgumentType.BOOLEAN ->
                                 EmscriptValue.BooleanValue(defaultValue.toBooleanStrict())
                             else -> EmscriptValue.StringValue(defaultValue)
                         }

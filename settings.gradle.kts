@@ -11,6 +11,7 @@ include(":app")
 includeBuild("visualtasker-blockeditor") {
     dependencySubstitution {
         substitute(module("de.visualtasker.workflow:workflow-core")).using(project(":workflow-core"))
+        substitute(module("de.visualtasker.workflow:workflow-semantics")).using(project(":workflow-semantics"))
         substitute(module("de.visualtasker.blockeditor:blockeditor-compose")).using(project(":blockeditor-compose"))
         substitute(module("de.visualtasker.blockeditor:blockeditor-domain")).using(project(":blockeditor-domain"))
         substitute(module("de.visualtasker.blockeditor:blockeditor-registry")).using(project(":blockeditor-registry"))

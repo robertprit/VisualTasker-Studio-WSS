@@ -10,9 +10,9 @@ import com.visualtasker.wss.emscript.runtime.RuntimeQueryDiagnosticCodes
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrExpression
-import de.visualtasker.blockeditor.ir.IrGenerator
-import de.visualtasker.blockeditor.ir.IrStatement
+import de.visualtasker.workflow.semantics.ir.IrExpression
+import de.visualtasker.workflow.semantics.ir.IrGenerator
+import de.visualtasker.workflow.semantics.ir.IrStatement
 import de.visualtasker.blockeditor.registry.CompositeBlockRegistry
 import de.visualtasker.blockeditor.registry.VariableReporterFactory
 import de.visualtasker.workflow.serialization.WorkflowSerializer

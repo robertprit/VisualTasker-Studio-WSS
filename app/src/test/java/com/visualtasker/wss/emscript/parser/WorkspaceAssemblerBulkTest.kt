@@ -3,7 +3,7 @@ package com.visualtasker.wss.emscript.parser
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.workspace.model.WorkspaceIdentityReconciler
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.blockeditor.ir.IrGraphGenerator
+import de.visualtasker.workflow.semantics.ir.IrGraphGenerator
 import de.visualtasker.workflow.core.WorkspaceDocument
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

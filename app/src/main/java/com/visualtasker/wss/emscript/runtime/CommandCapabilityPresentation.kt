@@ -1,7 +1,7 @@
 package com.visualtasker.wss.emscript.runtime
 
-import de.visualtasker.blockeditor.registry.CommandCapability
-import de.visualtasker.blockeditor.registry.CommandCapabilityDescriptor
+import de.visualtasker.workflow.semantics.CommandCapability
+import de.visualtasker.workflow.semantics.CommandCapabilityDescriptor
 
 internal enum class CommandToolboxAvailability {
     LOCAL,

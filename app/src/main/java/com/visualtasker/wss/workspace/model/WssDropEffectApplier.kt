@@ -4,7 +4,7 @@ import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.flowchart.domain.FlowPoint
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
-import de.visualtasker.blockeditor.registry.VisualTaskerCommandCatalog
+import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 
 data class WssTextInsertionResult(
     val text: String,
