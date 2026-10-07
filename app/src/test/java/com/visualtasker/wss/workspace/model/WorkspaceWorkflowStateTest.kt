@@ -6,6 +6,9 @@ import de.visualtasker.workflow.semantics.ir.IrGraphEdgeKind
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.WorkspaceBootstrap
 import de.visualtasker.workflow.serialization.WorkflowSerializer
+import de.visualtasker.workflow.core.CanonicalDiagnosticSeverity
+import de.visualtasker.workflow.core.SemanticEntityKind
+import de.visualtasker.workflow.core.SemanticRelationKind
 import de.visualtasker.workflow.core.WorkspacePoint as BlockWorkspacePoint
 import de.visualtasker.flowchart.domain.FlowSemanticValue
 import org.junit.Assert.assertEquals
@@ -24,6 +27,8 @@ class WorkspaceWorkflowStateTest {
         assertEquals(WorkflowSerializer.serialize(document), state.serializedJson)
         assertTrue(state.emscriptProjection.isSuccess)
         assertEquals(document.rootBlocks.size, state.document.rootBlocks.size)
+        assertTrue(state.canonicalDiagnostics.none { it.severity == CanonicalDiagnosticSeverity.Error })
+        assertTrue(state.canonicalDocument.entities.isNotEmpty())
         assertTrue(state.flowchartProjection.graph.nodes.isNotEmpty())
         assertTrue(state.resources.resources.isEmpty())
         assertEquals("test", state.mutationSource)
@@ -68,6 +73,8 @@ class WorkspaceWorkflowStateTest {
 
         assertTrue(initial.serializedJson != moved.serializedJson)
         assertEquals(initial.emscriptProjection.getOrThrow(), moved.emscriptProjection.getOrThrow())
+        assertEquals(initial.canonicalDocument.entities, moved.canonicalDocument.entities)
+        assertEquals(initial.canonicalDocument.relations, moved.canonicalDocument.relations)
     }
 
     @Test
@@ -90,6 +97,11 @@ class WorkspaceWorkflowStateTest {
         assertTrue(state.irGraph.edges.any { it.kind == IrGraphEdgeKind.DATA_FLOW })
         assertTrue(state.irGraph.scopes.isNotEmpty())
         assertTrue(state.irGraph.branches.isNotEmpty())
+        assertTrue(state.canonicalDocument.entities.any { it.ref.kind == SemanticEntityKind.Expression })
+        assertTrue(state.canonicalDocument.entities.any { it.ref.kind == SemanticEntityKind.Branch })
+        assertTrue(state.canonicalDocument.relations.any { it.kind == SemanticRelationKind.Sequence })
+        assertTrue(state.canonicalDocument.relations.any { it.kind == SemanticRelationKind.Expression })
+        assertTrue(state.canonicalDocument.relations.any { it.kind == SemanticRelationKind.Containment })
         assertTrue(state.irGraph.facets.isNotEmpty())
         assertTrue(state.flowchartProjection.graph.nodes.any { it.label == "IF" })
         assertEquals(
@@ -99,5 +111,38 @@ class WorkspaceWorkflowStateTest {
         assertTrue(state.flowchartProjection.graph.extensions.any { it.key == "visualtasker.ir-scopes" })
         assertTrue(state.flowchartProjection.graph.extensions.any { it.key == "visualtasker.ir-branches" })
         assertTrue(state.flowchartProjection.graph.extensions.any { it.key == "visualtasker.ir-facets" })
+    }
+
+    @Test
+    fun formatOnlyTextChangePreservesCanonicalIdentityAfterReconciliation() {
+        val compact = """
+            LET a = 1
+            IF a > 0
+                log("positive")
+            ELSE
+                wait(10)
+            END IF
+        """.trimIndent()
+        val spaced = """
+            LET a = 1
+
+            IF a > 0
+                log("positive")
+
+            ELSE
+                wait(10)
+            END IF
+        """.trimIndent()
+        val importer = EmscriptWorkspaceImporter()
+        val previous = importer.import(compact, workspaceId = "format-stability").document!!
+        val reparsed = importer.import(spaced, workspaceId = "format-stability").document!!
+        val reconciled = WorkspaceIdentityReconciler.reconcile(previous, reparsed)
+
+        val previousState = WorkspaceWorkflowState.fromDocument(previous, mutationSource = "text:compact")
+        val reconciledState = WorkspaceWorkflowState.fromDocument(reconciled, mutationSource = "text:spaced")
+
+        assertEquals(previous.blocks.keys, reconciled.blocks.keys)
+        assertEquals(previousState.canonicalDocument.entities, reconciledState.canonicalDocument.entities)
+        assertEquals(previousState.canonicalDocument.relations, reconciledState.canonicalDocument.relations)
     }
 }

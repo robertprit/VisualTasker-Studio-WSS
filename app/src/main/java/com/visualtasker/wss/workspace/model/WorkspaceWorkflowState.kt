@@ -2,6 +2,9 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.flowchart.FlowchartProjectionResult
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
+import de.visualtasker.workflow.core.CanonicalDiagnostic
+import de.visualtasker.workflow.core.CanonicalWorkspaceDocument
+import de.visualtasker.workflow.core.LegacyWorkspaceCanonicalizer
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
@@ -11,6 +14,8 @@ import de.visualtasker.workflow.serialization.WorkflowSerializer
 
 data class WorkspaceWorkflowState(
     val document: WorkspaceDocument,
+    val canonicalDocument: CanonicalWorkspaceDocument,
+    val canonicalDiagnostics: List<CanonicalDiagnostic>,
     val serializedJson: String,
     val irGraph: IrGraph,
     val emscriptProjection: Result<String>,
@@ -41,6 +46,7 @@ data class WorkspaceWorkflowState(
             mutationSource: String,
             resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
+            val canonicalization = LegacyWorkspaceCanonicalizer.canonicalize(document)
             BlockEditorDropTrace.markActive("HOST_STATE_NORMALIZE_SERIALIZE_ENTER")
             val normalizedJson = WorkflowSerializer.serialize(document)
             BlockEditorDropTrace.markActive(
@@ -67,6 +73,8 @@ data class WorkspaceWorkflowState(
             )
             return WorkspaceWorkflowState(
                 document = document,
+                canonicalDocument = canonicalization.document,
+                canonicalDiagnostics = canonicalization.diagnostics,
                 serializedJson = normalizedJson,
                 irGraph = irGraph,
                 emscriptProjection = emscriptProjection,
