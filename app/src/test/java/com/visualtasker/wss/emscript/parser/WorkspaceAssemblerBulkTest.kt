@@ -108,8 +108,16 @@ class WorkspaceAssemblerBulkTest {
     ) {
         val normalizedExpected = semanticDocument(expected)
         val normalizedActual = semanticDocument(actual)
+        val blockDifferences = (normalizedExpected.blocks.keys + normalizedActual.blocks.keys)
+            .filter { normalizedExpected.blocks[it] != normalizedActual.blocks[it] }
+            .take(12)
+            .joinToString { blockId ->
+                val expectedBlock = normalizedExpected.blocks[blockId]
+                val actualBlock = normalizedActual.blocks[blockId]
+                "${blockId.value}:${expectedBlock?.type ?: "missing"} expectedFields=${expectedBlock?.fields} actualFields=${actualBlock?.fields}"
+            }
         assertEquals("workspace id", normalizedExpected.id, normalizedActual.id)
-        assertEquals("block payload and compatibility projection", normalizedExpected.blocks, normalizedActual.blocks)
+        assertEquals("block payload and compatibility projection differences=[$blockDifferences]", normalizedExpected.blocks, normalizedActual.blocks)
         assertEquals("root compatibility projection", normalizedExpected.rootBlocks, normalizedActual.rootBlocks)
         assertEquals("root positions", normalizedExpected.rootPositions, normalizedActual.rootPositions)
         assertEquals("variables", normalizedExpected.variables, normalizedActual.variables)
