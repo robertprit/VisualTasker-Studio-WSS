@@ -4,6 +4,7 @@ import com.visualtasker.wss.emscript.parser.EmscriptParseIssue
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.workspace.model.WorkspaceIdentityReconciler
 import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.workflow.semantics.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
@@ -29,7 +30,17 @@ class EmscriptApplyGuard(
             )
         }
 
-        val imported = WorkspaceIdentityReconciler.reconcile(previousDocument, importResult.document)
+        val reconciled = WorkspaceIdentityReconciler.reconcile(previousDocument, importResult.document)
+        val migration = CanonicalWorkspaceMigration.toCurrent(reconciled)
+        if (!migration.isValid) {
+            val issue = migration.issues.firstOrNull()
+            return EmscriptApplyGuardResult.Failure(
+                stage = EmscriptApplyGuardStage.PRE_VALIDATE,
+                message = "Canonical migration failed: ${issue?.message ?: "unknown"}",
+                diagnosticCode = issue?.code,
+            )
+        }
+        val imported = migration.document
         val effectiveRegistry = registry ?: imported.registryWithVariables()
         val validation = if (registry != null) {
             Validator.validate(imported, registry)

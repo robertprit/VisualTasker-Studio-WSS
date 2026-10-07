@@ -4,7 +4,7 @@ import com.visualtasker.wss.flowchart.FlowchartProjectionResult
 import com.visualtasker.wss.flowchart.IrGraphFlowchartProjector
 import de.visualtasker.workflow.core.CanonicalDiagnostic
 import de.visualtasker.workflow.core.CanonicalWorkspaceDocument
-import de.visualtasker.workflow.core.LegacyWorkspaceCanonicalizer
+import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.compose.debug.BlockEditorDropTrace
@@ -46,21 +46,25 @@ data class WorkspaceWorkflowState(
             mutationSource: String,
             resources: WorkspaceResourceBundle = WorkspaceResourceBundle(),
         ): WorkspaceWorkflowState {
-            val canonicalization = LegacyWorkspaceCanonicalizer.canonicalize(document)
+            val migration = CanonicalWorkspaceMigration.toCurrent(document)
+            require(migration.isValid) {
+                "Canonical workspace migration failed: ${migration.issues.joinToString { it.code }}"
+            }
+            val normalizedDocument = migration.document
             BlockEditorDropTrace.markActive("HOST_STATE_NORMALIZE_SERIALIZE_ENTER")
-            val normalizedJson = WorkflowSerializer.serialize(document)
+            val normalizedJson = WorkflowSerializer.serialize(normalizedDocument)
             BlockEditorDropTrace.markActive(
                 "HOST_STATE_NORMALIZE_SERIALIZE_RETURN",
                 "bytes=${normalizedJson.toByteArray(Charsets.UTF_8).size}",
             )
             BlockEditorDropTrace.markActive("HOST_STATE_IR_GENERATION_ENTER")
-            val irGraph = IrGraphGenerator().generate(document)
+            val irGraph = IrGraphGenerator().generate(normalizedDocument)
             BlockEditorDropTrace.markActive(
                 "HOST_STATE_IR_GENERATION_RETURN",
                 "nodes=${irGraph.nodes.size} edges=${irGraph.edges.size}",
             )
             BlockEditorDropTrace.markActive("HOST_STATE_EMSCRIPT_GENERATION_ENTER")
-            val emscriptProjection = runCatching { EmscriptGenerator().generate(document) }
+            val emscriptProjection = runCatching { EmscriptGenerator().generate(normalizedDocument) }
             BlockEditorDropTrace.markActive(
                 "HOST_STATE_EMSCRIPT_GENERATION_RETURN",
                 "success=${emscriptProjection.isSuccess} chars=${emscriptProjection.getOrNull()?.length ?: 0}",
@@ -72,9 +76,9 @@ data class WorkspaceWorkflowState(
                 "nodes=${flowchartProjection.graph.nodes.size} edges=${flowchartProjection.graph.edges.size}",
             )
             return WorkspaceWorkflowState(
-                document = document,
-                canonicalDocument = canonicalization.document,
-                canonicalDiagnostics = canonicalization.diagnostics,
+                document = normalizedDocument,
+                canonicalDocument = requireNotNull(normalizedDocument.canonical),
+                canonicalDiagnostics = migration.diagnostics,
                 serializedJson = normalizedJson,
                 irGraph = irGraph,
                 emscriptProjection = emscriptProjection,

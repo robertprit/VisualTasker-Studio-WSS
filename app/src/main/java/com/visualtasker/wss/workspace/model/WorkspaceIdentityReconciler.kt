@@ -5,6 +5,9 @@ import de.visualtasker.workflow.core.BlockNode
 import de.visualtasker.workflow.core.Connection
 import de.visualtasker.workflow.core.ConnectionId
 import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.CanonicalCompatibilityProjection
+import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
+import de.visualtasker.workflow.core.SemanticRelation
 import de.visualtasker.workflow.core.allConnections
 
 /** Preserves semantic block identities when an EMScript draft is parsed again. */
@@ -56,11 +59,36 @@ object WorkspaceIdentityReconciler {
                 statementInputs = block.statementInputs.map { it.copy(connection = it.connection.remap()) },
             )
         }
-        return imported.copy(
+        val remapped = imported.copy(
             blocks = remappedBlocks,
             rootBlocks = imported.rootBlocks.map(blockIds::getValue),
             rootPositions = imported.rootPositions.mapKeys { (id, _) -> blockIds.getValue(id) },
+            canonical = null,
         )
+        val migrated = CanonicalWorkspaceMigration.toCurrent(remapped).document
+        val previousCanonical = CanonicalWorkspaceMigration.toCurrent(previous).document.canonical
+            ?: return migrated
+        val importedCanonical = migrated.canonical ?: return migrated
+        val previousEntities = previousCanonical.entities.associateBy { it.ref.id }
+        val previousRelations = previousCanonical.relations.associateBy(::relationIdentity)
+        val reconciledCanonical = importedCanonical.copy(
+            entities = importedCanonical.entities
+                .map { entity ->
+                    previousEntities[entity.ref.id]
+                        ?.takeIf { it.ref.kind == entity.ref.kind }
+                        ?: entity
+                }
+                .sortedBy { it.ref.id.value },
+            relations = importedCanonical.relations
+                .map { relation ->
+                    previousRelations[relationIdentity(relation)]
+                        ?.let { previousRelation -> relation.copy(id = previousRelation.id) }
+                        ?: relation
+                }
+                .sortedBy { it.id.value },
+        )
+        val reconciled = migrated.copy(canonical = reconciledCanonical)
+        return CanonicalCompatibilityProjection.project(reconciled).document
     }
 
     private fun semanticPaths(document: WorkspaceDocument): Map<BlockId, String> {
@@ -94,4 +122,22 @@ object WorkspaceIdentityReconciler {
     }
 
     private data class IdentityKey(val path: String, val type: String)
+
+    private fun relationIdentity(relation: SemanticRelation): RelationIdentity = RelationIdentity(
+        kind = relation.kind.name,
+        source = relation.source.id.value,
+        target = relation.target.id.value,
+        role = relation.role.kind.name,
+        roleName = relation.role.name,
+        branchRole = relation.role.branchRole?.name,
+    )
+
+    private data class RelationIdentity(
+        val kind: String,
+        val source: String,
+        val target: String,
+        val role: String,
+        val roleName: String?,
+        val branchRole: String?,
+    )
 }

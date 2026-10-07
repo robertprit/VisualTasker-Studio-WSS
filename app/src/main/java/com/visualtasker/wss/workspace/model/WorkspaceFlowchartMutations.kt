@@ -16,7 +16,6 @@ import de.visualtasker.workflow.core.WorkspaceReducer
 import de.visualtasker.workflow.core.allConnections
 import de.visualtasker.workflow.core.newBlockId
 import de.visualtasker.workflow.core.rootOffset
-import de.visualtasker.workflow.core.withConnectionUpdated
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
@@ -173,16 +172,13 @@ private fun instantiateFlowchartBlock(
     y: Float,
 ): Pair<WorkspaceDocument, BlockId>? {
     val id = newBlockId()
-    val block = DefaultBlockRegistry.getDefinition(definitionId)?.createNode(id) ?: return null
-    val withBlock = document.copy(
-        version = document.version + 1,
-        blocks = document.blocks + (id to block),
+    if (DefaultBlockRegistry.getDefinition(definitionId) == null) return null
+    val withBlock = WorkspaceReducer.reduce(
+        document,
+        WorkspaceAction.InstantiateBlock(definitionId, x, y, id),
+        DefaultBlockRegistry.asFactory(),
     )
-    val roots = WorkspaceGraph.pruneRootBlocks(withBlock, document.rootBlocks + id)
-    return withBlock.copy(
-        rootBlocks = roots,
-        rootPositions = withBlock.rootPositions + (id to WorkspacePoint(x, y)),
-    ) to id
+    return withBlock.takeIf { id in it.blocks }?.let { it to id }
 }
 
 fun deleteFlowchartNodeFromWorkspace(
@@ -206,34 +202,7 @@ fun deleteFlowchartNodesFromWorkspace(
         }
     if (toRemove.isEmpty()) return document
 
-    var blocks = document.blocks.toMutableMap()
-    val promotedRoots = mutableListOf<BlockId>()
-    toRemove.forEach { removedId ->
-        document.blocks[removedId]?.allConnections().orEmpty().forEach { connection ->
-            val partnerId = connection.connectedTo ?: return@forEach
-            val (partnerBlockId, partnerConnection) = WorkspaceGraph.findConnection(document, partnerId) ?: return@forEach
-            if (partnerBlockId !in toRemove) {
-                blocks[partnerBlockId] = blocks[partnerBlockId]
-                    ?.withConnectionUpdated(partnerId) { it.copy(connectedTo = null) }
-                    ?: return@forEach
-                if (partnerConnection.kind == ConnectionKind.Previous) {
-                    promotedRoots += partnerBlockId
-                }
-            }
-        }
-    }
-    toRemove.forEach(blocks::remove)
-    val reduced = document.copy(
-        version = document.version + 1,
-        blocks = blocks,
-        rootBlocks = document.rootBlocks.filter { it !in toRemove },
-        rootPositions = document.rootPositions - toRemove,
-    )
-    val roots = WorkspaceGraph.pruneRootBlocks(reduced, reduced.rootBlocks + promotedRoots)
-    return reduced.copy(
-        rootBlocks = roots,
-        rootPositions = reduced.rootPositions.filterKeys { it in roots },
-    )
+    return WorkspaceReducer.reduce(document, WorkspaceAction.DeleteBlocks(toRemove))
 }
 
 fun disconnectFlowchartEdgeFromWorkspace(
@@ -273,25 +242,7 @@ fun disconnectFlowchartEdgeFromWorkspace(
 
     val (_, connection) = WorkspaceGraph.findConnection(document, connectionId) ?: return document
     if (connection.connectedTo == null) return document
-    val disconnected = WorkspaceReducer.reduce(document, WorkspaceAction.Disconnect(connectionId))
-    val promotedRoots = when (edge.kind) {
-        FlowEdgeKind.SEQUENCE,
-        FlowEdgeKind.LOOP_EXIT,
-        FlowEdgeKind.TRUE_BRANCH,
-        FlowEdgeKind.FALSE_BRANCH,
-        FlowEdgeKind.ELSE_IF_BRANCH,
-        FlowEdgeKind.LOOP_BODY -> listOf(targetBlockId)
-        FlowEdgeKind.DATA_FLOW,
-        FlowEdgeKind.CONDITION -> listOf(sourceBlockId)
-        else -> emptyList()
-    }.filter { it in disconnected.blocks }
-    if (promotedRoots.isEmpty()) return disconnected
-    return disconnected.copy(
-        rootBlocks = WorkspaceGraph.pruneRootBlocks(
-            disconnected,
-            disconnected.rootBlocks + promotedRoots,
-        ),
-    )
+    return WorkspaceReducer.reduce(document, WorkspaceAction.Disconnect(connectionId))
 }
 
 fun connectFlowchartNodesInWorkspace(
@@ -330,22 +281,8 @@ fun connectFlowchartNodesInWorkspace(
             val source = sourceBlock.output?.id ?: return document
             val targetConnection = targetBlock.valueInputs.firstOrNull { it.name == inputName }?.connection
                 ?: return document
-            val formerReporterBlockId = targetConnection.connectedTo
-                ?.let { WorkspaceGraph.findConnection(document, it) }
-                ?.takeIf { (_, connection) -> connection.kind == ConnectionKind.Output }
-                ?.first
             val prepared = if (targetConnection.connectedTo != null && targetConnection.connectedTo != source) {
-                val disconnected = WorkspaceReducer.reduce(document, WorkspaceAction.Disconnect(targetConnection.id))
-                if (formerReporterBlockId != null && formerReporterBlockId in disconnected.blocks) {
-                    disconnected.copy(
-                        rootBlocks = WorkspaceGraph.pruneRootBlocks(
-                            disconnected,
-                            disconnected.rootBlocks + formerReporterBlockId,
-                        ),
-                    )
-                } else {
-                    disconnected
-                }
+                WorkspaceReducer.reduce(document, WorkspaceAction.Disconnect(targetConnection.id))
             } else {
                 document
             }
@@ -437,29 +374,9 @@ fun replaceFlowchartNodeTypeInWorkspace(
     val targetDefinition = DefaultBlockRegistry.getDefinition(definitionId) ?: return document
     val targetTemplate = targetDefinition.createNode(blockId)
     if (!source.hasCompatibleEditorSurface(targetTemplate)) return document
-    val targetConnectionIds = targetTemplate.allConnections().map { it.id }.toSet()
-    val blocks = document.blocks.toMutableMap()
-    val promotedRoots = mutableListOf<BlockId>()
-
-    source.allConnections()
-        .filter { it.id !in targetConnectionIds }
-        .forEach { removedConnection ->
-            val partnerId = removedConnection.connectedTo ?: return@forEach
-            val (partnerBlockId, partnerConnection) = WorkspaceGraph.findConnection(document, partnerId)
-                ?: return@forEach
-            blocks[partnerBlockId] = blocks[partnerBlockId]
-                ?.withConnectionUpdated(partnerConnection.id) { it.copy(connectedTo = null) }
-                ?: return@forEach
-            if (partnerConnection.kind == ConnectionKind.Previous ||
-                partnerConnection.kind == ConnectionKind.Output
-            ) {
-                promotedRoots += partnerBlockId
-            }
-        }
-
     val sourceValueInputs = source.valueInputs.associateBy { it.name }
     val sourceStatementInputs = source.statementInputs.associateBy { it.name }
-    blocks[blockId] = targetTemplate.copy(
+    val replacement = targetTemplate.copy(
         fields = targetTemplate.fields + source.fields.filterKeys { it in targetTemplate.fields },
         previous = source.previous?.takeIf { targetTemplate.previous != null },
         next = source.next?.takeIf { targetTemplate.next != null },
@@ -477,12 +394,11 @@ fun replaceFlowchartNodeTypeInWorkspace(
         metadata = source.metadata,
         collapsed = source.collapsed,
     )
-    val updated = document.copy(
-        version = document.version + 1,
-        blocks = blocks,
-        rootBlocks = WorkspaceGraph.pruneRootBlocks(document.copy(blocks = blocks), document.rootBlocks + promotedRoots),
+    return WorkspaceReducer.reduce(
+        document,
+        WorkspaceAction.ReplaceBlockShape(replacement),
+        DefaultBlockRegistry.asFactory(),
     )
-    return updated.copy(rootPositions = updated.rootPositions.filterKeys { it in updated.rootBlocks })
 }
 
 fun addFlowchartIfBranchInWorkspace(
@@ -724,29 +640,9 @@ private fun replaceFlowchartIfBranchShape(
     }
     val targetDefinition = DefaultBlockRegistry.getDefinition(targetType) ?: return document
     val targetTemplate = targetDefinition.createNode(blockId).withIfBranches(branchCount)
-    val targetConnectionIds = targetTemplate.allConnections().map { it.id }.toSet()
-    val promotedRoots = mutableListOf<BlockId>()
-    val blocks = document.blocks.toMutableMap()
-
-    source.allConnections()
-        .filter { it.id !in targetConnectionIds }
-        .forEach { removedConnection ->
-            val partnerId = removedConnection.connectedTo ?: return@forEach
-            val (partnerBlockId, partnerConnection) = WorkspaceGraph.findConnection(document, partnerId)
-                ?: return@forEach
-            blocks[partnerBlockId] = blocks[partnerBlockId]
-                ?.withConnectionUpdated(partnerConnection.id) { it.copy(connectedTo = null) }
-                ?: return@forEach
-            if (removedConnection.kind == ConnectionKind.StatementInput &&
-                partnerConnection.kind == ConnectionKind.Previous
-            ) {
-                promotedRoots += partnerBlockId
-            }
-        }
-
     val sourceValueInputs = source.valueInputs.associateBy { it.name }
     val sourceStatementInputs = source.statementInputs.associateBy { it.name }
-    blocks[blockId] = targetTemplate.copy(
+    val replacement = targetTemplate.copy(
         fields = targetTemplate.fields + source.fields,
         previous = source.previous?.takeIf { targetTemplate.previous != null },
         next = source.next?.takeIf { targetTemplate.next != null },
@@ -764,13 +660,10 @@ private fun replaceFlowchartIfBranchShape(
         collapsed = source.collapsed,
         metadata = source.metadata + ("if.branchCount" to branchCount.toString()),
     )
-    val updated = document.copy(
-        version = document.version + 1,
-        blocks = blocks,
-    )
-    return updated.copy(
-        rootBlocks = WorkspaceGraph.pruneRootBlocks(updated, document.rootBlocks + promotedRoots),
-        rootPositions = updated.rootPositions.filterKeys { it in WorkspaceGraph.topLevelRoots(updated) },
+    return WorkspaceReducer.reduce(
+        document,
+        WorkspaceAction.ReplaceBlockShape(replacement),
+        DefaultBlockRegistry.asFactory(),
     )
 }
 

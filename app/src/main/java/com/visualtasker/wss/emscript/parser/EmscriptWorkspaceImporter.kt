@@ -12,11 +12,13 @@ import de.visualtasker.workflow.core.VariableDefinition
 import de.visualtasker.workflow.core.VariableScope
 import de.visualtasker.workflow.core.WorkspaceAction
 import de.visualtasker.workflow.core.WorkspaceDocument
+import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
 import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.workflow.core.WorkspacePoint
 import de.visualtasker.workflow.core.WorkspaceReducer
 import de.visualtasker.workflow.core.newBlockId
 import de.visualtasker.workflow.core.withConnectionUpdated
+import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.workflow.semantics.WorkflowElementTypes as BlockTypes
 import de.visualtasker.workflow.semantics.CommandCatalogEntry
 import de.visualtasker.workflow.semantics.CommandArgumentType
@@ -86,7 +88,12 @@ class EmscriptWorkspaceImporter(
             )
             traceLabel?.let { EmscriptImportTrace.mark("${it}_ASSEMBLER_ENTER") }
             val assemblyStartedAt = System.nanoTime()
-            val document = assembler.build(ir, EmscriptEditorFacetScanner.scan(script))
+            val assembled = assembler.build(ir, EmscriptEditorFacetScanner.scan(script))
+            val migration = CanonicalWorkspaceMigration.toCurrent(assembled)
+            check(migration.isValid) {
+                "Canonical workspace migration failed: ${migration.issues.joinToString { it.message }}"
+            }
+            val document = migration.document
             val assemblyDurationNanos = System.nanoTime() - assemblyStartedAt
             traceLabel?.let {
                 EmscriptImportTrace.mark(
@@ -760,13 +767,15 @@ private class WorkspaceAssembler(
         if (document.blocks[parent]?.valueInputs?.firstOrNull { it.name == inputName }
                 ?.connection?.connectedTo == null
         ) {
-            // Import keeps an invalid candidate graph intact so Validator can emit the typed diagnostic.
+            // Local import candidate only: retain the typed-invalid edge for precise validation,
+            // and invalidate canonical state so no dual truth can cross the import boundary.
             val parentNode = requireNotNull(document.blocks[parent])
             val childNode = requireNotNull(document.blocks[child])
             document = document.copy(
                 blocks = document.blocks +
                     (parent to parentNode.withConnectionUpdated(target) { it.copy(connectedTo = source) }) +
                     (child to childNode.withConnectionUpdated(source) { it.copy(connectedTo = target) }),
+                canonical = null,
             )
         }
     }
@@ -932,14 +941,21 @@ private class WorkspaceAssembler(
             ?: error("Source-Verbindung ${sourceId.value} fehlt.")
         val (targetBlockId, target) = WorkspaceGraph.findConnection(document, targetId)
             ?: error("Target-Verbindung ${targetId.value} fehlt.")
+        val sourceBlock = document.blocks.getValue(sourceBlockId)
+        val targetBlock = document.blocks.getValue(targetBlockId)
+        if (
+            source.kind == ConnectionKind.Output &&
+            target.kind == ConnectionKind.ValueInput &&
+            !typesCompatible(source, target, targetBlock)
+        ) {
+            return
+        }
         val removeRoot = when (source.kind to target.kind) {
             ConnectionKind.Next to ConnectionKind.Previous -> targetBlockId
             ConnectionKind.Output to ConnectionKind.ValueInput -> sourceBlockId
             ConnectionKind.StatementInput to ConnectionKind.Previous -> targetBlockId
             else -> error("Nicht unterstützte Import-Verbindung ${source.kind} -> ${target.kind}.")
         }
-        val sourceBlock = document.blocks.getValue(sourceBlockId)
-        val targetBlock = document.blocks.getValue(targetBlockId)
         document = document.copy(
             version = document.version + 1,
             blocks = document.blocks +
@@ -952,6 +968,29 @@ private class WorkspaceAssembler(
 
     private fun semanticDefinition(type: String): WorkflowSemanticDefinition? =
         DefaultWorkflowSemanticDefinitions.semanticDefinition(type)
+
+    private fun typesCompatible(output: Connection, input: Connection, inputBlock: de.visualtasker.workflow.core.BlockNode): Boolean {
+        val outputType = output.provides ?: output.accepts.firstOrNull() ?: return true
+        val variableType = if (
+            inputBlock.type == BlockTypes.VARIABLE_SET &&
+            input.slotName.equals(WorkspaceValueTypeSystem.VARIABLE_SET_VALUE_INPUT, ignoreCase = true)
+        ) {
+            val variableId = (inputBlock.fields["variableId"] as? FieldValue.Text)?.value
+            variableId?.let { document.variables.variables[it]?.type }
+        } else {
+            null
+        }
+        val acceptedTypes = variableType?.let(::setOf) ?: input.accepts
+        if (acceptedTypes.isEmpty()) return true
+        if (outputType.equals("Any", ignoreCase = true)) return true
+        if (acceptedTypes.any { it.equals("Any", ignoreCase = true) }) {
+            return !outputType.trim().endsWith('?')
+        }
+        val actual = LanguageTypeCompatibility.fromWorkspaceName(outputType) ?: return false
+        return acceptedTypes
+            .mapNotNull(LanguageTypeCompatibility::fromWorkspaceName)
+            .any { expected -> LanguageTypeCompatibility.isAssignable(actual, expected) }
+    }
 }
 
 internal object EmscriptImportTrace {
