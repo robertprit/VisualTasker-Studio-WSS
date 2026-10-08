@@ -1,0 +1,17 @@
+statements,path,change,apply_ms,validation_median_ms,validation_max_ms,blocks
+40,legacy,format-only,78.503,2.189,2.385,41
+40,legacy,structural,70.350,1.163,1.426,42
+40,anchor,format-only,102.890,0.990,1.098,41
+40,anchor,structural,58.661,0.665,0.791,42
+80,legacy,format-only,85.175,1.190,1.635,81
+80,legacy,structural,76.185,1.305,1.494,82
+80,anchor,format-only,81.721,1.997,2.173,81
+80,anchor,structural,75.011,0.970,1.015,82
+160,legacy,format-only,77.017,1.742,1.794,161
+160,legacy,structural,80.856,1.533,2.105,162
+160,anchor,format-only,101.255,0.584,0.637,161
+160,anchor,structural,115.295,0.554,0.579,162
+320,legacy,format-only,207.882,1.286,1.349,321
+320,legacy,structural,161.476,1.269,1.276,322
+320,anchor,format-only,270.642,1.264,1.933,321
+320,anchor,structural,296.114,1.403,2.417,322
