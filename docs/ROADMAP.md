@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-09-20
+Stand: 2026-10-08
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
@@ -22,6 +22,35 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - Der FlowEditor soll kein zweiter zweidimensionaler BlockEditor werden. Er bleibt eine semantische Workflow-/Analyse-Projektion mit optionalen Detail-Layern.
 
 ## Aktueller Status
+
+### Architekturtrack M3/M4
+
+Dieser Architekturtrack ist die aktuelle Arbeitssequenz und nicht mit der historischen
+Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwechseln.
+
+- [x] M3-0: serialisierbare `WorkspaceOperation`- und atomare `WorkspaceTransaction`-Grundlage.
+- [x] M3-1: gemeinsames Semantic Property Schema und typisierte Property-Validierung.
+- [x] M3-2: verlustarmer Semantic Source Apply ueber genau eine Transaktion.
+- [x] M3-3: persistente Source-Anker fuer Statements, Expressions, Branches und Relationen.
+- [x] M3-4: linearer Validator-Graphlauf und reproduzierbares Performance-Gate.
+- [x] M3 Closure Audit: M3 ohne Blocker geschlossen; direkter Operationspfad aller Editoren als
+  M4-GAP dokumentiert.
+- [ ] M4-0: zentraler Three-Editor-Conformance-Harness fuer den bereits unterstuetzten Sprachumfang.
+- [ ] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
+- [ ] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
+- [ ] M4-3: Metadaten-, Layout-, Opaque-/Unsupported- und wiederholte Roundtrip-Gates schliessen.
+- [ ] M4-4: struktureller Vertrag fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
+- [ ] M5: Runtime-Ausfuehrung und Fehlerbehandlung fuer spaeter freigegebene neue Sprachstrukturen.
+
+Verbindliche Nachweise:
+
+- `docs/architecture/M3_CLOSURE_AUDIT.md`
+- `docs/architecture/M4_THREE_EDITOR_CONFORMANCE.md`
+- `docs/architecture/M4_CONFORMANCE_MATRIX.md`
+
+Der kleinste naechste Slice ist M4-0. Er fuehrt noch keine neue Syntax ein, sondern fixiert einen
+gemeinsamen kanonischen Fingerprint und einen wiederholbaren Text-Block-Flow-Text-Test fuer den
+bereits produktiv unterstuetzten Umfang.
 
 ### Stabil / Nutzbar
 
