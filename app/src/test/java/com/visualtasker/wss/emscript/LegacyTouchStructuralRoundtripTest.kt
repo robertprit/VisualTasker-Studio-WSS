@@ -50,7 +50,7 @@ class LegacyTouchStructuralRoundtripTest {
             assertEquals("touch", irCall.command)
             assertEquals(fixture.normalizedRawArgument, irCall.arguments)
 
-            val generated = EmscriptGenerator(IrGenerator()).generate(decoded)
+            val generated = EmscriptGenerator(IrGenerator()).generate(IrGenerator().generate(decoded))
             assertEquals("touch(${fixture.normalizedRawArgument});", generated)
             assertEquals(
                 LegacyTouchClassification.PARTIAL,

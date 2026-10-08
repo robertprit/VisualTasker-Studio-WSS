@@ -66,7 +66,8 @@ class NamingNormalizationRoundtripTest {
                 val document = imported.document!!
                 val serialized = WorkflowSerializer.serialize(document)
                 val decoded = (WorkflowSerializer.decode(serialized) as WorkflowDecodeResult.Decoded).document
-                val generated = EmscriptGenerator(IrGenerator()).generate(decoded, scriptName = case.stableId)
+                val irGenerator = IrGenerator()
+                val generated = EmscriptGenerator(irGenerator).generate(irGenerator.generate(decoded, case.stableId))
                 assertEquals(case.canonicalOutput, generated)
                 assertFalse(generated.contains(case.legacySource.substringBefore('(')))
 

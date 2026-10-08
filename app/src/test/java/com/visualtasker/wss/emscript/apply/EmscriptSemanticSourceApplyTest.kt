@@ -5,6 +5,7 @@ import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.workflow.core.FieldValue
 import de.visualtasker.workflow.core.SemanticEntityKind
+import de.visualtasker.workflow.core.SemanticEntityId
 import de.visualtasker.workflow.core.VariableScope
 import de.visualtasker.workflow.core.WorkspaceOperation
 import de.visualtasker.workflow.serialization.WorkflowSerializer
@@ -13,6 +14,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.system.measureNanoTime
 
 class EmscriptSemanticSourceApplyTest {
     private val guard = EmscriptApplyGuard()
@@ -181,6 +183,128 @@ class EmscriptSemanticSourceApplyTest {
     }
 
     @Test
+    fun persistentAnchorsDisambiguateDeletionAndInsertionOfIdenticalStatements() {
+        val before = success("click(\"same\")\nclick(\"same\")").importedDocument
+        val originalStatements = before.statementEntities()
+        val first = originalStatements[0]
+        val second = originalStatements[1]
+
+        val afterDeletion = success(
+            anchoredStatement(first.ref.id, "click(\"same\")"),
+            before,
+        ).importedDocument
+        assertEquals(setOf(first.ref.id), afterDeletion.statementEntities().map { it.ref.id }.toSet())
+
+        val afterInsertion = success(
+            listOf(
+                anchoredStatement(first.ref.id, "click(\"same\")"),
+                anchoredStatement(second.ref.id, "click(\"same\")"),
+                "click(\"same\")",
+            ).joinToString("\n"),
+            before,
+        ).importedDocument
+        val insertedIds = afterInsertion.statementEntities().map { it.ref.id }.toSet()
+        assertTrue(first.ref.id in insertedIds)
+        assertTrue(second.ref.id in insertedIds)
+        assertEquals(3, insertedIds.size)
+    }
+
+    @Test
+    fun stalePersistentAnchorFailsInsteadOfGuessing() {
+        val before = success("click(\"same\")").importedDocument
+
+        val result = guard.preview(
+            anchoredStatement(SemanticEntityId("entity:deleted"), "click(\"same\")"),
+            previousDocument = before,
+        )
+
+        assertTrue(result is EmscriptApplyGuardResult.Failure)
+        result as EmscriptApplyGuardResult.Failure
+        assertEquals(EmscriptApplyGuardStage.IDENTITY_RECONCILE, result.stage)
+        assertEquals("SOURCE_ANCHOR_TARGET_MISSING", result.diagnosticCode)
+    }
+
+    @Test
+    fun persistentAnchorsSurviveFormattingSaveReloadAndBranchRoundtrip() {
+        val initial = success(
+            """
+                LET a = 1
+                IF a > 0
+                    click("Login")
+                ELSE
+                    screenshot("login.png")
+                END IF
+            """.trimIndent(),
+        ).importedDocument
+        val generated = EmscriptGenerator().generate(initial)
+        val formatted = "// formatting only\n\n" + generated.replace(";\n", ";\n\n")
+        val reloaded = WorkflowSerializer.deserialize(WorkflowSerializer.serialize(initial))
+
+        val reapplied = success(formatted, reloaded).importedDocument
+
+        assertEquals(
+            requireNotNull(initial.canonical).entities.map { it.ref.id }.toSet(),
+            requireNotNull(reapplied.canonical).entities.map { it.ref.id }.toSet(),
+        )
+        assertEquals(
+            requireNotNull(initial.canonical).relations.map { it.id }.toSet(),
+            requireNotNull(reapplied.canonical).relations.map { it.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun repeatedExpressionsKeepEntityIdentityWhenStatementsAreReordered() {
+        val before = success("LET a = 1 + 1\nLET b = 1 + 1").importedDocument
+        val anchored = EmscriptGenerator().generate(before)
+        val bundles = anchored.statementBundles()
+        assertEquals(2, bundles.size)
+        val relationPrelude = anchored.lineSequence()
+            .filter { it.startsWith("@source.relation") }
+            .joinToString("\n")
+
+        val reorderedSource = listOf(relationPrelude, bundles[1], bundles[0])
+            .filter(String::isNotBlank)
+            .joinToString("\n")
+        val reordered = success(reorderedSource, before).importedDocument
+
+        assertEquals(
+            requireNotNull(before.canonical).entities.map { it.ref.id }.toSet(),
+            requireNotNull(reordered.canonical).entities.map { it.ref.id }.toSet(),
+        )
+        assertEquals(before.blocks.keys, reordered.blocks.keys)
+    }
+
+    @Test
+    fun sourceApplyPerformanceComparisonIsReproducibleForLargeWorkspace() {
+        val statementCount = 80
+        val legacySource = (1..statementCount).joinToString("\n") { index -> "wait($index)" }
+        val before = success(legacySource).importedDocument
+        val anchoredSource = EmscriptGenerator().generate(before)
+
+        guard.preview(legacySource, previousDocument = before)
+        guard.preview(anchoredSource, previousDocument = before)
+        var legacyResult: EmscriptApplyGuardResult? = null
+        var anchoredResult: EmscriptApplyGuardResult? = null
+        val legacyNanos = measureNanoTime {
+            legacyResult = guard.preview(legacySource, previousDocument = before)
+        }
+        val anchoredNanos = measureNanoTime {
+            anchoredResult = guard.preview(anchoredSource, previousDocument = before)
+        }
+
+        assertTrue(legacyResult.toString(), legacyResult is EmscriptApplyGuardResult.Success)
+        assertTrue(anchoredResult.toString(), anchoredResult is EmscriptApplyGuardResult.Success)
+        assertEquals(
+            before.blocks.keys,
+            (anchoredResult as EmscriptApplyGuardResult.Success).importedDocument.blocks.keys,
+        )
+        println(
+            "M3-3 source-apply comparison statements=$statementCount " +
+                "legacyMs=${legacyNanos / 1_000_000.0} anchoredMs=${anchoredNanos / 1_000_000.0}",
+        )
+    }
+
+    @Test
     fun invalidApplyLeavesOriginalDocumentUntouched() {
         val before = success("LET a = 1").importedDocument
 
@@ -233,4 +357,36 @@ class EmscriptSemanticSourceApplyTest {
     private fun de.visualtasker.workflow.core.WorkspaceDocument.ifBlockId() = blocks.values.single {
         it.type in setOf(BlockTypes.CONTROL_IF, BlockTypes.CONTROL_IF_ELSE, BlockTypes.CONTROL_IF_ELSEIF_ELSE)
     }.id
+
+    private fun de.visualtasker.workflow.core.WorkspaceDocument.statementEntities() =
+        requireNotNull(canonical).entities
+            .filter { it.ref.kind == SemanticEntityKind.Statement }
+            .filterNot { entity ->
+                entity.legacySourceId
+                    ?.let { de.visualtasker.workflow.core.BlockId(it) }
+                    ?.let(blocks::get)
+                    ?.type == BlockTypes.EVENT_START
+            }
+            .sortedBy { it.legacySourceId }
+
+    private fun anchoredStatement(entityId: SemanticEntityId, statement: String): String =
+        "@source.entity(\"block\", \"${entityId.value}\", \"Statement\")\n$statement"
+
+    private fun String.statementBundles(): List<String> {
+        val bundles = mutableListOf<String>()
+        val pending = mutableListOf<String>()
+        lineSequence().forEach { line ->
+            when {
+                line.startsWith("@source.relation") || line.isBlank() -> Unit
+                line.startsWith("@source.entity") -> pending += line
+                else -> {
+                    pending += line
+                    bundles += pending.joinToString("\n")
+                    pending.clear()
+                }
+            }
+        }
+        check(pending.isEmpty()) { "Incomplete source-anchor statement bundle." }
+        return bundles
+    }
 }

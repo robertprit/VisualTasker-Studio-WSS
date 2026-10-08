@@ -41,7 +41,7 @@ class LogExpressionRoundtripTest {
             val log = irGenerator.generate(document).statements.single() as IrStatement.Log
 
             assertEquals(source, expectedExpression, log.value)
-            assertEquals("$source;", generator.generate(document))
+            assertEquals("$source;", generator.generate(irGenerator.generate(document)))
         }
     }
 
@@ -73,7 +73,7 @@ class LogExpressionRoundtripTest {
         assertEquals("add", operation.operator)
         assertEquals(IrExpression.LiteralNumber(1.0), operation.a)
         assertEquals(IrExpression.LiteralNumber(2.0), operation.b)
-        assertEquals("log((1 + 2));", generator.generate(document))
+        assertEquals("log((1 + 2));", generator.generate(irGenerator.generate(document)))
         assertTrue(result.events.any { it.kind == "log" && it.message == "3" })
     }
 

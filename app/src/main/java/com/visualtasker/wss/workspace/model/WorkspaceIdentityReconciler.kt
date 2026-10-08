@@ -9,6 +9,14 @@ import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.core.CanonicalCompatibilityProjection
 import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
 import de.visualtasker.workflow.core.SemanticRelation
+import de.visualtasker.workflow.core.SemanticEntityId
+import de.visualtasker.workflow.core.SemanticEntityKind
+import de.visualtasker.workflow.core.SemanticEntityRef
+import de.visualtasker.workflow.core.SemanticRelationId
+import com.visualtasker.wss.emscript.parser.WorkspaceEntitySourceAnchor
+import com.visualtasker.wss.emscript.parser.WorkspaceRelationSourceAnchor
+import com.visualtasker.wss.emscript.parser.sourceEntityAnchors
+import com.visualtasker.wss.emscript.parser.sourceRelationAnchors
 import de.visualtasker.workflow.core.allConnections
 
 data class WorkspaceIdentityDiagnostic(
@@ -34,18 +42,59 @@ object WorkspaceIdentityReconciler {
         previous: WorkspaceDocument?,
         imported: WorkspaceDocument,
     ): WorkspaceIdentityReconcileResult {
-        if (previous == null || previous.blocks.isEmpty() || imported.blocks.isEmpty()) {
-            return WorkspaceIdentityReconcileResult(imported)
+        val importedMigration = CanonicalWorkspaceMigration.toCurrent(imported)
+        if (!importedMigration.isValid) {
+            return WorkspaceIdentityReconcileResult(
+                imported,
+                importedMigration.issues.map { issue ->
+                    WorkspaceIdentityDiagnostic(issue.code, issue.message)
+                },
+            )
+        }
+        val importedDocument = importedMigration.document
+        val previousDocument = previous?.let(CanonicalWorkspaceMigration::toCurrent)?.document
+        val previousCanonical = previousDocument?.canonical
+        val importedAnchors = importedDocument.sourceEntityAnchors()
+        val importedRelationAnchors = importedDocument.sourceRelationAnchors()
+        val strictAnchorValidation = previousDocument?.blocks?.values
+            ?.any { it.type != BlockTypes.EVENT_START }
+            ?: false
+        val diagnostics = mutableListOf<WorkspaceIdentityDiagnostic>()
+        validateSourceAnchors(
+            anchors = importedAnchors,
+            relationAnchors = importedRelationAnchors,
+            previousDocument = previousDocument,
+            strict = strictAnchorValidation,
+            diagnostics = diagnostics,
+        )
+        if (diagnostics.isNotEmpty()) {
+            return WorkspaceIdentityReconcileResult(importedDocument, diagnostics.distinctDiagnostics())
         }
 
-        val previousPaths = semanticPaths(previous)
-        val importedPaths = semanticPaths(imported)
+        val previousPaths = previousDocument?.let(::semanticPaths).orEmpty()
+        val importedPaths = semanticPaths(importedDocument)
         val usedPreviousIds = mutableSetOf<BlockId>()
         val blockIds = linkedMapOf<BlockId, BlockId>()
-        val diagnostics = mutableListOf<WorkspaceIdentityDiagnostic>()
+        val previousEntitiesById = previousCanonical?.entities?.associateBy { it.ref.id }.orEmpty()
 
-        val previousBySignature = previous.blocks.keys.groupBy { previous.blocks.getValue(it).identitySignature() }
-        val importedBySignature = imported.blocks.keys.groupBy { imported.blocks.getValue(it).identitySignature() }
+        importedAnchors
+            .filter { it.entityKind in setOf(SemanticEntityKind.Statement, SemanticEntityKind.Expression) }
+            .forEach { anchor ->
+                val previousEntity = previousEntitiesById[anchor.entityId] ?: return@forEach
+                val previousBlockId = previousEntity.legacySourceId?.let(::BlockId) ?: return@forEach
+                if (previousBlockId !in usedPreviousIds) {
+                    blockIds[anchor.ownerBlockId] = previousBlockId
+                    usedPreviousIds += previousBlockId
+                }
+            }
+
+        val previousBySignature = previousDocument?.blocks?.keys
+            .orEmpty()
+            .filterNot(usedPreviousIds::contains)
+            .groupBy { previousDocument!!.blocks.getValue(it).identitySignature() }
+        val importedBySignature = importedDocument.blocks.keys
+            .filterNot(blockIds::containsKey)
+            .groupBy { importedDocument.blocks.getValue(it).identitySignature() }
         importedBySignature.forEach { (signature, importedIds) ->
             val previousIds = previousBySignature[signature].orEmpty()
             if (importedIds.size > 1 && previousIds.isNotEmpty() && importedIds.size != previousIds.size) {
@@ -65,10 +114,10 @@ object WorkspaceIdentityReconciler {
         }
 
         val previousByPath = previousPaths.entries
-            .groupBy({ (id, path) -> IdentityKey(path, previous.blocks.getValue(id).identityType()) }, { it.key })
+            .groupBy({ (id, path) -> IdentityKey(path, previousDocument!!.blocks.getValue(id).identityType()) }, { it.key })
         importedPaths.entries.sortedBy { it.value }.forEach { (importedId, path) ->
             if (importedId in blockIds) return@forEach
-            val type = imported.blocks.getValue(importedId).identityType()
+            val type = importedDocument.blocks.getValue(importedId).identityType()
             val candidates = previousByPath[IdentityKey(path, type)].orEmpty().filterNot(usedPreviousIds::contains)
             if (candidates.size == 1) {
                 blockIds[importedId] = candidates.single()
@@ -85,9 +134,9 @@ object WorkspaceIdentityReconciler {
 
         importedPaths.entries.sortedBy { it.value }.forEach { (importedId, path) ->
             if (importedId in blockIds) return@forEach
-            val type = imported.blocks.getValue(importedId).identityType()
-            val candidates = previous.blocks.keys.filter { previousId ->
-                previousId !in usedPreviousIds && previous.blocks.getValue(previousId).identityType() == type
+            val type = importedDocument.blocks.getValue(importedId).identityType()
+            val candidates = previousDocument?.blocks?.keys.orEmpty().filter { previousId ->
+                previousId !in usedPreviousIds && previousDocument!!.blocks.getValue(previousId).identityType() == type
             }
             when (candidates.size) {
                 0 -> blockIds[importedId] = importedId
@@ -106,9 +155,9 @@ object WorkspaceIdentityReconciler {
                 }
             }
         }
-        imported.blocks.keys.filterNot(blockIds::containsKey).forEach { blockIds[it] = it }
+        importedDocument.blocks.keys.filterNot(blockIds::containsKey).forEach { blockIds[it] = it }
 
-        val connectionIds = imported.blocks.values
+        val connectionIds = importedDocument.blocks.values
             .flatMap(BlockNode::allConnections)
             .associate { connection ->
                 val newOwner = blockIds.getValue(connection.owner)
@@ -123,7 +172,7 @@ object WorkspaceIdentityReconciler {
             connectedTo = connectedTo?.let(connectionIds::getValue),
         )
 
-        val remappedBlocks = imported.blocks.entries.associateTo(linkedMapOf()) { (oldId, block) ->
+        val remappedBlocks = importedDocument.blocks.entries.associateTo(linkedMapOf()) { (oldId, block) ->
             val newId = blockIds.getValue(oldId)
             newId to block.copy(
                 id = newId,
@@ -134,47 +183,177 @@ object WorkspaceIdentityReconciler {
                 statementInputs = block.statementInputs.map { it.copy(connection = it.connection.remap()) },
             )
         }
-        val remapped = imported.copy(
+        val remapped = importedDocument.copy(
             blocks = remappedBlocks,
-            rootBlocks = imported.rootBlocks.map(blockIds::getValue),
-            rootPositions = imported.rootPositions.mapKeys { (id, _) -> blockIds.getValue(id) },
+            rootBlocks = importedDocument.rootBlocks.map(blockIds::getValue),
+            rootPositions = importedDocument.rootPositions.mapKeys { (id, _) -> blockIds.getValue(id) },
             canonical = null,
         )
         val migrated = CanonicalWorkspaceMigration.toCurrent(remapped).document
-        val previousCanonical = CanonicalWorkspaceMigration.toCurrent(previous).document.canonical
-            ?: return WorkspaceIdentityReconcileResult(migrated, diagnostics)
         val importedCanonical = migrated.canonical
             ?: return WorkspaceIdentityReconcileResult(migrated, diagnostics)
-        val previousEntities = previousCanonical.entities.associateBy { it.ref.id }
-        val previousRelations = previousCanonical.relations.associateBy(::relationIdentity)
+        val remappedAnchors = migrated.sourceEntityAnchors()
+        val entityIdRemap = linkedMapOf<SemanticEntityId, SemanticEntityId>()
+        remappedAnchors.forEach { anchor ->
+            val generated = importedCanonical.entities.singleOrNull { entity ->
+                entity.ref.kind == anchor.entityKind && entity.legacySourceId == anchor.legacySourceId
+            }
+            if (generated == null) {
+                diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "SOURCE_ANCHOR_TARGET_MISSING",
+                    message = "Source-Anker ${anchor.entityId.value} findet kein ${anchor.entityKind}-Ziel '${anchor.legacySourceId}'.",
+                    importedBlockId = anchor.ownerBlockId,
+                )
+            } else {
+                entityIdRemap[generated.ref.id] = anchor.entityId
+            }
+        }
+        val anchoredIds = entityIdRemap.values
+        if (anchoredIds.size != entityIdRemap.size ||
+            importedCanonical.entities.any { entity ->
+                entity.ref.id in anchoredIds && entity.ref.id !in entityIdRemap.keys
+            }
+        ) {
+            diagnostics += WorkspaceIdentityDiagnostic(
+                code = "SOURCE_ANCHOR_DUPLICATE",
+                message = "Source-Anker kollidieren mit einer vorhandenen semantischen Entity-ID.",
+            )
+        }
+        if (diagnostics.isNotEmpty()) {
+            return WorkspaceIdentityReconcileResult(importedDocument, diagnostics.distinctDiagnostics())
+        }
+
+        val anchoredEntities = importedCanonical.entities.map { entity ->
+            val desiredId = entityIdRemap[entity.ref.id] ?: entity.ref.id
+            previousEntitiesById[desiredId]
+                ?.takeIf { it.ref.kind == entity.ref.kind }
+                ?: entity.copy(ref = entity.ref.copy(id = desiredId))
+        }
+        val entityKindById = anchoredEntities.associate { it.ref.id to it.ref.kind }
+        val entityAnchoredRelations = importedCanonical.relations.map { relation ->
+            val sourceId = entityIdRemap[relation.source.id] ?: relation.source.id
+            val targetId = entityIdRemap[relation.target.id] ?: relation.target.id
+            relation.copy(
+                source = SemanticEntityRef(sourceId, entityKindById.getValue(sourceId)),
+                target = SemanticEntityRef(targetId, entityKindById.getValue(targetId)),
+            )
+        }
+        val remappedRelationAnchors = migrated.sourceRelationAnchors()
+        val relationAnchorsByIdentity = linkedMapOf<RelationIdentity, SemanticRelationId>()
+        val previousRelationsById = previousCanonical?.relations?.associateBy(SemanticRelation::id).orEmpty()
+        remappedRelationAnchors.forEach { anchor ->
+            val identity = relationIdentity(anchor)
+            val matches = entityAnchoredRelations.filter { relationIdentity(it) == identity }
+            if (matches.size > 1 || (matches.isEmpty() && anchor.relationId !in previousRelationsById)) {
+                diagnostics += WorkspaceIdentityDiagnostic(
+                    code = if (matches.isEmpty()) "SOURCE_ANCHOR_TARGET_MISSING" else "SOURCE_ANCHOR_AMBIGUOUS",
+                    message = "Relation-Anker ${anchor.relationId.value} passt auf ${matches.size} strukturelle Relationen.",
+                    importedBlockId = anchor.ownerBlockId,
+                )
+            } else if (matches.size == 1) {
+                relationAnchorsByIdentity[identity] = anchor.relationId
+            }
+        }
+        val previousRelations = previousCanonical?.relations?.associateBy(::relationIdentity).orEmpty()
         val reconciledCanonical = importedCanonical.copy(
-            entities = importedCanonical.entities
-                .map { entity ->
-                    previousEntities[entity.ref.id]
-                        ?.takeIf { it.ref.kind == entity.ref.kind }
-                        ?: entity
-                }
-                .sortedBy { it.ref.id.value },
-            relations = importedCanonical.relations
+            entities = anchoredEntities.sortedBy { it.ref.id.value },
+            relations = entityAnchoredRelations
                 .map { relation ->
-                    previousRelations[relationIdentity(relation)]
-                        ?.let { previousRelation -> relation.copy(id = previousRelation.id) }
-                        ?: relation
+                    val identity = relationIdentity(relation)
+                    val desiredId = relationAnchorsByIdentity[identity]
+                        ?: previousRelations[identity]?.id
+                        ?: relation.id
+                    relation.copy(id = desiredId)
                 }
                 .sortedBy { it.id.value },
         )
+        if (reconciledCanonical.relations.map { it.id }.distinct().size != reconciledCanonical.relations.size) {
+            diagnostics += WorkspaceIdentityDiagnostic(
+                code = "SOURCE_ANCHOR_DUPLICATE",
+                message = "Source-Anker erzeugen kollidierende semantische Relation-IDs.",
+            )
+        }
+        if (diagnostics.isNotEmpty()) {
+            return WorkspaceIdentityReconcileResult(importedDocument, diagnostics.distinctDiagnostics())
+        }
         val reconciled = migrated.copy(canonical = reconciledCanonical)
         return WorkspaceIdentityReconcileResult(
             document = CanonicalCompatibilityProjection.project(reconciled).document,
-            diagnostics = diagnostics.distinctBy { diagnostic ->
-                listOf(
-                    diagnostic.code,
-                    diagnostic.importedBlockId?.value.orEmpty(),
-                    diagnostic.candidateBlockIds.joinToString { it.value },
-                ).joinToString("|")
-            },
+            diagnostics = diagnostics.distinctDiagnostics(),
         )
     }
+
+    private fun validateSourceAnchors(
+        anchors: List<WorkspaceEntitySourceAnchor>,
+        relationAnchors: List<WorkspaceRelationSourceAnchor>,
+        previousDocument: WorkspaceDocument?,
+        strict: Boolean,
+        diagnostics: MutableList<WorkspaceIdentityDiagnostic>,
+    ) {
+        anchors.groupBy(WorkspaceEntitySourceAnchor::entityId)
+            .filterValues { it.size > 1 }
+            .forEach { (id, duplicates) ->
+                diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "SOURCE_ANCHOR_DUPLICATE",
+                    message = "Entity-Anker ${id.value} wird ${duplicates.size} mal verwendet.",
+                    importedBlockId = duplicates.first().ownerBlockId,
+                )
+            }
+        relationAnchors.groupBy(WorkspaceRelationSourceAnchor::relationId)
+            .filterValues { it.size > 1 }
+            .forEach { (id, duplicates) ->
+                diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "SOURCE_ANCHOR_DUPLICATE",
+                    message = "Relation-Anker ${id.value} wird ${duplicates.size} mal verwendet.",
+                    importedBlockId = duplicates.first().ownerBlockId,
+                )
+            }
+        val previousCanonical = previousDocument?.canonical ?: return
+        val previousEntities = previousCanonical.entities.associateBy { it.ref.id }
+        val previousRelations = previousCanonical.relations.associateBy(SemanticRelation::id)
+        anchors.forEach { anchor ->
+            val previousEntity = previousEntities[anchor.entityId]
+            when {
+                previousEntity == null && strict -> diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "SOURCE_ANCHOR_TARGET_MISSING",
+                    message = "Entity-Anker ${anchor.entityId.value} verweist auf keine vorhandene Entity.",
+                    importedBlockId = anchor.ownerBlockId,
+                )
+                previousEntity != null && previousEntity.ref.kind != anchor.entityKind ->
+                    diagnostics += WorkspaceIdentityDiagnostic(
+                        code = "SOURCE_ANCHOR_KIND_MISMATCH",
+                        message = "Entity-Anker ${anchor.entityId.value} erwartet ${anchor.entityKind}, " +
+                            "vorhanden ist ${previousEntity.ref.kind}.",
+                        importedBlockId = anchor.ownerBlockId,
+                    )
+            }
+        }
+        relationAnchors.forEach { anchor ->
+            val previousRelation = previousRelations[anchor.relationId]
+            when {
+                previousRelation == null && strict -> diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "SOURCE_ANCHOR_TARGET_MISSING",
+                    message = "Relation-Anker ${anchor.relationId.value} verweist auf keine vorhandene Relation.",
+                    importedBlockId = anchor.ownerBlockId,
+                )
+                previousRelation != null && relationIdentity(previousRelation) != relationIdentity(anchor) ->
+                    diagnostics += WorkspaceIdentityDiagnostic(
+                        code = "SOURCE_ANCHOR_CONFLICT",
+                        message = "Relation-Anker ${anchor.relationId.value} widerspricht seiner vorhandenen Struktur.",
+                        importedBlockId = anchor.ownerBlockId,
+                    )
+            }
+        }
+    }
+
+    private fun List<WorkspaceIdentityDiagnostic>.distinctDiagnostics(): List<WorkspaceIdentityDiagnostic> =
+        distinctBy { diagnostic ->
+            listOf(
+                diagnostic.code,
+                diagnostic.importedBlockId?.value.orEmpty(),
+                diagnostic.candidateBlockIds.joinToString { it.value },
+            ).joinToString("|")
+        }
 
     private fun semanticPaths(document: WorkspaceDocument): Map<BlockId, String> {
         val connectionOwners = document.blocks.values
@@ -238,6 +417,15 @@ object WorkspaceIdentityReconciler {
         role = relation.role.kind.name,
         roleName = relation.role.name,
         branchRole = relation.role.branchRole?.name,
+    )
+
+    private fun relationIdentity(anchor: WorkspaceRelationSourceAnchor): RelationIdentity = RelationIdentity(
+        kind = anchor.relationKind.name,
+        source = anchor.sourceEntityId.value,
+        target = anchor.targetEntityId.value,
+        role = anchor.roleKind.name,
+        roleName = anchor.roleName,
+        branchRole = anchor.branchRole?.name,
     )
 
     private data class RelationIdentity(

@@ -37,6 +37,47 @@ import org.junit.Test
 
 class EmscriptParserSliceTest {
     @Test
+    fun sourceAnchorDirectivesRemainOutsideRuntimeIr() {
+        val source = """
+            @source.relation("relation:one", "Expression", "entity:one", "entity:two", "Value", "value", "", "0")
+            @source.entity("block", "entity:one", "Statement")
+            @source.entity("input:VALUE", "entity:two", "Expression")
+            LET value = 1
+        """.trimIndent()
+
+        val result = EmscriptParserSlice().parse(source)
+
+        assertTrue(result.issues.joinToString { it.message }, result.isSuccess)
+        assertEquals(1, result.ir!!.statements.size)
+        assertEquals(2, result.projection.entityAnchorsByStatement.values.single().size)
+        assertEquals("relation:one", result.projection.relationAnchors.single().relationId)
+        assertEquals(3, result.projection.directives.size)
+    }
+
+    @Test
+    fun duplicateSourceAnchorLocatorFailsSafely() {
+        val source = """
+            @source.entity("block", "entity:one", "Statement")
+            @source.entity("block", "entity:two", "Statement")
+            wait(1)
+        """.trimIndent()
+
+        val result = EmscriptParserSlice().parse(source)
+
+        assertFalse(result.isSuccess)
+        assertTrue(result.issues.single().message.contains("SOURCE_ANCHOR_DUPLICATE"))
+    }
+
+    @Test
+    fun orphanSourceAnchorFailsSafely() {
+        val result = EmscriptParserSlice().parse(
+            "@source.entity(\"block\", \"entity:one\", \"Statement\")",
+        )
+
+        assertFalse(result.isSuccess)
+        assertTrue(result.issues.single().message.contains("SOURCE_ANCHOR_ORPHANED"))
+    }
+    @Test
     fun stableV1TestSuite_survivesParserWorkspaceImportAndDryRuns() {
         EditorDefaults.stableV1TestSuite.forEach { (name, source) ->
             val parsed = EmscriptParserSlice().parse(source)
@@ -480,9 +521,10 @@ class EmscriptParserSliceTest {
         assertTrue(document.blocks.values.any { it.type == BlockTypes.FEEDBACK_BEEP })
         assertTrue(document.blocks.values.any { it.type == BlockTypes.FEEDBACK_VIBRATE })
 
+        val irGenerator = IrGenerator()
         val regenerated = EmscriptGenerator(
-            irGenerator = IrGenerator(),
-        ).generate(document, scriptName = "feedback-roundtrip")
+            irGenerator = irGenerator,
+        ).generate(irGenerator.generate(document, scriptName = "feedback-roundtrip"))
 
         assertEquals(
             """
@@ -504,9 +546,10 @@ class EmscriptParserSliceTest {
         val imported = EmscriptWorkspaceImporter().import(source)
         assertTrue(imported.isSuccess)
 
+        val irGenerator = IrGenerator()
         val regenerated = EmscriptGenerator(
-            irGenerator = IrGenerator(),
-        ).generate(imported.document!!, scriptName = "roundtrip")
+            irGenerator = irGenerator,
+        ).generate(irGenerator.generate(imported.document!!, scriptName = "roundtrip"))
 
         assertEquals(
             """

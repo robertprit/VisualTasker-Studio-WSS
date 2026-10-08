@@ -157,6 +157,8 @@ import com.visualtasker.wss.emscript.editor.EmscriptEditorDiagnosticSeverity
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
 import com.visualtasker.wss.emscript.editor.EmscriptEditorUiState
 import com.visualtasker.wss.emscript.editor.SyntaxHighlighter
+import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
+import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.grid.GridSystem
 import com.visualtasker.wss.logging.StudioLogStore
@@ -187,7 +189,6 @@ import de.visualtasker.workflow.core.WorkspaceGraph
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.workflow.semantics.validation.ValidationError
-import de.visualtasker.workflow.semantics.validation.Validator
 import de.visualtasker.flowchart.compose.FlowchartHost
 import de.visualtasker.flowchart.compose.FlowchartHostCallbacks
 import de.visualtasker.flowchart.compose.FlowchartColorTokens
@@ -200,8 +201,6 @@ import de.visualtasker.flowchart.domain.FlowSemanticValue
 import de.visualtasker.flowchart.domain.FlowSurfaceId
 import de.visualtasker.flowchart.interaction.FlowchartController
 import de.visualtasker.flowchart.interaction.FlowInteractionAction
-import de.visualtasker.blockeditor.emscript.EmscriptGenerator
-import de.visualtasker.workflow.semantics.ir.IrGenerator
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
@@ -430,6 +429,7 @@ fun MainScreen(
         )
     }
     val emscriptImporter = remember { EmscriptWorkspaceImporter() }
+    val emscriptApplyGuard = remember { EmscriptApplyGuard(emscriptImporter) }
     var editorParserDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var editorApplyDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var editorPreparedWorkspace by remember { mutableStateOf<WorkspaceDocument?>(null) }
@@ -592,81 +592,44 @@ fun MainScreen(
     }
 
     fun buildApplyPreviewFromDraft(draft: String): ApplyGuardPreview? {
-        val importResult = emscriptImporter.import(draft, workspaceId = latestBlockEditorDocument.id)
-        if (!importResult.isSuccess || importResult.document == null) {
-            val firstIssue = importResult.issues.firstOrNull()
-            val message = firstIssue?.let { "Parse/Import Fehler ${it.line}:${it.column} ${it.message}" }
-                ?: "Parse/Import fehlgeschlagen"
-            editorApplyDiagnostics = listOf(message)
-            studioLogStore.append(
-                level = StudioLogLevel.ERROR,
-                source = "EMSCRIPT",
-                message = "Apply Guard abgebrochen",
-                details = message,
-                documentRevision = latestBlockEditorDocument.version,
-                groupKey = "emscript:apply:parse-import-failed",
-            )
-            return null
-        }
-        val imported = importResult.document
-        val preValidation = Validator.validate(imported, sharedBlockEditorController.blockRegistry)
-        if (!preValidation.isValid) {
-            val firstError = preValidation.errors.first().message
-            val message = "Pre-Validate fehlgeschlagen: $firstError"
-            editorApplyDiagnostics = listOf(message)
-            studioLogStore.append(
-                level = StudioLogLevel.ERROR,
-                source = "EMSCRIPT",
-                message = "Apply Guard abgebrochen",
-                details = message,
-                documentRevision = latestBlockEditorDocument.version,
-                groupKey = "emscript:apply:pre-validate-failed",
-            )
-            return null
-        }
-        val current = latestBlockEditorDocument
-        val scriptRoundtrip = runCatching {
-            EmscriptGenerator(IrGenerator(sharedBlockEditorController.blockRegistry)).generate(imported)
-        }.getOrElse { error ->
-            val message = "Roundtrip-Guard fehlgeschlagen: ${error.message ?: "unknown"}"
-            editorApplyDiagnostics = listOf(message)
-            studioLogStore.append(
-                level = StudioLogLevel.ERROR,
-                source = "EMSCRIPT",
-                message = "Apply Guard abgebrochen",
-                details = message,
-                documentRevision = latestBlockEditorDocument.version,
-                groupKey = "emscript:apply:roundtrip-failed",
-            )
-            return null
-        }
-        val preview = buildApplySemanticPreview(
-            before = current,
-            after = imported,
+        return when (val result = emscriptApplyGuard.preview(
+            draft = draft,
+            workspaceId = latestBlockEditorDocument.id,
             registry = sharedBlockEditorController.blockRegistry,
-            unsupportedCount = importResult.issues.count { it.message.contains("unsupported", ignoreCase = true) } +
-                imported.blocks.values.count { sharedBlockEditorController.blockRegistry.getDefinition(it.type) == null },
-            roundtripLength = scriptRoundtrip.length,
-        )
-        return ApplyGuardPreview(summary = preview, importedDocument = imported)
+            previousDocument = latestBlockEditorDocument,
+        )) {
+            is EmscriptApplyGuardResult.Success -> ApplyGuardPreview(
+                summary = result.summary,
+                importedDocument = result.importedDocument,
+            )
+            is EmscriptApplyGuardResult.Failure -> {
+                val message = buildString {
+                    append("${result.stage}: ${result.message}")
+                    result.diagnosticCode?.let { append(" [$it]") }
+                }
+                editorApplyDiagnostics = listOf(message)
+                studioLogStore.append(
+                    level = StudioLogLevel.ERROR,
+                    source = "EMSCRIPT",
+                    message = "Apply Guard abgebrochen",
+                    details = message,
+                    documentRevision = latestBlockEditorDocument.version,
+                    groupKey = "emscript:apply:${result.stage.name.lowercase()}",
+                )
+                null
+            }
+        }
     }
 
     fun applyDraftWithGuards(draft: String) {
         val preview = buildApplyPreviewFromDraft(draft) ?: return
-        val currentBeforeApply = latestBlockEditorDocument
-        val applyResult = runCatching {
+        runCatching {
             sharedBlockEditorController.replaceWorkspaceDocument(
                 newDocument = preview.importedDocument,
                 recordHistory = true,
             )
-            Validator.validate(sharedBlockEditorController.document, sharedBlockEditorController.blockRegistry)
-        }
-        val postValidation = applyResult.getOrElse { error ->
-            sharedBlockEditorController.replaceWorkspaceDocument(
-                newDocument = currentBeforeApply,
-                recordHistory = false,
-            )
-            val message = "Apply-Ausnahme: ${error.message ?: "unknown"}, Workspace wurde zurückgesetzt."
+        }.getOrElse { error ->
+            val message = "Apply-Ausnahme: ${error.message ?: "unknown"}, Übernahme wurde abgebrochen."
             editorApplyDiagnostics = listOf(message)
             studioLogStore.append(
                 level = StudioLogLevel.ERROR,
@@ -678,24 +641,7 @@ fun MainScreen(
             )
             return
         }
-        if (!postValidation.isValid) {
-            sharedBlockEditorController.replaceWorkspaceDocument(
-                newDocument = currentBeforeApply,
-                recordHistory = false,
-            )
-            val message = "Post-Validate fehlgeschlagen, Workspace wurde vollständig zurückgesetzt."
-            editorApplyDiagnostics = listOf(message, postValidation.errors.first().message)
-            studioLogStore.append(
-                level = StudioLogLevel.ERROR,
-                source = "EMSCRIPT",
-                message = "Apply fehlgeschlagen",
-                details = "${postValidation.errors.first().message}\nRollback auf vorheriges WorkspaceDocument ausgeführt",
-                documentRevision = latestBlockEditorDocument.version,
-                groupKey = "emscript:apply:post-validate-failed",
-            )
-            return
-        }
-        editorApplyDiagnostics = listOf("Apply erfolgreich: Workspace atomar ersetzt und erneut validiert.")
+        editorApplyDiagnostics = listOf("Apply erfolgreich: atomarer semantischer Source-Apply übernommen.")
         studioLogStore.append(
             level = StudioLogLevel.INFO,
             source = "EMSCRIPT",

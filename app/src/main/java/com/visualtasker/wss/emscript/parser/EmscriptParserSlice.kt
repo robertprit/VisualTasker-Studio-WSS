@@ -14,6 +14,7 @@ import de.visualtasker.emscript.contract.EmscriptV1Operators
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.emscript.contract.LanguageTypeRef
 import de.visualtasker.emscript.contract.OperatorId
+import de.visualtasker.emscript.contract.EmscriptSourceAnchorContract
 
 data class EmscriptParseIssue(
     val line: Int,
@@ -24,9 +25,44 @@ data class EmscriptParseIssue(
 data class EmscriptParseResult(
     val ir: EmscriptIrScript?,
     val issues: List<EmscriptParseIssue>,
+    val projection: EmscriptProjectionAst = EmscriptProjectionAst(),
 ) {
     val isSuccess: Boolean
         get() = ir != null && issues.isEmpty()
+}
+
+data class EmscriptProjectionDirective(
+    val name: String,
+    val arguments: List<String>,
+    val source: EmscriptSourceSpan,
+)
+
+data class EmscriptEntitySourceAnchor(
+    val locator: String,
+    val entityId: String,
+    val entityKind: String,
+    val source: EmscriptSourceSpan,
+)
+
+data class EmscriptRelationSourceAnchor(
+    val relationId: String,
+    val relationKind: String,
+    val sourceEntityId: String,
+    val targetEntityId: String,
+    val roleKind: String,
+    val roleName: String,
+    val branchRole: String,
+    val order: String,
+    val source: EmscriptSourceSpan,
+)
+
+data class EmscriptProjectionAst(
+    val directives: List<EmscriptProjectionDirective> = emptyList(),
+    val entityAnchorsByStatement: Map<EmscriptSourceSpan, List<EmscriptEntitySourceAnchor>> = emptyMap(),
+    val relationAnchors: List<EmscriptRelationSourceAnchor> = emptyList(),
+) {
+    fun entityAnchorsFor(statement: EmscriptIrStatement): List<EmscriptEntitySourceAnchor> =
+        statement.sourceSpanOrNull()?.let(entityAnchorsByStatement::get).orEmpty()
 }
 
 data class EmscriptIrScript(
@@ -109,6 +145,20 @@ sealed interface EmscriptIrStatement {
     ) : EmscriptIrStatement
 }
 
+private fun EmscriptIrStatement.sourceSpanOrNull(): EmscriptSourceSpan? = when (this) {
+    is EmscriptIrStatement.CommandCall -> source
+    is EmscriptIrStatement.Let -> source
+    is EmscriptIrStatement.Set -> source
+    is EmscriptIrStatement.Wait -> source
+    is EmscriptIrStatement.ClickText -> source
+    is EmscriptIrStatement.Output -> source
+    is EmscriptIrStatement.Beep -> source
+    is EmscriptIrStatement.Vibrate -> source
+    is EmscriptIrStatement.Loop -> source
+    is EmscriptIrStatement.While -> source
+    is EmscriptIrStatement.If -> source
+}
+
 data class EmscriptElseIfBranch(
     val condition: EmscriptIrExpression,
     val body: List<EmscriptIrStatement>,
@@ -160,9 +210,11 @@ class EmscriptParserSlice(
             val lexer = Lexer(script)
             val tokens = lexer.lex()
             val parser = Parser(tokens, includeSourceSpans)
+            val statements = parser.parseStatements(untilBoundary = false)
             EmscriptParseResult(
-                ir = EmscriptIrScript(parser.parseStatements(untilBoundary = false)),
+                ir = EmscriptIrScript(statements),
                 issues = emptyList(),
+                projection = parser.projectionAst(),
             )
         }.getOrElse { error ->
             val failure = (error as? ParseException) ?: ParseException(
@@ -230,6 +282,7 @@ private enum class TokenType {
     SEMICOLON,
     ANDAND,
     OROR,
+    AT,
     NEWLINE,
     EOF,
 }
@@ -317,6 +370,10 @@ private class Lexer(private val source: String) {
                     } else {
                         throw ParseException(line, column, "Unerwartetes Zeichen '|'.")
                     }
+                }
+                '@' -> {
+                    tokens += token(TokenType.AT, "@")
+                    advance()
                 }
                 ',' -> {
                     tokens += token(TokenType.COMMA, ",")
@@ -504,16 +561,172 @@ private class Parser(
     private val includeSourceSpans: Boolean,
 ) {
     private var current: Int = 0
+    private val directives = mutableListOf<EmscriptProjectionDirective>()
+    private val entityAnchorsByStatement = linkedMapOf<EmscriptSourceSpan, List<EmscriptEntitySourceAnchor>>()
+    private val relationAnchors = mutableListOf<EmscriptRelationSourceAnchor>()
+    private val pendingEntityAnchors = mutableListOf<EmscriptEntitySourceAnchor>()
 
     fun parseStatements(untilBoundary: Boolean): List<EmscriptIrStatement> {
         val statements = mutableListOf<EmscriptIrStatement>()
         skipSeparators()
         while (!isAtEnd()) {
             if (untilBoundary && isBlockBoundary()) break
+            if (match(TokenType.AT)) {
+                parseProjectionDirective(previous())
+                skipSeparators()
+                continue
+            }
+            val statementSource = peek().sourceSpan()
+            val attachedAnchors = pendingEntityAnchors.toList()
+            pendingEntityAnchors.clear()
             statements += parseStatement()
+            if (attachedAnchors.isNotEmpty()) {
+                entityAnchorsByStatement[statementSource] = attachedAnchors
+            }
             skipSeparators()
         }
+        if (pendingEntityAnchors.isNotEmpty()) {
+            val anchor = pendingEntityAnchors.first()
+            throw ParseException(
+                anchor.source.startLine,
+                anchor.source.startColumn,
+                "SOURCE_ANCHOR_ORPHANED: @${EmscriptSourceAnchorContract.ENTITY_DIRECTIVE} benötigt ein folgendes Statement.",
+            )
+        }
         return statements
+    }
+
+    fun projectionAst(): EmscriptProjectionAst {
+        val allEntityAnchors = entityAnchorsByStatement.values.flatten()
+        allEntityAnchors.groupBy(EmscriptEntitySourceAnchor::entityId)
+            .entries
+            .firstOrNull { it.value.size > 1 }
+            ?.let { (entityId, duplicates) ->
+                val source = duplicates[1].source
+                throw ParseException(
+                    source.startLine,
+                    source.startColumn,
+                    "SOURCE_ANCHOR_DUPLICATE: Entity-Anker '$entityId' wird mehrfach verwendet.",
+                )
+            }
+        relationAnchors.groupBy(EmscriptRelationSourceAnchor::relationId)
+            .entries
+            .firstOrNull { it.value.size > 1 }
+            ?.let { (relationId, duplicates) ->
+                val source = duplicates[1].source
+                throw ParseException(
+                    source.startLine,
+                    source.startColumn,
+                    "SOURCE_ANCHOR_DUPLICATE: Relation-Anker '$relationId' wird mehrfach verwendet.",
+                )
+            }
+        return EmscriptProjectionAst(
+            directives = directives.toList(),
+            entityAnchorsByStatement = entityAnchorsByStatement.toMap(),
+            relationAnchors = relationAnchors.toList(),
+        )
+    }
+
+    private fun parseProjectionDirective(at: Token) {
+        val first = consumeIdentifierPart("Direktivenname nach '@' erwartet.")
+        val name = parseQualifiedIdentifier(first).lexeme
+        val arguments = if (match(TokenType.LPAREN)) {
+            buildList {
+                if (!check(TokenType.RPAREN)) {
+                    do {
+                        val argument = advance()
+                        if (argument.type !in projectionArgumentTypes) {
+                            throw ParseException(
+                                argument.line,
+                                argument.column,
+                                "Direktivenparameter muss String, Zahl, Boolean oder Identifier sein.",
+                            )
+                        }
+                        add(argument.lexeme)
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.RPAREN, "')' nach Direktive erwartet.")
+            }
+        } else {
+            emptyList()
+        }
+        val source = at.sourceSpan()
+        directives += EmscriptProjectionDirective(name, arguments, source)
+        when (name) {
+            EmscriptSourceAnchorContract.ENTITY_DIRECTIVE -> parseEntityAnchor(arguments, source)
+            EmscriptSourceAnchorContract.RELATION_DIRECTIVE -> parseRelationAnchor(arguments, source)
+        }
+    }
+
+    private fun parseEntityAnchor(arguments: List<String>, source: EmscriptSourceSpan) {
+        if (arguments.size != 3) {
+            throw ParseException(
+                source.startLine,
+                source.startColumn,
+                "SOURCE_ANCHOR_INVALID: source.entity erwartet Locator, Entity-ID und Entity-Kind.",
+            )
+        }
+        val (locator, entityId, entityKind) = arguments
+        if (!EmscriptSourceAnchorContract.isValidEntityLocator(locator) ||
+            !EmscriptSourceAnchorContract.isValidStableId(entityId) ||
+            entityKind !in sourceAnchorEntityKinds
+        ) {
+            throw ParseException(
+                source.startLine,
+                source.startColumn,
+                "SOURCE_ANCHOR_INVALID: Ungültiger Entity-Anker '$locator' -> '$entityId' ($entityKind).",
+            )
+        }
+        if (pendingEntityAnchors.any { it.locator == locator }) {
+            throw ParseException(
+                source.startLine,
+                source.startColumn,
+                "SOURCE_ANCHOR_DUPLICATE: Locator '$locator' ist für dasselbe Statement mehrfach vorhanden.",
+            )
+        }
+        pendingEntityAnchors += EmscriptEntitySourceAnchor(locator, entityId, entityKind, source)
+    }
+
+    private fun parseRelationAnchor(arguments: List<String>, source: EmscriptSourceSpan) {
+        if (arguments.size != 8 || arguments.take(4).any(String::isBlank)) {
+            throw ParseException(
+                source.startLine,
+                source.startColumn,
+                "SOURCE_ANCHOR_INVALID: source.relation erwartet acht gültige Parameter.",
+            )
+        }
+        if (arguments.take(4).filterIndexed { index, _ -> index != 1 }
+                .any { !EmscriptSourceAnchorContract.isValidStableId(it) }
+        ) {
+            throw ParseException(
+                source.startLine,
+                source.startColumn,
+                "SOURCE_ANCHOR_INVALID: Relation enthält eine ungültige stabile ID.",
+            )
+        }
+        val order = arguments[7].takeIf(String::isNotBlank)?.toIntOrNull()
+        if (arguments[1] !in sourceAnchorRelationKinds ||
+            arguments[4] !in sourceAnchorRelationRoleKinds ||
+            (arguments[6].isNotBlank() && arguments[6] !in sourceAnchorBranchRoles) ||
+            (arguments[7].isNotBlank() && (order == null || order < 0))
+        ) {
+            throw ParseException(
+                source.startLine,
+                source.startColumn,
+                "SOURCE_ANCHOR_INVALID: Relation enthält ungültige Strukturangaben.",
+            )
+        }
+        relationAnchors += EmscriptRelationSourceAnchor(
+            relationId = arguments[0],
+            relationKind = arguments[1],
+            sourceEntityId = arguments[2],
+            targetEntityId = arguments[3],
+            roleKind = arguments[4],
+            roleName = arguments[5],
+            branchRole = arguments[6],
+            order = arguments[7],
+            source = source,
+        )
     }
 
     private fun parseStatement(): EmscriptIrStatement {
@@ -1139,6 +1352,29 @@ private class Parser(
         TokenType.TRUE,
         TokenType.FALSE,
     )
+
+    private val projectionArgumentTypes = setOf(
+        TokenType.STRING,
+        TokenType.NUMBER,
+        TokenType.TRUE,
+        TokenType.FALSE,
+        TokenType.IDENT,
+    )
+
+    private val sourceAnchorEntityKinds = setOf("Statement", "Expression", "Branch")
+    private val sourceAnchorRelationKinds = setOf("Sequence", "Expression", "Containment", "Reference")
+    private val sourceAnchorRelationRoleKinds = setOf(
+        "Next",
+        "Root",
+        "Value",
+        "Condition",
+        "Argument",
+        "Operand",
+        "Branch",
+        "Body",
+        "Variable",
+    )
+    private val sourceAnchorBranchRoles = setOf("Then", "ElseIf", "Else", "LoopBody")
 }
 
 private fun Token.sourceSpan(): EmscriptSourceSpan =

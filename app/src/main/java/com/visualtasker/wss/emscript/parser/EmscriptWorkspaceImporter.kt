@@ -38,6 +38,7 @@ data class EmscriptImportResult(
     val ir: EmscriptIrScript?,
     val document: WorkspaceDocument?,
     val issues: List<EmscriptParseIssue>,
+    val projection: EmscriptProjectionAst = EmscriptProjectionAst(),
     val assemblyMetrics: WorkspaceAssemblyMetrics? = null,
 ) {
     val isSuccess: Boolean
@@ -59,9 +60,14 @@ enum class WorkspaceAssemblyMode {
 }
 
 const val EMSCRIPT_SOURCE_PROPERTIES_METADATA = "emscript.source.properties"
+const val EMSCRIPT_SOURCE_ANCHOR_ENTITY_METADATA = "emscript.source.anchor.entity"
+const val EMSCRIPT_SOURCE_ANCHOR_ENTITY_KIND_METADATA = "emscript.source.anchor.entityKind"
+const val EMSCRIPT_SOURCE_ANCHOR_BRANCH_PREFIX = "emscript.source.anchor.branch."
+const val EMSCRIPT_SOURCE_ANCHOR_RELATION_PREFIX = "emscript.source.anchor.relation."
+const val EMSCRIPT_SOURCE_ANCHOR_RELATION_COUNT = "emscript.source.anchor.relation.count"
 
 class EmscriptWorkspaceImporter(
-    private val parser: EmscriptParserSlice = EmscriptParserSlice(),
+    private val parser: EmscriptParserSlice = EmscriptParserSlice(includeSourceSpans = true),
     private val assemblyMode: WorkspaceAssemblyMode = WorkspaceAssemblyMode.BULK,
 ) {
     fun import(
@@ -86,6 +92,7 @@ class EmscriptWorkspaceImporter(
             val assembler = WorkspaceAssembler(
                 workspaceId = workspaceId,
                 sourceLines = EmscriptSourceLineCursor(script),
+                projection = parsed.projection,
                 mode = assemblyMode,
             )
             traceLabel?.let { EmscriptImportTrace.mark("${it}_ASSEMBLER_ENTER") }
@@ -109,6 +116,7 @@ class EmscriptWorkspaceImporter(
                 ir = ir,
                 document = document,
                 issues = emptyList(),
+                projection = parsed.projection,
                 assemblyMetrics = WorkspaceAssemblyMetrics(
                     mode = assemblyMode,
                     reducerCalls = assembler.reducerCalls,
@@ -129,6 +137,7 @@ class EmscriptWorkspaceImporter(
                         message = error.message ?: "Workspace-Import fehlgeschlagen.",
                     ),
                 ),
+                projection = parsed.projection,
             )
         }
     }
@@ -147,6 +156,7 @@ private class EmscriptSourceLineCursor(script: String) {
             val uppercase = trimmed.uppercase()
             val isStatementLike = trimmed.isNotBlank() &&
                 !trimmed.startsWith("//") &&
+                !trimmed.startsWith("@") &&
                 !uppercase.startsWith("REM ") &&
                 uppercase != "REM" &&
                 uppercase != "ELSE" &&
@@ -174,6 +184,7 @@ private class EmscriptSourceLineCursor(script: String) {
 private class WorkspaceAssembler(
     workspaceId: String,
     private val sourceLines: EmscriptSourceLineCursor,
+    private val projection: EmscriptProjectionAst,
     private val mode: WorkspaceAssemblyMode,
 ) {
     private var document = WorkspaceDocument(id = workspaceId)
@@ -198,6 +209,7 @@ private class WorkspaceAssembler(
         if (facets.isNotEmpty()) {
             annotateGroupFacets(startBlock, facets)
         }
+        annotateRelationAnchors(startBlock, projection.relationAnchors)
         val topLevelHead = appendStatementChain(ir.statements)
         if (topLevelHead != null) {
             connectNext(startBlock, topLevelHead)
@@ -239,7 +251,7 @@ private class WorkspaceAssembler(
     }
 
     private fun emitStatement(statement: EmscriptIrStatement): BlockId {
-        return withSourceLocation(sourceLines.nextStatement()) {
+        val blockId = withSourceLocation(sourceLines.nextStatement()) {
             when (statement) {
             is EmscriptIrStatement.Let -> {
                 ensureVariable(
@@ -355,6 +367,105 @@ private class WorkspaceAssembler(
             }
         }
         }
+        applyEntitySourceAnchors(blockId, projection.entityAnchorsFor(statement))
+        return blockId
+    }
+
+    private fun applyEntitySourceAnchors(
+        statementBlockId: BlockId,
+        anchors: List<EmscriptEntitySourceAnchor>,
+    ) {
+        anchors.forEach { anchor ->
+            when {
+                anchor.locator == de.visualtasker.emscript.contract.EmscriptSourceAnchorContract.BLOCK_LOCATOR -> {
+                    require(anchor.entityKind == "Statement") {
+                        "SOURCE_ANCHOR_KIND_MISMATCH: Block-Locator erwartet Statement."
+                    }
+                    annotateEntityAnchor(statementBlockId, anchor)
+                }
+                anchor.locator.startsWith(de.visualtasker.emscript.contract.EmscriptSourceAnchorContract.INPUT_LOCATOR_PREFIX) -> {
+                    require(anchor.entityKind == "Expression") {
+                        "SOURCE_ANCHOR_KIND_MISMATCH: Input-Locator erwartet Expression."
+                    }
+                    val path = anchor.locator
+                        .removePrefix(de.visualtasker.emscript.contract.EmscriptSourceAnchorContract.INPUT_LOCATOR_PREFIX)
+                        .split('/')
+                    val expressionBlockId = resolveExpressionPath(statementBlockId, path)
+                        ?: error("SOURCE_ANCHOR_TARGET_MISSING: Input-Locator '${anchor.locator}' ist nicht vorhanden.")
+                    annotateEntityAnchor(expressionBlockId, anchor)
+                }
+                anchor.locator.startsWith(de.visualtasker.emscript.contract.EmscriptSourceAnchorContract.BRANCH_LOCATOR_PREFIX) -> {
+                    require(anchor.entityKind == "Branch") {
+                        "SOURCE_ANCHOR_KIND_MISMATCH: Branch-Locator erwartet Branch."
+                    }
+                    val slotName = anchor.locator
+                        .removePrefix(de.visualtasker.emscript.contract.EmscriptSourceAnchorContract.BRANCH_LOCATOR_PREFIX)
+                    val block = requireNotNull(document.blocks[statementBlockId])
+                    require(block.statementInputs.any { it.name == slotName }) {
+                        "SOURCE_ANCHOR_TARGET_MISSING: Branch-Locator '${anchor.locator}' ist nicht vorhanden."
+                    }
+                    document = document.copy(
+                        blocks = document.blocks + (
+                            statementBlockId to block.copy(
+                                metadata = block.metadata +
+                                    ("$EMSCRIPT_SOURCE_ANCHOR_BRANCH_PREFIX$slotName" to anchor.entityId),
+                            )
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun annotateEntityAnchor(blockId: BlockId, anchor: EmscriptEntitySourceAnchor) {
+        val block = requireNotNull(document.blocks[blockId])
+        document = document.copy(
+            blocks = document.blocks + (
+                blockId to block.copy(
+                    metadata = block.metadata +
+                        (EMSCRIPT_SOURCE_ANCHOR_ENTITY_METADATA to anchor.entityId) +
+                        (EMSCRIPT_SOURCE_ANCHOR_ENTITY_KIND_METADATA to anchor.entityKind),
+                )
+            ),
+        )
+    }
+
+    private fun resolveExpressionPath(statementBlockId: BlockId, path: List<String>): BlockId? {
+        var ownerId = statementBlockId
+        path.forEach { slotName ->
+            val connected = document.blocks[ownerId]
+                ?.valueInputs
+                ?.firstOrNull { it.name == slotName }
+                ?.connection
+                ?.connectedTo
+                ?: return null
+            ownerId = WorkspaceGraph.findConnection(document, connected)?.first ?: return null
+        }
+        return ownerId
+    }
+
+    private fun annotateRelationAnchors(
+        startBlockId: BlockId,
+        anchors: List<EmscriptRelationSourceAnchor>,
+    ) {
+        if (anchors.isEmpty()) return
+        val block = requireNotNull(document.blocks[startBlockId])
+        val metadata = buildMap {
+            putAll(block.metadata)
+            put(EMSCRIPT_SOURCE_ANCHOR_RELATION_COUNT, anchors.size.toString())
+            anchors.forEachIndexed { index, anchor ->
+                val prefix = "$EMSCRIPT_SOURCE_ANCHOR_RELATION_PREFIX$index."
+                put("${prefix}id", anchor.relationId)
+                put("${prefix}kind", anchor.relationKind)
+                put("${prefix}source", anchor.sourceEntityId)
+                put("${prefix}target", anchor.targetEntityId)
+                put("${prefix}role", anchor.roleKind)
+                put("${prefix}roleName", anchor.roleName)
+                put("${prefix}branchRole", anchor.branchRole)
+                put("${prefix}order", anchor.order)
+            }
+        }
+        document = document.copy(blocks = document.blocks + (startBlockId to block.copy(metadata = metadata)))
     }
 
     private fun <T> withSourceLocation(location: EmscriptSourceLocation?, block: () -> T): T {
