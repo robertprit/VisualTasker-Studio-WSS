@@ -212,7 +212,7 @@ object BlockEditorFlowchartProjector {
         block: BlockNode,
         document: WorkspaceDocument,
         diagnostics: MutableList<FlowGraphDiagnostic>,
-    ): String = when (block.type) {
+    ): String = textField(block, "displayLabel") ?: when (block.type) {
         BlockTypes.EVENT_START -> "START"
         BlockTypes.ACTION_CLICK_TEXT -> {
             val text = textField(block, "text").orEmpty()

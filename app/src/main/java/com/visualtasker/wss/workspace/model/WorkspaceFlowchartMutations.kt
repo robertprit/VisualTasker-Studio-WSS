@@ -20,6 +20,7 @@ import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.blockeditor.registry.DefaultBlockRegistry
 import de.visualtasker.blockeditor.registry.asFactory
 import de.visualtasker.blockeditor.registry.createNode
+import de.visualtasker.workflow.semantics.VisualTaskerSemanticPropertySchema
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowGraphDocument
@@ -343,6 +344,7 @@ fun updateFlowchartNodeFieldInWorkspace(
         return WorkspaceReducer.reduce(
             document,
             WorkspaceAction.UpdateField(blockId, "args", FieldValue.Text(args.joinToString(","))),
+            propertySchema = VisualTaskerSemanticPropertySchema,
         )
     }
     val current = block.fields[fieldKey]
@@ -360,7 +362,11 @@ fun updateFlowchartNodeFieldInWorkspace(
             else -> FieldValue.Text(rawValue)
         }
     }
-    return WorkspaceReducer.reduce(document, WorkspaceAction.UpdateField(blockId, fieldKey, parsed))
+    return WorkspaceReducer.reduce(
+        document,
+        WorkspaceAction.UpdateField(blockId, fieldKey, parsed),
+        propertySchema = VisualTaskerSemanticPropertySchema,
+    )
 }
 
 fun replaceFlowchartNodeTypeInWorkspace(

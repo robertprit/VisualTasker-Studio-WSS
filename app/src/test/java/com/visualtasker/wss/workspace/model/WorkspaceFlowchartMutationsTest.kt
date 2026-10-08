@@ -25,6 +25,29 @@ import org.junit.Test
 
 class WorkspaceFlowchartMutationsTest {
     @Test
+    fun `flowchart display label mutation updates canonical block and reprojection`() {
+        val document = addFlowchartNodeToWorkspace(
+            WorkspaceDocument(id = "flowchart-display-label-test"),
+            BlockTypes.ACTION_WAIT,
+        )
+        val blockId = document.blocks.keys.single()
+
+        val updated = updateFlowchartNodeFieldInWorkspace(
+            document = document,
+            nodeId = FlowNodeId("block:${blockId.value}"),
+            fieldKey = "displayLabel",
+            rawValue = "Shared wait",
+        )
+
+        assertEquals(FieldValue.Text("Shared wait"), updated.blocks.getValue(blockId).fields["displayLabel"])
+        val flowchart = WorkspaceWorkflowState
+            .fromDocument(updated, mutationSource = "test:flowchart-display-label")
+            .flowchartProjection
+            .graph
+        assertEquals("Shared wait", flowchart.nodes.single { it.id.value == "block:${blockId.value}" }.label)
+    }
+
+    @Test
     fun `add flowchart node instantiates workspace block`() {
         val document = WorkspaceDocument(id = "flowchart-add-test")
 

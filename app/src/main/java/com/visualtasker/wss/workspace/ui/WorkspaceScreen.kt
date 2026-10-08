@@ -208,6 +208,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -14051,6 +14052,7 @@ private fun BlockEditorPanel(
     val session = boundEditor.session as BlockEditorShellEditorSession
     val sessionSource = "$WORKFLOW_SOURCE_BLOCKEDITOR_PREFIX$panelId"
     val selectionEchoGuard = remember(session) { WorkspaceSelectionEchoGuard<BlockId>() }
+    val currentOnWorkspaceJsonChange by rememberUpdatedState(onWorkspaceJsonChange)
     LaunchedEffect(session) {
         onSessionReady(session)
     }
@@ -14090,7 +14092,7 @@ private fun BlockEditorPanel(
             boundEditor.close()
         }
     }
-    LaunchedEffect(session, onWorkspaceJsonChange) {
+    LaunchedEffect(session) {
         snapshotFlow { session.controller.document }
             .collect { document ->
                 BlockEditorDropTrace.markRevision(
@@ -14105,7 +14107,7 @@ private fun BlockEditorPanel(
                     "HOST_OBSERVER_SERIALIZATION_RETURN",
                     "bytes=${serialized.toByteArray(Charsets.UTF_8).size}",
                 )
-                onWorkspaceJsonChange(serialized, sessionSource)
+                currentOnWorkspaceJsonChange(serialized, sessionSource)
             }
     }
     LaunchedEffect(session, onBlockSelected) {

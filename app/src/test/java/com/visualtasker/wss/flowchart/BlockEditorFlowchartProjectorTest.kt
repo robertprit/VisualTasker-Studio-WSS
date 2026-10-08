@@ -93,6 +93,28 @@ class BlockEditorFlowchartProjectorTest {
     }
 
     @Test
+    fun customDisplayLabel_isSharedWithFlowchartProjectionAndSurvivesRoundtrip() {
+        var workspace = buildReferenceWorkspace()
+        val waitId = WorkspaceReducer.reduce(
+            workspace,
+            WorkspaceAction.InstantiateBlock(BlockTypes.ACTION_WAIT, 480f, 220f),
+            buildRegistry().asFactory(),
+        ).also { workspace = it }.rootBlocks.last()
+        workspace = WorkspaceReducer.reduce(
+            workspace,
+            WorkspaceAction.UpdateField(waitId, "displayLabel", FieldValue.Text("Shared wait")),
+            buildRegistry().asFactory(),
+        )
+
+        val projected = BlockEditorFlowchartProjector.project(workspace).graph
+        val reloaded = WorkflowSerializer.deserialize(WorkflowSerializer.serialize(workspace))
+        val reprojected = BlockEditorFlowchartProjector.project(reloaded).graph
+
+        assertEquals("Shared wait", projected.nodes.first { it.id.value == "block:${waitId.value}" }.label)
+        assertEquals("Shared wait", reprojected.nodes.first { it.id.value == "block:${waitId.value}" }.label)
+    }
+
+    @Test
     fun changingOperatorAndVariableLabel_updatesProjection_butKeepsVariableIdentity() {
         var workspace = buildReferenceWorkspace()
         val compareId = workspace.blocks.entries.first { it.value.type == BlockTypes.LOGIC_COMPARE }.key
