@@ -5,6 +5,7 @@ import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.workspace.model.WorkspaceIdentityReconciler
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
+import de.visualtasker.workflow.core.WorkspaceOperationResult
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.workflow.semantics.ir.IrGenerator
 import de.visualtasker.blockeditor.registry.BlockRegistry
@@ -30,8 +31,16 @@ class EmscriptApplyGuard(
             )
         }
 
-        val reconciled = WorkspaceIdentityReconciler.reconcile(previousDocument, importResult.document)
-        val migration = CanonicalWorkspaceMigration.toCurrent(reconciled)
+        val reconciliation = WorkspaceIdentityReconciler.reconcileWithDiagnostics(previousDocument, importResult.document)
+        if (!reconciliation.isUnambiguous) {
+            val diagnostic = reconciliation.diagnostics.first()
+            return EmscriptApplyGuardResult.Failure(
+                stage = EmscriptApplyGuardStage.IDENTITY_RECONCILE,
+                message = diagnostic.message,
+                diagnosticCode = diagnostic.code,
+            )
+        }
+        val migration = CanonicalWorkspaceMigration.toCurrent(reconciliation.document)
         if (!migration.isValid) {
             val issue = migration.issues.firstOrNull()
             return EmscriptApplyGuardResult.Failure(
@@ -40,7 +49,34 @@ class EmscriptApplyGuard(
                 diagnosticCode = issue?.code,
             )
         }
-        val imported = migration.document
+        val candidate = migration.document
+        val candidateRegistry = registry ?: candidate.registryWithVariables()
+        val candidateValidation = Validator.validate(candidate, candidateRegistry)
+        if (!candidateValidation.isValid) {
+            val diagnostic = candidateValidation.errors.first()
+            return EmscriptApplyGuardResult.Failure(
+                stage = EmscriptApplyGuardStage.PRE_VALIDATE,
+                message = "Pre-Validate fehlgeschlagen: ${diagnostic.message}",
+                diagnosticCode = diagnostic.code,
+            )
+        }
+        val plan = runCatching {
+            EmscriptSemanticSourceApply.plan(previousDocument, candidate)
+        }.getOrElse { error ->
+            return EmscriptApplyGuardResult.Failure(
+                stage = EmscriptApplyGuardStage.APPLY_TRANSACTION,
+                message = "Semantic Source Apply Plan fehlgeschlagen: ${error.message ?: "unknown"}",
+            )
+        }
+        val applyResult = EmscriptSemanticSourceApply.execute(plan)
+        val imported = when (applyResult) {
+            is WorkspaceOperationResult.Success -> applyResult.document
+            is WorkspaceOperationResult.Failure -> return EmscriptApplyGuardResult.Failure(
+                stage = EmscriptApplyGuardStage.APPLY_TRANSACTION,
+                message = "Semantic Source Apply abgelehnt: ${applyResult.diagnostic.message}",
+                diagnosticCode = applyResult.diagnostic.code.name,
+            )
+        }
         val effectiveRegistry = registry ?: imported.registryWithVariables()
         val validation = if (registry != null) {
             Validator.validate(imported, registry)
@@ -78,13 +114,16 @@ class EmscriptApplyGuard(
             variableCount = imported.variables.variables.size,
             unsupportedCount = unsupportedCount,
             roundtripLength = roundtrip.length,
+            sourceApplyPlan = plan,
         )
     }
 }
 
 enum class EmscriptApplyGuardStage {
     PARSE_IMPORT,
+    IDENTITY_RECONCILE,
     PRE_VALIDATE,
+    APPLY_TRANSACTION,
     ROUNDTRIP,
 }
 
@@ -97,6 +136,7 @@ sealed interface EmscriptApplyGuardResult {
         val variableCount: Int,
         val unsupportedCount: Int,
         val roundtripLength: Int,
+        val sourceApplyPlan: SemanticSourceApplyPlan,
     ) : EmscriptApplyGuardResult {
         val summary: String
             get() = buildString {
@@ -111,7 +151,8 @@ sealed interface EmscriptApplyGuardResult {
                 appendLine()
                 appendLine("Nicht unterstützte Konstrukte: $unsupportedCount")
                 appendLine("Roundtrip-Script-Länge: $roundtripLength")
-                append("Hinweis: Apply ersetzt das Workspace-Dokument nach Guard-Prüfung.")
+                append("Semantic Apply: ${sourceApplyPlan.transaction.operations.size} Operationen, " +
+                    "${sourceApplyPlan.preservedPropertyCount} nicht dargestellte Properties erhalten.")
             }
     }
 

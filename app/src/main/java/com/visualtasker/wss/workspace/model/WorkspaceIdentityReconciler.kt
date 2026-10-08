@@ -1,5 +1,6 @@
 package com.visualtasker.wss.workspace.model
 
+import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.workflow.core.BlockNode
 import de.visualtasker.workflow.core.Connection
@@ -10,28 +11,102 @@ import de.visualtasker.workflow.core.CanonicalWorkspaceMigration
 import de.visualtasker.workflow.core.SemanticRelation
 import de.visualtasker.workflow.core.allConnections
 
+data class WorkspaceIdentityDiagnostic(
+    val code: String,
+    val message: String,
+    val importedBlockId: BlockId? = null,
+    val candidateBlockIds: List<BlockId> = emptyList(),
+)
+
+data class WorkspaceIdentityReconcileResult(
+    val document: WorkspaceDocument,
+    val diagnostics: List<WorkspaceIdentityDiagnostic> = emptyList(),
+) {
+    val isUnambiguous: Boolean get() = diagnostics.isEmpty()
+}
+
 /** Preserves semantic block identities when an EMScript draft is parsed again. */
 object WorkspaceIdentityReconciler {
-    fun reconcile(previous: WorkspaceDocument?, imported: WorkspaceDocument): WorkspaceDocument {
-        if (previous == null || previous.blocks.isEmpty() || imported.blocks.isEmpty()) return imported
+    fun reconcile(previous: WorkspaceDocument?, imported: WorkspaceDocument): WorkspaceDocument =
+        reconcileWithDiagnostics(previous, imported).document
+
+    fun reconcileWithDiagnostics(
+        previous: WorkspaceDocument?,
+        imported: WorkspaceDocument,
+    ): WorkspaceIdentityReconcileResult {
+        if (previous == null || previous.blocks.isEmpty() || imported.blocks.isEmpty()) {
+            return WorkspaceIdentityReconcileResult(imported)
+        }
 
         val previousPaths = semanticPaths(previous)
         val importedPaths = semanticPaths(imported)
-        val previousByKey = previousPaths.entries
-            .groupBy({ (id, path) -> IdentityKey(path, previous.blocks.getValue(id).type) }, { it.key })
-            .mapValues { (_, ids) -> ArrayDeque(ids.sortedBy(BlockId::value)) }
-            .toMutableMap()
         val usedPreviousIds = mutableSetOf<BlockId>()
         val blockIds = linkedMapOf<BlockId, BlockId>()
+        val diagnostics = mutableListOf<WorkspaceIdentityDiagnostic>()
+
+        val previousBySignature = previous.blocks.keys.groupBy { previous.blocks.getValue(it).identitySignature() }
+        val importedBySignature = imported.blocks.keys.groupBy { imported.blocks.getValue(it).identitySignature() }
+        importedBySignature.forEach { (signature, importedIds) ->
+            val previousIds = previousBySignature[signature].orEmpty()
+            if (importedIds.size > 1 && previousIds.isNotEmpty() && importedIds.size != previousIds.size) {
+                diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "IDENTITY_RECONCILIATION_AMBIGUOUS",
+                    message = "Repeated source elements with signature '$signature' changed cardinality; identity cannot be proven losslessly.",
+                    importedBlockId = importedIds.first(),
+                    candidateBlockIds = previousIds.sortedBy(BlockId::value),
+                )
+            }
+            if (importedIds.size == 1 && previousIds.size == 1) {
+                val importedId = importedIds.single()
+                val previousId = previousIds.single()
+                blockIds[importedId] = previousId
+                usedPreviousIds += previousId
+            }
+        }
+
+        val previousByPath = previousPaths.entries
+            .groupBy({ (id, path) -> IdentityKey(path, previous.blocks.getValue(id).identityType()) }, { it.key })
+        importedPaths.entries.sortedBy { it.value }.forEach { (importedId, path) ->
+            if (importedId in blockIds) return@forEach
+            val type = imported.blocks.getValue(importedId).identityType()
+            val candidates = previousByPath[IdentityKey(path, type)].orEmpty().filterNot(usedPreviousIds::contains)
+            if (candidates.size == 1) {
+                blockIds[importedId] = candidates.single()
+                usedPreviousIds += candidates.single()
+            } else if (candidates.size > 1) {
+                diagnostics += WorkspaceIdentityDiagnostic(
+                    code = "IDENTITY_RECONCILIATION_AMBIGUOUS",
+                    message = "Source path '$path' matches more than one previous semantic element.",
+                    importedBlockId = importedId,
+                    candidateBlockIds = candidates.sortedBy(BlockId::value),
+                )
+            }
+        }
 
         importedPaths.entries.sortedBy { it.value }.forEach { (importedId, path) ->
-            val type = imported.blocks.getValue(importedId).type
-            val queue = previousByKey[IdentityKey(path, type)]
-            val previousId = queue?.removeFirstOrNull()?.takeIf(usedPreviousIds::add)
-            blockIds[importedId] = previousId ?: importedId
+            if (importedId in blockIds) return@forEach
+            val type = imported.blocks.getValue(importedId).identityType()
+            val candidates = previous.blocks.keys.filter { previousId ->
+                previousId !in usedPreviousIds && previous.blocks.getValue(previousId).identityType() == type
+            }
+            when (candidates.size) {
+                0 -> blockIds[importedId] = importedId
+                1 -> {
+                    blockIds[importedId] = candidates.single()
+                    usedPreviousIds += candidates.single()
+                }
+                else -> {
+                    diagnostics += WorkspaceIdentityDiagnostic(
+                        code = "IDENTITY_RECONCILIATION_AMBIGUOUS",
+                        message = "Source element at '$path' has ${candidates.size} equally valid previous identity candidates.",
+                        importedBlockId = importedId,
+                        candidateBlockIds = candidates.sortedBy(BlockId::value),
+                    )
+                    blockIds[importedId] = importedId
+                }
+            }
         }
         imported.blocks.keys.filterNot(blockIds::containsKey).forEach { blockIds[it] = it }
-        if (blockIds.all { (old, new) -> old == new }) return imported
 
         val connectionIds = imported.blocks.values
             .flatMap(BlockNode::allConnections)
@@ -67,8 +142,9 @@ object WorkspaceIdentityReconciler {
         )
         val migrated = CanonicalWorkspaceMigration.toCurrent(remapped).document
         val previousCanonical = CanonicalWorkspaceMigration.toCurrent(previous).document.canonical
-            ?: return migrated
-        val importedCanonical = migrated.canonical ?: return migrated
+            ?: return WorkspaceIdentityReconcileResult(migrated, diagnostics)
+        val importedCanonical = migrated.canonical
+            ?: return WorkspaceIdentityReconcileResult(migrated, diagnostics)
         val previousEntities = previousCanonical.entities.associateBy { it.ref.id }
         val previousRelations = previousCanonical.relations.associateBy(::relationIdentity)
         val reconciledCanonical = importedCanonical.copy(
@@ -88,7 +164,16 @@ object WorkspaceIdentityReconciler {
                 .sortedBy { it.id.value },
         )
         val reconciled = migrated.copy(canonical = reconciledCanonical)
-        return CanonicalCompatibilityProjection.project(reconciled).document
+        return WorkspaceIdentityReconcileResult(
+            document = CanonicalCompatibilityProjection.project(reconciled).document,
+            diagnostics = diagnostics.distinctBy { diagnostic ->
+                listOf(
+                    diagnostic.code,
+                    diagnostic.importedBlockId?.value.orEmpty(),
+                    diagnostic.candidateBlockIds.joinToString { it.value },
+                ).joinToString("|")
+            },
+        )
     }
 
     private fun semanticPaths(document: WorkspaceDocument): Map<BlockId, String> {
@@ -122,6 +207,29 @@ object WorkspaceIdentityReconciler {
     }
 
     private data class IdentityKey(val path: String, val type: String)
+
+    private fun BlockNode.identityType(): String = when (type) {
+        BlockTypes.CONTROL_IF,
+        BlockTypes.CONTROL_IF_ELSE,
+        BlockTypes.CONTROL_IF_ELSEIF_ELSE,
+        -> "control_if_family"
+        else -> type
+    }
+
+    private fun BlockNode.identitySignature(): String = buildString {
+        append(identityType())
+        fields.entries
+            .filterNot { (key, _) ->
+                key == "displayLabel" || key == "note" || key.endsWith(".source")
+            }
+            .sortedBy { it.key }
+            .forEach { (key, value) ->
+                append('|')
+                append(key)
+                append('=')
+                append(value)
+            }
+    }
 
     private fun relationIdentity(relation: SemanticRelation): RelationIdentity = RelationIdentity(
         kind = relation.kind.name,

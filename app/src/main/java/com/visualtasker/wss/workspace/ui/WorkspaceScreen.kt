@@ -263,6 +263,7 @@ import com.visualtasker.wss.components.FabAction
 import com.visualtasker.wss.components.M3EExpandableFAB
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuard
 import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
+import com.visualtasker.wss.emscript.apply.EmscriptAutomaticDraftApplyGate
 import com.visualtasker.wss.overlay.StudioOverlayService
 import com.visualtasker.wss.overlay.LiveMarkerMode
 import com.visualtasker.wss.overlay.LiveMarkerResult
@@ -2077,6 +2078,7 @@ fun WorkspaceScreen(
     }
     val logConsoleState = remember { LogConsoleUiState() }
     val emscriptApplyGuard = remember { EmscriptApplyGuard() }
+    val automaticDraftApplyGate = remember { EmscriptAutomaticDraftApplyGate() }
     fun replaceWorkflowStateFromJson(updated: String, source: String) {
         BlockEditorDropTrace.markActive("HOST_WORKSPACE_REPLACE_ENTER", "source=$source")
         val previousSelection = workspaceSelectionState
@@ -2264,7 +2266,7 @@ fun WorkspaceScreen(
         }
             .debounce(650)
             .collect { content ->
-                if (content.isBlank()) return@collect
+                if (!automaticDraftApplyGate.shouldApply(content)) return@collect
                 when (val preview = emscriptApplyGuard.preview(
                     content,
                     workspaceId = "workflow-main",

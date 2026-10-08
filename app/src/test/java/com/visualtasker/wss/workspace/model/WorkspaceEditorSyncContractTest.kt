@@ -140,9 +140,9 @@ class WorkspaceEditorSyncContractTest {
                 click("Login")
             END IF
         """.trimIndent()
-        val after = (
-            guard.preview(withoutElse, previousDocument = before) as EmscriptApplyGuardResult.Success
-        ).importedDocument
+        val applyResult = guard.preview(withoutElse, previousDocument = before)
+        assertTrue(applyResult.toString(), applyResult is EmscriptApplyGuardResult.Success)
+        val after = (applyResult as EmscriptApplyGuardResult.Success).importedDocument
 
         val reconciled = WorkspaceSelectionResolver.reconcile(
             after,

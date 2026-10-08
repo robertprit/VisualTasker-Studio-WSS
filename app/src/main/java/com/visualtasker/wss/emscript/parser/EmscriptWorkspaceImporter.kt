@@ -58,6 +58,8 @@ enum class WorkspaceAssemblyMode {
     LEGACY_SEQUENTIAL,
 }
 
+const val EMSCRIPT_SOURCE_PROPERTIES_METADATA = "emscript.source.properties"
+
 class EmscriptWorkspaceImporter(
     private val parser: EmscriptParserSlice = EmscriptParserSlice(),
     private val assemblyMode: WorkspaceAssemblyMode = WorkspaceAssemblyMode.BULK,
@@ -595,13 +597,7 @@ private class WorkspaceAssembler(
 
     private fun emitLiteralNumber(value: Double): BlockId {
         val block = instantiate(BlockTypes.LITERAL_NUMBER)
-        apply(
-            WorkspaceAction.UpdateField(
-                blockId = block,
-                key = "value",
-                value = FieldValue.Number(value),
-            ),
-        )
+        setNumberField(block, "value", value)
         return block
     }
 
@@ -613,13 +609,7 @@ private class WorkspaceAssembler(
 
     private fun emitLiteralBoolean(value: Boolean): BlockId {
         val block = instantiate(BlockTypes.LITERAL_BOOLEAN)
-        apply(
-            WorkspaceAction.UpdateField(
-                blockId = block,
-                key = "value",
-                value = FieldValue.Bool(value),
-            ),
-        )
+        setBoolField(block, "value", value)
         return block
     }
 
@@ -788,6 +778,7 @@ private class WorkspaceAssembler(
                 value = FieldValue.Text(value),
             ),
         )
+        markSourceProperty(blockId, key)
     }
 
     private fun setNumberField(blockId: BlockId, key: String, value: Double) {
@@ -798,6 +789,7 @@ private class WorkspaceAssembler(
                 value = FieldValue.Number(value),
             ),
         )
+        markSourceProperty(blockId, key)
     }
 
     private fun setBoolField(blockId: BlockId, key: String, value: Boolean) {
@@ -806,6 +798,26 @@ private class WorkspaceAssembler(
                 blockId = blockId,
                 key = key,
                 value = FieldValue.Bool(value),
+            ),
+        )
+        markSourceProperty(blockId, key)
+    }
+
+    private fun markSourceProperty(blockId: BlockId, key: String) {
+        val block = document.blocks[blockId] ?: return
+        val represented = block.metadata[EMSCRIPT_SOURCE_PROPERTIES_METADATA]
+            .orEmpty()
+            .split(',')
+            .filter(String::isNotBlank)
+            .toMutableSet()
+            .apply { add(key) }
+            .sorted()
+            .joinToString(",")
+        document = document.copy(
+            blocks = document.blocks + (
+                blockId to block.copy(
+                    metadata = block.metadata + (EMSCRIPT_SOURCE_PROPERTIES_METADATA to represented),
+                )
             ),
         )
     }
