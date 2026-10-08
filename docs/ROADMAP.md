@@ -35,7 +35,7 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [x] M3-4: linearer Validator-Graphlauf und reproduzierbares Performance-Gate.
 - [x] M3 Closure Audit: M3 ohne Blocker geschlossen; direkter Operationspfad aller Editoren als
   M4-GAP dokumentiert.
-- [ ] M4-0: zentraler Three-Editor-Conformance-Harness fuer den bereits unterstuetzten Sprachumfang.
+- [x] M4-0: zentraler Three-Editor-Conformance-Harness fuer den bereits unterstuetzten Sprachumfang.
 - [ ] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
 - [ ] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
 - [ ] M4-3: Metadaten-, Layout-, Opaque-/Unsupported- und wiederholte Roundtrip-Gates schliessen.
@@ -47,10 +47,11 @@ Verbindliche Nachweise:
 - `docs/architecture/M3_CLOSURE_AUDIT.md`
 - `docs/architecture/M4_THREE_EDITOR_CONFORMANCE.md`
 - `docs/architecture/M4_CONFORMANCE_MATRIX.md`
+- `docs/architecture/M4_0_THREE_EDITOR_CONFORMANCE.md`
 
-Der kleinste naechste Slice ist M4-0. Er fuehrt noch keine neue Syntax ein, sondern fixiert einen
-gemeinsamen kanonischen Fingerprint und einen wiederholbaren Text-Block-Flow-Text-Test fuer den
-bereits produktiv unterstuetzten Umfang.
+M4-0 ist mit 13 zentralen Conformance-Tests abgeschlossen. Der kleinste naechste Slice ist M4-1:
+verbleibende semantische Block-/Flow-Befehle werden unter Schutz des Harness von `WorkspaceAction`
+auf explizite `WorkspaceTransaction`s konvergiert. Neue Syntax bleibt ausserhalb dieses Slices.
 
 ### Stabil / Nutzbar
 

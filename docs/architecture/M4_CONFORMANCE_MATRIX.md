@@ -8,8 +8,13 @@
 - **not supported**: the construct is rejected, presentation-only, or absent from at least one required
   semantic projection.
 
-This matrix describes the current repository at `855e6bc` / BlockEditor `a5790ad`. Mention in a
+This matrix describes the M4-0 baseline at main `f5e6ce3` / BlockEditor `a5790ad` / FlowEditor
+`008b136`. Mention in a
 formatter, icon set, palette, or documentation is not implementation evidence.
+
+M4-0 executable evidence is documented in `M4_0_THREE_EDITOR_CONFORMANCE.md`. Its central harness
+uses the production import, canonical workspace, Block projection, IR/Flow projection, EMScript
+generator, source apply, workspace serializer, and FlowView codec.
 
 ## Matrix
 
@@ -30,23 +35,23 @@ formatter, icon set, palette, or documentation is not implementation evidence.
 | Reporter connections | Reporter expressions and call expressions | Output/value slots | Data-flow/condition edges | Expression relations with roles/order | implemented | Nested reporter, condition, and compatibility tests. |
 | Format-only text change | No semantic operations | No block identity change | Reprojection only | Revision and IDs unchanged | implemented | `formattingOnlyApplyKeepsIdentityRevisionAndProducesNoOperations`. |
 | Insert/Delete | Semantic diff emits create/delete | Reducer supports add/delete | Flow mutation facade supports add/delete | Entity/relation operations | implemented | Source insertion/deletion and Flow mutation tests. |
-| Reorder | Anchors disambiguate equal elements | Structural reconnect/order support | Edge/branch operations exist | `SetOrder` | partially implemented | Canonical/source cases are covered; one central Text/Block/Flow reorder matrix is missing. |
+| Reorder | Anchors disambiguate equal elements | Structural reconnect/order support | Edge/branch operations exist | `SetOrder` | partially implemented | Canonical/source cases are covered; M4-0 establishes the harness, but the dedicated cross-editor reorder matrix remains M4-2. |
 | Detach/Reconnect | Represented through source structure | Supported by reducer | Sequence/branch/data edges supported | Remove/CreateRelation | implemented | Workspace operation integration and Flow mutation tests. |
 | Undo/Redo | Host snapshot after accepted apply | Snapshot transaction history | Uses host workflow history | Atomic before/after document | partially implemented | Block history and selection restoration are covered; one cross-editor transaction/selection history suite is missing. |
-| Atomic transaction and rollback | One guarded source transaction | Canonical reducer transaction boundary | Mutations reach canonical reducer | Original document returned on failure | implemented | Transaction rollback and invalid source apply tests. |
+| Atomic transaction and rollback | One guarded source transaction | Canonical reducer transaction boundary | Mutations reach canonical reducer | Original document returned on failure | implemented | M4-0 directly verifies two-operation publication, one revision, and complete document/fingerprint rollback. |
 | Unknown block metadata | Missing source fields preserved | Metadata map roundtrips | May ignore but must retain via workspace | Compatibility payload retained | implemented | `custom.owner`, collapse state, missing plugin definition, and serializer tests. |
 | Opaque EMScript fragments | No opaque AST/source-fragment model | No lossless placeholder semantics | No lossless placeholder semantics | No opaque entity kind | not supported | Unknown text fails; this is acceptable only because publication is blocked. |
 | BlockView layout | Not represented | Root positions/collapse presentation | Read-only input to projection | Outside canonical relations | partially implemented | Root positions persist; a dedicated BlockView document is less explicit than FlowView. |
 | FlowView layout/facets/routes | Not represented | Not owner | Separate `FlowViewDocument` | Outside canonical relations | implemented | Persistence compatibility proves separate workflow and FlowView documents. |
 | TextView draft/caret/formatting | Owned by TextEditor | Not owner | Not owner | Outside canonical document until Apply | partially implemented | Restart draft gate exists; full lossless text-view persistence is not a semantic M4 requirement. |
-| Workspace JSON save/reload | Can regenerate source | Full workspace serialization | Reprojects from restored canonical data | Schema-2 canonical payload | implemented | Serializer and persistence compatibility suites. |
-| EMScript repeated roundtrip | Anchored generation/reapply | Rebuilt from same workspace | Rebuilt from IR | IDs and relation IDs retained | implemented | Anchor save/reload and three-editor projection tests. |
-| Editor switch without mutation | Draft remains separate | Projection consumer | Projection consumer | Revision must stay fixed | partially implemented | Shared state construction is read-only and tested; no central repeated-switch conformance loop yet. |
+| Workspace JSON save/reload | Can regenerate source | Full workspace serialization | Reprojects from restored canonical data | Schema-2 canonical payload | implemented | M4-0 directly compares workspace and FlowView structures plus persistence fingerprints after save/reload. |
+| EMScript repeated roundtrip | Anchored generation/reapply | Rebuilt from same workspace | Rebuilt from IR | IDs and relation IDs retained | implemented | M4-0 central supported-subset fixtures compare semantic and identity fingerprints plus structures. |
+| Editor switch without mutation | Draft remains separate | Projection consumer | Projection consumer | Revision must stay fixed | implemented | M4-0 repeats production Block/Flow/text projection and save/reload without canonical revision change. |
 | Cross-editor selection | Source line resolves semantic ID | Block selection uses semantic ID | Node selection uses semantic ID | Selection references entity identity | implemented | `WorkspaceEditorSyncContractTest` covers all directions and removed targets. |
 | Invalid anchors/conflicts | Typed failure stage/code | Prior projection retained | Prior projection retained | No publication | implemented | Duplicate/orphan/stale anchors and ambiguity tests. |
 | Invalid relation/type/graph | Parse/apply diagnostic where applicable | Validator/schema diagnostic | Invalid mutations return unchanged document | Deterministic canonical/validator diagnostics | implemented | Core validator, property, relation, and Flow mutation fixtures. |
 | Projection metadata affects runtime | Not allowed | Geometry ignored | Geometry/facets ignored | Runtime reads semantics | implemented | Layout-only position test leaves EMScript and canonical graph unchanged. |
-| Direct WorkspaceOperation use by every editor | Source Apply uses operations | Several actions still use `WorkspaceAction` facade | Several actions still use `WorkspaceAction` facade | One canonical mutator underneath | partially implemented | Primary M4 operation-convergence gap; no competing semantic store exists. |
+| Direct WorkspaceOperation use by every editor | Source Apply uses operations | Real M4-0 mutation test still enters through `WorkspaceAction` | Real M4-0 mutation test still enters through app facade and `WorkspaceAction` | One canonical mutator underneath | partially implemented | M4-0 proves current behavior; direct operation convergence remains the primary M4-1 gap. |
 
 ## M4 Priority
 
