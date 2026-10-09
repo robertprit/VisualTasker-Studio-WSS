@@ -40,7 +40,9 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [x] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
 - [x] M4-3: Shell-History, Undo/Redo, Selection-Reconciliation und Three-Editor-Closure-Gate.
 - [ ] M4-4: optionale spaetere Strukturerweiterung fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
-- [ ] M5: Runtime-Ausfuehrung und Fehlerbehandlung fuer spaeter freigegebene neue Sprachstrukturen.
+- [x] M5-0: deterministischer Execution-Contract, WorkflowGraph-Planung, JVM-Runner, Provider-Grenze,
+  Cancellation und kanonisch referenzierter Trace fuer den bestehenden Sprachumfang.
+- [ ] M5-1: separat freizugebende Host-Integration des Execution-Contracts; keine neuen Provider vorziehen.
 
 Verbindliche Nachweise:
 
@@ -52,13 +54,17 @@ Verbindliche Nachweise:
 - `docs/architecture/M4_2_EDITOR_MUTATION_ROUNDTRIP.md`
 - `docs/architecture/M4_3_SHELL_HISTORY_INTEGRATION.md`
 - `docs/architecture/M4_CLOSURE_AUDIT.md`
+- `docs/architecture/M5_0_RUNTIME_EXECUTION_CONTRACT.md`
+- `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
 eine gemeinsame semantische History fuer Text-, Block- und Flow-Urspruenge; 10 Integrationstests
 decken Undo/Redo, Editorwechsel, Selection-Reconciliation, Reihenfolge, Rejection und visuelle
 Nicht-Mutationen ab. Der zentrale M4-Harness bleibt mit 23 Tests gruen. History ueber einen
 Prozessneustart und verlustfreies Opaque-Source-Roundtrip bleiben ausdrueckliche Produktgrenzen.
-M5 oder neue Sprachstrukturen beginnen nur nach separater Freigabe.
+M5-0 stellt den JVM-testbaren Runtime-Kern bereit, ohne bestehende DryRun-/BasicRun-UI-Pfade oder
+Android-Provider umzuschalten. Weitere Host-Integration und neue Sprachstrukturen beginnen nur nach
+separater Freigabe.
 
 ### Stabil / Nutzbar
 
