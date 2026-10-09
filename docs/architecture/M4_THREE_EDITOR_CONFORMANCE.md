@@ -131,6 +131,21 @@ revision or rollback. Compound editor commands use one `WorkspaceTransaction`. P
 position and collapse changes do not advance canonical revision. See
 `M4_1_WORKSPACE_OPERATION_CONVERGENCE.md` for the path inventory and acceptance evidence.
 
+## M4-2 Productive Mutation Boundary
+
+M4-2 exercises productive Text Source Apply, `BlockEditorController`, and Flow mutation-facade paths
+against the same canonical document. The central suite now contains 23 tests. Create/connect,
+nested reporter reconnect, Flow add/connect/property updates, text property apply, IF branch order,
+detach/delete/reparent, Block undo/redo, save/reload, rollback, and deterministic four-dimensional
+fingerprints are covered together.
+
+Reparenting does not implicitly replace occupied connections: it is an explicit detach/connect
+sequence. A relation removed by disconnect has ended; reconnect creates a new relation identity while
+unchanged entities and source anchors remain stable. Shell-level Flow/Text undo uses shared serialized
+workspace history; direct Compose interaction coverage remains an explicit gap, while semantic
+selection reconciliation and Block controller history are covered. See
+`M4_2_EDITOR_MUTATION_ROUNDTRIP.md`.
+
 ## Smallest M4-0 Slice
 
 **Name:** Supported-subset three-editor conformance harness.

@@ -8,7 +8,7 @@
 - **not supported**: the construct is rejected, presentation-only, or absent from at least one required
   semantic projection.
 
-This matrix describes the M4-1 implementation based on main `9dd5624` / BlockEditor `a5790ad` /
+This matrix describes the M4-2 implementation based on main `c475236` / BlockEditor `595a8b7` /
 FlowEditor `008b136`. Mention in a
 formatter, icon set, palette, or documentation is not implementation evidence.
 
@@ -16,6 +16,8 @@ M4-0 executable evidence is documented in `M4_0_THREE_EDITOR_CONFORMANCE.md`. It
 uses the production import, canonical workspace, Block projection, IR/Flow projection, EMScript
 generator, source apply, workspace serializer, and FlowView codec.
 M4-1 operation-convergence evidence is documented in `M4_1_WORKSPACE_OPERATION_CONVERGENCE.md`.
+M4-2 productive mutation and roundtrip evidence is documented in
+`M4_2_EDITOR_MUTATION_ROUNDTRIP.md`.
 
 ## Matrix
 
@@ -36,9 +38,9 @@ M4-1 operation-convergence evidence is documented in `M4_1_WORKSPACE_OPERATION_C
 | Reporter connections | Reporter expressions and call expressions | Output/value slots | Data-flow/condition edges | Expression relations with roles/order | implemented | Nested reporter, condition, and compatibility tests. |
 | Format-only text change | No semantic operations | No block identity change | Reprojection only | Revision and IDs unchanged | implemented | `formattingOnlyApplyKeepsIdentityRevisionAndProducesNoOperations`. |
 | Insert/Delete | Semantic diff emits create/delete | Action adapter emits create/delete transaction | Flow add/delete facade emits one transaction | Entity/relation operations | implemented | M4-1 core and central Flow compound-add tests. |
-| Reorder | Anchors disambiguate equal elements | Structural reconnect/order support | Edge/branch operations exist | `SetOrder` | partially implemented | Canonical/source cases are covered; M4-0 establishes the harness, but the dedicated cross-editor reorder matrix remains M4-2. |
-| Detach/Reconnect | Represented through source structure | Adapter emits remove/create relation operations | Sequence/branch/data edges use the same adapter | Remove/CreateRelation | implemented | Workspace operation integration, deterministic relation and Flow mutation tests. |
-| Undo/Redo | Host snapshot after accepted apply | Snapshot transaction history | Uses host workflow history | Atomic before/after document | partially implemented | Block history and selection restoration are covered; one cross-editor transaction/selection history suite is missing. |
+| Reorder | Anchors disambiguate equal elements | Explicit detach/connect sequence | Edge/branch operations exist | `SetOrder` or explicit relation operations | implemented | M4-2 productive controller reparent test preserves entities, order, and complete undo/redo state. |
+| Detach/Reconnect | Represented through source structure | Adapter emits remove/create relation operations | Sequence/branch/data edges use the same adapter | Remove/CreateRelation | implemented | M4-2 detach/delete and nested reporter reconnect tests plus Flow mutation tests. |
+| Undo/Redo | Host snapshot after accepted apply | Snapshot transaction history | Uses host workflow history | Atomic before/after document | partially implemented | M4-2 proves complete Block fingerprint restoration and semantic selection reconciliation; direct shell Compose closure interaction remains untested. |
 | Atomic transaction and rollback | One guarded source transaction | Compound actions use `reduceAll` | Add-with-fields/connect and occupied-port replacement use `reduceAll` | Executor owns publication and rollback | implemented | M4-1 verifies one revision and complete document/fingerprint rollback. |
 | Unknown block metadata | Missing source fields preserved | Metadata map roundtrips | May ignore but must retain via workspace | Compatibility payload retained | implemented | `custom.owner`, collapse state, missing plugin definition, and serializer tests. |
 | Opaque EMScript fragments | No opaque AST/source-fragment model | No lossless placeholder semantics | No lossless placeholder semantics | No opaque entity kind | not supported | Unknown text fails; this is acceptable only because publication is blocked. |
@@ -52,12 +54,12 @@ M4-1 operation-convergence evidence is documented in `M4_1_WORKSPACE_OPERATION_C
 | Invalid anchors/conflicts | Typed failure stage/code | Prior projection retained | Prior projection retained | No publication | implemented | Duplicate/orphan/stale anchors and ambiguity tests. |
 | Invalid relation/type/graph | Parse/apply diagnostic where applicable | Validator/schema diagnostic | Invalid mutations return unchanged document | Deterministic canonical/validator diagnostics | implemented | Core validator, property, relation, and Flow mutation fixtures. |
 | Projection metadata affects runtime | Not allowed | Geometry ignored | Geometry/facets ignored | Runtime reads semantics | implemented | Layout-only position test leaves EMScript and canonical graph unchanged. |
-| Direct WorkspaceOperation use by every editor | Source Apply emits operations | `WorkspaceAction` is a delegating operation-plan adapter | Flow facade delegates to the same adapter/transactions | One executor publishes semantic changes | implemented | M4-1 core and 16 central conformance tests; compatibility API remains intentionally. |
+| Direct WorkspaceOperation use by every editor | Source Apply emits operations | `WorkspaceAction` is a delegating operation-plan adapter | Flow facade delegates to the same adapter/transactions | One executor publishes semantic changes | implemented | M4-1 core and 23 central conformance tests; compatibility API remains intentionally. |
 
 ## M4 Priority
 
-1. Extend M4-1 operation convergence with the M4-2 cross-editor operation/undo/selection matrix.
-2. Complete Insert/Delete/Reorder/Detach/Reconnect and Undo/Redo evidence across all projections.
+1. Proceed to M4-3 metadata, layout, unsupported/opaque, and repeated-roundtrip gates.
+2. Retain the explicit M4-2 gap for direct shell-level Flow/Text undo interaction testing.
 3. Add one structural language family at a time only when Text, Block, Flow, persistence, diagnostics,
    and stable identity can land together.
 4. Introduce TRY-family structure only in an explicitly approved later M4 slice; defer execution to M5.

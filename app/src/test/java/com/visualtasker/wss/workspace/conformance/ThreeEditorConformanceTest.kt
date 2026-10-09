@@ -4,6 +4,7 @@ import com.visualtasker.wss.emscript.apply.EmscriptApplyGuardResult
 import com.visualtasker.wss.workspace.model.FlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import com.visualtasker.wss.workspace.model.applyFlowchartWorkspaceMutation
+import de.visualtasker.blockeditor.compose.host.BlockEditorController
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.flowchart.domain.FlowLayoutMetadata
 import de.visualtasker.flowchart.domain.FlowNodeView
@@ -13,7 +14,9 @@ import de.visualtasker.flowchart.domain.FlowViewAnnotation
 import de.visualtasker.flowchart.domain.FlowViewDocument
 import de.visualtasker.flowchart.domain.FlowViewport
 import de.visualtasker.workflow.core.FieldValue
+import de.visualtasker.workflow.core.BlockId
 import de.visualtasker.workflow.core.SemanticEntityId
+import de.visualtasker.workflow.core.SemanticRelationKind
 import de.visualtasker.workflow.core.SemanticPropertyId
 import de.visualtasker.workflow.core.WorkspaceAction
 import de.visualtasker.workflow.core.WorkspaceOperation
@@ -346,6 +349,243 @@ class ThreeEditorConformanceTest {
     }
 
     @Test
+    fun blockEditorControllerCreatesAndConnectsStatementThroughCanonicalTransactions() {
+        val imported = (ThreeEditorConformanceHarness.importSource("beep()", "block-create-connect")
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val beep = imported.blocks.values.single { it.type != BlockTypes.EVENT_START }
+        val before = imported.copy(
+            blocks = imported.blocks + (
+                beep.id to beep.copy(metadata = beep.metadata + ("unknown.owner" to "m4-2"))
+            ),
+        )
+        val createdId = BlockId("m4-2-created-wait")
+
+        withBlockEditor(before) { controller ->
+            controller.onAction(WorkspaceAction.InstantiateBlock(BlockTypes.ACTION_WAIT, 160f, 240f, createdId))
+            val created = controller.document.blocks.getValue(createdId)
+            controller.onAction(WorkspaceAction.Connect(requireNotNull(beep.next).id, requireNotNull(created.previous).id))
+
+            val after = controller.document
+            val sequence = requireNotNull(after.canonical).relations.single {
+                it.kind == SemanticRelationKind.Sequence &&
+                    it.source.id == requireEntityId(after, beep.id) &&
+                    it.target.id == requireEntityId(after, createdId)
+            }
+            val projections = ThreeEditorConformanceHarness.project(after)
+
+            assertEquals(before.version + 2, after.version)
+            assertEquals("m4-2", after.blocks.getValue(beep.id).metadata["unknown.owner"])
+            assertTrue(sequence.id.value.isNotBlank())
+            assertTrue(projections.generatedSource.indexOf("beep()") < projections.generatedSource.indexOf("wait("))
+            assertTrue("block:${createdId.value}" in projections.flowNodeIds)
+        }
+    }
+
+    @Test
+    fun blockEditorControllerReconnectsNestedReporterWithStableIdentity() {
+        val before = (ThreeEditorConformanceHarness.importSource(
+            "LET total:Number = (1 + 2) * (3 + 4)\nlog(total)",
+            "block-nested-reporter",
+        ) as EmscriptApplyGuardResult.Success).importedDocument
+        val operators = before.blocks.values.filter { it.type == BlockTypes.LOGIC_OPERATE }
+        val nested = operators.firstNotNullOf { parent ->
+            parent.valueInputs.firstNotNullOfOrNull { input ->
+                operators.firstOrNull { child -> child.output?.id == input.connection.connectedTo }
+                    ?.let { child -> Triple(parent, input, child) }
+            }
+        }
+        val (parent, input, child) = nested
+        val relationBefore = requireNotNull(before.canonical).relations.single {
+            it.kind == SemanticRelationKind.Expression &&
+                it.source.id == requireEntityId(before, parent.id) &&
+                it.target.id == requireEntityId(before, child.id)
+        }
+
+        withBlockEditor(before) { controller ->
+            controller.onAction(WorkspaceAction.Disconnect(input.connection.id))
+            assertFalse(
+                requireNotNull(controller.document.canonical).relations.any { it.id == relationBefore.id },
+            )
+            controller.onAction(
+                WorkspaceAction.Connect(
+                    requireNotNull(controller.document.blocks.getValue(child.id).output).id,
+                    controller.document.blocks.getValue(parent.id).valueInputs
+                        .single { it.name == input.name }
+                        .connection.id,
+                ),
+            )
+
+            val after = controller.document
+            assertEquals(before.version + 2, after.version)
+            val restored = requireNotNull(after.canonical).relations.single {
+                it.kind == relationBefore.kind &&
+                    it.source == relationBefore.source &&
+                    it.target == relationBefore.target &&
+                    it.role == relationBefore.role &&
+                    it.order == relationBefore.order
+            }
+            assertTrue(restored.id.value.isNotBlank())
+            assertEquals(
+                requireNotNull(before.canonical).entities.map { it.ref }.toSet(),
+                requireNotNull(after.canonical).entities.map { it.ref }.toSet(),
+            )
+            assertEquals(
+                sourceAnchorDirectives(ThreeEditorConformanceHarness.project(before).generatedSource)
+                    .filter { it.startsWith("@source.entity") },
+                sourceAnchorDirectives(ThreeEditorConformanceHarness.project(after).generatedSource)
+                    .filter { it.startsWith("@source.entity") },
+            )
+            assertTrue(ThreeEditorConformanceHarness.project(after).generatedSource.contains("(1 + 2) * (3 + 4)"))
+        }
+    }
+
+    @Test
+    fun textEditorSourceApplyChangesPropertyWithoutReplacingIdentityAnchorsOrMetadata() {
+        val imported = (ThreeEditorConformanceHarness.importSource("wait(100)", "text-property-apply")
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val wait = imported.blocks.values.single { it.type == BlockTypes.ACTION_WAIT }
+        val before = imported.copy(
+            blocks = imported.blocks + (
+                wait.id to wait.copy(metadata = wait.metadata + ("unknown.owner" to "m4-2-source"))
+            ),
+        )
+        val source = ThreeEditorConformanceHarness.project(before).generatedSource
+        val anchorsBefore = sourceAnchorDirectives(source)
+        val changedSource = source.replaceFirst(Regex("wait\\([^\\n)]*\\)"), "wait(250)")
+        val applied = ThreeEditorConformanceHarness.applySource(changedSource, before.id, before)
+            as EmscriptApplyGuardResult.Success
+        val after = applied.importedDocument
+
+        assertEquals(before.version + 1, after.version)
+        assertTrue(applied.sourceApplyPlan.transaction.operations.isNotEmpty())
+        assertEquals(requireEntityId(before, wait.id), requireEntityId(after, wait.id))
+        assertEquals("m4-2-source", after.blocks.getValue(wait.id).metadata["unknown.owner"])
+        assertEquals(
+            ThreeEditorConformanceHarness.snapshot(before).identityStructure,
+            ThreeEditorConformanceHarness.snapshot(after).identityStructure,
+        )
+        assertEquals(anchorsBefore, sourceAnchorDirectives(ThreeEditorConformanceHarness.project(after).generatedSource))
+        assertEquals(FieldValue.Number(250.0), after.blocks.getValue(wait.id).fields["ms"])
+    }
+
+    @Test
+    fun blockEditorDetachAndDeletePreserveUnaffectedSemanticIdentities() {
+        val before = (ThreeEditorConformanceHarness.importSource(
+            "wait(10)\nbeep()\nlog(\"done\")",
+            "block-detach-delete",
+        ) as EmscriptApplyGuardResult.Success).importedDocument
+        val beep = before.blocks.values.single { it.type == BlockTypes.FEEDBACK_BEEP }
+        val beforeEntityIds = requireNotNull(before.canonical).entities.map { it.ref.id }.toSet()
+
+        withBlockEditor(before) { controller ->
+            controller.onAction(WorkspaceAction.DetachBlock(beep.id))
+            val detached = controller.document
+
+            assertEquals(before.version + 1, detached.version)
+            assertEquals(beforeEntityIds, requireNotNull(detached.canonical).entities.map { it.ref.id }.toSet())
+            assertFalse(
+                requireNotNull(detached.canonical).relations.any {
+                    it.kind == SemanticRelationKind.Sequence &&
+                        (it.source.id == requireEntityId(detached, beep.id) || it.target.id == requireEntityId(detached, beep.id))
+                },
+            )
+        }
+
+        withBlockEditor(before) { controller ->
+            controller.onAction(WorkspaceAction.DeleteBlockPreservingChain(beep.id))
+            val deleted = controller.document
+            val remainingIds = requireNotNull(deleted.canonical).entities.map { it.ref.id }.toSet()
+
+            assertEquals(before.version + 1, deleted.version)
+            assertFalse(beep.id in deleted.blocks)
+            assertFalse(requireEntityId(before, beep.id) in remainingIds)
+            assertTrue(beforeEntityIds.minus(requireEntityId(before, beep.id)).all(remainingIds::contains))
+            assertFalse(ThreeEditorConformanceHarness.project(deleted).generatedSource.contains("beep()"))
+        }
+    }
+
+    @Test
+    fun blockEditorReparentsStatementSequenceWithoutReplacingEntities() {
+        val before = (ThreeEditorConformanceHarness.importSource(
+            "wait(10)\nbeep()\nlog(\"done\")",
+            "block-reparent",
+        ) as EmscriptApplyGuardResult.Success).importedDocument
+        val wait = before.blocks.values.single { it.type == BlockTypes.ACTION_WAIT }
+        val beep = before.blocks.values.single { it.type == BlockTypes.FEEDBACK_BEEP }
+        val log = before.blocks.values.single { it.type == BlockTypes.DEBUG_LOG }
+        val entityRefs = requireNotNull(before.canonical).entities.map { it.ref }.toSet()
+
+        withBlockEditor(before) { controller ->
+            controller.onAction(WorkspaceAction.DetachBlock(beep.id))
+            controller.onAction(
+                WorkspaceAction.Connect(
+                    requireNotNull(wait.next).id,
+                    requireNotNull(log.previous).id,
+                ),
+            )
+            controller.onAction(
+                WorkspaceAction.Connect(
+                    requireNotNull(log.next).id,
+                    requireNotNull(beep.previous).id,
+                ),
+            )
+            val after = controller.document
+            val generated = ThreeEditorConformanceHarness.project(after).generatedSource
+
+            assertEquals(before.version + 3, after.version)
+            assertEquals(entityRefs, requireNotNull(after.canonical).entities.map { it.ref }.toSet())
+            assertTrue(generated.indexOf("wait(") < generated.indexOf("log("))
+            assertTrue(generated.indexOf("log(") < generated.indexOf("beep()"))
+            repeat(3) { assertTrue(controller.undo()) }
+            assertEquals(before, controller.document)
+            repeat(3) { assertTrue(controller.redo()) }
+            assertEquals(after, controller.document)
+        }
+    }
+
+    @Test
+    fun blockEditorUndoRedoRestoresAllFourFingerprintDimensions() {
+        val imported = (ThreeEditorConformanceHarness.importSource("wait(100)", "block-undo-redo")
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val wait = imported.blocks.values.single { it.type == BlockTypes.ACTION_WAIT }
+
+        withBlockEditor(imported) { controller ->
+            val before = ThreeEditorConformanceHarness.snapshot(controller.document)
+            controller.onAction(WorkspaceAction.UpdateField(wait.id, "ms", FieldValue.Number(500.0)))
+            val changed = ThreeEditorConformanceHarness.snapshot(controller.document)
+
+            assertTrue(controller.undo())
+            assertEquals(before, ThreeEditorConformanceHarness.snapshot(controller.document))
+            assertTrue(controller.redo())
+            assertEquals(changed, ThreeEditorConformanceHarness.snapshot(controller.document))
+        }
+    }
+
+    @Test
+    fun saveReloadAndReapplyPreserveAllEditorProjectionsAnchorsAndFingerprints() {
+        val imported = (ThreeEditorConformanceHarness.importSource(
+            "LET score:Number = 8\nIF score > 3\nlog(\"high\")\nELSE\nwait(10)\nEND IF",
+            "save-reload-three-editors",
+        ) as EmscriptApplyGuardResult.Success).importedDocument
+        val sourceWithAnchors = ThreeEditorConformanceHarness.project(imported).generatedSource
+        val anchored = (ThreeEditorConformanceHarness.applySource(sourceWithAnchors, imported.id, imported)
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val before = ThreeEditorConformanceHarness.snapshot(anchored)
+        val reloaded = ThreeEditorConformanceHarness.saveReload(anchored)
+        val afterReload = ThreeEditorConformanceHarness.snapshot(reloaded)
+        val projections = ThreeEditorConformanceHarness.project(reloaded)
+        val reapplied = ThreeEditorConformanceHarness.applySource(projections.generatedSource, reloaded.id, reloaded)
+            as EmscriptApplyGuardResult.Success
+
+        assertEquals(before, afterReload)
+        assertTrue(projections.generatedSource.contains("@source.entity"))
+        assertTrue(projections.blockIds.isNotEmpty())
+        assertTrue(projections.flowNodeIds.containsAll(projections.blockIds.map { "block:$it" }))
+        assertTrue(reapplied.sourceApplyPlan.transaction.operations.isEmpty())
+        assertEquals(before.fingerprints, ThreeEditorConformanceHarness.snapshot(reapplied.importedDocument).fingerprints)
+    }
+
+    @Test
     fun threeConsecutiveRunsProduceIdenticalFingerprintsAndDiagnostics() {
         val source = "LET value:Number = 1 + 2\nIF value > 1\n    log(value)\nELSE\n    wait(10)\nEND IF"
         val baseline = ThreeEditorConformanceHarness.roundtrip(source, "determinism")
@@ -403,4 +643,28 @@ class ThreeEditorConformanceTest {
             layoutMetadata = FlowLayoutMetadata("m4-grid", "1", 42L),
         )
     }
+
+    private inline fun <T> withBlockEditor(
+        document: de.visualtasker.workflow.core.WorkspaceDocument,
+        block: (BlockEditorController) -> T,
+    ): T {
+        val controller = BlockEditorController(initialDocument = document, debounceMillis = 0L)
+        return try {
+            block(controller)
+        } finally {
+            controller.close()
+        }
+    }
+
+    private fun requireEntityId(
+        document: de.visualtasker.workflow.core.WorkspaceDocument,
+        blockId: BlockId,
+    ): SemanticEntityId = requireNotNull(document.canonical).entities
+        .single { it.legacySourceId == blockId.value }
+        .ref.id
+
+    private fun sourceAnchorDirectives(source: String): List<String> = source.lineSequence()
+        .map(String::trim)
+        .filter { it.startsWith("@source.") }
+        .toList()
 }

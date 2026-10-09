@@ -37,7 +37,7 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   M4-GAP dokumentiert.
 - [x] M4-0: zentraler Three-Editor-Conformance-Harness fuer den bereits unterstuetzten Sprachumfang.
 - [x] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
-- [ ] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
+- [x] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
 - [ ] M4-3: Metadaten-, Layout-, Opaque-/Unsupported- und wiederholte Roundtrip-Gates schliessen.
 - [ ] M4-4: struktureller Vertrag fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
 - [ ] M5: Runtime-Ausfuehrung und Fehlerbehandlung fuer spaeter freigegebene neue Sprachstrukturen.
@@ -49,11 +49,13 @@ Verbindliche Nachweise:
 - `docs/architecture/M4_CONFORMANCE_MATRIX.md`
 - `docs/architecture/M4_0_THREE_EDITOR_CONFORMANCE.md`
 - `docs/architecture/M4_1_WORKSPACE_OPERATION_CONVERGENCE.md`
+- `docs/architecture/M4_2_EDITOR_MUTATION_ROUNDTRIP.md`
 
-M4-1 konvergiert Text-, Block- und Flow-Mutationen auf den kanonischen Executor; der zentrale Harness
-enthaelt nun 16 Tests. Der kleinste naechste Slice ist M4-2: Insert/Delete/Reorder/Detach/Reconnect
-sowie Undo/Redo werden editoruebergreifend mit Auswahl- und Identitaetserhalt nachgewiesen. Neue Syntax
-bleibt ausserhalb dieses Slices.
+M4-2 belegt produktive Text-, Block- und Flow-Mutationen mit 23 zentralen Conformance-Tests.
+Insert/Delete/Reorder/Detach/Reconnect, Block-Undo/Redo, Persistenz, Rollback und Identitaetserhalt
+sind gemeinsam abgesichert. Direkte Shell-UI-Interaktion fuer Flow/Text-Undo bleibt als explizite
+Testluecke bestehen. Der kleinste naechste Slice ist M4-3; neue Syntax bleibt bis zu einem separat
+freigegebenen strukturellen Slice ausserhalb des Scopes.
 
 ### Stabil / Nutzbar
 
