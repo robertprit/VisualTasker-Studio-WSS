@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-10-08
+Stand: 2026-10-09
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
@@ -38,8 +38,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [x] M4-0: zentraler Three-Editor-Conformance-Harness fuer den bereits unterstuetzten Sprachumfang.
 - [x] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
 - [x] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
-- [ ] M4-3: Metadaten-, Layout-, Opaque-/Unsupported- und wiederholte Roundtrip-Gates schliessen.
-- [ ] M4-4: struktureller Vertrag fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
+- [x] M4-3: Shell-History, Undo/Redo, Selection-Reconciliation und Three-Editor-Closure-Gate.
+- [ ] M4-4: optionale spaetere Strukturerweiterung fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
 - [ ] M5: Runtime-Ausfuehrung und Fehlerbehandlung fuer spaeter freigegebene neue Sprachstrukturen.
 
 Verbindliche Nachweise:
@@ -50,12 +50,15 @@ Verbindliche Nachweise:
 - `docs/architecture/M4_0_THREE_EDITOR_CONFORMANCE.md`
 - `docs/architecture/M4_1_WORKSPACE_OPERATION_CONVERGENCE.md`
 - `docs/architecture/M4_2_EDITOR_MUTATION_ROUNDTRIP.md`
+- `docs/architecture/M4_3_SHELL_HISTORY_INTEGRATION.md`
+- `docs/architecture/M4_CLOSURE_AUDIT.md`
 
-M4-2 belegt produktive Text-, Block- und Flow-Mutationen mit 23 zentralen Conformance-Tests.
-Insert/Delete/Reorder/Detach/Reconnect, Block-Undo/Redo, Persistenz, Rollback und Identitaetserhalt
-sind gemeinsam abgesichert. Direkte Shell-UI-Interaktion fuer Flow/Text-Undo bleibt als explizite
-Testluecke bestehen. Der kleinste naechste Slice ist M4-3; neue Syntax bleibt bis zu einem separat
-freigegebenen strukturellen Slice ausserhalb des Scopes.
+M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
+eine gemeinsame semantische History fuer Text-, Block- und Flow-Urspruenge; 10 Integrationstests
+decken Undo/Redo, Editorwechsel, Selection-Reconciliation, Reihenfolge, Rejection und visuelle
+Nicht-Mutationen ab. Der zentrale M4-Harness bleibt mit 23 Tests gruen. History ueber einen
+Prozessneustart und verlustfreies Opaque-Source-Roundtrip bleiben ausdrueckliche Produktgrenzen.
+M5 oder neue Sprachstrukturen beginnen nur nach separater Freigabe.
 
 ### Stabil / Nutzbar
 

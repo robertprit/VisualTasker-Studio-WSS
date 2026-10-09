@@ -8,7 +8,7 @@
 - **not supported**: the construct is rejected, presentation-only, or absent from at least one required
   semantic projection.
 
-This matrix describes the M4-2 implementation based on main `c475236` / BlockEditor `595a8b7` /
+This matrix describes the M4-3 closure implementation based on main `965e972` / BlockEditor `595a8b7` /
 FlowEditor `008b136`. Mention in a
 formatter, icon set, palette, or documentation is not implementation evidence.
 
@@ -18,6 +18,8 @@ generator, source apply, workspace serializer, and FlowView codec.
 M4-1 operation-convergence evidence is documented in `M4_1_WORKSPACE_OPERATION_CONVERGENCE.md`.
 M4-2 productive mutation and roundtrip evidence is documented in
 `M4_2_EDITOR_MUTATION_ROUNDTRIP.md`.
+M4-3 shell-history and closure evidence is documented in `M4_3_SHELL_HISTORY_INTEGRATION.md` and
+`M4_CLOSURE_AUDIT.md`.
 
 ## Matrix
 
@@ -40,7 +42,7 @@ M4-2 productive mutation and roundtrip evidence is documented in
 | Insert/Delete | Semantic diff emits create/delete | Action adapter emits create/delete transaction | Flow add/delete facade emits one transaction | Entity/relation operations | implemented | M4-1 core and central Flow compound-add tests. |
 | Reorder | Anchors disambiguate equal elements | Explicit detach/connect sequence | Edge/branch operations exist | `SetOrder` or explicit relation operations | implemented | M4-2 productive controller reparent test preserves entities, order, and complete undo/redo state. |
 | Detach/Reconnect | Represented through source structure | Adapter emits remove/create relation operations | Sequence/branch/data edges use the same adapter | Remove/CreateRelation | implemented | M4-2 detach/delete and nested reporter reconnect tests plus Flow mutation tests. |
-| Undo/Redo | Host snapshot after accepted apply | Snapshot transaction history | Uses host workflow history | Atomic before/after document | partially implemented | M4-2 proves complete Block fingerprint restoration and semantic selection reconciliation; direct shell Compose closure interaction remains untested. |
+| Undo/Redo | Local draft history plus Source Apply; shared shell snapshots | Controller mutation publishes into shared shell history | Flow mutation publishes into shared shell history | Atomic serialized before/after document plus semantic selection | implemented | M4-3 covers all three origins, editor switch, delete/restore, strict ordering, rejection, and exact fingerprints. |
 | Atomic transaction and rollback | One guarded source transaction | Compound actions use `reduceAll` | Add-with-fields/connect and occupied-port replacement use `reduceAll` | Executor owns publication and rollback | implemented | M4-1 verifies one revision and complete document/fingerprint rollback. |
 | Unknown block metadata | Missing source fields preserved | Metadata map roundtrips | May ignore but must retain via workspace | Compatibility payload retained | implemented | `custom.owner`, collapse state, missing plugin definition, and serializer tests. |
 | Opaque EMScript fragments | No opaque AST/source-fragment model | No lossless placeholder semantics | No lossless placeholder semantics | No opaque entity kind | not supported | Unknown text fails; this is acceptable only because publication is blocked. |
@@ -58,8 +60,8 @@ M4-2 productive mutation and roundtrip evidence is documented in
 
 ## M4 Priority
 
-1. Proceed to M4-3 metadata, layout, unsupported/opaque, and repeated-roundtrip gates.
-2. Retain the explicit M4-2 gap for direct shell-level Flow/Text undo interaction testing.
+1. M4 three-editor architecture is closed; do not start M5 without explicit approval.
+2. Keep process-restart history persistence and opaque unsupported source as documented product gaps.
 3. Add one structural language family at a time only when Text, Block, Flow, persistence, diagnostics,
    and stable identity can land together.
 4. Introduce TRY-family structure only in an explicitly approved later M4 slice; defer execution to M5.

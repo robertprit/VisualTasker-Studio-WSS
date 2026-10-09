@@ -336,10 +336,9 @@ import com.visualtasker.wss.workspace.model.WORKFLOW_SOURCE_VT2VT_PREFIX
 import com.visualtasker.wss.workspace.model.FlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.ToolboxSetMode
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
-import com.visualtasker.wss.workspace.model.WorkspaceHistoryEntry
+import com.visualtasker.wss.workspace.model.WorkspaceShellHistoryController
 import com.visualtasker.wss.workspace.model.WorkspaceSelectionResolver
 import com.visualtasker.wss.workspace.model.WorkspaceSelectionEchoGuard
-import com.visualtasker.wss.workspace.model.WorkspaceMutationSourcePolicy
 import com.visualtasker.wss.workspace.model.WorkspaceReleasePreflight
 import com.visualtasker.wss.workspace.model.WorkspaceSyncGuard
 import com.visualtasker.wss.workspace.model.accepts
@@ -1229,9 +1228,7 @@ fun WorkspaceScreen(
             ),
         )
     }
-    val workspaceUndoStack = remember(uiPrefs) { mutableStateListOf<WorkspaceHistoryEntry>() }
-    val workspaceRedoStack = remember(uiPrefs) { mutableStateListOf<WorkspaceHistoryEntry>() }
-    var lastWorkspaceChangeSource by remember(uiPrefs) { mutableStateOf<String?>(null) }
+    val workspaceHistory = remember(uiPrefs) { WorkspaceShellHistoryController() }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
     val runtimeDatastoreLoad = remember(context) { loadRuntimeDatastore(context) }
@@ -2079,11 +2076,10 @@ fun WorkspaceScreen(
     val logConsoleState = remember { LogConsoleUiState() }
     val emscriptApplyGuard = remember { EmscriptApplyGuard() }
     val automaticDraftApplyGate = remember { EmscriptAutomaticDraftApplyGate() }
-    fun replaceWorkflowStateFromJson(updated: String, source: String) {
+    fun replaceWorkflowState(nextWorkflowState: WorkspaceWorkflowState, source: String) {
         BlockEditorDropTrace.markActive("HOST_WORKSPACE_REPLACE_ENTER", "source=$source")
         val previousSelection = workspaceSelectionState
         val previousProjectedScript = workflowState.emscriptProjection.getOrNull()
-        val nextWorkflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
         val semanticWorkflowChanged = nextWorkflowState.emscriptProjection.getOrNull() != previousProjectedScript
         workflowState = nextWorkflowState
         workspaceSelectionState = WorkspaceSelectionResolver.reconcile(
@@ -2100,6 +2096,12 @@ fun WorkspaceScreen(
         BlockEditorDropTrace.markActive(
             "HOST_WORKSPACE_REPLACE_RETURN",
             "revision=${workflowState.revision} blocks=${workflowState.document.blocks.size}",
+        )
+    }
+    fun replaceWorkflowStateFromJson(updated: String, source: String) {
+        replaceWorkflowState(
+            WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source),
+            source,
         )
     }
     val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
@@ -2123,17 +2125,19 @@ fun WorkspaceScreen(
                 BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_RETURN", "result=rejected")
                 return@applyWorkspaceJsonChange
             }
+            val nextWorkflowState = WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source)
             BlockEditorDropTrace.markActive("HOST_GLOBAL_HISTORY_ENTER")
-            if (!WorkspaceMutationSourcePolicy.coalesces(source, lastWorkspaceChangeSource)) {
-                workspaceUndoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
-            }
-            workspaceRedoStack.clear()
+            workspaceHistory.recordAcceptedTransition(
+                current = workflowState,
+                next = nextWorkflowState,
+                selection = workspaceSelectionState,
+                source = source,
+            )
             BlockEditorDropTrace.markActive(
                 "HOST_GLOBAL_HISTORY_RETURN",
-                "undo=${workspaceUndoStack.size} redo=${workspaceRedoStack.size}",
+                "undo=${workspaceHistory.undoDepth} redo=${workspaceHistory.redoDepth}",
             )
-            replaceWorkflowStateFromJson(updated, source)
-            lastWorkspaceChangeSource = source
+            replaceWorkflowState(nextWorkflowState, source)
             val normalized = workflowState.serializedJson
             studioLogStore.append(
                 level = StudioLogLevel.DEBUG,
@@ -2290,26 +2294,22 @@ fun WorkspaceScreen(
             }
     }
     val undoWorkspaceChange: () -> Boolean = {
-        val previous = workspaceUndoStack.removeLastOrNull()
+        val previous = workspaceHistory.undo(workflowState, workspaceSelectionState)
         if (previous == null) {
             false
         } else {
-            workspaceRedoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
             replaceWorkflowStateFromJson(previous.serializedJson, "workspace:undo")
             workspaceSelectionState = WorkspaceSelectionResolver.reconcile(workflowState.document, previous.selection)
-            lastWorkspaceChangeSource = null
             true
         }
     }
     val redoWorkspaceChange: () -> Boolean = {
-        val next = workspaceRedoStack.removeLastOrNull()
+        val next = workspaceHistory.redo(workflowState, workspaceSelectionState)
         if (next == null) {
             false
         } else {
-            workspaceUndoStack.add(WorkspaceHistoryEntry(workflowState.serializedJson, workspaceSelectionState))
             replaceWorkflowStateFromJson(next.serializedJson, "workspace:redo")
             workspaceSelectionState = WorkspaceSelectionResolver.reconcile(workflowState.document, next.selection)
-            lastWorkspaceChangeSource = null
             true
         }
     }
