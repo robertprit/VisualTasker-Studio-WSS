@@ -305,6 +305,8 @@ import com.visualtasker.wss.emscript.runtime.RuntimeDatastoreLoadResult
 import com.visualtasker.wss.emscript.runtime.EmscriptRuntimeDiagnosticException
 import com.visualtasker.wss.emscript.runtime.RuntimeQueryDiagnosticCodes
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
+import com.visualtasker.wss.emscript.runtime.AndroidRuntimeBridge
+import com.visualtasker.wss.emscript.runtime.ExecutionState
 import com.visualtasker.wss.emscript.runtime.toToolboxCapability
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
@@ -314,6 +316,7 @@ import com.visualtasker.wss.emscript.runtime.RuntimeTextMatchCandidate
 import com.visualtasker.wss.emscript.runtime.TextMatchQueryRuntime
 import com.visualtasker.wss.emscript.runtime.dryRunEventIndexOrNull
 import com.visualtasker.wss.emscript.runtime.traceSummary
+import com.visualtasker.wss.emscript.runtime.toExecutionTrace
 import com.visualtasker.wss.emscript.runtime.toRailTraceSteps
 import com.visualtasker.wss.flowchart.EmscriptDryRunFlowRuntimeMapper
 import com.visualtasker.wss.data.PanelState as MainPanelState
@@ -1975,6 +1978,13 @@ fun WorkspaceScreen(
             ),
         )
     }
+    val androidRuntimeBridge = remember(coroutineScope) {
+        AndroidRuntimeBridge(scope = coroutineScope)
+    }
+    val androidRuntimeSnapshot by androidRuntimeBridge.state.collectAsState()
+    DisposableEffect(androidRuntimeBridge) {
+        onDispose(androidRuntimeBridge::close)
+    }
     val workspaceSyncGuard = remember { WorkspaceSyncGuard() }
     var workspaceDryRunSequence by remember { mutableStateOf(0L) }
     var workspaceDryRunResult by remember { mutableStateOf<EmscriptDryRunResult?>(null) }
@@ -2734,104 +2744,75 @@ fun WorkspaceScreen(
             )
             return
         }
-        val capabilityReport = workspaceRuntimeCapabilityGate(context).inspect(workflowState.document)
-        val accessibilityBlockers = capabilityReport.accessibilityBlockedCommands()
-        if (accessibilityBlockers.isNotEmpty() && !VisualTaskerAccessibilityService.isConnected()) {
-            studioLogStore.append(
-                level = StudioLogLevel.ERROR,
-                source = source,
-                message = "Live-Run wartet auf Accessibility",
-                details = "Blockierte Commands: ${accessibilityBlockers.joinToString(", ")}",
-                documentRevision = workflowState.revision.toLong(),
-                groupKey = "workspace:basic-run:accessibility-required",
-                sourceTarget = StudioLogSourceTarget(preferredSurface = StudioLogSourceSurface.PLUGIN_SETTINGS),
+        val started = androidRuntimeBridge.start(
+            document = workflowState.document,
+            workflowId = workflowState.document.id,
+        )
+        if (started) {
+            workspaceDryRunResult = null
+            workspaceDryRunSource = null
+            workspaceDryRunStepIndex = 0
+            val updatedStepperState = stepperPanelState.copy(
+                selectedStepId = null,
+                replayIndex = 0,
+                replayPositionMs = 0L,
+                railMode = RailMode.Step,
             )
-            coroutineScope.launch {
-                val result = snackbarHostState.showSnackbar(
-                    message = "Accessibility aktivieren für: ${accessibilityBlockers.take(3).joinToString(", ")}",
-                    actionLabel = "Öffnen",
-                    withDismissAction = true,
-                    duration = SnackbarDuration.Long,
-                )
-                if (result == SnackbarResult.ActionPerformed) {
-                    context.safeStartActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            }
-            return
-        }
-        coroutineScope.launch {
+            stepperPanelState = updatedStepperState
+            persistStepperState(uiPrefs, updatedStepperState)
             studioLogStore.append(
                 level = StudioLogLevel.INFO,
                 source = source,
-                message = "Workspace Basic-Run gestartet",
-                details = capabilityReport.summary,
+                message = "Workspace Runtime gestartet",
+                details = "ExecutionRunner · Workflow=${workflowState.document.id}",
                 documentRevision = workflowState.revision.toLong(),
-                groupKey = "workspace:basic-run:start:${workflowState.revision}"
+                groupKey = "workspace:execution-runner:start:${workflowState.revision}",
             )
-            val result = workspaceBasicRuntime.run(workflowState.document)
-            workspaceDryRunResult = result
-            workspaceDryRunSource = latestEmscriptProjected
-            workspaceDryRunStepIndex = dryRunEventCount(result)
-            workspaceDryRunSequence += 1
-            syncRailTraceToDryRunStep(
-                result = result,
-                runId = "emscript-dry-run:$workspaceDryRunSequence",
-                stepIndex = workspaceDryRunStepIndex,
-                currentState = stepperPanelState,
-                onStateChanged = { updated ->
-                    stepperPanelState = updated
-                    persistStepperState(uiPrefs, updated)
+        } else {
+            studioLogStore.append(
+                level = StudioLogLevel.WARNING,
+                source = source,
+                message = "Workspace Runtime bereits aktiv",
+                details = "Doppelstart wurde abgewiesen.",
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:execution-runner:duplicate-start",
+            )
+        }
+    }
+    LaunchedEffect(
+        androidRuntimeSnapshot.requestId,
+        androidRuntimeSnapshot.state,
+        androidRuntimeSnapshot.trace.size,
+    ) {
+        val activeEntityId = androidRuntimeSnapshot.activeEntityId
+        if (activeEntityId != null && BlockId(activeEntityId) in workflowState.document.blocks) {
+            workspaceSelectionState = workspaceSelectionState.selectBlock(
+                blockId = BlockId(activeEntityId),
+                source = "runtime",
+            )
+        }
+        if (androidRuntimeSnapshot.state in setOf(
+                ExecutionState.COMPLETED,
+                ExecutionState.FAILED,
+                ExecutionState.CANCELLED,
+                ExecutionState.REJECTED,
+            )
+        ) {
+            val result = androidRuntimeSnapshot.result
+            studioLogStore.append(
+                level = if (androidRuntimeSnapshot.state == ExecutionState.COMPLETED) {
+                    StudioLogLevel.INFO
+                } else {
+                    StudioLogLevel.WARNING
                 },
+                source = "RUNTIME",
+                message = "Workspace Runtime ${androidRuntimeSnapshot.state.name}",
+                details = result?.diagnostics?.joinToString("\n") { "${it.code}: ${it.message}" }
+                    ?.takeIf(String::isNotBlank)
+                    ?: "Trace=${androidRuntimeSnapshot.trace.size} Ereignisse",
+                documentRevision = workflowState.revision.toLong(),
+                groupKey = "workspace:execution-runner:terminal:${androidRuntimeSnapshot.requestId}:${androidRuntimeSnapshot.state}",
             )
-            val snapshot = EmscriptDryRunFlowRuntimeMapper.map(
-                irGraph = workflowState.irGraph,
-                graph = workflowState.flowchartProjection.graph,
-                result = result,
-                sequence = workspaceDryRunSequence,
-            )
-            flowRuntimeSnapshot = snapshot
-            snapshot.diagnostics.forEach { diagnostic ->
-                studioLogStore.append(
-                    level = if (diagnostic.severity.name == "ERROR") StudioLogLevel.ERROR else StudioLogLevel.WARNING,
-                    source = source,
-                    message = "Runtime-Diagnose ${diagnostic.code}",
-                    details = diagnostic.runtimeDetailText(workflowState),
-                    documentRevision = workflowState.revision.toLong(),
-                    groupKey = "workspace:basic-run:diag:${diagnostic.code}:${diagnostic.nodeId?.value}:${diagnostic.message}",
-                    sourceTarget = diagnostic.toStudioLogSourceTarget(workflowState),
-                )
-            }
-            when (result) {
-                is EmscriptDryRunResult.Success -> {
-                    val summary = result.traceSummary()
-                    val preview = result.events.takeLast(8).joinToString(separator = "\n") {
-                        "#${it.index} ${it.kind.uppercase()}: ${it.message}"
-                    }
-                    studioLogStore.append(
-                        level = if (summary.hasWarnings || summary.hasErrors) StudioLogLevel.WARNING else StudioLogLevel.INFO,
-                        source = source,
-                        message = if (summary.hasWarnings || summary.hasErrors) {
-                            "Workspace Basic-Run mit Hinweisen abgeschlossen"
-                        } else {
-                            "Workspace Basic-Run erfolgreich"
-                        },
-                        details = "${summary.message}\n$preview",
-                        documentRevision = workflowState.revision.toLong(),
-                        groupKey = "workspace:basic-run:success:${snapshot.sequence}"
-                    )
-                }
-                is EmscriptDryRunResult.Failure -> {
-                    val summary = result.traceSummary()
-                    studioLogStore.append(
-                        level = StudioLogLevel.ERROR,
-                        source = source,
-                        message = "Workspace Basic-Run fehlgeschlagen",
-                        details = summary.message,
-                        documentRevision = workflowState.revision.toLong(),
-                        groupKey = "workspace:basic-run:failure:${snapshot.sequence}"
-                    )
-                }
-            }
         }
     }
     LaunchedEffect(latestEmscriptProjected, latestEmscriptGenerationFailure) {
@@ -2930,6 +2911,24 @@ fun WorkspaceScreen(
             emptyList()
         }
     }
+    val liveRuntimeSteps = remember(androidRuntimeSnapshot) {
+        androidRuntimeSnapshot.toExecutionTrace()
+            ?.toRailTraceSteps(idPrefix = "live-run")
+            .orEmpty()
+    }
+    LaunchedEffect(androidRuntimeSnapshot.requestId, liveRuntimeSteps.size) {
+        val activeStep = liveRuntimeSteps.lastOrNull() ?: return@LaunchedEffect
+        val updated = stepperPanelState.copy(
+            selectedStepId = activeStep.id,
+            replayIndex = liveRuntimeSteps.lastIndex,
+            replayPositionMs = activeStep.timestampMs ?: 0L,
+            railMode = RailMode.Step,
+        )
+        if (updated != stepperPanelState) {
+            stepperPanelState = updated
+            persistStepperState(uiPrefs, updated)
+        }
+    }
     val canonicalRecordingSteps = remember(
         recordingPlaybackRuntimeState.playback.document,
         recordingPlaybackRuntimeState.candidateDocument,
@@ -2993,6 +2992,7 @@ fun WorkspaceScreen(
     }
     val projectedSteps = when (stepperPanelState.railMode.toSurfaceMode()) {
         RailSurfaceMode.Run -> when {
+            liveRuntimeSteps.isNotEmpty() -> liveRuntimeSteps
             dryRunRecorderSteps.isNotEmpty() -> dryRunRecorderSteps
             recorderStepsProjection != null -> recorderStepsProjection.invoke()
             else -> emptyList()
@@ -3679,7 +3679,9 @@ fun WorkspaceScreen(
 
             WorkspaceTopAppBar(
                 projectName = emscriptFileManager.currentName.ifBlank { "draft" },
-                canRunLive = workflowState.document.blocks.isNotEmpty(),
+                runtimeState = androidRuntimeSnapshot.state,
+                canRunLive = workflowState.document.blocks.isNotEmpty() && !androidRuntimeSnapshot.hasActiveRequest,
+                canStop = androidRuntimeSnapshot.hasActiveRequest,
                 onRunLive = { runCurrentWorkspaceLive("WORKSPACE") },
                 onPause = {
                     studioLogStore.append(
@@ -3692,17 +3694,16 @@ fun WorkspaceScreen(
                     )
                 },
                 onStop = {
-                    workspaceDryRunResult = null
-                    workspaceDryRunStepIndex = 0
-                    flowRuntimeSnapshot = null
-                    studioLogStore.append(
-                        level = StudioLogLevel.INFO,
-                        source = "WORKSPACE",
-                        message = "Runtime-Anzeige gestoppt",
-                        details = "Dry/Live Snapshot geleert.",
-                        documentRevision = workflowState.revision.toLong(),
-                        groupKey = "workspace:runtime-stop"
-                    )
+                    if (androidRuntimeBridge.stop()) {
+                        studioLogStore.append(
+                            level = StudioLogLevel.INFO,
+                            source = "WORKSPACE",
+                            message = "Runtime Stop angefordert",
+                            details = "Die laufende Provider-Aktion wird kontrolliert abgebrochen.",
+                            documentRevision = workflowState.revision.toLong(),
+                            groupKey = "workspace:execution-runner:stop",
+                        )
+                    }
                 },
                 onLoadProject = {
                     replaceWorkflowStateFromJson(loadBlockEditorWorkspaceJson(uiPrefs), "workspace:project-load")
@@ -11826,7 +11827,9 @@ private fun processingModeFromRuntime(raw: String): ScreenshotCanvasProcessingMo
 @Composable
 private fun WorkspaceTopAppBar(
     projectName: String,
+    runtimeState: ExecutionState,
     canRunLive: Boolean,
+    canStop: Boolean,
     onRunLive: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -11841,8 +11844,8 @@ private fun WorkspaceTopAppBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(WORKSPACE_TOP_BAR_HEIGHT_DP.dp)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .height(WORKSPACE_TOP_BAR_HEIGHT_DP.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
         tonalElevation = 3.dp
     ) {
@@ -11864,13 +11867,25 @@ private fun WorkspaceTopAppBar(
                         fontWeight = FontWeight.SemiBold,
                         color = topBarContentColor
                     )
+                    Text(
+                        text = runtimeState.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when (runtimeState) {
+                            ExecutionState.RUNNING -> MaterialTheme.colorScheme.primary
+                            ExecutionState.COMPLETED -> MaterialTheme.colorScheme.tertiary
+                            ExecutionState.FAILED,
+                            ExecutionState.REJECTED,
+                            -> MaterialTheme.colorScheme.error
+                            else -> topBarContentColor
+                        },
+                    )
                     TooltipIconButton(tooltip = "Workflow starten", onClick = onRunLive, modifier = Modifier.size(34.dp), enabled = canRunLive) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Workflow starten")
                     }
                     TooltipIconButton(tooltip = "Pause", onClick = onPause, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Default.Pause, contentDescription = "Pause")
                     }
-                    TooltipIconButton(tooltip = "Stop", onClick = onStop, modifier = Modifier.size(34.dp)) {
+                    TooltipIconButton(tooltip = "Stop", onClick = onStop, modifier = Modifier.size(34.dp), enabled = canStop) {
                         Icon(Icons.Default.Stop, contentDescription = "Stop")
                     }
                 }

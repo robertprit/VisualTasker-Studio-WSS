@@ -8,7 +8,8 @@ Android service classes behind a provider.
 
 | Capability family | Catalog/source today | M5-0 provider | Product provider status | Core dependency |
 | --- | --- | --- | --- | --- |
-| Core command invocation | `VisualTaskerCommandCatalog` | Deterministic fake provider | Future host adapter | None |
+| Timing `wait(duration)` | `action.wait`, capability `TIMING` | Deterministic fake provider | `AndroidWaitExecutionProvider` live in M5-1 | None |
+| Core command invocation | `VisualTaskerCommandCatalog` | Deterministic fake provider | Not registered in M5-1 | None |
 | Logging/feedback | Core catalog and existing BasicRun environment | Fake provider | Existing Android behavior, not migrated | None |
 | Input/click/swipe/touch | Automation catalog | Fake provider | Accessibility/input provider later | None |
 | Clipboard/file/cache/system | Core catalog | Fake provider | Existing BasicRun environment later | None |
@@ -29,5 +30,6 @@ Android service classes behind a provider.
 6. Cancellation is visible through the context token and checked by the runner at controlled boundaries.
 7. Provider calls and results are traceable by capability, provider ID and workflow entity.
 
-M5-0 intentionally contains no global provider singleton and no Android service locator. A host
-constructs the registry explicitly for each runtime environment.
+M5-1 still contains no global provider singleton and no Android service locator. The productive
+`AndroidRuntimeBridge` constructs one explicit registry containing only the native timing provider.
+All other capabilities fail closed until a later, separately approved provider slice.

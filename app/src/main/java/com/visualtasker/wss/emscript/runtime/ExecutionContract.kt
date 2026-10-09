@@ -185,6 +185,7 @@ data class ProviderInvocation(
 sealed interface ProviderResult {
     data class Success(val value: ExecutionValue = ExecutionValue.VoidValue) : ProviderResult
     data class Failure(val code: String, val message: String) : ProviderResult
+    data class Cancelled(val message: String = "Provider invocation cancelled.") : ProviderResult
 }
 
 interface ExecutionProvider {

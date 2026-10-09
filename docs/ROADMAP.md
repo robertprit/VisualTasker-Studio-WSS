@@ -42,7 +42,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [ ] M4-4: optionale spaetere Strukturerweiterung fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
 - [x] M5-0: deterministischer Execution-Contract, WorkflowGraph-Planung, JVM-Runner, Provider-Grenze,
   Cancellation und kanonisch referenzierter Trace fuer den bestehenden Sprachumfang.
-- [ ] M5-1: separat freizugebende Host-Integration des Execution-Contracts; keine neuen Provider vorziehen.
+- [x] M5-1: Android Runtime Bridge, globaler Start/Stop, beobachtbare Runtime-Zustaende,
+  RailTrace-Projektion und erster nativer, abbrechbarer `wait(duration)`-Provider.
 
 Verbindliche Nachweise:
 
@@ -65,6 +66,11 @@ Prozessneustart und verlustfreies Opaque-Source-Roundtrip bleiben ausdrueckliche
 M5-0 stellt den JVM-testbaren Runtime-Kern bereit, ohne bestehende DryRun-/BasicRun-UI-Pfade oder
 Android-Provider umzuschalten. Weitere Host-Integration und neue Sprachstrukturen beginnen nur nach
 separater Freigabe.
+
+M5-1 schaltet den produktiven globalen Play-/Stop-Pfad auf den M5-0-ExecutionRunner um. Die Shell
+besitzt genau eine lifecycle-gebundene Bridge; `wait(duration)` ist die einzige registrierte native
+Capability. Laufzustand und kanonisch referenzierter Live-Trace werden ueber vorhandene TopBar-,
+Log- und RailTrace-Flaechen dargestellt. Weitere Provider bleiben M5-2 oder spaeter vorbehalten.
 
 ### Stabil / Nutzbar
 

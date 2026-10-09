@@ -9,6 +9,7 @@ class DeterministicExecutionRunner(
     fun execute(
         request: ExecutionRequest,
         cancellationToken: CancellationToken = MutableCancellationToken(),
+        traceObserver: (ExecutionTraceEvent) -> Unit = {},
     ): ExecutionResult {
         val lifecycle = ExecutionLifecycle()
         val trace = mutableListOf<ExecutionTraceEvent>()
@@ -28,7 +29,7 @@ class DeterministicExecutionRunner(
             value: ExecutionValue? = null,
             diagnostic: ExecutionDiagnostic? = null,
         ) {
-            trace += ExecutionTraceEvent(
+            val traceEvent = ExecutionTraceEvent(
                 index = trace.size + 1,
                 kind = kind,
                 state = lifecycle.state,
@@ -39,6 +40,8 @@ class DeterministicExecutionRunner(
                 value = value,
                 diagnostic = diagnostic,
             )
+            trace += traceEvent
+            traceObserver(traceEvent)
         }
         fun transition(next: ExecutionState) {
             lifecycle.transitionTo(next)
@@ -64,7 +67,16 @@ class DeterministicExecutionRunner(
 
         transition(ExecutionState.RUNNING)
         event(ExecutionTraceEventKind.EXECUTION_STARTED, entityId = plan.entryPointEntityId)
-        val machine = Machine(context, providers, trace, diagnostics, lifecycle, maxSteps, maxLoopIterations)
+        val machine = Machine(
+            context = context,
+            providers = providers,
+            trace = trace,
+            diagnostics = diagnostics,
+            lifecycle = lifecycle,
+            maxSteps = maxSteps,
+            maxLoopIterations = maxLoopIterations,
+            traceObserver = traceObserver,
+        )
         return try {
             machine.execute(plan.steps)
             if (cancellationToken.isCancellationRequested) {
@@ -112,6 +124,7 @@ private class Machine(
     private val lifecycle: ExecutionLifecycle,
     private val maxSteps: Int,
     private val maxLoopIterations: Int,
+    private val traceObserver: (ExecutionTraceEvent) -> Unit,
 ) {
     var currentEntityId: String? = null
         private set
@@ -252,6 +265,7 @@ private class Machine(
                 )
             }
             is ProviderResult.Failure -> fail(result.code, result.message, entityId)
+            is ProviderResult.Cancelled -> throw ExecutionCancelled(entityId)
         }
     }
 
@@ -271,7 +285,7 @@ private class Machine(
         providerId: String? = null,
         value: ExecutionValue? = null,
     ) {
-        trace += ExecutionTraceEvent(
+        val traceEvent = ExecutionTraceEvent(
             index = trace.size + 1,
             kind = kind,
             state = lifecycle.state,
@@ -281,6 +295,8 @@ private class Machine(
             providerId = providerId,
             value = value,
         )
+        trace += traceEvent
+        traceObserver(traceEvent)
     }
 
     private fun fail(code: String, message: String, entityId: String): Nothing =
