@@ -36,7 +36,7 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [x] M3 Closure Audit: M3 ohne Blocker geschlossen; direkter Operationspfad aller Editoren als
   M4-GAP dokumentiert.
 - [x] M4-0: zentraler Three-Editor-Conformance-Harness fuer den bereits unterstuetzten Sprachumfang.
-- [ ] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
+- [x] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
 - [ ] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
 - [ ] M4-3: Metadaten-, Layout-, Opaque-/Unsupported- und wiederholte Roundtrip-Gates schliessen.
 - [ ] M4-4: struktureller Vertrag fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
@@ -48,10 +48,12 @@ Verbindliche Nachweise:
 - `docs/architecture/M4_THREE_EDITOR_CONFORMANCE.md`
 - `docs/architecture/M4_CONFORMANCE_MATRIX.md`
 - `docs/architecture/M4_0_THREE_EDITOR_CONFORMANCE.md`
+- `docs/architecture/M4_1_WORKSPACE_OPERATION_CONVERGENCE.md`
 
-M4-0 ist mit 13 zentralen Conformance-Tests abgeschlossen. Der kleinste naechste Slice ist M4-1:
-verbleibende semantische Block-/Flow-Befehle werden unter Schutz des Harness von `WorkspaceAction`
-auf explizite `WorkspaceTransaction`s konvergiert. Neue Syntax bleibt ausserhalb dieses Slices.
+M4-1 konvergiert Text-, Block- und Flow-Mutationen auf den kanonischen Executor; der zentrale Harness
+enthaelt nun 16 Tests. Der kleinste naechste Slice ist M4-2: Insert/Delete/Reorder/Detach/Reconnect
+sowie Undo/Redo werden editoruebergreifend mit Auswahl- und Identitaetserhalt nachgewiesen. Neue Syntax
+bleibt ausserhalb dieses Slices.
 
 ### Stabil / Nutzbar
 

@@ -122,6 +122,15 @@ test, every `partially implemented` row is either completed or explicitly deferr
 unsupported construct fails without mutation or information loss. Passing isolated editor tests is
 necessary but not sufficient.
 
+## M4-1 Operation Boundary
+
+M4-1 closes the competing editor-publication path. Text source apply and the Block/Flow compatibility
+facades now converge on `WorkspaceOperationExecutor`. `WorkspaceAction` remains an interaction API,
+but only prepares a deterministic operation plan and staged payload; it does not own publication,
+revision or rollback. Compound editor commands use one `WorkspaceTransaction`. Projection-only root
+position and collapse changes do not advance canonical revision. See
+`M4_1_WORKSPACE_OPERATION_CONVERGENCE.md` for the path inventory and acceptance evidence.
+
 ## Smallest M4-0 Slice
 
 **Name:** Supported-subset three-editor conformance harness.

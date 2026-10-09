@@ -154,32 +154,29 @@ fun addFlowchartNodeToWorkspace(
     val anchor = afterBlockId?.let { document.rootOffset(it) }
     val x = position?.x?.toFloat() ?: anchor?.x ?: 96f
     val y = position?.y?.toFloat() ?: anchor?.y?.plus(96f) ?: (120f + document.rootBlocks.size * 32f)
-    val (withNodeRaw, insertedId) = instantiateFlowchartBlock(document, definitionId, x, y)
-        ?: return document
-    val withNode = initialFields.entries.fold(withNodeRaw) { current, (fieldKey, rawValue) ->
-        updateFlowchartNodeFieldInWorkspace(current, FlowNodeId("$FLOW_BLOCK_NODE_PREFIX${insertedId.value}"), fieldKey, rawValue)
-    }
-    if (afterBlock == null || afterBlock.next == null) return withNode
-    val inserted = withNode.blocks[insertedId] ?: return withNode
-    val source = withNode.blocks[afterBlockId]?.next?.id ?: return withNode
-    val target = inserted.previous?.id ?: return withNode
-    return WorkspaceReducer.reduce(withNode, WorkspaceAction.Connect(source, target))
-}
-
-private fun instantiateFlowchartBlock(
-    document: WorkspaceDocument,
-    definitionId: String,
-    x: Float,
-    y: Float,
-): Pair<WorkspaceDocument, BlockId>? {
     val id = newBlockId()
-    if (DefaultBlockRegistry.getDefinition(definitionId) == null) return null
-    val withBlock = WorkspaceReducer.reduce(
+    val definition = DefaultBlockRegistry.getDefinition(definitionId) ?: return document
+    val template = definition.createNode(id)
+    val sequenceSource = afterBlock?.next?.id
+    val sequenceTarget = template.previous?.id
+    val actions = buildList {
+        add(WorkspaceAction.InstantiateBlock(definitionId, x, y, id))
+        initialFields.entries.sortedBy(Map.Entry<String, String>::key).forEach { (fieldKey, rawValue) ->
+            val parsed = parseFlowchartFieldValue(template, fieldKey, rawValue) ?: return document
+            if (template.fields[fieldKey] != parsed) {
+                add(WorkspaceAction.UpdateField(id, fieldKey, parsed))
+            }
+        }
+        if (sequenceSource != null && sequenceTarget != null) {
+            add(WorkspaceAction.Connect(sequenceSource, sequenceTarget))
+        }
+    }
+    return WorkspaceReducer.reduceAll(
         document,
-        WorkspaceAction.InstantiateBlock(definitionId, x, y, id),
+        actions,
         DefaultBlockRegistry.asFactory(),
+        VisualTaskerSemanticPropertySchema,
     )
-    return withBlock.takeIf { id in it.blocks }?.let { it to id }
 }
 
 fun deleteFlowchartNodeFromWorkspace(
@@ -282,12 +279,13 @@ fun connectFlowchartNodesInWorkspace(
             val source = sourceBlock.output?.id ?: return document
             val targetConnection = targetBlock.valueInputs.firstOrNull { it.name == inputName }?.connection
                 ?: return document
-            val prepared = if (targetConnection.connectedTo != null && targetConnection.connectedTo != source) {
-                WorkspaceReducer.reduce(document, WorkspaceAction.Disconnect(targetConnection.id))
-            } else {
-                document
+            val actions = buildList {
+                if (targetConnection.connectedTo != null && targetConnection.connectedTo != source) {
+                    add(WorkspaceAction.Disconnect(targetConnection.id))
+                }
+                add(WorkspaceAction.Connect(source, targetConnection.id))
             }
-            return WorkspaceReducer.reduce(prepared, WorkspaceAction.Connect(source, targetConnection.id))
+            return WorkspaceReducer.reduceAll(document, actions)
         }
         else -> return document
     }
@@ -347,26 +345,30 @@ fun updateFlowchartNodeFieldInWorkspace(
             propertySchema = VisualTaskerSemanticPropertySchema,
         )
     }
-    val current = block.fields[fieldKey]
-    val parsed = when (current) {
-        is FieldValue.Number -> rawValue.toDoubleOrNull()?.let(FieldValue::Number) ?: return document
-        is FieldValue.Bool -> rawValue.equals("true", ignoreCase = true)
-            .takeIf { it || rawValue.equals("false", ignoreCase = true) }
-            ?.let(FieldValue::Bool) ?: return document
-        is FieldValue.Text -> FieldValue.Text(rawValue)
-        null -> when (fieldKey) {
-            "ms", "frequency", "durationMs", "volume", "repeatCount" ->
-                rawValue.toDoubleOrNull()?.let(FieldValue::Number) ?: return document
-            "active", "value" ->
-                rawValue.toBooleanStrictOrNull()?.let(FieldValue::Bool) ?: FieldValue.Text(rawValue)
-            else -> FieldValue.Text(rawValue)
-        }
-    }
+    val parsed = parseFlowchartFieldValue(block, fieldKey, rawValue) ?: return document
     return WorkspaceReducer.reduce(
         document,
         WorkspaceAction.UpdateField(blockId, fieldKey, parsed),
         propertySchema = VisualTaskerSemanticPropertySchema,
     )
+}
+
+private fun parseFlowchartFieldValue(block: BlockNode, fieldKey: String, rawValue: String): FieldValue? {
+    val current = block.fields[fieldKey]
+    return when (current) {
+        is FieldValue.Number -> rawValue.toDoubleOrNull()?.let(FieldValue::Number)
+        is FieldValue.Bool -> rawValue.equals("true", ignoreCase = true)
+            .takeIf { it || rawValue.equals("false", ignoreCase = true) }
+            ?.let(FieldValue::Bool)
+        is FieldValue.Text -> FieldValue.Text(rawValue)
+        null -> when (fieldKey) {
+            "ms", "frequency", "durationMs", "volume", "repeatCount" ->
+                rawValue.toDoubleOrNull()?.let(FieldValue::Number)
+            "active", "value" ->
+                rawValue.toBooleanStrictOrNull()?.let(FieldValue::Bool) ?: FieldValue.Text(rawValue)
+            else -> FieldValue.Text(rawValue)
+        }
+    }
 }
 
 fun replaceFlowchartNodeTypeInWorkspace(

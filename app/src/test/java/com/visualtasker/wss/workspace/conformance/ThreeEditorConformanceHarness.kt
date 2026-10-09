@@ -43,6 +43,12 @@ internal data class ThreeEditorRoundtrip(
     val sourceApplyOperationCount: Int,
 )
 
+internal data class EditorProjectionSnapshot(
+    val generatedSource: String,
+    val blockIds: List<String>,
+    val flowNodeIds: List<String>,
+)
+
 /** Test-only orchestration over production parser, projections, source apply, and serializers. */
 internal object ThreeEditorConformanceHarness {
     private val guard = EmscriptApplyGuard()
@@ -92,6 +98,15 @@ internal object ThreeEditorConformanceHarness {
 
     fun saveReload(document: WorkspaceDocument): WorkspaceDocument =
         WorkflowSerializer.deserialize(WorkflowSerializer.serialize(document))
+
+    fun project(document: WorkspaceDocument): EditorProjectionSnapshot {
+        val state = WorkspaceWorkflowState.fromDocument(document, "m4:editor-projection")
+        return EditorProjectionSnapshot(
+            generatedSource = EmscriptGenerator().generate(state.document),
+            blockIds = state.document.blocks.keys.map { it.value }.sorted(),
+            flowNodeIds = state.flowchartProjection.graph.nodes.map { it.id.value }.sorted(),
+        )
+    }
 
     fun saveReload(flowView: FlowViewDocument, document: WorkspaceDocument): FlowViewDocument {
         val graph = WorkspaceWorkflowState.fromDocument(document, "m4-0:flow-codec").flowchartProjection.graph

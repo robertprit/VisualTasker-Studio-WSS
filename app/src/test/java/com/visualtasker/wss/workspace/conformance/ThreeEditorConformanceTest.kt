@@ -231,20 +231,33 @@ class ThreeEditorConformanceTest {
 
     @Test
     fun blockEditorWorkspaceActionMutatesCanonicalWorkspaceThroughProductionFacade() {
-        val before = (ThreeEditorConformanceHarness.importSource("wait(100)", "block-mutation")
+        val imported = (ThreeEditorConformanceHarness.importSource("wait(100)", "block-mutation")
             as EmscriptApplyGuardResult.Success).importedDocument
+        val command = imported.blocks.values.single { it.type != BlockTypes.EVENT_START }
+        val before = imported.copy(
+            blocks = imported.blocks + (command.id to command.copy(metadata = command.metadata + ("unknown.owner" to "m4-1"))),
+        )
         val waitBlock = before.blocks.values.single { it.type != BlockTypes.EVENT_START }
+        val beforeSnapshot = ThreeEditorConformanceHarness.snapshot(before)
         val after = WorkspaceReducer.reduce(
             document = before,
-            action = WorkspaceAction.UpdateField(waitBlock.id, "displayLabel", FieldValue.Text("Block label")),
+            action = WorkspaceAction.UpdateField(waitBlock.id, "ms", FieldValue.Number(250.0)),
             propertySchema = VisualTaskerSemanticPropertySchema,
         )
+        val afterSnapshot = ThreeEditorConformanceHarness.snapshot(after)
+        val projections = ThreeEditorConformanceHarness.project(after)
 
         assertEquals(before.version + 1, after.version)
-        assertEquals(FieldValue.Text("Block label"), after.blocks.getValue(waitBlock.id).fields["displayLabel"])
+        assertEquals(FieldValue.Number(250.0), after.blocks.getValue(waitBlock.id).fields["ms"])
+        assertEquals("m4-1", after.blocks.getValue(waitBlock.id).metadata["unknown.owner"])
+        assertEquals(beforeSnapshot.identityStructure, afterSnapshot.identityStructure)
+        assertEquals(beforeSnapshot.fingerprints.identity, afterSnapshot.fingerprints.identity)
+        assertEquals(beforeSnapshot.fingerprints.metadata, afterSnapshot.fingerprints.metadata)
+        assertTrue(projections.generatedSource.contains("wait(250"))
+        assertTrue("block:${waitBlock.id.value}" in projections.flowNodeIds)
         assertNotEquals(
-            ThreeEditorConformanceHarness.snapshot(before).fingerprints.semantics,
-            ThreeEditorConformanceHarness.snapshot(after).fingerprints.semantics,
+            beforeSnapshot.fingerprints.semantics,
+            afterSnapshot.fingerprints.semantics,
         )
     }
 
@@ -265,6 +278,71 @@ class ThreeEditorConformanceTest {
         assertEquals(before.version + 1, mutation.document.version)
         assertEquals(FieldValue.Text("Flow label"), mutation.document.blocks.getValue(waitBlock.id).fields["displayLabel"])
         assertEquals("Flow label", projected.flowchartProjection.graph.nodes.single { it.id == flowNode.id }.label)
+    }
+
+    @Test
+    fun flowEditorCompoundAddPublishesOneRevisionAndProjectsToTextAndBlocks() {
+        val before = (ThreeEditorConformanceHarness.importSource("beep()", "flow-compound-add")
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val beep = before.blocks.values.single { it.type != BlockTypes.EVENT_START }
+        val beforeIds = requireNotNull(before.canonical).entities.map { it.ref.id }.toSet()
+
+        val mutation = applyFlowchartWorkspaceMutation(
+            before,
+            FlowchartWorkspaceMutation.AddNode(
+                definitionId = BlockTypes.ACTION_WAIT,
+                afterNodeId = de.visualtasker.flowchart.domain.FlowNodeId("block:${beep.id.value}"),
+                initialFields = mapOf("ms" to "250"),
+            ),
+        )
+        val projections = ThreeEditorConformanceHarness.project(mutation.document)
+        val afterIds = requireNotNull(mutation.document.canonical).entities.map { it.ref.id }.toSet()
+
+        assertTrue(mutation.applied)
+        assertEquals(before.version + 1, mutation.document.version)
+        assertTrue(beforeIds.all(afterIds::contains))
+        assertTrue(projections.generatedSource.contains("beep()"))
+        assertTrue(projections.generatedSource.contains("wait(250"))
+        assertEquals(mutation.document.blocks.keys.map { it.value }.sorted(), projections.blockIds)
+        assertTrue(projections.flowNodeIds.containsAll(projections.blockIds.map { "block:$it" }))
+    }
+
+    @Test
+    fun invalidFlowPropertyMutationRollsBackAllFingerprintsAndRevision() {
+        val before = (ThreeEditorConformanceHarness.importSource("wait(100)", "flow-invalid-property")
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val waitBlock = before.blocks.values.single { it.type != BlockTypes.EVENT_START }
+        val flowNode = WorkspaceWorkflowState.fromDocument(before, "m4-1:invalid-flow")
+            .flowchartProjection.graph.nodes.single { it.id.value == "block:${waitBlock.id.value}" }
+        val beforeSnapshot = ThreeEditorConformanceHarness.snapshot(before)
+
+        val mutation = applyFlowchartWorkspaceMutation(
+            before,
+            FlowchartWorkspaceMutation.UpdateNodeField(flowNode.id, "ms", "not-a-number"),
+        )
+
+        assertFalse(mutation.applied)
+        assertEquals(before, mutation.document)
+        assertEquals(beforeSnapshot, ThreeEditorConformanceHarness.snapshot(mutation.document))
+    }
+
+    @Test
+    fun repeatedBlockEditorMutationIsDeterministic() {
+        val before = (ThreeEditorConformanceHarness.importSource("wait(100)", "block-determinism")
+            as EmscriptApplyGuardResult.Success).importedDocument
+        val waitBlock = before.blocks.values.single { it.type != BlockTypes.EVENT_START }
+        val runs = List(3) {
+            WorkspaceReducer.reduce(
+                before,
+                WorkspaceAction.UpdateField(waitBlock.id, "ms", FieldValue.Number(250.0)),
+                propertySchema = VisualTaskerSemanticPropertySchema,
+            )
+        }
+        val snapshots = runs.map(ThreeEditorConformanceHarness::snapshot)
+
+        assertEquals(1, runs.distinct().size)
+        assertEquals(1, snapshots.map { it.fingerprints }.distinct().size)
+        assertTrue(runs.all { it.version == before.version + 1 })
     }
 
     @Test
