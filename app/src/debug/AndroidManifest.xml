@@ -6,6 +6,10 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.visualtasker.wss.debug.M5_2_PREPARE" />
+                <action android:name="com.visualtasker.wss.debug.M5_3_PREPARE_SWIPE" />
+                <action android:name="com.visualtasker.wss.debug.M5_3_PREPARE_PATH" />
+                <action android:name="com.visualtasker.wss.debug.M5_3_PREPARE_CANCELLATION" />
+                <action android:name="com.visualtasker.wss.debug.M5_3_CANCEL" />
                 <action android:name="com.visualtasker.wss.debug.M5_2_RESTORE" />
             </intent-filter>
         </receiver>

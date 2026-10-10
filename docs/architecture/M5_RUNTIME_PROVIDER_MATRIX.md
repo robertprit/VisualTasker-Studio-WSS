@@ -11,8 +11,13 @@ Android service classes behind a provider.
 | Timing `wait(duration)` | `action.wait`, capability `TIMING` | Deterministic fake provider | `AndroidWaitExecutionProvider` live in M5-1 | None |
 | Core command invocation | `VisualTaskerCommandCatalog` | Deterministic fake provider | Not registered in M5-1 | None |
 | Logging/feedback | Core catalog and existing BasicRun environment | Fake provider | Existing Android behavior, not migrated | None |
-| Coordinate click `clickPoint(x,y)` | `input.clickPoint`, capability `A11Y` | Fake provider | `NativeTouchProvider` live in M5-2 | None |
-| Swipe/path/multitouch/semantic click | Automation catalog | Fake provider | Not registered in M5-2 | None |
+| Coordinate click `clickPoint(x,y)` | `input.clickPoint`, capability `A11Y` | Fake provider | `NativeGestureProvider` live since M5-2 | None |
+| Swipe/polyline path | `action.swipe`, raw point list plus repeat, capability `A11Y` | Fake provider | `NativeGestureProvider` live in M5-3; absolute pixels, fixed legacy 250 ms duration | None |
+| Typed `Path` / timed `PointerPath` | V1 contract; not lowered by current M5 planner | Fake/provider contract only | GAP: no typed execution lowering, timing or Bezier dispatch in M5-3 | None |
+| MultiPath/multitouch | V1 contract | Not implemented | Out of M5-3 scope | None |
+| Semantic `clickElement` | Planned A11y target plus optional relative bounds point | Not implemented | Contract only; requires A11y/worldview resolver | None |
+| Semantic `clickText` | Existing text command; target resolver not in M5 | Not implemented | Contract only; requires A11y text resolver | None |
+| Semantic `clickImage` / `clickTemplate` | Planned image/template target and search region | Not implemented | Contract only; requires Vision provider | None |
 | Clipboard/file/cache/system | Core catalog | Fake provider | Existing BasicRun environment later | None |
 | Tasker | Tasker catalog/plugin contracts | Not implemented | Optional provider | None |
 | Shizuku | Shell capability metadata | Not implemented | Optional provider | None |
@@ -31,8 +36,22 @@ Android service classes behind a provider.
 6. Cancellation is visible through the context token and checked by the runner at controlled boundaries.
 7. Provider calls and results are traceable by capability, provider ID and workflow entity.
 
-M5-2 still contains no global provider singleton. The productive `AndroidRuntimeBridge` constructs
-one explicit registry containing the native timing and native coordinate-touch providers. The touch
+M5-3 still contains no global provider singleton. The productive `AndroidRuntimeBridge` constructs
+one explicit registry containing the native timing and native gesture providers. The gesture
 gateway reuses the already connected `VisualTaskerAccessibilityService`; it does not activate that
 service and fails closed when Android has not connected it. All other capabilities continue to fail
 closed until a later, separately approved provider slice.
+
+Click, swipe and the supported polyline share one active-sequence gate. Concurrent requests are
+rejected with `TOUCH_GESTURE_BUSY`, never executed in hidden parallel. Swipe repeats are dispatched
+sequentially with a bounded inter-repeat cancellation point. Android completion/cancellation,
+runtime cancellation, timeout, service loss, display changes and synchronous dispatch rejection
+remain typed terminal outcomes.
+
+The catalog's current swipe signature does not expose duration, speed, delay or hold. M5-3 therefore
+retains the established fixed 250 ms behavior and rejects unsupported typed path text. Timeless
+`Path` and timed `PointerPath` remain separate contracts.
+
+The supported subset has a physical SM-S918B gate for straight swipe, multi-waypoint path and
+mid-sequence cancellation. Typed path lowering, explicit timing, Bezier segments and multitouch
+remain documented gaps rather than implicit fallbacks.

@@ -232,6 +232,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
@@ -606,6 +607,8 @@ private const val WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP = 44f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
 private const val M5_2_TOUCH_TEST_TARGET_PREF_KEY = "m5_2_touch_test_target_visible"
+private const val M5_3_GESTURE_TEST_MODE_PREF_KEY = "m5_3_gesture_test_mode"
+private const val M5_3_CANCEL_REQUEST_PREF_KEY = "m5_3_cancel_request"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 private const val BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY = "blockeditor_minimap_visible"
 private const val TOOLBOX_SET_MODE_PREF_KEY = "toolbox_set_mode"
@@ -1075,9 +1078,14 @@ fun WorkspaceScreen(
     val vt2vtManager = remember(context) { Vt2VtRuntime.manager(context) }
     val vt2vtSnapshot by vt2vtManager.state.collectAsState()
     val uiPrefs = remember(context) { context.getSharedPreferences("panel_ui_options", Context.MODE_PRIVATE) }
+    val runtimeGestureTestRun = uiPrefs.getString(M5_3_GESTURE_TEST_MODE_PREF_KEY, null)
+    val runtimeGestureTestMode = runtimeGestureTestRun?.substringBefore(':')
     val showRuntimeTouchTestTarget = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
-        uiPrefs.getBoolean(M5_2_TOUCH_TEST_TARGET_PREF_KEY, false)
-    var runtimeTouchTestHitCount by rememberSaveable { mutableIntStateOf(0) }
+        (uiPrefs.getBoolean(M5_2_TOUCH_TEST_TARGET_PREF_KEY, false) || runtimeGestureTestRun != null)
+    var runtimeTouchTestHitCount by rememberSaveable(runtimeGestureTestRun) { mutableIntStateOf(0) }
+    var runtimeGestureDeltaX by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
+    var runtimeGestureDeltaY by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
+    var runtimeGestureTravel by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     LaunchedEffect(uiPrefs) {
         if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
             uiPrefs.edit()
@@ -1991,6 +1999,17 @@ fun WorkspaceScreen(
     val androidRuntimeSnapshot by androidRuntimeBridge.state.collectAsState()
     DisposableEffect(androidRuntimeBridge) {
         onDispose(androidRuntimeBridge::close)
+    }
+    DisposableEffect(androidRuntimeBridge, uiPrefs) {
+        if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+            onDispose { }
+        } else {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == M5_3_CANCEL_REQUEST_PREF_KEY) androidRuntimeBridge.stop()
+            }
+            uiPrefs.registerOnSharedPreferenceChangeListener(listener)
+            onDispose { uiPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
     }
     val workspaceSyncGuard = remember { WorkspaceSyncGuard() }
     var workspaceDryRunSequence by remember { mutableStateOf(0L) }
@@ -4515,7 +4534,16 @@ fun WorkspaceScreen(
         if (showRuntimeTouchTestTarget) {
             RuntimeTouchTestTarget(
                 hitCount = runtimeTouchTestHitCount,
-                onClick = { runtimeTouchTestHitCount += 1 },
+                mode = runtimeGestureTestMode ?: "click",
+                deltaX = runtimeGestureDeltaX,
+                deltaY = runtimeGestureDeltaY,
+                travel = runtimeGestureTravel,
+                onGesture = { delta, travel ->
+                    runtimeTouchTestHitCount += 1
+                    runtimeGestureDeltaX = delta.x
+                    runtimeGestureDeltaY = delta.y
+                    runtimeGestureTravel = travel
+                },
                 modifier = Modifier
                     .align(Alignment.Center)
                     .zIndex(999_999f),
@@ -11934,17 +11962,35 @@ private fun WorkspaceTopAppBar(
 @Composable
 private fun RuntimeTouchTestTarget(
     hitCount: Int,
-    onClick: () -> Unit,
+    mode: String,
+    deltaX: Float,
+    deltaY: Float,
+    travel: Float,
+    onGesture: (Offset, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        onClick = onClick,
         modifier = modifier
-            .size(112.dp)
+            .width(280.dp)
+            .height(180.dp)
+            .pointerInput(mode) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var delta = Offset.Zero
+                    var distance = 0f
+                    drag(down.id) { change ->
+                        val movement = change.positionChange()
+                        delta += movement
+                        distance += movement.getDistance()
+                        change.consume()
+                    }
+                    onGesture(delta, distance)
+                }
+            }
             .semantics {
-                contentDescription = "M5-2 Touch-Testziel $hitCount"
+                contentDescription = "M5-3 Gesture-Testziel $mode $hitCount delta ${deltaX.toInt()} ${deltaY.toInt()} travel ${travel.toInt()}"
             },
-        shape = CircleShape,
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary),
@@ -11961,9 +12007,13 @@ private fun RuntimeTouchTestTarget(
                 modifier = Modifier.size(32.dp),
             )
             Text(
-                text = "Touch $hitCount",
+                text = "Gesture $hitCount",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "$mode  ${deltaX.toInt()}, ${deltaY.toInt()}  Weg ${travel.toInt()}",
+                style = MaterialTheme.typography.labelMedium,
             )
         }
     }

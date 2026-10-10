@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-10-09
+Stand: 2026-10-10
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
@@ -47,6 +47,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [x] M5-2: nativer `clickPoint(x,y)`-Provider ueber den bestehenden AccessibilityService,
   deterministische Gesture-Callbacks und produktiver Shell-Testpfad. Der reale Touch-Nachweis auf
   dem SM-S918B hat Zieltreffer, `COMPLETED`, RailTrace-Persistenz und unveraenderten Workspace belegt.
+- [x] M5-3: gemeinsamer nativer Gesture-Provider fuer Click, Swipe und lineare Mehrpunkt-Pfade,
+  deterministischer Konkurrenzvertrag, Cancellation-/Callback-Haertung und sicherer Geraete-Gate.
 
 Verbindliche Nachweise:
 
@@ -61,6 +63,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_0_RUNTIME_EXECUTION_CONTRACT.md`
 - `docs/architecture/M5_1_ANDROID_RUNTIME_BRIDGE.md`
 - `docs/architecture/M5_2_NATIVE_TOUCH_PROVIDER.md`
+- `docs/architecture/M5_3_NATIVE_GESTURE_PROVIDER.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
@@ -83,6 +86,13 @@ Timeout und fehlende Service-Freigabe typisiert und besitzt keinen Tasker-/Shizu
 automatisierte Shell-Test nutzt ein ungefaehrliches, nur fuer Debugtests sichtbares Ziel in der
 Workspace-Mitte. Das Debug-Gate arbeitet ausserhalb von Android Instrumentation, weil diese das
 Zielpaket samt eigenem AccessibilityService vor Testbeginn zwangsweise stoppt.
+
+M5-3 erweitert denselben Provider um den vorhandenen `swipe`-Katalogvertrag und lineare
+Mehrpunkt-Pfade. Click, Swipe und Path teilen einen deterministischen Ein-Sequenz-Vertrag;
+Konkurrenz wird sichtbar abgewiesen, Wiederholungen bleiben seriell und abbrechbar. Der reale
+SM-S918B-Gate belegt Straight-Swipe, einen V-foermigen Drei-Punkt-Pfad, Cancellation nach 2 von 20
+Wiederholungen sowie einen unveraenderten kanonischen Workspace. Explizites Timing, typisiertes
+`PointerPath`-Lowering, Bezier und Multitouch bleiben bewusst dokumentierte Folge-GAPs.
 
 ### Stabil / Nutzbar
 
