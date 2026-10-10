@@ -112,6 +112,10 @@ sealed interface EmscriptValue {
     data class NumberValue(val value: Double) : EmscriptValue
     data class StringValue(val value: String) : EmscriptValue
     data class BooleanValue(val value: Boolean) : EmscriptValue
+    data class PointValue(val value: PointerPathPoint) : EmscriptValue
+    data class PathSegmentValue(val value: PointerPathSegment) : EmscriptValue
+    data class PathValue(val value: PointerPathGeometry) : EmscriptValue
+    data class PointerPathValue(val value: PointerPath) : EmscriptValue
     data class TaskerVariableValue(val name: String, val value: String) : EmscriptValue {
         init {
             require(name.isNotBlank()) { "Tasker variable name must not be blank." }
@@ -419,6 +423,9 @@ private class Interpreter(
             is EmscriptIrExpression.NumberLiteral -> EmscriptValue.NumberValue(expression.value)
             is EmscriptIrExpression.StringLiteral -> EmscriptValue.StringValue(expression.value)
             is EmscriptIrExpression.BooleanLiteral -> EmscriptValue.BooleanValue(expression.value)
+            is EmscriptIrExpression.ListLiteral -> expression.values
+                .map(::evaluate)
+                .toEmscriptListValue()
             is EmscriptIrExpression.FunctionCall -> evaluateFunctionCall(expression)
             is EmscriptIrExpression.Binary -> evaluateBinary(expression)
         }
@@ -431,6 +438,13 @@ private class Interpreter(
                 values.joinToString(prefix = "region(", postfix = ")") { value ->
                     EmscriptValue.NumberValue(value).render()
                 },
+            )
+        }
+        if (expression.name in PATH_VALUE_CONSTRUCTOR_NAMES) {
+            return evaluatePathValueConstructor(
+                expression.name,
+                expression.arguments.map(::evaluate),
+                expression.argumentNames,
             )
         }
         val arguments = expression.arguments.joinToString(",") { evaluate(it).render() }
@@ -572,6 +586,10 @@ private fun EmscriptValue.asDouble(context: String): Double =
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
         is EmscriptValue.ListValue,
+        is EmscriptValue.PointValue,
+        is EmscriptValue.PathSegmentValue,
+        is EmscriptValue.PathValue,
+        is EmscriptValue.PointerPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -592,6 +610,10 @@ private fun EmscriptValue.asBoolean(context: String): Boolean =
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
         is EmscriptValue.ListValue,
+        is EmscriptValue.PointValue,
+        is EmscriptValue.PathSegmentValue,
+        is EmscriptValue.PathValue,
+        is EmscriptValue.PointerPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -614,6 +636,10 @@ private fun EmscriptValue.render(): String =
         is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
         is EmscriptValue.MarkerValue -> "Marker($markerId)"
         is EmscriptValue.ChartSnapshotValue -> "ChartSnapshot($id,$kind)"
+        is EmscriptValue.PointValue -> "Point(${value.x},${value.y})"
+        is EmscriptValue.PathSegmentValue -> value::class.simpleName ?: "PathSegment"
+        is EmscriptValue.PathValue -> "Path(${value.segments.size} segments)"
+        is EmscriptValue.PointerPathValue -> "PointerPath(${value.geometry.segments.size} segments)"
         EmscriptValue.NullValue -> "null"
     }
 
@@ -627,7 +653,70 @@ private fun EmscriptValue.runtimeType(): LanguageTypeRef = when (this) {
     is EmscriptValue.TextMatchValue -> DomainTypes.TEXT_MATCH.ref
     is EmscriptValue.MarkerValue -> DomainTypes.MARKER.ref
     is EmscriptValue.ChartSnapshotValue -> DomainTypes.CHART_SNAPSHOT.ref
+    is EmscriptValue.PointValue -> DomainTypes.POINT.ref
+    is EmscriptValue.PathSegmentValue -> DomainTypes.PATH_SEGMENT.ref
+    is EmscriptValue.PathValue -> DomainTypes.PATH.ref
+    is EmscriptValue.PointerPathValue -> DomainTypes.POINTER_PATH.ref
     EmscriptValue.NullValue -> error(
         "NULL_LITERAL_DECISION_REQUIRED: absent besitzt ohne erwarteten Typ keinen ableitbaren Basistyp",
     )
+}
+
+internal val PATH_VALUE_CONSTRUCTOR_NAMES = setOf(
+    "point",
+    "lineSegment",
+    "quadraticBezierSegment",
+    "cubicBezierSegment",
+    "path",
+    "pointerPath",
+)
+
+internal fun List<EmscriptValue>.toEmscriptListValue(): EmscriptValue.ListValue {
+    val types = map { value -> value.runtimeType() }.distinct()
+    return EmscriptValue.ListValue(types.singleOrNull() ?: CoreTypes.ANY.ref, this)
+}
+
+internal fun evaluatePathValueConstructor(
+    commandName: String,
+    arguments: List<EmscriptValue>,
+    argumentNames: List<String?>,
+): EmscriptValue {
+    val commandId = when (commandName.lowercase()) {
+        "point" -> "geometry.point"
+        "linesegment" -> "geometry.lineSegment"
+        "quadraticbeziersegment" -> "geometry.quadraticBezierSegment"
+        "cubicbeziersegment" -> "geometry.cubicBezierSegment"
+        "path" -> "geometry.path"
+        "pointerpath" -> "gesture.pointerPath"
+        else -> error("Unsupported path constructor '$commandName'")
+    }
+    return when (val result = PointerPathRuntimeConstructors.evaluate(
+        commandId,
+        arguments.map(EmscriptValue::toExecutionPathValue),
+        argumentNames,
+    )) {
+        is PointerPathConstructionResult.Failure -> error("${result.code}: ${result.message}")
+        is PointerPathConstructionResult.Success -> result.value.toEmscriptPathValue()
+    }
+}
+
+private fun EmscriptValue.toExecutionPathValue(): ExecutionValue = when (this) {
+    is EmscriptValue.NumberValue -> ExecutionValue.NumberValue(value)
+    is EmscriptValue.StringValue -> ExecutionValue.StringValue(value)
+    is EmscriptValue.BooleanValue -> ExecutionValue.BooleanValue(value)
+    is EmscriptValue.ListValue -> ExecutionValue.ListValue(values.map(EmscriptValue::toExecutionPathValue))
+    is EmscriptValue.PointValue -> ExecutionValue.PointValue(value)
+    is EmscriptValue.PathSegmentValue -> ExecutionValue.PathSegmentValue(value)
+    is EmscriptValue.PathValue -> ExecutionValue.PathValue(value)
+    is EmscriptValue.PointerPathValue -> ExecutionValue.PointerPathValue(value)
+    else -> error("Path constructor cannot consume $this")
+}
+
+private fun ExecutionValue.toEmscriptPathValue(): EmscriptValue = when (this) {
+    is ExecutionValue.PointValue -> EmscriptValue.PointValue(value)
+    is ExecutionValue.PathSegmentValue -> EmscriptValue.PathSegmentValue(value)
+    is ExecutionValue.PathValue -> EmscriptValue.PathValue(value)
+    is ExecutionValue.PointerPathValue -> EmscriptValue.PointerPathValue(value)
+    is ExecutionValue.ListValue -> values.map(ExecutionValue::toEmscriptPathValue).toEmscriptListValue()
+    else -> error("Path constructor returned unsupported value $this")
 }

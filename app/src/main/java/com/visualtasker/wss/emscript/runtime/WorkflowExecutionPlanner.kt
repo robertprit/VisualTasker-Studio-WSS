@@ -18,12 +18,18 @@ import de.visualtasker.workflow.semantics.CommandCatalogEntry
 import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
 import de.visualtasker.workflow.semantics.WorkflowElementTypes as BlockTypes
 import de.visualtasker.workflow.semantics.maximumArgumentCount
+import de.visualtasker.workflow.semantics.argumentAt
 import de.visualtasker.workflow.semantics.validation.Validator
 import de.visualtasker.workflow.semantics.workspaceInputNameAt
 
 class WorkflowExecutionPlanner(
     private val parser: EmscriptParserSlice = EmscriptParserSlice(),
 ) {
+    private data class CompiledConstructorArguments(
+        val expressions: List<ExecutionExpression>,
+        val names: List<String?>,
+    )
+
     fun plan(request: ExecutionRequest): ExecutionPlanResult {
         val validation = Validator.validate(request.document)
         if (!validation.isValid) {
@@ -166,7 +172,7 @@ class WorkflowExecutionPlanner(
         block: BlockNode,
         entry: CommandCatalogEntry,
     ): List<ExecutionExpression> {
-        if (entry.id == "action.swipe") {
+        if (entry.id == "action.swipe" && expressionInput(document, block, "points") == null) {
             return compileLegacySwipeArguments(block)
         }
         val maximum = entry.maximumArgumentCount() ?: block.valueInputs.size
@@ -178,7 +184,9 @@ class WorkflowExecutionPlanner(
                     ?: block.fields[inputName]?.let { field -> literal(block.id.value, field) }
                     ?: block.fields[argument.name]?.let { field -> literal(block.id.value, field) }
                     ?: specialFieldArgument(block, argument.name)
-                    ?: argument.defaultValue?.let { default -> defaultExpression(block.id.value, argument.type, default) }
+                    ?: argument.defaultValue
+                        ?.takeUnless { entry.id == "action.swipe" && argument.name == "repeat" }
+                        ?.let { default -> defaultExpression(block.id.value, argument.type, default) }
                 if (expression != null) add(expression)
             }
         }
@@ -252,6 +260,12 @@ class WorkflowExecutionPlanner(
         -> ExecutionExpression.Literal(block.id.value, ExecutionValue.BooleanValue(block.fieldBool("value")))
         BlockTypes.LITERAL_NUMBER -> ExecutionExpression.Literal(block.id.value, ExecutionValue.NumberValue(block.fieldNumber("value")))
         BlockTypes.LITERAL_STRING -> ExecutionExpression.Literal(block.id.value, ExecutionValue.StringValue(block.fieldText("value")))
+        BlockTypes.LITERAL_LIST -> ExecutionExpression.ListExpression(
+            entityId = block.id.value,
+            values = block.valueInputs
+                .sortedBy { input -> input.name.removePrefix("item").toIntOrNull() ?: Int.MAX_VALUE }
+                .mapNotNull { input -> expressionInput(document, block, input.name) },
+        )
         BlockTypes.VARIABLE_GET,
         BlockTypes.VARIABLE_VALUE,
         BlockTypes.VARIABLES_GET,
@@ -289,12 +303,22 @@ class WorkflowExecutionPlanner(
                 check(!entry.returnType.isNullOrBlank() && !entry.returnType.equals("Void", true)) {
                     "Void command '${entry.id}' cannot be used as an expression."
                 }
-                ExecutionExpression.ProviderCall(
-                    entityId = block.id.value,
-                    commandId = entry.id,
-                    capability = entry.executionCapability(),
-                    arguments = compileArguments(document, block, entry),
-                )
+                if (entry.id in PATH_VALUE_CONSTRUCTOR_IDS) {
+                    val arguments = compileConstructorArguments(document, block, entry)
+                    ExecutionExpression.ValueConstructor(
+                        entityId = block.id.value,
+                        commandId = entry.id,
+                        arguments = arguments.expressions,
+                        argumentNames = arguments.names,
+                    )
+                } else {
+                    ExecutionExpression.ProviderCall(
+                        entityId = block.id.value,
+                        commandId = entry.id,
+                        capability = entry.executionCapability(),
+                        arguments = compileArguments(document, block, entry),
+                    )
+                }
             }
             else -> error("Unsupported expression block '${block.type}' at ${block.id.value}.")
         }
@@ -312,6 +336,10 @@ class WorkflowExecutionPlanner(
         is EmscriptIrExpression.NumberLiteral -> ExecutionExpression.Literal(entityId, ExecutionValue.NumberValue(expression.value))
         is EmscriptIrExpression.StringLiteral -> ExecutionExpression.Literal(entityId, ExecutionValue.StringValue(expression.value))
         is EmscriptIrExpression.BooleanLiteral -> ExecutionExpression.Literal(entityId, ExecutionValue.BooleanValue(expression.value))
+        is EmscriptIrExpression.ListLiteral -> ExecutionExpression.ListExpression(
+            entityId = entityId,
+            values = expression.values.map { compileParsedExpression(entityId, it) },
+        )
         is EmscriptIrExpression.Binary -> ExecutionExpression.Binary(
             entityId = entityId,
             operator = expression.op.symbol(),
@@ -325,13 +353,45 @@ class WorkflowExecutionPlanner(
             check(!entry.returnType.isNullOrBlank() && !entry.returnType.equals("Void", true)) {
                 "Void command '${entry.id}' cannot be used as an expression."
             }
-            ExecutionExpression.ProviderCall(
-                entityId = entityId,
-                commandId = entry.id,
-                capability = entry.executionCapability(),
-                arguments = expression.arguments.map { compileParsedExpression(entityId, it) },
-            )
+            val arguments = expression.arguments.map { compileParsedExpression(entityId, it) }
+            if (entry.id in PATH_VALUE_CONSTRUCTOR_IDS) {
+                ExecutionExpression.ValueConstructor(
+                    entityId = entityId,
+                    commandId = entry.id,
+                    arguments = arguments,
+                    argumentNames = expression.argumentNames,
+                )
+            } else {
+                ExecutionExpression.ProviderCall(
+                    entityId = entityId,
+                    commandId = entry.id,
+                    capability = entry.executionCapability(),
+                    arguments = arguments,
+                )
+            }
         }
+    }
+
+    private fun compileConstructorArguments(
+        document: WorkspaceDocument,
+        block: BlockNode,
+        entry: CommandCatalogEntry,
+    ): CompiledConstructorArguments {
+        val maximum = entry.maximumArgumentCount() ?: block.valueInputs.size
+        val expressions = mutableListOf<ExecutionExpression>()
+        val names = mutableListOf<String?>()
+        var namedArgumentsStarted = false
+        for (index in 0 until maximum) {
+            val inputName = entry.workspaceInputNameAt(index) ?: break
+            val expression = expressionInput(document, block, inputName)
+            if (expression == null) {
+                namedArgumentsStarted = true
+                continue
+            }
+            expressions += expression
+            names += if (namedArgumentsStarted) requireNotNull(entry.argumentAt(index)).name else null
+        }
+        return CompiledConstructorArguments(expressions, names)
     }
 
     private fun literal(entityId: String, field: FieldValue): ExecutionExpression.Literal = ExecutionExpression.Literal(
@@ -354,6 +414,8 @@ class WorkflowExecutionPlanner(
                     add(value.capability)
                     value.arguments.forEach(::expression)
                 }
+                is ExecutionExpression.ListExpression -> value.values.forEach(::expression)
+                is ExecutionExpression.ValueConstructor -> value.arguments.forEach(::expression)
                 is ExecutionExpression.Literal,
                 is ExecutionExpression.Variable,
                 -> Unit
@@ -418,6 +480,17 @@ class WorkflowExecutionPlanner(
 
     private fun CommandCatalogEntry.executionCapability(): ExecutionCapability =
         ExecutionCapability(runtime?.liveCapabilityGate?.name ?: "command:$id")
+
+    private companion object {
+        val PATH_VALUE_CONSTRUCTOR_IDS = setOf(
+            "geometry.point",
+            "geometry.lineSegment",
+            "geometry.quadraticBezierSegment",
+            "geometry.cubicBezierSegment",
+            "geometry.path",
+            "gesture.pointerPath",
+        )
+    }
 
     private fun EmscriptBinaryOp.symbol(): String = when (this) {
         EmscriptBinaryOp.OR -> "||"

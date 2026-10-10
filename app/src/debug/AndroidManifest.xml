@@ -16,6 +16,7 @@
                 <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_SLOW" />
                 <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_FAST" />
                 <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_CANCELLATION" />
+                <action android:name="com.visualtasker.wss.debug.M5_5_PREPARE_VARIABLE_PATH" />
                 <action android:name="com.visualtasker.wss.debug.M5_2_RESTORE" />
             </intent-filter>
         </receiver>

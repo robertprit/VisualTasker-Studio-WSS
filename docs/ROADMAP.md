@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Roadmap
 
-Stand: 2026-10-10
+Stand: 2026-10-11
 
 Diese Datei ist die laufende Arbeitsliste fuer Ziele, TODOs, Abnahmen und offene Entscheidungen bis zur stabilen Version 1. Sie beschreibt den Projektstand aus Sicht der Workspace Shell App. Details zu Architekturentscheidungen stehen in `docs/adr/`.
 
@@ -51,6 +51,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   deterministischer Konkurrenzvertrag, Cancellation-/Callback-Haertung und sicherer Geraete-Gate.
 - [x] M5-4: typisierter PointerPath-Vertrag mit Linien, quadratischen/kubischen Bezier-Segmenten,
   Gesamt-/Segment-/Speed-Timing, Holds, Delay, Repeat, Roundtrip und nativer Android-Fortsetzung.
+- [x] M5-5: `Point`, `PathSegment`, `Path` und `PointerPath` als typisierte, variablengebundene
+  Runtime-Werte mit statischer Typpruefung, Three-Editor-Roundtrip und strukturiertem Trace.
 
 Verbindliche Nachweise:
 
@@ -67,6 +69,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_2_NATIVE_TOUCH_PROVIDER.md`
 - `docs/architecture/M5_3_NATIVE_GESTURE_PROVIDER.md`
 - `docs/architecture/M5_4_TYPED_POINTER_PATH.md`
+- `docs/architecture/M5_5_TYPED_PATH_BINDINGS.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
@@ -101,6 +104,12 @@ M5-4 schliesst das typisierte Single-Pointer-GAP. Zeitlose Path-Geometrie wird d
 lineare, quadratische und kubische Android-Stroke-Phasen abgesenkt; Gesamt-, explizite Segment- und
 Speed-Zeit bleiben unterscheidbar. Legacy-Swipes behalten ihren 250-ms-Vertrag. Multitouch,
 variable Path-Ausdruecke und semantische Vision-/A11y-Zielaufloesung bleiben spaetere Slices.
+
+M5-5 schliesst das variable Path-GAP aus M5-4. Die vorhandenen V1-Konstruktoren sind echte
+typisierte Reporter; LET/SET, dynamische Koordinaten und Timing-Werte laufen durch denselben
+ExecutionRunner und NativeGestureProvider. Text-, Block- und Flow-Projektion erhalten Identitaeten,
+Source-Anker, unbekannte Metadaten und die drei Timing-Modi. Multitouch und semantische
+Vision-/A11y-Zielaufloesung bleiben explizite Folgegrenzen.
 
 ### Stabil / Nutzbar
 

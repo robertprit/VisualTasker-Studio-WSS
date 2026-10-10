@@ -22,6 +22,7 @@ fun AndroidRuntimeSnapshot.toExecutionTrace(
                 ExecutionSourceRef(kind = ExecutionSourceKind.Block, id = entityId)
             },
             correlationId = event.entityId ?: event.relationId,
+            pathTrace = event.pathTrace ?: event.diagnostic?.pathTrace,
         )
     }
     val finalResult = result
@@ -66,7 +67,10 @@ private fun ExecutionValue.toEmscriptValue(): EmscriptValue = when (this) {
     is ExecutionValue.StringValue -> EmscriptValue.StringValue(value)
     is ExecutionValue.BooleanValue -> EmscriptValue.BooleanValue(value)
     is ExecutionValue.ListValue -> EmscriptValue.NullValue
-    is ExecutionValue.PointerPathValue -> EmscriptValue.NullValue
+    is ExecutionValue.PointValue -> EmscriptValue.PointValue(value)
+    is ExecutionValue.PathSegmentValue -> EmscriptValue.PathSegmentValue(value)
+    is ExecutionValue.PathValue -> EmscriptValue.PathValue(value)
+    is ExecutionValue.PointerPathValue -> EmscriptValue.PointerPathValue(value)
     ExecutionValue.NullValue,
     ExecutionValue.VoidValue,
     -> EmscriptValue.NullValue

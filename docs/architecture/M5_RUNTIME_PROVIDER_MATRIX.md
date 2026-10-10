@@ -13,7 +13,7 @@ Android service classes behind a provider.
 | Logging/feedback | Core catalog and existing BasicRun environment | Fake provider | Existing Android behavior, not migrated | None |
 | Coordinate click `clickPoint(x,y)` | `input.clickPoint`, capability `A11Y` | Fake provider | `NativeGestureProvider` live since M5-2 | None |
 | Swipe/polyline path | `action.swipe`, raw point list plus repeat, capability `A11Y` | Fake provider | `NativeGestureProvider` live in M5-3; absolute pixels, fixed legacy 250 ms duration | None |
-| Typed `Path` / timed `PointerPath` | V1 `path`/segment constructors transported by existing `action.swipe` | Fake/provider contract plus deterministic lowering | `NativeGestureProvider` live in M5-4; line, quadratic/cubic Bezier, duration/segment duration/speed, hold, delay and repeat | None |
+| Typed `Path` / timed `PointerPath` | V1 catalog-backed value constructors plus existing `action.swipe` | Typed value construction, variable binding and deterministic lowering | `NativeGestureProvider` live; M5-5 adds LET/SET, dynamic geometry/timing, editor roundtrip and structured trace | None |
 | MultiPath/multitouch | V1 contract | Not implemented | Out of M5-4 scope; nonzero pointer IDs fail explicitly | None |
 | Semantic `clickElement` | Planned A11y target plus optional relative bounds point | Not implemented | Contract only; requires A11y/worldview resolver | None |
 | Semantic `clickText` | Existing text command; target resolver not in M5 | Not implemented | Contract only; requires A11y text resolver | None |
@@ -58,5 +58,5 @@ legacy numeric list or frozen V1 Path/PointerPath constructors. Legacy input ret
 hold and delay remain PointerPath timing and never become Path geometry.
 
 The supported subset has a debug-only physical gate for straight, quadratic and cubic paths,
-slow/fast timing and cancellation. Multitouch, variable-bound Path expressions and semantic target
-resolution remain documented gaps rather than implicit fallbacks.
+slow/fast timing, cancellation and variable-bound PointerPath execution. Multitouch and semantic
+target resolution remain documented gaps rather than implicit fallbacks.

@@ -59,6 +59,7 @@ data class OperationResult(
     val causedBy: ExecutionOperationId? = null,
     val correlationId: String? = null,
     val evidenceRefs: List<String> = emptyList(),
+    val pathTrace: PointerPathTraceInfo? = null,
 )
 
 data class ExecutionTrace(

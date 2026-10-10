@@ -21,6 +21,7 @@ import de.visualtasker.workflow.core.withConnectionUpdated
 import de.visualtasker.emscript.contract.LanguageTypeCompatibility
 import de.visualtasker.workflow.semantics.WorkflowElementTypes as BlockTypes
 import de.visualtasker.workflow.semantics.CommandCatalogEntry
+import de.visualtasker.workflow.semantics.CommandArgument
 import de.visualtasker.workflow.semantics.CommandArgumentType
 import de.visualtasker.workflow.semantics.CommandCatalogKind
 import de.visualtasker.workflow.semantics.canBeUsedAsExpression
@@ -187,6 +188,12 @@ private class WorkspaceAssembler(
     private val projection: EmscriptProjectionAst,
     private val mode: WorkspaceAssemblyMode,
 ) {
+    private data class ResolvedExpressionArgument(
+        val inputName: String,
+        val definition: CommandArgument,
+        val expression: EmscriptIrExpression,
+    )
+
     private var document = WorkspaceDocument(id = workspaceId)
     private val factory = BlockFactory { definitionId, id ->
         semanticDefinition(definitionId)?.createNode(
@@ -282,7 +289,11 @@ private class WorkspaceAssembler(
                 setTextField(block, "command", entry.canonicalName)
                 setTextField(block, "args", statement.arguments)
                 if (statement.expressionArguments.isNotEmpty()) {
-                    connectExpressionArguments(block, statement.expressionArguments)
+                    connectExpressionArguments(
+                        block,
+                        statement.expressionArguments,
+                        statement.expressionArgumentNames,
+                    )
                 }
                 block
             }
@@ -516,6 +527,7 @@ private class WorkspaceAssembler(
             is EmscriptIrExpression.BooleanLiteral -> emitLiteralBoolean(expression.value)
             is EmscriptIrExpression.NumberLiteral -> emitLiteralNumber(expression.value)
             is EmscriptIrExpression.StringLiteral -> emitLiteralString(expression.value)
+            is EmscriptIrExpression.ListLiteral -> emitListLiteral(expression.values)
             is EmscriptIrExpression.FunctionCall -> emitFunctionExpression(expression)
             is EmscriptIrExpression.Binary -> emitBinaryExpression(expression)
         }
@@ -524,6 +536,7 @@ private class WorkspaceAssembler(
     private fun connectExpressionArguments(
         parent: BlockId,
         expressions: List<EmscriptIrExpression>,
+        names: List<String?> = emptyList(),
     ) {
         val block = document.blocks[parent] ?: error("Block ${parent.value} fehlt.")
         val definition = semanticDefinition(block.type)
@@ -538,40 +551,61 @@ private class WorkspaceAssembler(
                 "${definition.type} erwartet maximal $maximum Expressions, erhalten: ${expressions.size}."
             }
         }
-        ensureCommandExpressionInputs(parent, entry, expressions.size)
-        expressions.forEachIndexed { index, expression ->
-            val inputName = requireNotNull(entry.workspaceInputNameAt(index))
-            connectCommandExpressionInput(parent, inputName, emitExpression(expression))
+        val resolved = resolveExpressionArguments(entry, expressions, names)
+        ensureCommandExpressionInputs(parent, resolved)
+        resolved.forEach { argument ->
+            connectCommandExpressionInput(parent, argument.inputName, emitExpression(argument.expression))
         }
     }
 
     private fun ensureCommandExpressionInputs(
         parent: BlockId,
-        entry: CommandCatalogEntry,
-        count: Int,
+        arguments: List<ResolvedExpressionArgument>,
     ) {
         val block = document.blocks[parent] ?: error("Block ${parent.value} fehlt.")
         val existing = block.valueInputs.associateBy(ValueInput::name)
-        val requiredInputs = (0 until count).map { index ->
-            val argument = requireNotNull(entry.argumentAt(index))
-            val inputName = requireNotNull(entry.workspaceInputNameAt(index))
-            existing[inputName] ?: ValueInput(
-                name = inputName,
+        val requiredInputs = arguments.map { argument ->
+            existing[argument.inputName] ?: ValueInput(
+                name = argument.inputName,
                 connection = Connection(
-                    id = ConnectionId("${block.id.value}:$inputName"),
+                    id = ConnectionId("${block.id.value}:${argument.inputName}"),
                     owner = block.id,
                     kind = ConnectionKind.ValueInput,
-                    accepts = argument.acceptedTypes,
-                    slotName = inputName,
+                    accepts = argument.definition.acceptedTypes,
+                    slotName = argument.inputName,
                 ),
             )
         }
-        val retained = block.valueInputs.filterNot { input ->
-            (0 until count).any { index -> entry.workspaceInputNameAt(index) == input.name }
-        }
+        val replacedNames = requiredInputs.mapTo(hashSetOf(), ValueInput::name)
+        val retained = block.valueInputs.filterNot { it.name in replacedNames }
         document = document.copy(
             blocks = document.blocks + (parent to block.copy(valueInputs = retained + requiredInputs)),
         )
+    }
+
+    private fun resolveExpressionArguments(
+        entry: CommandCatalogEntry,
+        expressions: List<EmscriptIrExpression>,
+        names: List<String?>,
+    ): List<ResolvedExpressionArgument> {
+        var positionalIndex = 0
+        return expressions.mapIndexed { index, expression ->
+            val name = names.getOrNull(index)
+            val definitionIndex = if (name == null) {
+                positionalIndex++
+            } else {
+                entry.arguments.indexOfFirst { it.name.equals(name, ignoreCase = true) }
+                    .takeIf { it >= 0 }
+                    ?: error("Unbekanntes Argument '$name' fuer ${entry.canonicalName}.")
+            }
+            val definition = requireNotNull(entry.argumentAt(definitionIndex))
+            val inputName = if (name == null) {
+                requireNotNull(entry.workspaceInputNameAt(definitionIndex))
+            } else {
+                definition.name
+            }
+            ResolvedExpressionArgument(inputName, definition, expression)
+        }
     }
 
     /**
@@ -635,33 +669,11 @@ private class WorkspaceAssembler(
         }
         val blockType = entry.block?.blockType ?: error("Reporter '${expression.name}' hat keinen Block-Typ.")
         val block = instantiate(blockType)
-        entry.arguments
-            .filter { it.type != CommandArgumentType.STATEMENT_BODY }
-            .zip(expression.arguments)
-            .forEach { (argument, value) ->
-                val input = document.blocks[block]?.valueInputs?.firstOrNull { it.name == argument.name }
-                if (input != null) {
-                    connectCommandExpressionInput(block, argument.name, emitExpression(value))
-                    return@forEach
-                }
-                when (argument.type) {
-                    CommandArgumentType.NUMBER,
-                    CommandArgumentType.DURATION_MS,
-                    CommandArgumentType.FREQUENCY_HZ,
-                    CommandArgumentType.PERCENT,
-                    -> setNumberField(
-                        block,
-                        argument.name,
-                        expressionToNumber(value, fallback = argument.defaultValue?.toDoubleOrNull() ?: 0.0),
-                    )
-                    CommandArgumentType.BOOLEAN -> setBoolField(
-                        block,
-                        argument.name,
-                        expressionToBoolean(value, fallback = argument.defaultValue?.toBooleanStrictOrNull() ?: false),
-                    )
-                    else -> setTextField(block, argument.name, expressionToTextArgument(value))
-                }
-            }
+        val resolved = resolveExpressionArguments(entry, expression.arguments, expression.argumentNames)
+        ensureCommandExpressionInputs(block, resolved)
+        resolved.forEach { argument ->
+            connectCommandExpressionInput(block, argument.inputName, emitExpression(argument.expression))
+        }
         return block
     }
 
@@ -724,6 +736,38 @@ private class WorkspaceAssembler(
         return block
     }
 
+    private fun emitListLiteral(values: List<EmscriptIrExpression>): BlockId {
+        val block = instantiate(BlockTypes.LITERAL_LIST)
+        val node = document.blocks.getValue(block)
+        val inputs = values.mapIndexed { index, _ ->
+            val name = "item${index + 1}"
+            ValueInput(
+                name = name,
+                connection = Connection(
+                    id = ConnectionId("${block.value}:$name"),
+                    owner = block,
+                    kind = ConnectionKind.ValueInput,
+                    accepts = setOf("Any"),
+                    slotName = name,
+                ),
+            )
+        }
+        document = document.copy(blocks = document.blocks + (block to node.copy(valueInputs = inputs)))
+        values.forEachIndexed { index, value ->
+            connectCommandExpressionInput(block, "item${index + 1}", emitExpression(value))
+        }
+        val inferredType = inferExpressionType(EmscriptIrExpression.ListLiteral(values))
+        val connectedNode = document.blocks.getValue(block)
+        document = document.copy(
+            blocks = document.blocks + (
+                block to connectedNode.copy(
+                    output = connectedNode.output?.copy(provides = inferredType),
+                )
+            ),
+        )
+        return block
+    }
+
     private fun emitVariableReporter(variableId: String): BlockId {
         val reporterType = BlockTypes.VARIABLE_REPORTER_PREFIX + variableId
         val block = instantiate(reporterType)
@@ -764,6 +808,10 @@ private class WorkspaceAssembler(
             is EmscriptIrExpression.NumberLiteral -> "Number"
             is EmscriptIrExpression.BooleanLiteral -> "Boolean"
             is EmscriptIrExpression.StringLiteral -> "String"
+            is EmscriptIrExpression.ListLiteral -> {
+                val elementTypes = expression.values.map(::inferExpressionType).distinct()
+                "List<${elementTypes.singleOrNull() ?: "Any"}>"
+            }
             is EmscriptIrExpression.VariableRef -> document.variables.variables[expression.name]?.type ?: "Any"
             is EmscriptIrExpression.FunctionCall -> {
                 val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
@@ -823,8 +871,15 @@ private class WorkspaceAssembler(
             is EmscriptIrExpression.StringLiteral -> "\"${expression.value.escapeEmscriptString()}\""
             is EmscriptIrExpression.BooleanLiteral -> expression.value.toString()
             is EmscriptIrExpression.FunctionCall -> {
-                "${expression.name}(${expression.arguments.joinToString(",") { expressionToInlineText(it) }})"
+                val arguments = expression.arguments.mapIndexed { index, argument ->
+                    expression.argumentNames.getOrNull(index)
+                        ?.let { name -> "$name=${expressionToInlineText(argument)}" }
+                        ?: expressionToInlineText(argument)
+                }
+                "${expression.name}(${arguments.joinToString(",")})"
             }
+            is EmscriptIrExpression.ListLiteral ->
+                "[${expression.values.joinToString(",") { expressionToInlineText(it) }}]"
             is EmscriptIrExpression.Binary -> {
                 "(${expressionToInlineText(expression.left)} ${inlineOperator(expression.op)} ${expressionToInlineText(expression.right)})"
             }

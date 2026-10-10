@@ -380,6 +380,9 @@ private class WorkspaceInterpreter(
             is EmscriptIrExpression.NumberLiteral -> EmscriptValue.NumberValue(expression.value)
             is EmscriptIrExpression.StringLiteral -> EmscriptValue.StringValue(expression.value)
             is EmscriptIrExpression.BooleanLiteral -> EmscriptValue.BooleanValue(expression.value)
+            is EmscriptIrExpression.ListLiteral -> expression.values
+                .map(::evaluateParsedExpression)
+                .toEmscriptListValue()
             is EmscriptIrExpression.FunctionCall -> evaluateParsedFunctionCall(expression)
             is EmscriptIrExpression.Binary -> {
                 val left = evaluateParsedExpression(expression.left)
@@ -403,6 +406,13 @@ private class WorkspaceInterpreter(
         }
 
     private fun evaluateParsedFunctionCall(expression: EmscriptIrExpression.FunctionCall): EmscriptValue {
+        if (expression.name in PATH_VALUE_CONSTRUCTOR_NAMES) {
+            return evaluatePathValueConstructor(
+                expression.name,
+                expression.arguments.map(::evaluateParsedExpression),
+                expression.argumentNames,
+            )
+        }
         val entry = VisualTaskerCommandCatalog.findByCanonicalName(expression.name)
             ?: VisualTaskerCommandCatalog.findByAcceptedName(expression.name)
         val returnType = entry?.returnType
@@ -551,6 +561,10 @@ private fun EmscriptValue.asDoubleDryRun(context: String): Double =
         is EmscriptValue.BooleanValue -> if (value) 1.0 else 0.0
         is EmscriptValue.StringValue -> value.toDoubleOrNull() ?: error("$context erwartet Zahl, erhalten: \"$value\"")
         is EmscriptValue.ListValue,
+        is EmscriptValue.PointValue,
+        is EmscriptValue.PathSegmentValue,
+        is EmscriptValue.PathValue,
+        is EmscriptValue.PointerPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -568,6 +582,10 @@ private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
         is EmscriptValue.NumberValue -> value != 0.0
         is EmscriptValue.StringValue -> value.isNotEmpty()
         is EmscriptValue.ListValue,
+        is EmscriptValue.PointValue,
+        is EmscriptValue.PathSegmentValue,
+        is EmscriptValue.PathValue,
+        is EmscriptValue.PointerPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -590,6 +608,10 @@ private fun EmscriptValue.renderDryRun(): String =
         is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
         is EmscriptValue.MarkerValue -> "Marker($markerId)"
         is EmscriptValue.ChartSnapshotValue -> "ChartSnapshot($id,$kind)"
+        is EmscriptValue.PointValue -> "Point(${value.x},${value.y})"
+        is EmscriptValue.PathSegmentValue -> value::class.simpleName ?: "PathSegment"
+        is EmscriptValue.PathValue -> "Path(${value.segments.size} segments)"
+        is EmscriptValue.PointerPathValue -> "PointerPath(${value.geometry.segments.size} segments)"
         EmscriptValue.NullValue -> "null"
     }
 

@@ -509,7 +509,7 @@ class NativeTouchProviderTest {
             .filter { it.kind == ExecutionTraceEventKind.STEP_STARTED }
             .mapNotNull { it.entityId }
 
-        assertEquals(ExecutionState.COMPLETED, completed.state)
+        assertEquals(completed.result?.diagnostics.toString(), ExecutionState.COMPLETED, completed.state)
         assertEquals(expectedEntities, startedEntities)
         assertEquals(
             NativeGestureProvider.PROVIDER_ID,
@@ -528,9 +528,13 @@ class NativeTouchProviderTest {
         val fixture = runtimeFixture("swipe([120, 640, 320, 420, 520, 640], 1)")
 
         assertTrue(fixture.bridge.start(fixture.document, fixture.document.id))
-        assertEquals(ExecutionState.COMPLETED, fixture.awaitTerminal().state)
+        fixture.awaitTerminal().also { completed ->
+            assertEquals(completed.result?.diagnostics.toString(), ExecutionState.COMPLETED, completed.state)
+        }
         assertTrue(fixture.bridge.start(fixture.document, fixture.document.id))
-        assertEquals(ExecutionState.COMPLETED, fixture.awaitTerminal().state)
+        fixture.awaitTerminal().also { completed ->
+            assertEquals(completed.result?.diagnostics.toString(), ExecutionState.COMPLETED, completed.state)
+        }
 
         assertEquals(2, fixture.gateway.dispatchCount)
         assertTrue(fixture.gateway.paths.all { it.points.size == 3 })
@@ -549,12 +553,87 @@ class NativeTouchProviderTest {
         assertTrue(fixture.bridge.start(fixture.document, fixture.document.id))
         val completed = fixture.awaitTerminal()
 
-        assertEquals(ExecutionState.COMPLETED, completed.state)
+        assertEquals(completed.result?.diagnostics.toString(), ExecutionState.COMPLETED, completed.state)
         val path = fixture.gateway.paths.single()
         assertTrue(path.segments.single() is TouchGestureSegment.QuadraticBezier)
         assertEquals(800L, path.segments.single().durationMs)
         assertEquals(before, WorkflowSerializer.serialize(fixture.document))
         fixture.close()
+    }
+
+    @Test
+    fun variableBoundPointerPathUsesRuntimePointAndTimingValuesWithStructuredTrace() {
+        val fixture = runtimeFixture(
+            "LET startX:Number = 120\n" +
+                "LET duration:Number = 800\n" +
+                "LET startHold:Number = 20\n" +
+                "LET endHold:Number = 30\n" +
+                "LET delay:Number = 10\n" +
+                "LET repeats:Number = 2\n" +
+                "LET route:PointerPath = pointerPath(path([" +
+                "quadraticBezierSegment(point(startX,640),point(320,360),point(520,640))" +
+                "]),duration=duration,startHold=startHold,endHold=endHold,delay=delay,repeat=repeats)\n" +
+                "swipe(route)",
+        )
+
+        assertTrue(fixture.bridge.start(fixture.document, fixture.document.id))
+        val completed = fixture.awaitTerminal()
+
+        assertEquals(completed.result?.diagnostics.toString(), ExecutionState.COMPLETED, completed.state)
+        val route = completed.result?.variables?.get("route") as ExecutionValue.PointerPathValue
+        assertEquals(120.0, route.value.geometry.startPoint.x, 0.0)
+        assertEquals(800L, route.value.timing.durationMs)
+        val providerEvents = completed.trace.filter {
+            it.kind == ExecutionTraceEventKind.PROVIDER_STARTED ||
+                it.kind == ExecutionTraceEventKind.PROVIDER_FINISHED
+        }
+        assertEquals(listOf("RUNNING", "COMPLETED"), providerEvents.mapNotNull { it.pathTrace?.status })
+        assertEquals(listOf("QUADRATIC_BEZIER"), providerEvents.last().pathTrace?.segmentTypes)
+        assertEquals(1_720L, providerEvents.last().pathTrace?.plannedTotalDurationMs)
+        assertEquals(2, fixture.gateway.dispatchCount)
+        fixture.close()
+    }
+
+    @Test
+    fun setRebindsPointerPathWithoutMutatingPreviouslyDispatchedValue() {
+        val fixture = runtimeFixture(
+            "LET route:PointerPath = pointerPath(path(point(100,200),point(200,200)),duration=200)\n" +
+                "swipe(route)\n" +
+                "SET route = pointerPath(path([" +
+                "cubicBezierSegment(point(200,200),point(250,120),point(350,280),point(400,200))" +
+                "]),duration=400)\n" +
+                "swipe(route)",
+        )
+
+        assertTrue(fixture.bridge.start(fixture.document, fixture.document.id))
+        val completed = fixture.awaitTerminal()
+
+        assertEquals(completed.result?.diagnostics.toString(), ExecutionState.COMPLETED, completed.state)
+        assertEquals(2, fixture.gateway.dispatchCount)
+        assertTrue(fixture.gateway.paths.first().segments.single() is TouchGestureSegment.Line)
+        assertTrue(fixture.gateway.paths.last().segments.single() is TouchGestureSegment.CubicBezier)
+        assertEquals(200L, fixture.gateway.paths.first().segments.single().durationMs)
+        assertEquals(400L, fixture.gateway.paths.last().segments.single().durationMs)
+        fixture.close()
+    }
+
+    @Test
+    fun incompatibleVariableCannotBeUsedAsSwipePath() {
+        val imported = EmscriptWorkspaceImporter().import(
+            script = "LET route:Number = 1\nswipe(route)",
+            workspaceId = "m5-5-invalid-path-type",
+        )
+        assertTrue(imported.issues.joinToString { it.message }, imported.isSuccess)
+        val document = requireNotNull(imported.document)
+        val result = WorkflowExecutionPlanner().plan(
+            ExecutionRequest("invalid-path-type", document.id, document),
+        )
+
+        assertTrue(result is ExecutionPlanResult.Rejected)
+        assertTrue(
+            (result as ExecutionPlanResult.Rejected).diagnostics.joinToString { it.message }
+                .contains("expects", ignoreCase = true),
+        )
     }
 
     private fun runtimeFixture(script: String): RuntimeFixture {

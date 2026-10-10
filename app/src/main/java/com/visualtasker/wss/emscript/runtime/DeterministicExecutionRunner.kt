@@ -28,6 +28,7 @@ class DeterministicExecutionRunner(
             providerId: String? = null,
             value: ExecutionValue? = null,
             diagnostic: ExecutionDiagnostic? = null,
+            pathTrace: PointerPathTraceInfo? = null,
         ) {
             val traceEvent = ExecutionTraceEvent(
                 index = trace.size + 1,
@@ -39,6 +40,7 @@ class DeterministicExecutionRunner(
                 providerId = providerId,
                 value = value,
                 diagnostic = diagnostic,
+                pathTrace = pathTrace,
             )
             trace += traceEvent
             traceObserver(traceEvent)
@@ -89,7 +91,11 @@ class DeterministicExecutionRunner(
             result(request, lifecycle, context, diagnostics, trace)
         } catch (cancelled: ExecutionCancelled) {
             transition(ExecutionState.CANCELLED)
-            event(ExecutionTraceEventKind.CANCELLED, entityId = cancelled.entityId)
+            event(
+                ExecutionTraceEventKind.CANCELLED,
+                entityId = cancelled.entityId,
+                pathTrace = cancelled.pathTrace,
+            )
             result(request, lifecycle, context, diagnostics, trace)
         } catch (failed: ExecutionFailed) {
             diagnostics += failed.diagnostic
@@ -196,6 +202,29 @@ private class Machine(
         is ExecutionExpression.Literal -> expression.value
         is ExecutionExpression.Variable -> context.variables[expression.variableId] ?: ExecutionValue.NullValue
         is ExecutionExpression.Binary -> evaluateBinary(expression)
+        is ExecutionExpression.ListExpression -> ExecutionValue.ListValue(expression.values.map(::evaluate))
+        is ExecutionExpression.ValueConstructor -> {
+            val arguments = expression.arguments.map(::evaluate)
+            when (val result = PointerPathRuntimeConstructors.evaluate(
+                expression.commandId,
+                arguments,
+                expression.argumentNames,
+            )) {
+                is PointerPathConstructionResult.Success -> result.value
+                is PointerPathConstructionResult.Failure -> fail(
+                    result.code,
+                    result.message,
+                    expression.entityId,
+                    pathTrace = PointerPathTraceInfo(
+                        segmentCount = 0,
+                        segmentTypes = emptyList(),
+                        plannedTotalDurationMs = null,
+                        status = "FAILED",
+                        invalidSegmentIndex = result.invalidSegmentIndex,
+                    ),
+                )
+            }
+        }
         is ExecutionExpression.ProviderCall -> invoke(
             expression.entityId,
             expression.commandId,
@@ -238,11 +267,13 @@ private class Machine(
             entityId = entityId,
         )
         val values = arguments.map(::evaluate)
+        val pointerPath = values.gesturePointerPathOrNull(commandId)
         emit(
             kind = ExecutionTraceEventKind.PROVIDER_STARTED,
             entityId = entityId,
             capability = capability,
             providerId = provider.id,
+            pathTrace = pointerPath?.traceInfo(status = "RUNNING"),
         )
         return when (val result = provider.invoke(
             ProviderInvocation(
@@ -262,10 +293,22 @@ private class Machine(
                     capability = capability,
                     providerId = provider.id,
                     value = value,
+                    pathTrace = pointerPath?.traceInfo(status = "COMPLETED"),
                 )
             }
-            is ProviderResult.Failure -> fail(result.code, result.message, entityId)
-            is ProviderResult.Cancelled -> throw ExecutionCancelled(entityId)
+            is ProviderResult.Failure -> fail(
+                result.code,
+                result.message,
+                entityId,
+                pathTrace = pointerPath?.traceInfo(
+                    status = "FAILED",
+                    invalidSegmentIndex = result.message.segmentIndexOrNull(),
+                ),
+            )
+            is ProviderResult.Cancelled -> throw ExecutionCancelled(
+                entityId,
+                pointerPath?.traceInfo(status = "CANCELLED", cancellationPosition = "provider-dispatch"),
+            )
         }
     }
 
@@ -284,6 +327,7 @@ private class Machine(
         capability: ExecutionCapability? = null,
         providerId: String? = null,
         value: ExecutionValue? = null,
+        pathTrace: PointerPathTraceInfo? = null,
     ) {
         val traceEvent = ExecutionTraceEvent(
             index = trace.size + 1,
@@ -294,16 +338,24 @@ private class Machine(
             capability = capability,
             providerId = providerId,
             value = value,
+            pathTrace = pathTrace,
         )
         trace += traceEvent
         traceObserver(traceEvent)
     }
 
-    private fun fail(code: String, message: String, entityId: String): Nothing =
-        throw ExecutionFailed(ExecutionDiagnostic(code, message, entityId))
+    private fun fail(
+        code: String,
+        message: String,
+        entityId: String,
+        pathTrace: PointerPathTraceInfo? = null,
+    ): Nothing = throw ExecutionFailed(ExecutionDiagnostic(code, message, entityId, pathTrace))
 }
 
-private class ExecutionCancelled(val entityId: String) : RuntimeException()
+private class ExecutionCancelled(
+    val entityId: String,
+    val pathTrace: PointerPathTraceInfo? = null,
+) : RuntimeException()
 private class ExecutionFailed(val diagnostic: ExecutionDiagnostic) : RuntimeException(diagnostic.message)
 
 private fun ExecutionValue.asBoolean(entityId: String): Boolean = when (this) {
@@ -319,3 +371,6 @@ private fun ExecutionValue.asNumber(entityId: String): Double = when (this) {
         ExecutionDiagnostic("NUMBER_REQUIRED", "Number value required at $entityId, received $this.", entityId),
     )
 }
+
+private fun String.segmentIndexOrNull(): Int? =
+    Regex("[Ss]egment\\s+(\\d+)").find(this)?.groupValues?.getOrNull(1)?.toIntOrNull()

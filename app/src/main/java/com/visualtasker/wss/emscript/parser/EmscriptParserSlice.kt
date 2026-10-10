@@ -81,6 +81,7 @@ sealed interface EmscriptIrStatement {
         val command: String,
         val arguments: String,
         val expressionArguments: List<EmscriptIrExpression> = emptyList(),
+        val expressionArgumentNames: List<String?> = emptyList(),
         val source: EmscriptSourceSpan? = null,
     ) : EmscriptIrStatement
 
@@ -173,7 +174,10 @@ sealed interface EmscriptIrExpression {
     data class FunctionCall(
         val name: String,
         val arguments: List<EmscriptIrExpression>,
+        val argumentNames: List<String?> = emptyList(),
     ) : EmscriptIrExpression
+
+    data class ListLiteral(val values: List<EmscriptIrExpression>) : EmscriptIrExpression
 
     data class Binary(
         val left: EmscriptIrExpression,
@@ -901,13 +905,19 @@ private class Parser(
                             validatePrimitiveTypes = expressionTransport == null,
                         )
                     }
-                    val expressionArguments = expressionTransport
-                        ?.let { args.arguments.map { raw -> parseStandaloneExpression(raw, command) } }
-                        .orEmpty()
+                    val parsedArguments = when {
+                        catalogEntry.id == "action.swipe" &&
+                            args.arguments.all { it.isNotBlank() && it.trim() != "{}" } ->
+                            args.arguments.map { raw -> parseStandaloneCallArgument(raw, command) }
+                        expressionTransport != null ->
+                            args.arguments.map { raw -> parseStandaloneCallArgument(raw, command) }
+                        else -> emptyList()
+                    }
                     return EmscriptIrStatement.CommandCall(
                         command = catalogEntry.canonicalName,
                         arguments = args.rendered,
-                        expressionArguments = expressionArguments,
+                        expressionArguments = parsedArguments.map(EmscriptCallArgument::value),
+                        expressionArgumentNames = parsedArguments.argumentNamesOrEmpty(),
                     )
                 }
                 throw ParseException(command.line, command.column, "Unbekanntes Kommando '${command.lexeme}'.")
@@ -1003,6 +1013,13 @@ private class Parser(
             val detail = (error as? ParseException)?.message ?: error.message ?: "ungueltiger Ausdruck"
             throw ParseException(command.line, command.column, "${command.lexeme}: $detail")
         }
+
+    private fun parseStandaloneCallArgument(raw: String, command: Token): EmscriptCallArgument {
+        val match = namedRawArgumentRegex.matchEntire(raw.trim())
+        val name = match?.groupValues?.get(1)
+        val valueSource = match?.groupValues?.get(2) ?: raw
+        return EmscriptCallArgument(name, parseStandaloneExpression(valueSource, command))
+    }
 
     private fun parseStandaloneExpression(): EmscriptIrExpression {
         val expression = parseExpression()
@@ -1202,6 +1219,16 @@ private class Parser(
             match(TokenType.STRING) -> EmscriptIrExpression.StringLiteral(previous().lexeme)
             match(TokenType.TRUE) -> EmscriptIrExpression.BooleanLiteral(true)
             match(TokenType.FALSE) -> EmscriptIrExpression.BooleanLiteral(false)
+            match(TokenType.LBRACKET) -> {
+                val values = mutableListOf<EmscriptIrExpression>()
+                if (!check(TokenType.RBRACKET)) {
+                    do {
+                        values += parseExpression()
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.RBRACKET, "Schließende Klammer ']' erwartet.")
+                EmscriptIrExpression.ListLiteral(values)
+            }
             match(TokenType.IDENT) -> {
                 val identifier = parseQualifiedIdentifier(previous())
                 if (identifier.lexeme.equals("null", ignoreCase = true)) {
@@ -1232,14 +1259,12 @@ private class Parser(
     private fun parseExpressionFunction(function: Token): EmscriptIrExpression.FunctionCall {
         if (function.lexeme.equals("region", ignoreCase = true) || function.lexeme.equals("bbox", ignoreCase = true)) {
             consume(TokenType.LPAREN, "'(' nach ${function.lexeme} erwartet.")
-            val arguments = mutableListOf<EmscriptIrExpression>()
-            if (!check(TokenType.RPAREN)) {
-                do {
-                    arguments += parseExpression()
-                } while (match(TokenType.COMMA))
-            }
+            val parsedArguments = parseCallArguments(function)
+            val arguments = parsedArguments.map(EmscriptCallArgument::value)
             consume(TokenType.RPAREN, "')' nach ${function.lexeme}-Parametern erwartet.")
-            if (arguments.size != 4 || arguments.any { it !is EmscriptIrExpression.NumberLiteral }) {
+            if (parsedArguments.any { it.name != null } ||
+                arguments.size != 4 || arguments.any { it !is EmscriptIrExpression.NumberLiteral }
+            ) {
                 throw ParseException(function.line, function.column, "region erwartet vier Number-Literale.")
             }
             return EmscriptIrExpression.FunctionCall("region", arguments)
@@ -1250,21 +1275,49 @@ private class Parser(
             throw ParseException(function.line, function.column, "'${function.lexeme}' ist kein Ausdruck.")
         }
         consume(TokenType.LPAREN, "'(' nach ${function.lexeme} erwartet.")
-        val arguments = mutableListOf<EmscriptIrExpression>()
+        val parsedArguments = parseCallArguments(function)
+        consume(TokenType.RPAREN, "')' nach ${function.lexeme}-Parametern erwartet.")
+        validateExpressionFunctionArguments(function, entry, parsedArguments)
+        return EmscriptIrExpression.FunctionCall(
+            name = entry.canonicalName,
+            arguments = parsedArguments.map(EmscriptCallArgument::value),
+            argumentNames = parsedArguments.argumentNamesOrEmpty(),
+        )
+    }
+
+    private fun parseCallArguments(function: Token): List<EmscriptCallArgument> {
+        val arguments = mutableListOf<EmscriptCallArgument>()
+        var namedArgumentsStarted = false
         if (!check(TokenType.RPAREN)) {
             do {
-                arguments += parseExpression()
+                val name = if (
+                    (check(TokenType.IDENT) || peek().type in identifierPartKeywords) &&
+                    tokens.getOrNull(current + 1)?.type == TokenType.ASSIGN
+                ) {
+                    namedArgumentsStarted = true
+                    advance().lexeme.also {
+                        consume(TokenType.ASSIGN, "'=' nach benanntem Argument erwartet.")
+                    }
+                } else {
+                    if (namedArgumentsStarted) {
+                        throw ParseException(
+                            function.line,
+                            function.column,
+                            "Positionale Argumente müssen vor benannten Argumenten stehen.",
+                        )
+                    }
+                    null
+                }
+                arguments += EmscriptCallArgument(name, parseExpression())
             } while (match(TokenType.COMMA))
         }
-        consume(TokenType.RPAREN, "')' nach ${function.lexeme}-Parametern erwartet.")
-        validateExpressionFunctionArguments(function, entry, arguments)
-        return EmscriptIrExpression.FunctionCall(entry.canonicalName, arguments)
+        return arguments
     }
 
     private fun validateExpressionFunctionArguments(
         function: Token,
         entry: CommandCatalogEntry,
-        arguments: List<EmscriptIrExpression>,
+        arguments: List<EmscriptCallArgument>,
     ) {
         val required = entry.minimumArgumentCount()
         if (arguments.size < required) {
@@ -1274,9 +1327,28 @@ private class Parser(
         if (maximum != null && arguments.size > maximum) {
             throw ParseException(function.line, function.column, "${entry.canonicalName} unterstützt maximal $maximum Parameter.")
         }
+        val seenNames = linkedSetOf<String>()
+        var positionalIndex = 0
         arguments.forEachIndexed { index, argument ->
-            val spec = requireNotNull(entry.argumentAt(index))
-            if (!argument.matchesArgumentType(spec.type)) {
+            val spec = if (argument.name == null) {
+                entry.argumentAt(positionalIndex++)
+            } else {
+                entry.arguments.firstOrNull { it.name.equals(argument.name, ignoreCase = true) }
+                    ?.also {
+                        if (!seenNames.add(it.name.lowercase())) {
+                            throw ParseException(
+                                function.line,
+                                function.column,
+                                "Argument '${argument.name}' wurde doppelt angegeben.",
+                            )
+                        }
+                    }
+            } ?: throw ParseException(
+                function.line,
+                function.column,
+                "Unbekanntes Argument '${argument.name ?: index + 1}' für ${entry.canonicalName}.",
+            )
+            if (!argument.value.matchesArgumentType(spec.type)) {
                 throw ParseException(
                     function.line,
                     function.column,
@@ -1284,6 +1356,19 @@ private class Parser(
                 )
             }
         }
+        val suppliedNames = arguments.mapNotNull { it.name?.lowercase() }.toSet()
+        val suppliedPositionally = arguments.takeWhile { it.name == null }.size
+        entry.arguments
+            .filter { it.type != CommandArgumentType.STATEMENT_BODY }
+            .forEachIndexed { index, spec ->
+                if (spec.required && index >= suppliedPositionally && spec.name.lowercase() !in suppliedNames) {
+                    throw ParseException(
+                        function.line,
+                        function.column,
+                        "${entry.canonicalName} benötigt Argument '${spec.name}'.",
+                    )
+                }
+            }
     }
 
     private fun skipSeparators() {
@@ -1414,7 +1499,19 @@ private data class RawFunctionArguments(
     val arguments: List<String>,
 )
 
+private data class EmscriptCallArgument(
+    val name: String?,
+    val value: EmscriptIrExpression,
+)
+
+private fun List<EmscriptCallArgument>.argumentNamesOrEmpty(): List<String?> =
+    if (any { it.name != null }) map(EmscriptCallArgument::name) else emptyList()
+
 private val numberArgumentRegex = Regex("-?\\d+(?:\\.\\d+)?")
+private val namedRawArgumentRegex = Regex(
+    "^([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.+)$",
+    RegexOption.DOT_MATCHES_ALL,
+)
 
 private fun String.escapeEmscriptString(): String =
     replace("\\", "\\\\")

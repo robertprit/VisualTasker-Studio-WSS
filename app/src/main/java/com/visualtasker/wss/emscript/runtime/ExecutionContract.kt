@@ -99,6 +99,18 @@ sealed interface ExecutionExpression {
         val right: ExecutionExpression,
     ) : ExecutionExpression
 
+    data class ListExpression(
+        override val entityId: String,
+        val values: List<ExecutionExpression>,
+    ) : ExecutionExpression
+
+    data class ValueConstructor(
+        override val entityId: String,
+        val commandId: String,
+        val arguments: List<ExecutionExpression>,
+        val argumentNames: List<String?> = emptyList(),
+    ) : ExecutionExpression
+
     data class ProviderCall(
         override val entityId: String,
         val commandId: String,
@@ -112,6 +124,9 @@ sealed interface ExecutionValue {
     data class StringValue(val value: String) : ExecutionValue
     data class BooleanValue(val value: Boolean) : ExecutionValue
     data class ListValue(val values: List<ExecutionValue>) : ExecutionValue
+    data class PointValue(val value: PointerPathPoint) : ExecutionValue
+    data class PathSegmentValue(val value: PointerPathSegment) : ExecutionValue
+    data class PathValue(val value: PointerPathGeometry) : ExecutionValue
     data class PointerPathValue(val value: PointerPath) : ExecutionValue
     data object NullValue : ExecutionValue
     data object VoidValue : ExecutionValue
@@ -124,6 +139,16 @@ data class ExecutionDiagnostic(
     val code: String,
     val message: String,
     val entityId: String? = null,
+    val pathTrace: PointerPathTraceInfo? = null,
+)
+
+data class PointerPathTraceInfo(
+    val segmentCount: Int,
+    val segmentTypes: List<String>,
+    val plannedTotalDurationMs: Long?,
+    val status: String,
+    val invalidSegmentIndex: Int? = null,
+    val cancellationPosition: String? = null,
 )
 
 enum class ExecutionTraceEventKind {
@@ -149,6 +174,7 @@ data class ExecutionTraceEvent(
     val providerId: String? = null,
     val value: ExecutionValue? = null,
     val diagnostic: ExecutionDiagnostic? = null,
+    val pathTrace: PointerPathTraceInfo? = null,
 )
 
 data class ExecutionResult(

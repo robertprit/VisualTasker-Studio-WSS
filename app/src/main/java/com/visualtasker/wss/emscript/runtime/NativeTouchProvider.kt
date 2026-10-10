@@ -432,7 +432,35 @@ class NativeGestureProvider(
             )
         }
         is GestureRequest.Swipe -> {
-            val typed = (arguments.singleOrNull() as? ExecutionValue.PointerPathValue)?.value
+            val typed = when (val first = arguments.firstOrNull()) {
+                is ExecutionValue.PointerPathValue -> {
+                    if (arguments.size != 1) return validationFailure(
+                        "TOUCH_REPEAT_DUPLICATE",
+                        "PointerPath already owns repeat timing; swipe must not add another repeat value.",
+                    )
+                    first.value
+                }
+                is ExecutionValue.PathValue -> {
+                    if (arguments.size !in 1..2) return validationFailure(
+                        "TOUCH_PATH_INVALID",
+                        "swipe(Path, repeat?) accepts one Path and an optional repeat value.",
+                    )
+                    val repeat = arguments.getOrNull(1)?.positiveIntegerOrNull()
+                        ?: if (arguments.size == 1) 1 else return validationFailure(
+                            "TOUCH_REPEAT_INVALID",
+                            "swipe Path repeat must be a positive whole number.",
+                        )
+                    PointerPath(
+                        pointerId = 0,
+                        geometry = first.value,
+                        timing = PointerPathTiming(
+                            durationMs = PointerPathSourceCodec.DEFAULT_DURATION_MS,
+                            repeat = repeat,
+                        ),
+                    )
+                }
+                else -> null
+            }
             if (typed != null) {
                 return when (val resolved = PointerPathLowerer.resolve(typed)) {
                     is PointerPathResolutionResult.Failure -> validationFailure(resolved.code, resolved.message)

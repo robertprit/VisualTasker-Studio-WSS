@@ -8,6 +8,7 @@ import de.visualtasker.workflow.serialization.WorkflowSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.system.measureNanoTime
 
 class PointerPathContractTest {
     @Test
@@ -224,6 +225,36 @@ class PointerPathContractTest {
             resolve(success(extractSwipeArguments(generated)).pointerPath),
             resolve(success(extractSwipeArguments(EmscriptGenerator().generate(secondDocument))).pointerPath),
         )
+    }
+
+    @Test
+    fun `long PointerPath lowering is deterministic and bounded`() {
+        val points = (0..320).map { index -> point(index.toDouble(), (index % 2).toDouble()) }
+        val pointerPath = PointerPath(
+            pointerId = 0,
+            geometry = PointerPathGeometry(
+                startPoint = points.first(),
+                segments = points.zipWithNext { from, to -> PointerPathSegment.Line(from, to) },
+            ),
+            timing = PointerPathTiming(durationMs = 3_200L),
+        )
+        val baseline = resolve(pointerPath)
+        val androidStrokePhases = baseline.segments.sumOf { segment ->
+            ((segment.durationMs + 199L) / 200L).toInt()
+        }
+        val elapsedNanos = measureNanoTime {
+            repeat(100) { assertEquals(baseline, resolve(pointerPath)) }
+        }
+        println(
+            "M5_5_POINTER_PATH_LOWERING segments=320 runs=100 " +
+                "providerDispatches=1 androidStrokePhases=$androidStrokePhases " +
+                "expectedAndroidCallbacks=$androidStrokePhases elapsedMs=${elapsedNanos / 1_000_000.0}",
+        )
+
+        assertEquals(320, baseline.segments.size)
+        assertEquals(320, androidStrokePhases)
+        assertEquals(3_200L, baseline.segments.sumOf { it.durationMs })
+        assertTrue("100 lowerings took ${elapsedNanos / 1_000_000.0} ms", elapsedNanos < 2_000_000_000L)
     }
 
     private fun success(arguments: String): PointerPathParseResult.Success {

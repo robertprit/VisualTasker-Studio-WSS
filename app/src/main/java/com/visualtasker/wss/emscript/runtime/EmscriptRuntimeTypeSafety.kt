@@ -35,6 +35,11 @@ internal object EmscriptRuntimeTypeSafety {
             CoreTypes.NUMBER.ref -> EmscriptValue.NumberValue(0.0)
             CoreTypes.BOOL.ref -> EmscriptValue.BooleanValue(false)
             is LanguageTypeRef.ListOf -> EmscriptValue.ListValue(expected.elementType, emptyList())
+            DomainTypes.POINT.ref,
+            DomainTypes.PATH_SEGMENT.ref,
+            DomainTypes.PATH.ref,
+            DomainTypes.POINTER_PATH.ref,
+            -> error("Domain value '$expectedType' requires an explicit constructor.")
             else -> error("Unsupported expression return type '$expectedType'")
         }
     }
@@ -49,6 +54,10 @@ internal object EmscriptRuntimeTypeSafety {
         is EmscriptValue.TextMatchValue -> DomainTypes.TEXT_MATCH.ref
         is EmscriptValue.MarkerValue -> DomainTypes.MARKER.ref
         is EmscriptValue.ChartSnapshotValue -> DomainTypes.CHART_SNAPSHOT.ref
+        is EmscriptValue.PointValue -> DomainTypes.POINT.ref
+        is EmscriptValue.PathSegmentValue -> DomainTypes.PATH_SEGMENT.ref
+        is EmscriptValue.PathValue -> DomainTypes.PATH.ref
+        is EmscriptValue.PointerPathValue -> DomainTypes.POINTER_PATH.ref
         EmscriptValue.NullValue -> error("Absent values require an expected nullable type")
     }
 }

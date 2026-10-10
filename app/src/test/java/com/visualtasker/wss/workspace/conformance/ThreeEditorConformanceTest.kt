@@ -77,6 +77,86 @@ class ThreeEditorConformanceTest {
     }
 
     @Test
+    fun typedPointerPathSurvivesTextBlockFlowPersistenceAndSourceApply() {
+        val result = assertSupportedRoundtrip(
+            """
+                LET duration:Number = 900
+                LET route:PointerPath = pointerPath(path([lineSegment(point(100,200),point(200,200)),quadraticBezierSegment(point(200,200),point(250,260),point(300,200)),cubicBezierSegment(point(300,200),point(340,140),point(380,260),point(420,200))]),duration=duration,startHold=20,endHold=30,delay=10,repeat=2)
+                swipe(route)
+            """.trimIndent(),
+            "typed-pointer-path",
+        )
+
+        assertTrue(result.generatedSource, result.generatedSource.contains("let route:PointerPath"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("quadraticBezierSegment"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("cubicBezierSegment"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("duration=duration"))
+        assertTrue(result.flowNodeIds.containsAll(result.blockProjection.keys.map { "block:$it" }))
+    }
+
+    @Test
+    fun pointerPathTimingModesSurviveThreeEditorRoundtrip() {
+        val result = assertSupportedRoundtrip(
+            """
+                LET timed:PointerPath = pointerPath(path([lineSegment(point(10,20),point(30,40)),lineSegment(point(30,40),point(50,60))]),segmentDurations=[100,250])
+                LET paced:PointerPath = pointerPath(path(point(100,200),point(400,600)),speed=250)
+                swipe(timed)
+                swipe(paced)
+            """.trimIndent(),
+            "typed-pointer-path-timing-modes",
+        )
+
+        assertTrue(result.generatedSource, result.generatedSource.contains("segmentDurations=[100, 250]"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("speed=250"))
+        assertTrue(result.flowNodeIds.containsAll(result.blockProjection.keys.map { "block:$it" }))
+    }
+
+    @Test
+    fun pathTimingEditsConvergeThroughBlockAndFlowWithUndoRedoAndStableIdentity() {
+        val imported = (ThreeEditorConformanceHarness.importSource(
+            "LET route:PointerPath = pointerPath(path(point(100,200),point(300,400)),duration=600)\nswipe(route)",
+            "typed-pointer-path-mutation",
+        ) as EmscriptApplyGuardResult.Success).importedDocument
+        val pointerPath = imported.blocks.values.single {
+            it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}gesture.pointerPath"
+        }
+        val duration = imported.blocks.values.single { it.fields["value"] == FieldValue.Number(600.0) }
+        val decorated = imported.copy(
+            blocks = imported.blocks + (
+                pointerPath.id to pointerPath.copy(metadata = pointerPath.metadata + ("unknown.owner" to "m5-5"))
+            ),
+        )
+        val identityBefore = requireNotNull(decorated.canonical).entities.map { it.ref.id }.toSet()
+
+        withBlockEditor(decorated) { controller ->
+            controller.onAction(WorkspaceAction.UpdateField(duration.id, "value", FieldValue.Number(700.0)))
+            val blockChanged = controller.document
+            assertTrue(ThreeEditorConformanceHarness.project(blockChanged).generatedSource.contains("duration=700"))
+            assertTrue(controller.undo())
+            assertTrue(ThreeEditorConformanceHarness.project(controller.document).generatedSource.contains("duration=600"))
+            assertTrue(controller.redo())
+            assertTrue(ThreeEditorConformanceHarness.project(controller.document).generatedSource.contains("duration=700"))
+
+            val flowChanged = applyFlowchartWorkspaceMutation(
+                controller.document,
+                FlowchartWorkspaceMutation.UpdateNodeField(
+                    nodeId = de.visualtasker.flowchart.domain.FlowNodeId("block:${duration.id.value}"),
+                    fieldKey = "value",
+                    rawValue = "800",
+                ),
+            )
+            val projection = ThreeEditorConformanceHarness.project(flowChanged.document)
+            assertTrue(flowChanged.applied)
+            assertTrue(projection.generatedSource.contains("duration=800"))
+            assertEquals("m5-5", flowChanged.document.blocks.getValue(pointerPath.id).metadata["unknown.owner"])
+            assertEquals(identityBefore, requireNotNull(flowChanged.document.canonical).entities.map { it.ref.id }.toSet())
+            assertEquals(1, flowChanged.document.blocks.values.count {
+                it.type == "${BlockTypes.EMSCRIPT_COMMAND_PREFIX}gesture.pointerPath"
+            })
+        }
+    }
+
+    @Test
     fun metadataAndProjectionLayoutsSurviveSourceAndPersistenceRoundtrip() {
         val result = ThreeEditorConformanceHarness.roundtrip(
             source = "wait(100)",

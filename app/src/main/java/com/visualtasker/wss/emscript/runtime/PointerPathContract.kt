@@ -261,6 +261,243 @@ object PointerPathLowerer {
     private const val POSITION_EPSILON = 0.0001
 }
 
+sealed interface PointerPathConstructionResult {
+    data class Success(val value: ExecutionValue) : PointerPathConstructionResult
+    data class Failure(
+        val code: String,
+        val message: String,
+        val invalidSegmentIndex: Int? = null,
+    ) : PointerPathConstructionResult
+}
+
+object PointerPathRuntimeConstructors {
+    fun evaluate(
+        commandId: String,
+        arguments: List<ExecutionValue>,
+        argumentNames: List<String?> = emptyList(),
+    ): PointerPathConstructionResult = try {
+        val value = when (commandId) {
+            "geometry.point" -> {
+                val bound = bind(arguments, argumentNames, listOf("x", "y"))
+                ExecutionValue.PointValue(PointerPathPoint(bound.number("x"), bound.number("y")))
+            }
+            "geometry.lineSegment" -> {
+                val bound = bind(arguments, argumentNames, listOf("from", "to"))
+                ExecutionValue.PathSegmentValue(PointerPathSegment.Line(bound.point("from"), bound.point("to")))
+            }
+            "geometry.quadraticBezierSegment" -> {
+                val bound = bind(arguments, argumentNames, listOf("from", "control", "to"))
+                ExecutionValue.PathSegmentValue(
+                    PointerPathSegment.QuadraticBezier(
+                        bound.point("from"),
+                        bound.point("control"),
+                        bound.point("to"),
+                    ),
+                )
+            }
+            "geometry.cubicBezierSegment" -> {
+                val bound = bind(arguments, argumentNames, listOf("from", "control1", "control2", "to"))
+                ExecutionValue.PathSegmentValue(
+                    PointerPathSegment.CubicBezier(
+                        bound.point("from"),
+                        bound.point("control1"),
+                        bound.point("control2"),
+                        bound.point("to"),
+                    ),
+                )
+            }
+            "geometry.path" -> ExecutionValue.PathValue(path(arguments))
+            "gesture.pointerPath" -> pointerPath(arguments, argumentNames)
+            else -> return failure("PATH_CONSTRUCTOR_UNSUPPORTED", "Unsupported path constructor '$commandId'.")
+        }
+        PointerPathConstructionResult.Success(value)
+    } catch (error: PathBindingException) {
+        failure(error.code, error.message ?: error.code, error.invalidSegmentIndex)
+    } catch (error: IllegalArgumentException) {
+        failure("PATH_VALUE_INVALID", error.message ?: "Invalid path value.")
+    }
+
+    private fun path(arguments: List<ExecutionValue>): PointerPathGeometry {
+        val values = arguments.singleOrNull()
+            ?.let { (it as? ExecutionValue.ListValue)?.values }
+            ?: arguments
+        if (values.all { it is ExecutionValue.PointValue }) {
+            val points = values.map { (it as ExecutionValue.PointValue).value }
+            if (points.size < 2) throw PathBindingException("PATH_POINTS_REQUIRED", "Path requires at least two Point values.")
+            return PointerPathGeometry(
+                startPoint = points.first(),
+                segments = points.zipWithNext { from, to -> PointerPathSegment.Line(from, to) },
+            )
+        }
+        if (values.all { it is ExecutionValue.PathSegmentValue }) {
+            val segments = values.map { (it as ExecutionValue.PathSegmentValue).value }
+            if (segments.isEmpty()) throw PathBindingException("PATH_SEGMENTS_REQUIRED", "Path requires at least one segment.")
+            return PointerPathGeometry(segments.first().from, segments)
+        }
+        throw PathBindingException(
+            "PATH_ELEMENT_TYPE_INVALID",
+            "Path values must contain only Point values or only PathSegment values.",
+        )
+    }
+
+    private fun pointerPath(
+        arguments: List<ExecutionValue>,
+        argumentNames: List<String?>,
+    ): ExecutionValue.PointerPathValue {
+        val bound = bind(
+            arguments,
+            argumentNames,
+            listOf("path", "duration", "segmentDurations", "speed", "startHold", "endHold", "delay", "repeat", "pointerId"),
+        )
+        val geometry = (bound.required("path") as? ExecutionValue.PathValue)?.value
+            ?: throw PathBindingException("PATH_REQUIRED", "pointerPath.path must be a Path value.")
+        val duration = bound.optionalWholeLong("duration", positive = true)
+        val segmentDurations = bound["segmentDurations"]?.let { value ->
+            val values = (value as? ExecutionValue.ListValue)?.values
+                ?: throw PathBindingException("PATH_TIMING_TYPE_INVALID", "segmentDurations must be a List<Number>.")
+            if (values.isEmpty()) throw PathBindingException("PATH_TIMING_INVALID", "segmentDurations must not be empty.")
+            values.mapIndexed { index, item -> item.wholeLong("segmentDurations[$index]", positive = true) }
+        }
+        val speed = bound.optionalNumber("speed")?.also {
+            if (it <= 0.0) throw PathBindingException("TOUCH_SPEED_INVALID", "speed must be positive.")
+        }
+        if (listOf(duration, segmentDurations, speed).count { it != null } != 1) {
+            throw PathBindingException(
+                "TOUCH_TIMING_REQUIRED",
+                "pointerPath requires exactly one of duration, segmentDurations or speed.",
+            )
+        }
+        return ExecutionValue.PointerPathValue(
+            PointerPath(
+                pointerId = bound.optionalWholeLong("pointerId", positive = false)?.toIntChecked("pointerId") ?: 0,
+                geometry = geometry,
+                timing = PointerPathTiming(
+                    durationMs = duration,
+                    segmentDurationsMs = segmentDurations,
+                    speedPixelsPerSecond = speed,
+                    startHoldMs = bound.optionalWholeLong("startHold", positive = false) ?: 0L,
+                    endHoldMs = bound.optionalWholeLong("endHold", positive = false) ?: 0L,
+                    delayMs = bound.optionalWholeLong("delay", positive = false) ?: 0L,
+                    repeat = bound.optionalWholeLong("repeat", positive = true)?.toIntChecked("repeat") ?: 1,
+                ),
+            ),
+        )
+    }
+
+    private fun bind(
+        arguments: List<ExecutionValue>,
+        names: List<String?>,
+        expectedNames: List<String>,
+    ): Map<String, ExecutionValue> {
+        val result = linkedMapOf<String, ExecutionValue>()
+        var positionalIndex = 0
+        arguments.forEachIndexed { index, value ->
+            val suppliedName = names.getOrNull(index)
+            val canonicalName = if (suppliedName == null) {
+                expectedNames.getOrNull(positionalIndex++)
+                    ?: throw PathBindingException("PATH_ARGUMENT_COUNT_INVALID", "Too many positional path arguments.")
+            } else {
+                expectedNames.firstOrNull { it.equals(suppliedName, ignoreCase = true) }
+                    ?: throw PathBindingException("PATH_ARGUMENT_UNKNOWN", "Unknown path argument '$suppliedName'.")
+            }
+            if (result.put(canonicalName, value) != null) {
+                throw PathBindingException("PATH_ARGUMENT_DUPLICATE", "Path argument '$canonicalName' is duplicated.")
+            }
+        }
+        return result
+    }
+
+    private fun Map<String, ExecutionValue>.required(name: String): ExecutionValue =
+        get(name) ?: throw PathBindingException("PATH_ARGUMENT_REQUIRED", "Path argument '$name' is required.")
+
+    private fun Map<String, ExecutionValue>.number(name: String): Double =
+        (required(name) as? ExecutionValue.NumberValue)?.value
+            ?.takeIf(Double::isFinite)
+            ?: throw PathBindingException("PATH_NUMBER_REQUIRED", "Path argument '$name' must be a finite Number.")
+
+    private fun Map<String, ExecutionValue>.point(name: String): PointerPathPoint =
+        (required(name) as? ExecutionValue.PointValue)?.value
+            ?: throw PathBindingException("PATH_POINT_REQUIRED", "Path argument '$name' must be a Point.")
+
+    private fun Map<String, ExecutionValue>.optionalNumber(name: String): Double? =
+        get(name)?.let { value ->
+            (value as? ExecutionValue.NumberValue)?.value?.takeIf(Double::isFinite)
+                ?: throw PathBindingException("PATH_NUMBER_REQUIRED", "Path argument '$name' must be a finite Number.")
+        }
+
+    private fun Map<String, ExecutionValue>.optionalWholeLong(name: String, positive: Boolean): Long? =
+        get(name)?.wholeLong(name, positive)
+
+    private fun ExecutionValue.wholeLong(name: String, positive: Boolean): Long {
+        val number = (this as? ExecutionValue.NumberValue)?.value
+            ?.takeIf(Double::isFinite)
+            ?: throw PathBindingException("PATH_NUMBER_REQUIRED", "Path argument '$name' must be a finite Number.")
+        val minimum = if (positive) 1.0 else 0.0
+        if (number < minimum || number > Long.MAX_VALUE.toDouble() || number % 1.0 != 0.0) {
+            throw PathBindingException(
+                "PATH_WHOLE_NUMBER_REQUIRED",
+                "Path argument '$name' must be ${if (positive) "a positive" else "a non-negative"} whole Number.",
+            )
+        }
+        return number.toLong()
+    }
+
+    private fun Long.toIntChecked(name: String): Int {
+        if (this > Int.MAX_VALUE) throw PathBindingException("PATH_NUMBER_RANGE", "$name exceeds the supported range.")
+        return toInt()
+    }
+
+    private fun failure(code: String, message: String, invalidSegmentIndex: Int? = null) =
+        PointerPathConstructionResult.Failure(code, message, invalidSegmentIndex)
+
+    private class PathBindingException(
+        val code: String,
+        message: String,
+        val invalidSegmentIndex: Int? = null,
+    ) : IllegalArgumentException(message)
+}
+
+fun PointerPath.traceInfo(
+    status: String,
+    invalidSegmentIndex: Int? = null,
+    cancellationPosition: String? = null,
+): PointerPathTraceInfo {
+    val resolved = PointerPathLowerer.resolve(this) as? PointerPathResolutionResult.Success
+    return PointerPathTraceInfo(
+        segmentCount = geometry.segments.size,
+        segmentTypes = geometry.segments.map { segment ->
+            when (segment) {
+                is PointerPathSegment.Line -> "LINE"
+                is PointerPathSegment.QuadraticBezier -> "QUADRATIC_BEZIER"
+                is PointerPathSegment.CubicBezier -> "CUBIC_BEZIER"
+            }
+        },
+        plannedTotalDurationMs = resolved?.pointerPath?.let { path -> path.totalDispatchDurationMs * path.repeat },
+        status = status,
+        invalidSegmentIndex = invalidSegmentIndex,
+        cancellationPosition = cancellationPosition,
+    )
+}
+
+fun List<ExecutionValue>.gesturePointerPathOrNull(commandId: String): PointerPath? {
+    if (commandId !in setOf("action.swipe", "swipe")) return null
+    return when (val first = firstOrNull()) {
+        is ExecutionValue.PointerPathValue -> first.value
+        is ExecutionValue.PathValue -> {
+            val repeat = (getOrNull(1) as? ExecutionValue.NumberValue)?.value
+                ?.takeIf { it.isFinite() && it >= 1.0 && it % 1.0 == 0.0 && it <= Int.MAX_VALUE.toDouble() }
+                ?.toInt()
+                ?: 1
+            PointerPath(
+                pointerId = 0,
+                geometry = first.value,
+                timing = PointerPathTiming(durationMs = PointerPathSourceCodec.DEFAULT_DURATION_MS, repeat = repeat),
+            )
+        }
+        else -> null
+    }
+}
+
 object PointerPathSourceCodec {
     fun parseSwipe(arguments: String): PointerPathParseResult = try {
         val parsed = GestureSourceParser(arguments).parseTopLevelArguments()

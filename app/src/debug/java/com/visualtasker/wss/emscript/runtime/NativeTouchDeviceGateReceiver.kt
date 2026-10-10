@@ -21,6 +21,7 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             ACTION_PREPARE_SLOW -> preparePointerPath(context, PointerPathGateMode.Slow)
             ACTION_PREPARE_FAST -> preparePointerPath(context, PointerPathGateMode.Fast)
             ACTION_PREPARE_POINTER_CANCELLATION -> preparePointerPath(context, PointerPathGateMode.Cancellation)
+            ACTION_PREPARE_VARIABLE_PATH -> preparePointerPath(context, PointerPathGateMode.Variable)
             ACTION_CANCEL -> requestCancellation(context)
             ACTION_RESTORE -> restore(context)
             else -> return
@@ -110,6 +111,7 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             PointerPathGateMode.Linear,
             PointerPathGateMode.Slow,
             PointerPathGateMode.Fast,
+            PointerPathGateMode.Variable,
             -> "path(point($left,$centerY),point($right,$centerY))"
             PointerPathGateMode.Quadratic ->
                 "path([quadraticBezierSegment(point($left,$centerY)," +
@@ -129,15 +131,23 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             PointerPathGateMode.Slow -> "speed=140"
             PointerPathGateMode.Fast -> "speed=700"
             PointerPathGateMode.Cancellation -> "duration=5000,repeat=5"
+            PointerPathGateMode.Variable -> "duration=duration,startHold=80,endHold=80"
         }
         val script = buildString {
             appendLine("wait(500)")
-            appendLine("swipe(pointerPath($path,$timing))")
+            if (mode == PointerPathGateMode.Variable) {
+                appendLine("LET duration = 900")
+                appendLine("LET route = pointerPath($path,$timing)")
+                appendLine("swipe(route)")
+            } else {
+                appendLine("swipe(pointerPath($path,$timing))")
+            }
             append("wait(500)")
         }
         val imported = EmscriptWorkspaceImporter().import(
             script,
-            workspaceId = "m5-4-device-shell-${mode.name.lowercase()}",
+            workspaceId = "${if (mode == PointerPathGateMode.Variable) "m5-5" else "m5-4"}" +
+                "-device-shell-${mode.name.lowercase()}",
         )
         check(imported.isSuccess) { imported.issues.joinToString { it.message } }
 
@@ -145,12 +155,17 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             .putString(WORKSPACE_KEY, WorkflowSerializer.serialize(requireNotNull(imported.document)))
             .putInt(WORKSPACE_VERSION_KEY, Int.MAX_VALUE)
             .putBoolean(TEST_TARGET_KEY, false)
-            .putString(GESTURE_TEST_MODE_KEY, "m5-4-${mode.name.lowercase()}:${System.nanoTime()}")
+            .putString(
+                GESTURE_TEST_MODE_KEY,
+                "${if (mode == PointerPathGateMode.Variable) "m5-5" else "m5-4"}" +
+                    "-${mode.name.lowercase()}:${System.nanoTime()}",
+            )
             .remove(STEPPER_STATE_KEY)
             .commit()
         launchWorkspace(context)
         resultCode = RESULT_PREPARED
-        resultData = "M5-4 ${mode.name.lowercase()} gate prepared: $path $timing"
+        resultData = "${if (mode == PointerPathGateMode.Variable) "M5-5" else "M5-4"} " +
+            "${mode.name.lowercase()} gate prepared: $path $timing"
     }
 
     private fun ensureBackup(
@@ -243,6 +258,8 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
         private const val ACTION_PREPARE_FAST = "com.visualtasker.wss.debug.M5_4_PREPARE_FAST"
         private const val ACTION_PREPARE_POINTER_CANCELLATION =
             "com.visualtasker.wss.debug.M5_4_PREPARE_CANCELLATION"
+        private const val ACTION_PREPARE_VARIABLE_PATH =
+            "com.visualtasker.wss.debug.M5_5_PREPARE_VARIABLE_PATH"
         private const val ACTION_RESTORE = "com.visualtasker.wss.debug.M5_2_RESTORE"
         private const val PREFS_NAME = "panel_ui_options"
         private const val BACKUP_PREFS_NAME = "m5_2_device_gate_backup"
@@ -272,5 +289,6 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
         Slow,
         Fast,
         Cancellation,
+        Variable,
     }
 }

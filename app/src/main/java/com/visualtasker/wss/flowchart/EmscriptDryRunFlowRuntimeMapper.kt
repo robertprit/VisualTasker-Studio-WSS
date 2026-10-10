@@ -226,6 +226,10 @@ object EmscriptDryRunFlowRuntimeMapper {
         is EmscriptValue.TextMatchValue -> "TextMatch($text,$confidence)"
         is EmscriptValue.MarkerValue -> "Marker($markerId)"
         is EmscriptValue.ChartSnapshotValue -> "ChartSnapshot($id,$kind)"
+        is EmscriptValue.PointValue -> "Point(${value.x},${value.y})"
+        is EmscriptValue.PathSegmentValue -> value::class.simpleName ?: "PathSegment"
+        is EmscriptValue.PathValue -> "Path(${value.segments.size} segments)"
+        is EmscriptValue.PointerPathValue -> "PointerPath(${value.geometry.segments.size} segments)"
         EmscriptValue.NullValue -> "null"
     }
 }
