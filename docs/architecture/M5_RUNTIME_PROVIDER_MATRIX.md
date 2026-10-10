@@ -11,7 +11,8 @@ Android service classes behind a provider.
 | Timing `wait(duration)` | `action.wait`, capability `TIMING` | Deterministic fake provider | `AndroidWaitExecutionProvider` live in M5-1 | None |
 | Core command invocation | `VisualTaskerCommandCatalog` | Deterministic fake provider | Not registered in M5-1 | None |
 | Logging/feedback | Core catalog and existing BasicRun environment | Fake provider | Existing Android behavior, not migrated | None |
-| Input/click/swipe/touch | Automation catalog | Fake provider | Accessibility/input provider later | None |
+| Coordinate click `clickPoint(x,y)` | `input.clickPoint`, capability `A11Y` | Fake provider | `NativeTouchProvider` live in M5-2 | None |
+| Swipe/path/multitouch/semantic click | Automation catalog | Fake provider | Not registered in M5-2 | None |
 | Clipboard/file/cache/system | Core catalog | Fake provider | Existing BasicRun environment later | None |
 | Tasker | Tasker catalog/plugin contracts | Not implemented | Optional provider | None |
 | Shizuku | Shell capability metadata | Not implemented | Optional provider | None |
@@ -30,6 +31,8 @@ Android service classes behind a provider.
 6. Cancellation is visible through the context token and checked by the runner at controlled boundaries.
 7. Provider calls and results are traceable by capability, provider ID and workflow entity.
 
-M5-1 still contains no global provider singleton and no Android service locator. The productive
-`AndroidRuntimeBridge` constructs one explicit registry containing only the native timing provider.
-All other capabilities fail closed until a later, separately approved provider slice.
+M5-2 still contains no global provider singleton. The productive `AndroidRuntimeBridge` constructs
+one explicit registry containing the native timing and native coordinate-touch providers. The touch
+gateway reuses the already connected `VisualTaskerAccessibilityService`; it does not activate that
+service and fails closed when Android has not connected it. All other capabilities continue to fail
+closed until a later, separately approved provider slice.

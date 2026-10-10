@@ -1,6 +1,7 @@
 package com.visualtasker.wss.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.view.accessibility.AccessibilityWindowInfo
 import android.graphics.Bitmap
@@ -118,6 +119,25 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
             durationMs = 1L,
         )
 
+    fun gestureDisplayBounds(): Rect {
+        val metrics = resources.displayMetrics
+        return Rect(0, 0, metrics.widthPixels, metrics.heightPixels)
+    }
+
+    fun canPerformGestures(): Boolean =
+        serviceInfo?.capabilities
+            ?.and(AccessibilityServiceInfo.CAPABILITY_CAN_PERFORM_GESTURES) != 0
+
+    fun dispatchClickGesture(
+        x: Float,
+        y: Float,
+        onResult: (AccessibilityGestureResult) -> Unit,
+    ): Boolean = dispatchPathGesture(
+        path = Path().apply { moveTo(x, y) },
+        durationMs = 1L,
+        onResult = onResult,
+    )
+
     suspend fun swipe(points: List<RuntimePoint>, durationMs: Long): Boolean {
         if (points.size < 2) return false
         val path = Path().apply {
@@ -160,23 +180,36 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
 
     private suspend fun dispatchPathGesture(path: Path, durationMs: Long): Boolean =
         suspendCancellableCoroutine { continuation ->
-            val gesture = GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))
-                .build()
-            dispatchGesture(
-                gesture,
-                object : GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        if (continuation.isActive) continuation.resume(true)
-                    }
-
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        if (continuation.isActive) continuation.resume(false)
-                    }
-                },
-                null,
-            )
+            val accepted = dispatchPathGesture(path, durationMs) { result ->
+                if (continuation.isActive) {
+                    continuation.resume(result == AccessibilityGestureResult.Completed)
+                }
+            }
+            if (!accepted && continuation.isActive) continuation.resume(false)
         }
+
+    private fun dispatchPathGesture(
+        path: Path,
+        durationMs: Long,
+        onResult: (AccessibilityGestureResult) -> Unit,
+    ): Boolean {
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))
+            .build()
+        return dispatchGesture(
+            gesture,
+            object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    onResult(AccessibilityGestureResult.Completed)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    onResult(AccessibilityGestureResult.Cancelled)
+                }
+            },
+            null,
+        )
+    }
 
     companion object {
         @Volatile
@@ -186,6 +219,11 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
 
         fun isConnected(): Boolean = instance != null
     }
+}
+
+enum class AccessibilityGestureResult {
+    Completed,
+    Cancelled,
 }
 
 private fun AccessibilityNodeInfo.toRecordingNode(

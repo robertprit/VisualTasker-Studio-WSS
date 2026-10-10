@@ -36,7 +36,12 @@ data class AndroidRuntimeSnapshot(
 class AndroidRuntimeBridge(
     private val scope: CoroutineScope,
     private val runner: DeterministicExecutionRunner = DeterministicExecutionRunner(
-        providers = ExecutionProviderRegistry(listOf(AndroidWaitExecutionProvider())),
+        providers = ExecutionProviderRegistry(
+            listOf(
+                AndroidWaitExecutionProvider(),
+                NativeTouchProvider(),
+            ),
+        ),
     ),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val requestIdFactory: () -> String = { UUID.randomUUID().toString() },

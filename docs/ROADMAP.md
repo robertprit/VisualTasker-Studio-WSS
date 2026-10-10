@@ -44,6 +44,9 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   Cancellation und kanonisch referenzierter Trace fuer den bestehenden Sprachumfang.
 - [x] M5-1: Android Runtime Bridge, globaler Start/Stop, beobachtbare Runtime-Zustaende,
   RailTrace-Projektion und erster nativer, abbrechbarer `wait(duration)`-Provider.
+- [x] M5-2: nativer `clickPoint(x,y)`-Provider ueber den bestehenden AccessibilityService,
+  deterministische Gesture-Callbacks und produktiver Shell-Testpfad. Der reale Touch-Nachweis auf
+  dem SM-S918B hat Zieltreffer, `COMPLETED`, RailTrace-Persistenz und unveraenderten Workspace belegt.
 
 Verbindliche Nachweise:
 
@@ -56,6 +59,8 @@ Verbindliche Nachweise:
 - `docs/architecture/M4_3_SHELL_HISTORY_INTEGRATION.md`
 - `docs/architecture/M4_CLOSURE_AUDIT.md`
 - `docs/architecture/M5_0_RUNTIME_EXECUTION_CONTRACT.md`
+- `docs/architecture/M5_1_ANDROID_RUNTIME_BRIDGE.md`
+- `docs/architecture/M5_2_NATIVE_TOUCH_PROVIDER.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
@@ -70,7 +75,14 @@ separater Freigabe.
 M5-1 schaltet den produktiven globalen Play-/Stop-Pfad auf den M5-0-ExecutionRunner um. Die Shell
 besitzt genau eine lifecycle-gebundene Bridge; `wait(duration)` ist die einzige registrierte native
 Capability. Laufzustand und kanonisch referenzierter Live-Trace werden ueber vorhandene TopBar-,
-Log- und RailTrace-Flaechen dargestellt. Weitere Provider bleiben M5-2 oder spaeter vorbehalten.
+Log- und RailTrace-Flaechen dargestellt.
+
+M5-2 erweitert dieselbe Registry um `clickPoint(x,y)` mit absoluten Display-Pixeln. Der Provider
+verwendet den vorhandenen Accessibility-Gesture-Dispatcher, behandelt Abschluss, Cancellation,
+Timeout und fehlende Service-Freigabe typisiert und besitzt keinen Tasker-/Shizuku-Fallback. Der
+automatisierte Shell-Test nutzt ein ungefaehrliches, nur fuer Debugtests sichtbares Ziel in der
+Workspace-Mitte. Das Debug-Gate arbeitet ausserhalb von Android Instrumentation, weil diese das
+Zielpaket samt eigenem AccessibilityService vor Testbeginn zwangsweise stoppt.
 
 ### Stabil / Nutzbar
 

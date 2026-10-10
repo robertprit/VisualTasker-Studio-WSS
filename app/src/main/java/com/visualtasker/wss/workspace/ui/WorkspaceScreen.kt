@@ -11,6 +11,7 @@ import android.media.ToneGenerator
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -238,6 +239,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
@@ -602,6 +605,7 @@ private const val WORKSPACE_PANEL_MARGIN_DP = 12f
 private const val WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP = 44f
 private const val BLOCKEDITOR_WORKSPACE_PREF_KEY = "blockeditor_workspace_json"
 private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_test_workspace_version"
+private const val M5_2_TOUCH_TEST_TARGET_PREF_KEY = "m5_2_touch_test_target_visible"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 private const val BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY = "blockeditor_minimap_visible"
 private const val TOOLBOX_SET_MODE_PREF_KEY = "toolbox_set_mode"
@@ -1071,6 +1075,9 @@ fun WorkspaceScreen(
     val vt2vtManager = remember(context) { Vt2VtRuntime.manager(context) }
     val vt2vtSnapshot by vt2vtManager.state.collectAsState()
     val uiPrefs = remember(context) { context.getSharedPreferences("panel_ui_options", Context.MODE_PRIVATE) }
+    val showRuntimeTouchTestTarget = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
+        uiPrefs.getBoolean(M5_2_TOUCH_TEST_TARGET_PREF_KEY, false)
+    var runtimeTouchTestHitCount by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(uiPrefs) {
         if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
             uiPrefs.edit()
@@ -4504,6 +4511,16 @@ fun WorkspaceScreen(
             }
         }
         BlockEditorDropTrace.markActive("HOST_PANEL_LOOP_RETURN")
+
+        if (showRuntimeTouchTestTarget) {
+            RuntimeTouchTestTarget(
+                hitCount = runtimeTouchTestHitCount,
+                onClick = { runtimeTouchTestHitCount += 1 },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .zIndex(999_999f),
+            )
+        }
 
         val activeDragPayload = activeWssDragPayload
         val activeDragPosition = activeWssDragPosition
@@ -11910,6 +11927,44 @@ private fun WorkspaceTopAppBar(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeTouchTestTarget(
+    hitCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .size(112.dp)
+            .semantics {
+                contentDescription = "M5-2 Touch-Testziel $hitCount"
+            },
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(10.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = Icons.Default.TouchApp,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+            )
+            Text(
+                text = "Touch $hitCount",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
