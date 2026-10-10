@@ -1086,6 +1086,7 @@ fun WorkspaceScreen(
     var runtimeGestureDeltaX by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     var runtimeGestureDeltaY by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     var runtimeGestureTravel by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
+    var runtimeGestureDurationMs by rememberSaveable(runtimeGestureTestRun) { mutableLongStateOf(0L) }
     LaunchedEffect(uiPrefs) {
         if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
             uiPrefs.edit()
@@ -4538,11 +4539,13 @@ fun WorkspaceScreen(
                 deltaX = runtimeGestureDeltaX,
                 deltaY = runtimeGestureDeltaY,
                 travel = runtimeGestureTravel,
-                onGesture = { delta, travel ->
+                durationMs = runtimeGestureDurationMs,
+                onGesture = { delta, travel, durationMs ->
                     runtimeTouchTestHitCount += 1
                     runtimeGestureDeltaX = delta.x
                     runtimeGestureDeltaY = delta.y
                     runtimeGestureTravel = travel
+                    runtimeGestureDurationMs = durationMs
                 },
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -11966,7 +11969,8 @@ private fun RuntimeTouchTestTarget(
     deltaX: Float,
     deltaY: Float,
     travel: Float,
-    onGesture: (Offset, Float) -> Unit,
+    durationMs: Long,
+    onGesture: (Offset, Float, Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -11978,17 +11982,20 @@ private fun RuntimeTouchTestTarget(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     var delta = Offset.Zero
                     var distance = 0f
+                    var lastUptimeMillis = down.uptimeMillis
                     drag(down.id) { change ->
                         val movement = change.positionChange()
                         delta += movement
                         distance += movement.getDistance()
+                        lastUptimeMillis = change.uptimeMillis
                         change.consume()
                     }
-                    onGesture(delta, distance)
+                    onGesture(delta, distance, (lastUptimeMillis - down.uptimeMillis).coerceAtLeast(0L))
                 }
             }
             .semantics {
-                contentDescription = "M5-3 Gesture-Testziel $mode $hitCount delta ${deltaX.toInt()} ${deltaY.toInt()} travel ${travel.toInt()}"
+                contentDescription = "M5 Gesture-Testziel $mode $hitCount delta ${deltaX.toInt()} ${deltaY.toInt()} " +
+                    "travel ${travel.toInt()} duration $durationMs"
             },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -12012,7 +12019,7 @@ private fun RuntimeTouchTestTarget(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "$mode  ${deltaX.toInt()}, ${deltaY.toInt()}  Weg ${travel.toInt()}",
+                text = "$mode  ${deltaX.toInt()}, ${deltaY.toInt()}  Weg ${travel.toInt()}  ${durationMs}ms",
                 style = MaterialTheme.typography.labelMedium,
             )
         }

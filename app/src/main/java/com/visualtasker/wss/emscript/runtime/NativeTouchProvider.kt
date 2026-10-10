@@ -2,7 +2,9 @@ package com.visualtasker.wss.emscript.runtime
 
 import com.visualtasker.wss.accessibility.AccessibilityGesturePoint
 import com.visualtasker.wss.accessibility.AccessibilityGestureResult
+import com.visualtasker.wss.accessibility.AccessibilityGestureSegment
 import com.visualtasker.wss.accessibility.AccessibilityGestureSubmission
+import com.visualtasker.wss.accessibility.AccessibilityPointerPath
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
 import de.visualtasker.workflow.semantics.CommandCapability
 import java.util.concurrent.CountDownLatch
@@ -13,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference
 enum class TouchGestureResult {
     Completed,
     Cancelled,
+    Rejected,
 }
 
 enum class TouchGestureSubmission {
@@ -25,6 +28,7 @@ data class TouchAvailability(
     val connected: Boolean,
     val canPerformGestures: Boolean,
     val displayBounds: TouchDisplayBounds?,
+    val maxGestureDurationMs: Long = DEFAULT_ANDROID_MAX_GESTURE_DURATION_MS,
 )
 
 data class TouchDisplayBounds(
@@ -48,7 +52,39 @@ data class TouchGesturePoint(
 data class TouchGesturePath(
     val points: List<TouchGesturePoint>,
     val durationMs: Long,
+    val pointerId: Int = 0,
+    val segments: List<TouchGestureSegment> = emptyList(),
+    val startDelayMs: Long = 0L,
+    val startHoldMs: Long = 0L,
+    val endHoldMs: Long = 0L,
 )
+
+sealed interface TouchGestureSegment {
+    val from: TouchGesturePoint
+    val to: TouchGesturePoint
+    val durationMs: Long
+
+    data class Line(
+        override val from: TouchGesturePoint,
+        override val to: TouchGesturePoint,
+        override val durationMs: Long,
+    ) : TouchGestureSegment
+
+    data class QuadraticBezier(
+        override val from: TouchGesturePoint,
+        val control: TouchGesturePoint,
+        override val to: TouchGesturePoint,
+        override val durationMs: Long,
+    ) : TouchGestureSegment
+
+    data class CubicBezier(
+        override val from: TouchGesturePoint,
+        val control1: TouchGesturePoint,
+        val control2: TouchGesturePoint,
+        override val to: TouchGesturePoint,
+        override val durationMs: Long,
+    ) : TouchGestureSegment
+}
 
 interface TouchGestureGateway {
     fun availability(): TouchAvailability
@@ -57,6 +93,8 @@ interface TouchGestureGateway {
         path: TouchGesturePath,
         onResult: (TouchGestureResult) -> Unit,
     ): TouchGestureSubmission
+
+    fun cancelActiveGesture() = Unit
 }
 
 class AccessibilityTouchGestureGateway(
@@ -70,6 +108,7 @@ class AccessibilityTouchGestureGateway(
             displayBounds = service?.gestureDisplayBounds()?.let { bounds ->
                 TouchDisplayBounds(bounds.left, bounds.top, bounds.right, bounds.bottom)
             },
+            maxGestureDurationMs = service?.maxGestureDurationMs() ?: DEFAULT_ANDROID_MAX_GESTURE_DURATION_MS,
         )
     }
 
@@ -78,23 +117,72 @@ class AccessibilityTouchGestureGateway(
         onResult: (TouchGestureResult) -> Unit,
     ): TouchGestureSubmission {
         val service = serviceProvider() ?: return TouchGestureSubmission.Rejected
-        return when (
+        val submission = if (path.segments.isEmpty()) {
             service.dispatchGesturePath(
-                points = path.points.map { AccessibilityGesturePoint(it.x, it.y) },
+                points = path.points.map { point -> point.toAccessibilityPoint() },
                 durationMs = path.durationMs,
             ) { result ->
                 onResult(
                     when (result) {
                         AccessibilityGestureResult.Completed -> TouchGestureResult.Completed
                         AccessibilityGestureResult.Cancelled -> TouchGestureResult.Cancelled
+                        AccessibilityGestureResult.Rejected -> TouchGestureResult.Rejected
                     },
                 )
             }
-        ) {
+        } else {
+            service.dispatchPointerPath(
+                pointerPath = AccessibilityPointerPath(
+                    pointerId = path.pointerId,
+                    startPoint = path.segments.first().from.toAccessibilityPoint(),
+                    segments = path.segments.map { segment -> segment.toAccessibilitySegment() },
+                    startHoldMs = path.startHoldMs,
+                    endHoldMs = path.endHoldMs,
+                    delayMs = path.startDelayMs,
+                ),
+            ) { result ->
+                onResult(
+                    when (result) {
+                        AccessibilityGestureResult.Completed -> TouchGestureResult.Completed
+                        AccessibilityGestureResult.Cancelled -> TouchGestureResult.Cancelled
+                        AccessibilityGestureResult.Rejected -> TouchGestureResult.Rejected
+                    },
+                )
+            }
+        }
+        return when (submission) {
             AccessibilityGestureSubmission.Accepted -> TouchGestureSubmission.Accepted
             AccessibilityGestureSubmission.Busy -> TouchGestureSubmission.Busy
             AccessibilityGestureSubmission.Rejected -> TouchGestureSubmission.Rejected
         }
+    }
+
+    override fun cancelActiveGesture() {
+        serviceProvider()?.cancelActiveGestureSequence()
+    }
+
+    private fun TouchGesturePoint.toAccessibilityPoint(): AccessibilityGesturePoint =
+        AccessibilityGesturePoint(x, y)
+
+    private fun TouchGestureSegment.toAccessibilitySegment(): AccessibilityGestureSegment = when (this) {
+        is TouchGestureSegment.Line -> AccessibilityGestureSegment.Line(
+            from.toAccessibilityPoint(),
+            to.toAccessibilityPoint(),
+            durationMs,
+        )
+        is TouchGestureSegment.QuadraticBezier -> AccessibilityGestureSegment.QuadraticBezier(
+            from.toAccessibilityPoint(),
+            control.toAccessibilityPoint(),
+            to.toAccessibilityPoint(),
+            durationMs,
+        )
+        is TouchGestureSegment.CubicBezier -> AccessibilityGestureSegment.CubicBezier(
+            from.toAccessibilityPoint(),
+            control1.toAccessibilityPoint(),
+            control2.toAccessibilityPoint(),
+            to.toAccessibilityPoint(),
+            durationMs,
+        )
     }
 }
 
@@ -121,7 +209,10 @@ class NativeGestureProvider(
         if (context.cancellationToken.isCancellationRequested) {
             return ProviderResult.Cancelled("Gesture cancelled before dispatch.")
         }
-        val validated = request.validate() ?: return request.validationFailure()
+        val validated = when (val validation = request.validate()) {
+            is GestureValidation.Success -> validation.gesture
+            is GestureValidation.Failure -> return failure(validation.code, validation.message)
+        }
         val initialAvailability = gateway.safeAvailability()
             ?: return failure("TOUCH_AVAILABILITY_FAILED", "Accessibility gesture availability could not be read.")
         availabilityFailure(initialAvailability)?.let { return it }
@@ -131,6 +222,9 @@ class NativeGestureProvider(
                 "TOUCH_COORDINATES_OUT_OF_BOUNDS",
                 "Pixel (${point.x}, ${point.y}) is outside display bounds $initialBounds.",
             )
+        }
+        validated.path.androidDurationViolation(initialAvailability.maxGestureDurationMs)?.let { message ->
+            return failure("TOUCH_DURATION_ANDROID_LIMIT", message)
         }
         if (!sequenceInFlight.compareAndSet(false, true)) {
             return failure("TOUCH_GESTURE_BUSY", "Another native gesture sequence is still active.")
@@ -145,7 +239,7 @@ class NativeGestureProvider(
                     is ProviderResult.Success -> Unit
                     else -> return result
                 }
-                if (iteration < validated.repeat - 1) {
+                if (iteration < validated.repeat - 1 && validated.interRepeatDelayMs > 0L) {
                     awaitNextRepeat(context)?.let { return it }
                 }
             }
@@ -190,10 +284,15 @@ class NativeGestureProvider(
             }
         }
 
-        val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(callbackTimeoutMs.coerceAtLeast(1L))
+        val effectiveTimeoutMs = maxOf(
+            callbackTimeoutMs.coerceAtLeast(1L),
+            path.expectedTimelineDurationMs() + CALLBACK_TIMEOUT_GRACE_MS,
+        )
+        val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(effectiveTimeoutMs)
         while (true) {
             if (context.cancellationToken.isCancellationRequested) {
                 callbackOpen.set(false)
+                gateway.cancelActiveGesture()
                 return ProviderResult.Cancelled(
                     "Gesture cancellation requested after dispatch; physical delivery may already have occurred.",
                 )
@@ -214,22 +313,29 @@ class NativeGestureProvider(
                     return ProviderResult.Success()
                 }
                 TouchGestureResult.Cancelled -> return correlateAndroidCancellation(context)
+                TouchGestureResult.Rejected -> return failure(
+                    "TOUCH_DISPATCH_REJECTED",
+                    "Android rejected a continued PointerPath segment.",
+                )
                 null -> Unit
             }
             val availability = gateway.safeAvailability()
                 ?: return failure("TOUCH_AVAILABILITY_FAILED", "Accessibility gesture availability could not be read during dispatch.")
             if (!availability.connected) {
                 callbackOpen.set(false)
+                gateway.cancelActiveGesture()
                 return failure("ACCESSIBILITY_SERVICE_LOST", "AccessibilityService disconnected during gesture dispatch.")
             }
             if (availability.displayBounds != initialBounds) {
                 callbackOpen.set(false)
+                gateway.cancelActiveGesture()
                 return failure("TOUCH_DISPLAY_CHANGED", "Physical display bounds changed during gesture dispatch.")
             }
             val remainingNs = deadlineNs - System.nanoTime()
             if (remainingNs <= 0L) {
                 callbackOpen.set(false)
-                return failure("TOUCH_GESTURE_TIMEOUT", "Gesture callback did not complete within $callbackTimeoutMs ms.")
+                gateway.cancelActiveGesture()
+                return failure("TOUCH_GESTURE_TIMEOUT", "Gesture callback did not complete within $effectiveTimeoutMs ms.")
             }
             val waitMs = minOf(
                 cancellationPollMs.coerceAtLeast(1L),
@@ -240,6 +346,7 @@ class NativeGestureProvider(
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
                 callbackOpen.set(false)
+                gateway.cancelActiveGesture()
                 return ProviderResult.Cancelled("Gesture provider worker was interrupted while awaiting the Android callback.")
             }
         }
@@ -296,52 +403,64 @@ class NativeGestureProvider(
         else -> null
     }
 
-    private fun GestureRequest.validate(): ValidatedGesture? = when (this) {
+    private fun GestureRequest.validate(): GestureValidation = when (this) {
         is GestureRequest.Click -> {
-            if (arguments.size !in 2..3) return null
-            val point = arguments.take(2).toClickPointOrNull() ?: return null
-            val repeat = arguments.getOrNull(2)?.positiveIntegerOrNull()
-                ?: if (arguments.size == 2) 1 else return null
-            if (repeat != 1) return null
-            ValidatedGesture(
-                points = listOf(point),
-                repeat = 1,
-                path = TouchGesturePath(listOf(point), CLICK_DURATION_MS),
+            if (arguments.size !in 2..3) return validationFailure(
+                "TOUCH_COORDINATES_REQUIRED",
+                "clickPoint(x, y) requires two finite numeric pixel coordinates.",
             )
-        }
-        is GestureRequest.Swipe -> {
-            if (arguments.size !in 1..2) return null
-            val points = arguments.firstOrNull()?.toTouchPoints().orEmpty()
-            if (points.size < 2) return null
-            val repeat = arguments.getOrNull(1)?.positiveIntegerOrNull()
-                ?: if (arguments.size == 1) 1 else return null
-            ValidatedGesture(
-                points = points,
-                repeat = repeat,
-                path = TouchGesturePath(points, LEGACY_SWIPE_DURATION_MS),
+            val point = arguments.take(2).toClickPointOrNull() ?: return validationFailure(
+                "TOUCH_COORDINATES_REQUIRED",
+                "clickPoint(x, y) requires two finite numeric pixel coordinates.",
             )
-        }
-    }
-
-    private fun GestureRequest.validationFailure(): ProviderResult.Failure = when (this) {
-        is GestureRequest.Click -> {
             val repeat = arguments.getOrNull(2)?.positiveIntegerOrNull()
-            if (repeat != null && repeat != 1) {
-                failure("TOUCH_REPEAT_UNSUPPORTED", "Coordinate click supports exactly one click per invocation.")
-            } else {
-                failure("TOUCH_COORDINATES_REQUIRED", "clickPoint(x, y) requires two finite numeric pixel coordinates.")
-            }
-        }
-        is GestureRequest.Swipe -> {
-            val repeat = arguments.getOrNull(1)
-            if (repeat != null && repeat.positiveIntegerOrNull() == null) {
-                failure("TOUCH_REPEAT_INVALID", "swipe repeat must be a positive whole number.")
-            } else {
-                failure(
-                    "TOUCH_PATH_INVALID",
-                    "swipe requires an ordered list containing at least two finite pixel coordinate pairs.",
+                ?: if (arguments.size == 2) 1 else return validationFailure(
+                    "TOUCH_REPEAT_INVALID",
+                    "clickPoint repeat must be a positive whole number.",
                 )
+            if (repeat != 1) return validationFailure(
+                "TOUCH_REPEAT_UNSUPPORTED",
+                "Coordinate click supports exactly one click per invocation.",
+            )
+            GestureValidation.Success(
+                ValidatedGesture(
+                    points = listOf(point),
+                    repeat = 1,
+                    path = TouchGesturePath(listOf(point), CLICK_DURATION_MS),
+                    interRepeatDelayMs = 0L,
+                ),
+            )
+        }
+        is GestureRequest.Swipe -> {
+            val typed = (arguments.singleOrNull() as? ExecutionValue.PointerPathValue)?.value
+            if (typed != null) {
+                return when (val resolved = PointerPathLowerer.resolve(typed)) {
+                    is PointerPathResolutionResult.Failure -> validationFailure(resolved.code, resolved.message)
+                    is PointerPathResolutionResult.Success -> GestureValidation.Success(resolved.pointerPath.toValidatedGesture())
+                }
             }
+            if (arguments.size !in 1..2) return validationFailure(
+                "TOUCH_PATH_INVALID",
+                "swipe requires an ordered list containing at least two finite pixel coordinate pairs.",
+            )
+            val points = arguments.firstOrNull()?.toTouchPoints().orEmpty()
+            if (points.size < 2) return validationFailure(
+                "TOUCH_PATH_INVALID",
+                "swipe requires an ordered list containing at least two finite pixel coordinate pairs.",
+            )
+            val repeat = arguments.getOrNull(1)?.positiveIntegerOrNull()
+                ?: if (arguments.size == 1) 1 else return validationFailure(
+                    "TOUCH_REPEAT_INVALID",
+                    "swipe repeat must be a positive whole number.",
+                )
+            GestureValidation.Success(
+                ValidatedGesture(
+                    points = points,
+                    repeat = repeat,
+                    path = TouchGesturePath(points, LEGACY_SWIPE_DURATION_MS),
+                    interRepeatDelayMs = repeatDispatchIntervalMs,
+                ),
+            )
         }
     }
 
@@ -420,16 +539,117 @@ class NativeGestureProvider(
         val points: List<TouchGesturePoint>,
         val repeat: Int,
         val path: TouchGesturePath,
+        val interRepeatDelayMs: Long,
     )
+
+    private sealed interface GestureValidation {
+        data class Success(val gesture: ValidatedGesture) : GestureValidation
+        data class Failure(val code: String, val message: String) : GestureValidation
+    }
+
+    private fun validationFailure(code: String, message: String): GestureValidation.Failure =
+        GestureValidation.Failure(code, message)
+
+    private fun ResolvedPointerPath.toValidatedGesture(): ValidatedGesture {
+        val touchSegments = segments.map { segment ->
+            when (val geometry = segment.geometry) {
+                is PointerPathSegment.Line -> TouchGestureSegment.Line(
+                    geometry.from.toTouchPoint(),
+                    geometry.to.toTouchPoint(),
+                    segment.durationMs,
+                )
+                is PointerPathSegment.QuadraticBezier -> TouchGestureSegment.QuadraticBezier(
+                    geometry.from.toTouchPoint(),
+                    geometry.control.toTouchPoint(),
+                    geometry.to.toTouchPoint(),
+                    segment.durationMs,
+                )
+                is PointerPathSegment.CubicBezier -> TouchGestureSegment.CubicBezier(
+                    geometry.from.toTouchPoint(),
+                    geometry.control1.toTouchPoint(),
+                    geometry.control2.toTouchPoint(),
+                    geometry.to.toTouchPoint(),
+                    segment.durationMs,
+                )
+            }
+        }
+        val coordinates = buildList {
+            add(startPoint.toTouchPoint())
+            touchSegments.forEach { segment ->
+                when (segment) {
+                    is TouchGestureSegment.Line -> Unit
+                    is TouchGestureSegment.QuadraticBezier -> add(segment.control)
+                    is TouchGestureSegment.CubicBezier -> {
+                        add(segment.control1)
+                        add(segment.control2)
+                    }
+                }
+                add(segment.to)
+            }
+        }
+        return ValidatedGesture(
+            points = coordinates,
+            repeat = repeat,
+            path = TouchGesturePath(
+                points = coordinates,
+                durationMs = movementDurationMs,
+                pointerId = pointerId,
+                segments = touchSegments,
+                startDelayMs = delayMs,
+                startHoldMs = startHoldMs,
+                endHoldMs = endHoldMs,
+            ),
+            interRepeatDelayMs = 0L,
+        )
+    }
+
+    private fun PointerPathPoint.toTouchPoint(): TouchGesturePoint = TouchGesturePoint(x.toFloat(), y.toFloat())
+
+    private fun TouchGesturePath.androidDurationViolation(maxDurationMs: Long): String? {
+        val phaseDurations = if (segments.isEmpty()) {
+            listOf(durationMs)
+        } else {
+            buildList {
+                if (startHoldMs > 0L) add(startDelayMs + startHoldMs)
+                segments.forEachIndexed { index, segment ->
+                    add(segment.durationMs + if (index == 0 && startHoldMs == 0L) startDelayMs else 0L)
+                }
+                if (endHoldMs > 0L) add(endHoldMs)
+            }
+        }
+        val invalid = phaseDurations.firstOrNull { it <= 0L || it > maxDurationMs }
+        return invalid?.let {
+            "PointerPath phase duration $it ms exceeds Android's per-gesture limit of $maxDurationMs ms."
+        }
+    }
+
+    private fun TouchGesturePath.expectedTimelineDurationMs(): Long {
+        val phaseDurations = if (segments.isEmpty()) {
+            listOf(durationMs)
+        } else {
+            buildList {
+                add(startDelayMs)
+                add(startHoldMs)
+                addAll(segments.map(TouchGestureSegment::durationMs))
+                add(endHoldMs)
+            }
+        }
+        return phaseDurations.fold(0L) { total, duration ->
+            if (Long.MAX_VALUE - total < duration) Long.MAX_VALUE else total + duration
+        }
+    }
 
     companion object {
         const val PROVIDER_ID = "android.native.touch"
         const val CLICK_DURATION_MS = 1L
         const val LEGACY_SWIPE_DURATION_MS = 250L
+        private const val CALLBACK_TIMEOUT_GRACE_MS = 5_000L
         val A11Y_CAPABILITY = ExecutionCapability(CommandCapability.A11Y.name)
         val SUPPORTED_COMMAND_IDS = setOf("input.clickPoint", "clickPoint", "action.swipe", "swipe")
         private val rawPointListRegex = Regex("^\\[\\s*(.*?)\\s*]$")
     }
 }
+
+private const val DEFAULT_ANDROID_MAX_GESTURE_DURATION_MS = 60_000L
 
 typealias NativeTouchProvider = NativeGestureProvider

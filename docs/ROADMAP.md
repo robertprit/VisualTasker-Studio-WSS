@@ -49,6 +49,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   dem SM-S918B hat Zieltreffer, `COMPLETED`, RailTrace-Persistenz und unveraenderten Workspace belegt.
 - [x] M5-3: gemeinsamer nativer Gesture-Provider fuer Click, Swipe und lineare Mehrpunkt-Pfade,
   deterministischer Konkurrenzvertrag, Cancellation-/Callback-Haertung und sicherer Geraete-Gate.
+- [x] M5-4: typisierter PointerPath-Vertrag mit Linien, quadratischen/kubischen Bezier-Segmenten,
+  Gesamt-/Segment-/Speed-Timing, Holds, Delay, Repeat, Roundtrip und nativer Android-Fortsetzung.
 
 Verbindliche Nachweise:
 
@@ -64,6 +66,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_1_ANDROID_RUNTIME_BRIDGE.md`
 - `docs/architecture/M5_2_NATIVE_TOUCH_PROVIDER.md`
 - `docs/architecture/M5_3_NATIVE_GESTURE_PROVIDER.md`
+- `docs/architecture/M5_4_TYPED_POINTER_PATH.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
@@ -93,6 +96,11 @@ Konkurrenz wird sichtbar abgewiesen, Wiederholungen bleiben seriell und abbrechb
 SM-S918B-Gate belegt Straight-Swipe, einen V-foermigen Drei-Punkt-Pfad, Cancellation nach 2 von 20
 Wiederholungen sowie einen unveraenderten kanonischen Workspace. Explizites Timing, typisiertes
 `PointerPath`-Lowering, Bezier und Multitouch bleiben bewusst dokumentierte Folge-GAPs.
+
+M5-4 schliesst das typisierte Single-Pointer-GAP. Zeitlose Path-Geometrie wird deterministisch in
+lineare, quadratische und kubische Android-Stroke-Phasen abgesenkt; Gesamt-, explizite Segment- und
+Speed-Zeit bleiben unterscheidbar. Legacy-Swipes behalten ihren 250-ms-Vertrag. Multitouch,
+variable Path-Ausdruecke und semantische Vision-/A11y-Zielaufloesung bleiben spaetere Slices.
 
 ### Stabil / Nutzbar
 

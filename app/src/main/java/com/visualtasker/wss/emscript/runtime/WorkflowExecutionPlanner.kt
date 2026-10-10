@@ -185,64 +185,17 @@ class WorkflowExecutionPlanner(
     }
 
     private fun compileLegacySwipeArguments(block: BlockNode): List<ExecutionExpression> {
-        val rawArguments = block.fieldText("args").splitTopLevelArguments()
-        val points = block.fieldText("points")
-            .takeIf(String::isNotBlank)
-            ?: rawArguments.firstOrNull().orEmpty()
-        val repeat = block.fieldText("repeat")
-            .takeIf(String::isNotBlank)
-            ?: rawArguments.getOrNull(1)
-            ?: "1"
-        return listOf(
-            ExecutionExpression.Literal(block.id.value, ExecutionValue.StringValue(points)),
-            ExecutionExpression.Literal(block.id.value, ExecutionValue.StringValue(repeat)),
-        )
-    }
-
-    private fun String.splitTopLevelArguments(): List<String> {
-        if (isBlank()) return emptyList()
-        val arguments = mutableListOf<String>()
-        val current = StringBuilder()
-        var parenthesisDepth = 0
-        var bracketDepth = 0
-        var braceDepth = 0
-        var inString = false
-        var escaped = false
-        forEach { character ->
-            if (escaped) {
-                current.append(character)
-                escaped = false
-                return@forEach
+        val rawArguments = block.fieldText("args").takeIf(String::isNotBlank)
+            ?: buildString {
+                append(block.fieldText("points"))
+                block.fieldText("repeat").takeIf(String::isNotBlank)?.let { repeat -> append(",").append(repeat) }
             }
-            if (character == '\\' && inString) {
-                current.append(character)
-                escaped = true
-                return@forEach
-            }
-            if (character == '"') {
-                inString = !inString
-                current.append(character)
-                return@forEach
-            }
-            if (!inString) {
-                when (character) {
-                    '(' -> parenthesisDepth += 1
-                    ')' -> parenthesisDepth -= 1
-                    '[' -> bracketDepth += 1
-                    ']' -> bracketDepth -= 1
-                    '{' -> braceDepth += 1
-                    '}' -> braceDepth -= 1
-                    ',' -> if (parenthesisDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
-                        arguments += current.toString().trim()
-                        current.clear()
-                        return@forEach
-                    }
-                }
-            }
-            current.append(character)
+        return when (val parsed = PointerPathSourceCodec.parseSwipe(rawArguments)) {
+            is PointerPathParseResult.Success -> listOf(
+                ExecutionExpression.Literal(block.id.value, ExecutionValue.PointerPathValue(parsed.pointerPath)),
+            )
+            is PointerPathParseResult.Failure -> error("${parsed.code}: ${parsed.message}")
         }
-        arguments += current.toString().trim()
-        return arguments
     }
 
     private fun specialFieldArgument(block: BlockNode, argumentName: String): ExecutionExpression? {

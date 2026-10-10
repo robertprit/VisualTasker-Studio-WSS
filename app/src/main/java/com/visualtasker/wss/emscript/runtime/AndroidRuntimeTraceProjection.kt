@@ -66,6 +66,7 @@ private fun ExecutionValue.toEmscriptValue(): EmscriptValue = when (this) {
     is ExecutionValue.StringValue -> EmscriptValue.StringValue(value)
     is ExecutionValue.BooleanValue -> EmscriptValue.BooleanValue(value)
     is ExecutionValue.ListValue -> EmscriptValue.NullValue
+    is ExecutionValue.PointerPathValue -> EmscriptValue.NullValue
     ExecutionValue.NullValue,
     ExecutionValue.VoidValue,
     -> EmscriptValue.NullValue

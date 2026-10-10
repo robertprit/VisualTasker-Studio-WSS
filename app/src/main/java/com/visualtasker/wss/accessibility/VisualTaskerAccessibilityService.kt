@@ -6,6 +6,7 @@ import android.accessibilityservice.GestureDescription
 import android.view.accessibility.AccessibilityWindowInfo
 import android.graphics.Bitmap
 import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
@@ -22,7 +23,9 @@ import com.visualtasker.wss.workspace.model.WorldviewRect
 import com.visualtasker.wss.recording.A11yNodeSnapshot
 import com.visualtasker.wss.recording.RecordingSessionRuntime
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -30,6 +33,7 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
     @Volatile
     private var lastInspectorSnapshot: AccessibilityInspectorSnapshot? = null
     private val activeGestureId = AtomicLong(NO_ACTIVE_GESTURE)
+    private val activeGestureCancellation = AtomicReference<AtomicBoolean?>(null)
     private val gestureIdSequence = AtomicLong(NO_ACTIVE_GESTURE)
 
     override fun onServiceConnected() {
@@ -133,6 +137,12 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
         serviceInfo?.capabilities
             ?.and(AccessibilityServiceInfo.CAPABILITY_CAN_PERFORM_GESTURES) != 0
 
+    fun maxGestureDurationMs(): Long = GestureDescription.getMaxGestureDuration()
+
+    fun cancelActiveGestureSequence() {
+        activeGestureCancellation.get()?.set(true)
+    }
+
     fun dispatchClickGesture(
         x: Float,
         y: Float,
@@ -156,6 +166,52 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
             points.drop(1).forEach { point -> lineTo(point.x, point.y) }
         }
         return dispatchPathGesture(path, durationMs.coerceAtLeast(1L), onResult)
+    }
+
+    fun dispatchPointerPath(
+        pointerPath: AccessibilityPointerPath,
+        onResult: (AccessibilityGestureResult) -> Unit,
+    ): AccessibilityGestureSubmission {
+        if (pointerPath.pointerId != 0 || pointerPath.segments.isEmpty()) {
+            return AccessibilityGestureSubmission.Rejected
+        }
+        val phases = runCatching {
+            buildList {
+                if (pointerPath.startHoldMs > 0L) {
+                    addAll(
+                        stationaryPhases(
+                            point = pointerPath.startPoint,
+                            durationMs = pointerPath.startHoldMs,
+                            initialStartTimeMs = pointerPath.delayMs,
+                        ),
+                    )
+                }
+                pointerPath.segments.forEachIndexed { index, segment ->
+                    addAll(
+                        segment.toCancellablePhases(
+                            initialStartTimeMs = if (index == 0 && pointerPath.startHoldMs == 0L) {
+                                pointerPath.delayMs
+                            } else {
+                                0L
+                            },
+                        ),
+                    )
+                }
+                if (pointerPath.endHoldMs > 0L) {
+                    addAll(
+                        stationaryPhases(
+                            point = pointerPath.segments.last().to,
+                            durationMs = pointerPath.endHoldMs,
+                            initialStartTimeMs = 0L,
+                        ),
+                    )
+                }
+            }
+        }.getOrElse { return AccessibilityGestureSubmission.Rejected }
+        if (phases.any { it.durationMs <= 0L || it.startTimeMs < 0L }) {
+            return AccessibilityGestureSubmission.Rejected
+        }
+        return dispatchGestureSequence(phases, onResult)
     }
 
     suspend fun swipe(points: List<RuntimePoint>, durationMs: Long): Boolean {
@@ -214,45 +270,193 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
         path: Path,
         durationMs: Long,
         onResult: (AccessibilityGestureResult) -> Unit,
+    ): AccessibilityGestureSubmission = dispatchGestureSequence(
+        phases = listOf(AccessibilityGesturePhase(path, 0L, durationMs)),
+        onResult = onResult,
+    )
+
+    private fun dispatchGestureSequence(
+        phases: List<AccessibilityGesturePhase>,
+        onResult: (AccessibilityGestureResult) -> Unit,
     ): AccessibilityGestureSubmission {
+        if (phases.isEmpty()) return AccessibilityGestureSubmission.Rejected
         val gestureId = gestureIdSequence.incrementAndGet()
         if (!activeGestureId.compareAndSet(NO_ACTIVE_GESTURE, gestureId)) {
             return AccessibilityGestureSubmission.Busy
         }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))
-            .build()
-        val accepted = dispatchGesture(
-            gesture,
-            object : GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    if (activeGestureId.compareAndSet(gestureId, NO_ACTIVE_GESTURE)) {
-                        onResult(AccessibilityGestureResult.Completed)
-                    }
-                }
+        val cancellation = AtomicBoolean(false)
+        activeGestureCancellation.set(cancellation)
 
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    if (activeGestureId.compareAndSet(gestureId, NO_ACTIVE_GESTURE)) {
-                        onResult(AccessibilityGestureResult.Cancelled)
+        fun finish(result: AccessibilityGestureResult) {
+            if (activeGestureId.compareAndSet(gestureId, NO_ACTIVE_GESTURE)) {
+                activeGestureCancellation.compareAndSet(cancellation, null)
+                onResult(result)
+            }
+        }
+
+        fun releaseCancelledStroke(
+            stroke: GestureDescription.StrokeDescription,
+            point: AccessibilityGesturePoint,
+        ) {
+            val release = runCatching {
+                stroke.continueStroke(
+                    stationaryPath(point),
+                    0L,
+                    CANCELLATION_RELEASE_DURATION_MS,
+                    false,
+                )
+            }.getOrNull()
+            if (release == null) {
+                finish(AccessibilityGestureResult.Cancelled)
+                return
+            }
+            val accepted = dispatchGesture(
+                GestureDescription.Builder().addStroke(release).build(),
+                object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        finish(AccessibilityGestureResult.Cancelled)
                     }
-                }
-            },
-            null,
-        )
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        finish(AccessibilityGestureResult.Cancelled)
+                    }
+                },
+                null,
+            )
+            if (!accepted) finish(AccessibilityGestureResult.Cancelled)
+        }
+
+        lateinit var dispatchPhase: (Int, GestureDescription.StrokeDescription?) -> Boolean
+        dispatchPhase = { index, previousStroke ->
+            val phase = phases[index]
+            val hasNext = index < phases.lastIndex
+            val stroke = if (previousStroke == null) {
+                GestureDescription.StrokeDescription(
+                    phase.path,
+                    phase.startTimeMs,
+                    phase.durationMs,
+                    hasNext,
+                )
+            } else {
+                previousStroke.continueStroke(
+                    phase.path,
+                    phase.startTimeMs,
+                    phase.durationMs,
+                    hasNext,
+                )
+            }
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(
+                gesture,
+                object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        when {
+                            cancellation.get() && hasNext && phase.endPoint != null ->
+                                releaseCancelledStroke(stroke, phase.endPoint)
+                            cancellation.get() -> finish(AccessibilityGestureResult.Cancelled)
+                            hasNext -> if (!dispatchPhase(index + 1, stroke)) {
+                                finish(AccessibilityGestureResult.Rejected)
+                            }
+                            else -> finish(AccessibilityGestureResult.Completed)
+                        }
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        finish(AccessibilityGestureResult.Cancelled)
+                    }
+                },
+                null,
+            )
+        }
+
+        val accepted = runCatching { dispatchPhase(0, null) }.getOrDefault(false)
         if (!accepted) {
-            activeGestureId.compareAndSet(gestureId, NO_ACTIVE_GESTURE)
+            finish(AccessibilityGestureResult.Rejected)
             return AccessibilityGestureSubmission.Rejected
         }
+        val expectedDurationMs = phases.sumOf { it.startTimeMs + it.durationMs }
         Handler(Looper.getMainLooper()).postDelayed(
-            { activeGestureId.compareAndSet(gestureId, NO_ACTIVE_GESTURE) },
-            durationMs.coerceAtLeast(1L) + GESTURE_CALLBACK_GRACE_MS,
+            { finish(AccessibilityGestureResult.Cancelled) },
+            expectedDurationMs.coerceAtLeast(1L) + GESTURE_CALLBACK_GRACE_MS,
         )
         return AccessibilityGestureSubmission.Accepted
+    }
+
+    private fun stationaryPath(point: AccessibilityGesturePoint): Path =
+        Path().apply { moveTo(point.x, point.y) }
+
+    private fun stationaryPhases(
+        point: AccessibilityGesturePoint,
+        durationMs: Long,
+        initialStartTimeMs: Long,
+    ): List<AccessibilityGesturePhase> = cancellablePhaseDurations(durationMs).mapIndexed { index, phaseDurationMs ->
+        AccessibilityGesturePhase(
+            path = stationaryPath(point),
+            startTimeMs = if (index == 0) initialStartTimeMs else 0L,
+            durationMs = phaseDurationMs,
+            endPoint = point,
+        )
+    }
+
+    private fun AccessibilityGestureSegment.toAndroidPath(): Path = Path().apply {
+        moveTo(from.x, from.y)
+        when (this@toAndroidPath) {
+            is AccessibilityGestureSegment.Line -> lineTo(to.x, to.y)
+            is AccessibilityGestureSegment.QuadraticBezier -> quadTo(control.x, control.y, to.x, to.y)
+            is AccessibilityGestureSegment.CubicBezier -> cubicTo(
+                control1.x,
+                control1.y,
+                control2.x,
+                control2.y,
+                to.x,
+                to.y,
+            )
+        }
+    }
+
+    private fun AccessibilityGestureSegment.toCancellablePhases(
+        initialStartTimeMs: Long,
+    ): List<AccessibilityGesturePhase> {
+        val sourcePath = toAndroidPath()
+        val measure = PathMeasure(sourcePath, false)
+        require(measure.length > 0f) { "Gesture segment must have positive path length." }
+        val phaseDurations = cancellablePhaseDurations(durationMs)
+        var elapsedMs = 0L
+        return phaseDurations.mapIndexed { index, phaseDurationMs ->
+            val startDistance = measure.length * (elapsedMs.toDouble() / durationMs).toFloat()
+            elapsedMs += phaseDurationMs
+            val endDistance = measure.length * (elapsedMs.toDouble() / durationMs).toFloat()
+            val phasePath = Path()
+            require(measure.getSegment(startDistance, endDistance, phasePath, true)) {
+                "Android could not extract a PointerPath phase."
+            }
+            val endPosition = FloatArray(2)
+            require(measure.getPosTan(endDistance.coerceAtMost(measure.length), endPosition, null)) {
+                "Android could not resolve a PointerPath phase endpoint."
+            }
+            AccessibilityGesturePhase(
+                path = phasePath,
+                startTimeMs = if (index == 0) initialStartTimeMs else 0L,
+                durationMs = phaseDurationMs,
+                endPoint = AccessibilityGesturePoint(endPosition[0], endPosition[1]),
+            )
+        }
+    }
+
+    private fun cancellablePhaseDurations(durationMs: Long): List<Long> {
+        require(durationMs > 0L) { "Gesture phase duration must be positive." }
+        val phaseCount = ((durationMs + MAX_CANCELLABLE_PHASE_DURATION_MS - 1L) /
+            MAX_CANCELLABLE_PHASE_DURATION_MS).toInt().coerceAtLeast(1)
+        val baseDuration = durationMs / phaseCount
+        val remainder = durationMs % phaseCount
+        return List(phaseCount) { index -> baseDuration + if (index < remainder) 1L else 0L }
     }
 
     companion object {
         private const val NO_ACTIVE_GESTURE = 0L
         private const val GESTURE_CALLBACK_GRACE_MS = 5_000L
+        private const val MAX_CANCELLABLE_PHASE_DURATION_MS = 200L
+        private const val CANCELLATION_RELEASE_DURATION_MS = 1L
 
         @Volatile
         private var instance: VisualTaskerAccessibilityService? = null
@@ -266,6 +470,7 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
 enum class AccessibilityGestureResult {
     Completed,
     Cancelled,
+    Rejected,
 }
 
 enum class AccessibilityGestureSubmission {
@@ -277,6 +482,49 @@ enum class AccessibilityGestureSubmission {
 data class AccessibilityGesturePoint(
     val x: Float,
     val y: Float,
+)
+
+sealed interface AccessibilityGestureSegment {
+    val from: AccessibilityGesturePoint
+    val to: AccessibilityGesturePoint
+    val durationMs: Long
+
+    data class Line(
+        override val from: AccessibilityGesturePoint,
+        override val to: AccessibilityGesturePoint,
+        override val durationMs: Long,
+    ) : AccessibilityGestureSegment
+
+    data class QuadraticBezier(
+        override val from: AccessibilityGesturePoint,
+        val control: AccessibilityGesturePoint,
+        override val to: AccessibilityGesturePoint,
+        override val durationMs: Long,
+    ) : AccessibilityGestureSegment
+
+    data class CubicBezier(
+        override val from: AccessibilityGesturePoint,
+        val control1: AccessibilityGesturePoint,
+        val control2: AccessibilityGesturePoint,
+        override val to: AccessibilityGesturePoint,
+        override val durationMs: Long,
+    ) : AccessibilityGestureSegment
+}
+
+data class AccessibilityPointerPath(
+    val pointerId: Int,
+    val startPoint: AccessibilityGesturePoint,
+    val segments: List<AccessibilityGestureSegment>,
+    val startHoldMs: Long,
+    val endHoldMs: Long,
+    val delayMs: Long,
+)
+
+private data class AccessibilityGesturePhase(
+    val path: Path,
+    val startTimeMs: Long,
+    val durationMs: Long,
+    val endPoint: AccessibilityGesturePoint? = null,
 )
 
 private fun AccessibilityNodeInfo.toRecordingNode(

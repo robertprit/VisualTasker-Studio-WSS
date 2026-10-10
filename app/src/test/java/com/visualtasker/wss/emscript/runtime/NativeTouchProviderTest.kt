@@ -65,6 +65,118 @@ class NativeTouchProviderTest {
     }
 
     @Test
+    fun typedPointerPathDispatchesMixedSegmentsAndExactTiming() {
+        val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
+        val pointerPath = PointerPath(
+            pointerId = 0,
+            geometry = PointerPathGeometry(
+                startPoint = PointerPathPoint(100.0, 200.0),
+                segments = listOf(
+                    PointerPathSegment.Line(
+                        PointerPathPoint(100.0, 200.0),
+                        PointerPathPoint(200.0, 200.0),
+                    ),
+                    PointerPathSegment.QuadraticBezier(
+                        PointerPathPoint(200.0, 200.0),
+                        PointerPathPoint(250.0, 260.0),
+                        PointerPathPoint(300.0, 200.0),
+                    ),
+                    PointerPathSegment.CubicBezier(
+                        PointerPathPoint(300.0, 200.0),
+                        PointerPathPoint(340.0, 140.0),
+                        PointerPathPoint(380.0, 260.0),
+                        PointerPathPoint(420.0, 200.0),
+                    ),
+                ),
+            ),
+            timing = PointerPathTiming(
+                durationMs = 1_500L,
+                startHoldMs = 40L,
+                endHoldMs = 60L,
+                delayMs = 20L,
+            ),
+        )
+
+        val result = provider(gateway).invoke(typedSwipeInvocation(pointerPath), context())
+
+        assertTrue(result is ProviderResult.Success)
+        val dispatched = gateway.paths.single()
+        assertEquals(0, dispatched.pointerId)
+        assertEquals(3, dispatched.segments.size)
+        assertTrue(dispatched.segments[0] is TouchGestureSegment.Line)
+        assertTrue(dispatched.segments[1] is TouchGestureSegment.QuadraticBezier)
+        assertTrue(dispatched.segments[2] is TouchGestureSegment.CubicBezier)
+        assertEquals(1_500L, dispatched.segments.sumOf(TouchGestureSegment::durationMs))
+        assertEquals(40L, dispatched.startHoldMs)
+        assertEquals(60L, dispatched.endHoldMs)
+        assertEquals(20L, dispatched.startDelayMs)
+    }
+
+    @Test
+    fun typedPointerPathCancellationReachesAndroidGateway() {
+        val gateway = FakeTouchGateway()
+        val token = MutableCancellationToken()
+        val result = AtomicReference<ProviderResult>()
+        val pointerPath = PointerPath(
+            pointerId = 0,
+            geometry = PointerPathGeometry(
+                startPoint = PointerPathPoint(100.0, 200.0),
+                segments = listOf(
+                    PointerPathSegment.QuadraticBezier(
+                        PointerPathPoint(100.0, 200.0),
+                        PointerPathPoint(250.0, 400.0),
+                        PointerPathPoint(400.0, 200.0),
+                    ),
+                ),
+            ),
+            timing = PointerPathTiming(durationMs = 5_000L),
+        )
+        val thread = Thread {
+            result.set(provider(gateway).invoke(typedSwipeInvocation(pointerPath), context(token)))
+        }.apply { start() }
+        assertTrue(gateway.awaitDispatch())
+
+        token.cancel()
+        thread.join(1_000)
+
+        assertTrue(result.get() is ProviderResult.Cancelled)
+        assertEquals(1, gateway.cancelCount)
+        assertFalse(thread.isAlive)
+    }
+
+    @Test
+    fun typedPointerPathPhaseOverAndroidLimitIsRejectedBeforeDispatch() {
+        val gateway = FakeTouchGateway(
+            availabilityProvider = {
+                TouchAvailability(
+                    connected = true,
+                    canPerformGestures = true,
+                    displayBounds = TouchDisplayBounds(0, 0, 1080, 2400),
+                    maxGestureDurationMs = 1_000L,
+                )
+            },
+        )
+        val pointerPath = PointerPath(
+            pointerId = 0,
+            geometry = PointerPathGeometry(
+                PointerPathPoint(100.0, 200.0),
+                listOf(
+                    PointerPathSegment.Line(
+                        PointerPathPoint(100.0, 200.0),
+                        PointerPathPoint(400.0, 200.0),
+                    ),
+                ),
+            ),
+            timing = PointerPathTiming(durationMs = 1_001L),
+        )
+
+        val result = provider(gateway).invoke(typedSwipeInvocation(pointerPath), context())
+
+        assertFailure(result, "TOUCH_DURATION_ANDROID_LIMIT")
+        assertFalse(gateway.wasDispatched)
+    }
+
+    @Test
     fun bracketedCatalogPayloadIsAcceptedWithoutGeometryNormalization() {
         val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
         val invocation = swipeInvocation(
@@ -425,6 +537,26 @@ class NativeTouchProviderTest {
         fixture.close()
     }
 
+    @Test
+    fun importedTypedBezierPathRunsThroughPlannerProviderAndDoesNotMutateWorkspace() {
+        val fixture = runtimeFixture(
+            "swipe(pointerPath(path([" +
+                "quadraticBezierSegment(point(120,640),point(320,360),point(520,640))" +
+                "]),duration=800,startHold=20,endHold=30,delay=10))",
+        )
+        val before = WorkflowSerializer.serialize(fixture.document)
+
+        assertTrue(fixture.bridge.start(fixture.document, fixture.document.id))
+        val completed = fixture.awaitTerminal()
+
+        assertEquals(ExecutionState.COMPLETED, completed.state)
+        val path = fixture.gateway.paths.single()
+        assertTrue(path.segments.single() is TouchGestureSegment.QuadraticBezier)
+        assertEquals(800L, path.segments.single().durationMs)
+        assertEquals(before, WorkflowSerializer.serialize(fixture.document))
+        fixture.close()
+    }
+
     private fun runtimeFixture(script: String): RuntimeFixture {
         val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
         val runner = DeterministicExecutionRunner(
@@ -499,6 +631,10 @@ class NativeTouchProviderTest {
         arguments = arguments,
     )
 
+    private fun typedSwipeInvocation(pointerPath: PointerPath) = swipeInvocation(
+        arguments = listOf(ExecutionValue.PointerPathValue(pointerPath)),
+    )
+
     private fun pointList(vararg coordinates: Double): ExecutionValue.ListValue =
         ExecutionValue.ListValue(coordinates.map(ExecutionValue::NumberValue))
 
@@ -533,6 +669,8 @@ private class FakeTouchGateway(
     private var availabilityCount = 0
     private var dispatchAttempts = 0
     val paths = mutableListOf<TouchGesturePath>()
+    var cancelCount: Int = 0
+        private set
     val dispatchCount: Int
         get() = paths.size
     val wasDispatched: Boolean
@@ -563,6 +701,10 @@ private class FakeTouchGateway(
 
     fun complete(result: TouchGestureResult, index: Int = callbacks.lastIndex) {
         callbacks.getOrNull(index)?.invoke(result)
+    }
+
+    override fun cancelActiveGesture() {
+        cancelCount += 1
     }
 }
 

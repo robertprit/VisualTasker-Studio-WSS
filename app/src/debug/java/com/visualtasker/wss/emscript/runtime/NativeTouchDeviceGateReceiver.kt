@@ -15,6 +15,12 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             ACTION_PREPARE_SWIPE -> prepareGesture(context, GestureGateMode.Swipe)
             ACTION_PREPARE_PATH -> prepareGesture(context, GestureGateMode.Path)
             ACTION_PREPARE_CANCELLATION -> prepareGesture(context, GestureGateMode.Cancellation)
+            ACTION_PREPARE_LINEAR -> preparePointerPath(context, PointerPathGateMode.Linear)
+            ACTION_PREPARE_QUADRATIC -> preparePointerPath(context, PointerPathGateMode.Quadratic)
+            ACTION_PREPARE_CUBIC -> preparePointerPath(context, PointerPathGateMode.Cubic)
+            ACTION_PREPARE_SLOW -> preparePointerPath(context, PointerPathGateMode.Slow)
+            ACTION_PREPARE_FAST -> preparePointerPath(context, PointerPathGateMode.Fast)
+            ACTION_PREPARE_POINTER_CANCELLATION -> preparePointerPath(context, PointerPathGateMode.Cancellation)
             ACTION_CANCEL -> requestCancellation(context)
             ACTION_RESTORE -> restore(context)
             else -> return
@@ -89,6 +95,62 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
         launchWorkspace(context)
         resultCode = RESULT_PREPARED
         resultData = "M5-3 ${mode.name.lowercase()} gate prepared: ${points.joinToString()} repeat=$repeat"
+    }
+
+    private fun preparePointerPath(context: Context, mode: PointerPathGateMode) {
+        val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        ensureBackup(context, preferences)
+        val metrics = context.resources.displayMetrics
+        val left = metrics.widthPixels * 35 / 100
+        val centerX = metrics.widthPixels / 2
+        val right = metrics.widthPixels * 65 / 100
+        val centerY = metrics.heightPixels / 2
+        val verticalOffset = metrics.heightPixels / 22
+        val path = when (mode) {
+            PointerPathGateMode.Linear,
+            PointerPathGateMode.Slow,
+            PointerPathGateMode.Fast,
+            -> "path(point($left,$centerY),point($right,$centerY))"
+            PointerPathGateMode.Quadratic ->
+                "path([quadraticBezierSegment(point($left,$centerY)," +
+                    "point($centerX,${centerY - verticalOffset}),point($right,$centerY))])"
+            PointerPathGateMode.Cubic,
+            PointerPathGateMode.Cancellation,
+            ->
+                "path([cubicBezierSegment(point($left,$centerY)," +
+                    "point(${left + (centerX - left) / 2},${centerY - verticalOffset})," +
+                    "point(${centerX + (right - centerX) / 2},${centerY + verticalOffset})," +
+                    "point($right,$centerY))])"
+        }
+        val timing = when (mode) {
+            PointerPathGateMode.Linear -> "duration=900,startHold=80,endHold=80"
+            PointerPathGateMode.Quadratic -> "duration=1200,startHold=80,endHold=80"
+            PointerPathGateMode.Cubic -> "duration=1400,startHold=80,endHold=80"
+            PointerPathGateMode.Slow -> "speed=140"
+            PointerPathGateMode.Fast -> "speed=700"
+            PointerPathGateMode.Cancellation -> "duration=5000,repeat=5"
+        }
+        val script = buildString {
+            appendLine("wait(500)")
+            appendLine("swipe(pointerPath($path,$timing))")
+            append("wait(500)")
+        }
+        val imported = EmscriptWorkspaceImporter().import(
+            script,
+            workspaceId = "m5-4-device-shell-${mode.name.lowercase()}",
+        )
+        check(imported.isSuccess) { imported.issues.joinToString { it.message } }
+
+        preferences.edit()
+            .putString(WORKSPACE_KEY, WorkflowSerializer.serialize(requireNotNull(imported.document)))
+            .putInt(WORKSPACE_VERSION_KEY, Int.MAX_VALUE)
+            .putBoolean(TEST_TARGET_KEY, false)
+            .putString(GESTURE_TEST_MODE_KEY, "m5-4-${mode.name.lowercase()}:${System.nanoTime()}")
+            .remove(STEPPER_STATE_KEY)
+            .commit()
+        launchWorkspace(context)
+        resultCode = RESULT_PREPARED
+        resultData = "M5-4 ${mode.name.lowercase()} gate prepared: $path $timing"
     }
 
     private fun ensureBackup(
@@ -174,6 +236,13 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
         private const val ACTION_PREPARE_PATH = "com.visualtasker.wss.debug.M5_3_PREPARE_PATH"
         private const val ACTION_PREPARE_CANCELLATION = "com.visualtasker.wss.debug.M5_3_PREPARE_CANCELLATION"
         private const val ACTION_CANCEL = "com.visualtasker.wss.debug.M5_3_CANCEL"
+        private const val ACTION_PREPARE_LINEAR = "com.visualtasker.wss.debug.M5_4_PREPARE_LINEAR"
+        private const val ACTION_PREPARE_QUADRATIC = "com.visualtasker.wss.debug.M5_4_PREPARE_QUADRATIC"
+        private const val ACTION_PREPARE_CUBIC = "com.visualtasker.wss.debug.M5_4_PREPARE_CUBIC"
+        private const val ACTION_PREPARE_SLOW = "com.visualtasker.wss.debug.M5_4_PREPARE_SLOW"
+        private const val ACTION_PREPARE_FAST = "com.visualtasker.wss.debug.M5_4_PREPARE_FAST"
+        private const val ACTION_PREPARE_POINTER_CANCELLATION =
+            "com.visualtasker.wss.debug.M5_4_PREPARE_CANCELLATION"
         private const val ACTION_RESTORE = "com.visualtasker.wss.debug.M5_2_RESTORE"
         private const val PREFS_NAME = "panel_ui_options"
         private const val BACKUP_PREFS_NAME = "m5_2_device_gate_backup"
@@ -193,6 +262,15 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
     private enum class GestureGateMode {
         Swipe,
         Path,
+        Cancellation,
+    }
+
+    private enum class PointerPathGateMode {
+        Linear,
+        Quadratic,
+        Cubic,
+        Slow,
+        Fast,
         Cancellation,
     }
 }

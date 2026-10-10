@@ -889,12 +889,18 @@ private class Parser(
                     val expressionTransport = catalogEntry.arguments
                         .filter { it.type != CommandArgumentType.STATEMENT_BODY }
                         .takeIf { it.isNotEmpty() && it.all { argument -> argument.acceptedTypes.isNotEmpty() } }
-                    validateCatalogArguments(
-                        command = command,
-                        entry = catalogEntry,
-                        arguments = args.arguments,
-                        validatePrimitiveTypes = expressionTransport == null,
-                    )
+                    if (catalogEntry.id == "action.swipe") {
+                        if (args.arguments.isEmpty()) {
+                            throw ParseException(command.line, command.column, "swipe erwartet mindestens einen Parameter.")
+                        }
+                    } else {
+                        validateCatalogArguments(
+                            command = command,
+                            entry = catalogEntry,
+                            arguments = args.arguments,
+                            validatePrimitiveTypes = expressionTransport == null,
+                        )
+                    }
                     val expressionArguments = expressionTransport
                         ?.let { args.arguments.map { raw -> parseStandaloneExpression(raw, command) } }
                         .orEmpty()

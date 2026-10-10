@@ -10,6 +10,12 @@
                 <action android:name="com.visualtasker.wss.debug.M5_3_PREPARE_PATH" />
                 <action android:name="com.visualtasker.wss.debug.M5_3_PREPARE_CANCELLATION" />
                 <action android:name="com.visualtasker.wss.debug.M5_3_CANCEL" />
+                <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_LINEAR" />
+                <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_QUADRATIC" />
+                <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_CUBIC" />
+                <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_SLOW" />
+                <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_FAST" />
+                <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_CANCELLATION" />
                 <action android:name="com.visualtasker.wss.debug.M5_2_RESTORE" />
             </intent-filter>
         </receiver>

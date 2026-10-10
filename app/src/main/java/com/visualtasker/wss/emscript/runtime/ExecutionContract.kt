@@ -112,6 +112,7 @@ sealed interface ExecutionValue {
     data class StringValue(val value: String) : ExecutionValue
     data class BooleanValue(val value: Boolean) : ExecutionValue
     data class ListValue(val values: List<ExecutionValue>) : ExecutionValue
+    data class PointerPathValue(val value: PointerPath) : ExecutionValue
     data object NullValue : ExecutionValue
     data object VoidValue : ExecutionValue
 }
