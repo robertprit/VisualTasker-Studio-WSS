@@ -28,7 +28,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M2 Canonical Workflow Core | DONE | WorkflowGraph/WorkspaceDocument als einzige semantische Wahrheit. |
 | M3 Workspace Operations und Source Apply | DONE | `M3_CLOSURE_AUDIT.md`; atomare Operationen, Properties, Source-Anker und Validator. |
 | M4 Three-Editor Conformance | DONE | `M4_CLOSURE_AUDIT.md`; M4-0 bis M4-3 ohne Blocker geschlossen. |
-| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-6 `DONE`; semantische Ziele, Headless Host und Runtime-Closure fehlen. |
+| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-7 `DONE`; Provider-Policy, Headless Host und Runtime-Closure fehlen. |
 | M6 Editor Productization und Workspace UX | PLANNED | Viele Funktionen vorhanden; ein gemeinsamer Window-Session-Vertrag und M6-Gesamtgate fehlen. |
 | M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Scene-Inspector-Vorarbeiten vorhanden; Perception und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Datastore-/Asset-Vorarbeiten vorhanden; gemeinsame Scope- und Lifecycle-Abnahme fehlt. |
@@ -66,6 +66,19 @@ Runtime-Variablensnapshots, Trace-Retention und Lifecycle-Stop-Verhalten.
 M5-Gate: Ein gueltiger kanonischer Workflow kann ueber genau einen produktiven Runner gestartet,
 beobachtet, gestoppt, wiederaufgenommen oder diagnostisch beendet werden. Provider-Auswahl,
 Fehlersemantik und Trace sind deterministisch dokumentiert.
+
+### Testbare Integrationsgates M5-7 bis M7
+
+| Gate | Abnahmekriterien | Verbindlicher Nachweis | Status / Blocker |
+| --- | --- | --- | --- |
+| M5-7 Accessibility Target Resolution | Eine typisierte Query adressiert genau eine stabile Workflow-Entity; Preorder-Aufloesung ist deterministisch; 0/1/n Treffer ergeben NOT_FOUND/FOUND/AMBIGUOUS; stale Nodes werden vor Aktion abgewiesen; Cancellation beendet Polling/Aktion; `ACTION_CLICK` trifft Element oder klickbaren Parent; keine implizite Koordinatenfallback- oder Workspace-Mutation | JVM-Resolver-/Provider-Tests, Text-Block-Flow-Roundtrip, reale Tests fuer unique, parent, changed observation und ambiguity, RailTrace mit Querytyp, Kandidatenzahl, Status, Aktion, Display und Observation | DONE fuer `clickText`; `clickElement`, variable Query und Nicht-Default-Display bleiben GAP |
+| M5-8 Provider Policy | Bestehende Timing-, Gesture-, Accessibility-, Tasker-, Shizuku-, Termux- und CustomTabs-Hosts sind inventarisiert; jede Capability liefert Discovery, Availability, Permission und typed Result; Auswahl ist priorisiert und deterministisch; Fallback ist pro Capability explizit und im Trace sichtbar; Abwesenheit, Permission denial, Timeout, Cancellation und Providerverlust teilen stabile Fehlercodes | Registry-Unit-Tests fuer Prioritaet und Konflikt, Host-Adapter-Fixtures, kontrollierte Abwesenheits-/Permission-Tests, keine direkte zweite Dispatch-Engine | OPEN: gemeinsame Policy und Adaptereinordnung fehlen |
+| M5-H Headless Runtime | Genau eine prozessweite `ExecutionSession` besitzt Runner/Job/Trace; Compose kann attach/detach ohne Laufabbruch; Doppelstart, Stop, Cancellation, Prozess-/Service-Recovery und UI-Reattachment sind deterministisch; Foreground-Service und Notification-Stop entsprechen Android 36; Session-ID, Workflow-ID, Status und Trace-Retention bleiben stabil | JVM State-Machine-Tests, Service-Lifecycle-/Process-recreation-Test, Hintergrundlauf mit sichtbarer Notification, Reattach und Stop auf Zielgeraet | OPEN: Bridge ist noch Shell-owned |
+| M6-W WindowSession | Vorhandene Panel-Persistenz, Z-Order, Drag, Resize und Snap werden wiederverwendet; Shell und `StudioOverlayService` teilen Session-, Display-, Fokus- und Touch-Routing-Vertrag; harte Bounds, Insets, Min/Max, Crash-Restore und Multi-Panel-Z-Order sind deterministisch; Window-Aktionen mutieren keinen Workflow | Pure-State-Tests, Persistenz-/Migrationstest, Rotation/Insets, Overlay attach/detach, reproduzierbarer Geraete-Gestenlauf | OPEN: gemeinsamer Vertrag und Android-36-Overlaygate fehlen |
+| M7 Perception/Recorder | Capture, Marker, Recorder, Scene Inspector und Runtime tragen denselben Display-/Frame-/Zeitkontext; bestehende Recording-Persistenz, Integrity, Review, Replay und Recovery bleiben erhalten; Record -> Candidate -> Review -> Junktor Proposal -> explizite WorkspaceTransaction -> Runtime ist nachvollziehbar; Ablehnung mutiert nichts; es entsteht keine zweite Recorder-Pipeline | Capture-/Koordinatenfixtures, persistenter Record-Neustart, Evidence-Provenienz, Publish/Reject-Integrationstest, zwei reale App-Workflows bis Trace | OPEN: gemeinsamer Capture-Kontext und Publishing-Pfad fehlen |
+
+M7-V VirtualDisplay ist kein Bestandteil dieser Gates. M9-D Remote Display bleibt bis zu einer
+separaten Scope-Freigabe deferred.
 
 ## M6 Editor Productization Und Workspace UX
 
@@ -171,21 +184,33 @@ Gesamtstatus: `PLANNED`
 
 ## Abhaengigkeiten Und Kritischer Pfad
 
-1. M5-7 baut auf M5-0 bis M5-6 und dem vorhandenen AccessibilityService auf.
+1. M5-7 baut auf M5-0 bis M5-6 und dem vorhandenen AccessibilityService auf und ist abgeschlossen.
 2. M5-8 konsolidiert Provider-Aufloesung, bevor weitere externe Adapter releaseverbindlich werden.
 3. M5-H uebernimmt den bestehenden Runner nach M5-8 in genau einen UI-unabhaengigen Runtime Host;
    die Compose-Shell wird Beobachter und Steuerflaeche, nicht Runtime-Eigentuemer.
-4. Der strukturierte Fehleranteil von M5-9 setzt einen freigegebenen M4-4-Strukturvertrag voraus.
-5. M5-10 schliesst erst nach M5-7, M5-8, M5-H, M5-9 und den M5-Pebbles.
-6. M6-0 auditiert die vorhandene Editor-Produktreife; M6-W konsolidiert danach vorhandene
+4. M6-W konsolidiert nach M5-H die vorhandene Compose-Panel- und native Overlay-Mechanik in einen
+   gemeinsamen WindowSession-/Display-Vertrag.
+5. M7-1/M7-2 verwenden diesen Display-Vertrag fuer Capture, Scene und Evidence; M7-6 schliesst
+   danach den Recorder-to-Workflow-Publishing-Pfad.
+6. M8-0 definiert Ressourcen und Scopes, bevor Explorer und Portabilitaet geschlossen werden.
+7. M10 hardenet erst den festgelegten 1.0-Scope und fuehrt zu Alpha, Beta, RC und Stable.
+8. Der strukturierte Fehleranteil von M5-9 setzt einen freigegebenen M4-4-Strukturvertrag voraus,
+   ist aber kein 1.0-Core-Blocker.
+9. M5-10 schliesst nach M5-8, M5-H und den releaseverbindlichen M5-Pebbles; M5-9 ist nur nach
+   separater Scope-Freigabe Voraussetzung.
+10. M6-0 auditiert parallel die vorhandene Editor-Produktreife; M6-W konsolidiert danach vorhandene
    Compose-Panel- und native Overlay-Mechanik ohne Workflow-Mutation.
-7. M7-0 trennt vorhandene Recorder-/Inspector-Bausteine von fehlender Perception-Semantik. M7-V
+11. M7-0 trennt vorhandene Recorder-/Inspector-Bausteine von fehlender Perception-Semantik. M7-V
    setzt mindestens den Display-Kontext aus M6-W und den Capture-Vertrag aus M7-1 voraus.
-8. M8-0 definiert Ressourcen und Scopes, bevor Explorer, Funktionen und projektweite DnD-Pfade
-   erweitert werden.
-9. M9 nutzt M5-8 und M8-Vertraege; M9-D benoetigt zusaetzlich M7-V und M9-5. Konkrete
+12. M9 nutzt M5-8 und M8-Vertraege; M9-D benoetigt zusaetzlich M7-V und M9-5. Konkrete
    Integrationen werden nicht in den Runtime-Kern gezogen.
-10. M10 beginnt nach festgelegtem 1.0-Scope und Feature-Freeze.
+
+Verbindlicher kritischer Pfad:
+
+`M5-7 DONE -> M5-8 -> M5-H -> M6-W -> M7 Capture/Display -> M7 Recorder-to-Workflow -> M8 Portability -> M10 Hardening -> Alpha -> Beta -> RC -> Stable`
+
+Parallel erlaubt sind M6-Editor-Haertung, Dokumentationsabschluss und Regressionserweiterung. Sie
+duerfen keine noch offenen Runtime-, WindowSession- oder Capture-Vertraege vorwegnehmen.
 
 Der aktuelle kleinste sinnvolle Slice ist M5-8: die bereits produktiven Timing-, Gesture- und
 Accessibility-Provider erhalten eine gemeinsame Resolver-, Availability-, Berechtigungs- und
@@ -273,18 +298,20 @@ Stable-1.0-Blocker:
 | Feature M10 | M10 Release Hardening |
 | C1 bis C7 | Querschnittsbacklog; vor Umsetzung einem Master-Slice zuordnen |
 
-## Naechste Zehn Freizugebende Slices
+## Naechste Zehn Ausfuehrbare Pebbles
 
-1. `DONE` M5-7 A11y-Vertragsinventur und vertikaler semantischer Zielpfad.
-2. `DONE` M5-7 Abschluss mit deterministischer Mehrdeutigkeit, Trace und Geraetegate.
-3. `PLANNED` M5-8 Provider-Resolution, Availability und Fehlercode-Vertrag.
-4. `PLANNED` M5-H Headless Host, Foreground-Vertrag und UI-Reattachment.
-5. `PLANNED` M4-4 Entscheidungs- und Conformance-Slice fuer strukturierte Fehler.
-6. `PLANNED` M5-9 Funktionen, Calls, Return und freigegebene Fehlerstrukturen.
-7. `PLANNED` M5-10 Runtime-Closure-Audit und Langlaufmatrix.
-8. `PLANNED` M6-0 Bestandsaudit, danach M6-W als kleinster Window-Session-Slice.
-9. `PLANNED` M7-0 Capture-/Recorder-/Perception-Audit; M7-V bleibt optional.
-10. `PLANNED` M8-0 Ressourcen-/Scope-Vertrag und M10-0 Release-Scope-Vorbereitung.
+| Nr. | Pebble | Abhaengigkeit | Abnahme |
+| --- | --- | --- | --- |
+| 1 | M5-8 Host-Inventar fuer Registry, Accessibility, Tasker, Shizuku, Termux und Custom Tabs | M5-7 DONE | Jede Capability hat genau einen dokumentierten produktiven Einstieg oder eine GAP-Markierung |
+| 2 | M5-8 gemeinsamer Availability-/Permission-Snapshot | 1 | Deterministische typed States fuer available, unavailable, denied und stale |
+| 3 | M5-8 Provider-Prioritaet und Konfliktentscheidung | 2 | Reihenfolge unabhaengig von Registrierung; Konflikt wird diagnostiziert |
+| 4 | M5-8 stabile Result-/Fehlercodes und explizite Fallback-Metadaten | 3 | Abwesenheit, denial, timeout, cancellation und provider loss im Trace testbar |
+| 5 | M5-8 vertikales Gate mit vorhandenen nativen Providern; externe Hosts nur inventarisieren | 4 | Kein Direktdispatch neben der Registry, bestehende M5-7-Tests bleiben gruen |
+| 6 | M5-H `ExecutionSession`-State-Machine aus bestehender Bridge extrahieren | 5 | Genau eine Session, Doppelstart/Stop/Cancellation als JVM-Test |
+| 7 | M5-H UI Attach/Detach und Status-/Trace-Reattachment | 6 | Lauf ueberlebt Shell-Detach, UI zeigt denselben Sessionzustand |
+| 8 | M5-H Android-36 Foreground-Service-, Notification-Stop- und Recovery-Gate | 7 | Hintergrundlauf, Prozessrecovery und Stop auf Zielgeraet |
+| 9 | M6-W vorhandene Panel-/Overlay-Zustaende auf einen WindowSession-Vertrag abbilden | 8 | Keine zweite Persistenz; Shell/Overlay teilen ID, Display, Bounds und Z-Order |
+| 10 | M7-0/M7-1 Capture-/Recorder-Audit und kleinster gemeinsamer Frame-/Display-Kontext | 9 | Eine Aufnahme, Marker-ROI und Scene Evidence referenzieren denselben Frame |
 
-Keiner dieser Slices gilt durch diese Planung als implementiert. Vorhandene Vorarbeiten werden im
-jeweiligen Audit inventarisiert und nicht neu gebaut.
+Die Pebbles 1 bis 5 bilden M5-8, 6 bis 8 M5-H, 9 M6-W und 10 den Einstieg in M7. Vorhandene
+Vorarbeiten werden inventarisiert und nicht neu gebaut.

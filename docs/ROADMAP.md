@@ -44,7 +44,7 @@ Teilimplementierungen, isolierte Contracts und reine Planung.
 | M2 Canonical Workflow Core | DONE | Ein kanonisches Workspace-/Workflow-Dokument ist die semantische Wahrheit. |
 | M3 Workspace Operations und Source Apply | DONE | Atomare Transaktionen, Property Schema, Source-Anker und linearer Validator geschlossen. |
 | M4 Three-Editor Conformance | DONE | Text, Block und Flow mutieren ueber denselben kanonischen Pfad; M4-0 bis M4-3 geschlossen. |
-| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-6 sind DONE; semantische Ziele, Provider-Policy, Headless Host, Kontrollfluss und Closure fehlen. |
+| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-7 sind DONE; Provider-Policy, Headless Host und Closure fehlen. Kontrollfluss ist kein 1.0-Core-Blocker. |
 | M6 Editor Productization und Workspace UX | PLANNED | Erhebliche Panel-/Layout-Vorarbeiten vorhanden; gemeinsamer Window-Session-Vertrag und Produktgate fehlen. |
 | M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Vorhandene Datastore-/Asset-Bausteine muessen gegen gemeinsame Scope-Vertraege auditiert werden. |
@@ -67,6 +67,15 @@ Reconciliation 2026-10-11:
   bleiben `DEFERRED`, bis M7-V und der VT2VT-Scope freigegeben sind.
 - WorldviewGraph, RAG, lokale KI/SLM und weitere experimentelle Produkterweiterungen sind fuer
   nach 1.0 `DEFERRED`, solange keine ausdrueckliche Scope-Aenderung erfolgt.
+
+Verbindlicher 1.0-Pfad nach dem Feature-Audit-Follow-up:
+
+`M5-7 DONE -> M5-8 -> M5-H -> M6-W -> M7 Capture/Display -> M7 Recorder-to-Workflow -> M8 Portability -> M10 Hardening -> Alpha -> Beta -> RC -> Stable`
+
+M6-Editor-Haertung, Dokumentation und Regressionstests duerfen parallel laufen. M7-V bleibt
+optional, M9-D deferred. Die lueckenlose Scope-Klassifikation aller 146 Features und die
+Abschluss-Pebbles der 42 `PARTIAL`-Baseline stehen in `architecture/RELEASE_1_0_SCOPE.md` und
+`FEATURE_STATUS_MATRIX.md`.
 
 ## Aktueller Status
 
@@ -135,6 +144,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_4_TYPED_POINTER_PATH.md`
 - `docs/architecture/M5_5_TYPED_PATH_BINDINGS.md`
 - `docs/architecture/M5_6_NATIVE_MULTITOUCH.md`
+- `docs/architecture/M5_7_ACCESSIBILITY_TARGET_RESOLUTION.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 - `docs/architecture/WINDOW_HEADLESS_DISPLAY_ROADMAP.md`
 - `docs/architecture/RELEASE_1_0_PLAN.md`

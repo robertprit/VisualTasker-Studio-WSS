@@ -12,6 +12,28 @@ Produkte duerfen 1.0 nicht blockieren.
 Dieses Dokument konkretisiert `RELEASE_1_0_PLAN.md`. Die Feature-IDs stammen aus
 `../FEATURE_INVENTORY.md`.
 
+## Verbindliche Scope-Klassen
+
+- `CORE_1_0`: muss fuer Stable 1.0 geschlossen oder mit einer explizit akzeptierten Grenze
+  abgenommen sein.
+- `OPTIONAL_1_0`: darf in 1.0 enthalten sein, blockiert Alpha, Beta, RC oder Stable aber nicht.
+- `POST_1_0`: bleibt architekturkompatibel, wird jedoch nicht vor Stable 1.0 fertiggestellt.
+- `EXPERIMENTAL`: Konzept oder Forschungsflaeche ohne Produkt- oder Kompatibilitaetsversprechen.
+
+Die folgende Zuordnung ist lueckenlos fuer alle 146 inventarisierten IDs. Bereiche mit Ausnahmen
+sind absichtlich einzeln aufgeteilt.
+
+| Scope | Feature-IDs |
+| --- | --- |
+| CORE_1_0 | A-01..A-11, A-16; R-01..R-16, R-18; E-01..E-05, E-09..E-15; W-01..W-09; H-01..H-05; V-01..V-08, V-11..V-12; T-01..T-10; D-01..D-03, D-05, D-07..D-09; I-01..I-02, I-12; Q-01..Q-14 |
+| OPTIONAL_1_0 | E-06..E-08; H-06..H-07, H-09..H-11; V-09..V-10; T-11; D-04, D-06; I-03..I-10, I-13 |
+| POST_1_0 | A-12..A-15; R-17; W-10; H-12; T-12; D-10..D-12; I-11; X-05, X-08..X-10 |
+| EXPERIMENTAL | E-16..E-17; H-08; X-01..X-04, X-06..X-07 |
+
+`WorldviewGraph`, Morf, Patchbay, Virtual App Sessions, RAG-Ausbau und zusaetzliche KI-Agenten
+sind damit ausdruecklich keine 1.0-Blocker. Eine spaetere Hochstufung benoetigt eine dokumentierte
+Scope-Aenderung und darf nicht implizit durch vorhandene Klassen erfolgen.
+
 ## Verpflichtender 1.0-Umfang
 
 ### Kanonisches Projekt und EMScript
@@ -90,17 +112,19 @@ Fehlt ein Adapter, muss WSS kontrolliert diagnostizieren und weiter nutzbar blei
 
 ## Kritischer Pfad
 
-1. **M5-7:** A11y-Zielvertrag und ein realer semantischer Klickpfad.
+1. **M5-7 DONE:** A11y-Zielvertrag und realer semantischer `clickText`-Pfad.
 2. **M5-8:** Provider-Resolution, Berechtigungen und deterministische Fehler.
 3. **M5-H:** Headless Host, Foreground Lifecycle, Recovery und UI-Reattachment.
-4. **M5-10:** Runtime Closure, Retention und Langlaufmatrix. M5-9 wird nur bei separater Freigabe
-   aufgenommen.
-5. **M6-0/M6-W:** produktiver Editor-/Panel-Audit und gemeinsamer WindowSession-Vertrag.
-6. **M6-1 bis M6-5/M6-7:** Block, Flow, Text, Selection, Inspector und Performance/Geraetegate.
-7. **M7-0/M7-1/M7-2:** Capture, A11y Scene/Evidence und Freshness.
-8. **M7-3/M7-6 bis M7-9:** OCR nach Bedarf sowie Record -> Review -> Proposal -> Workflow.
-9. **M8-0/M8-1/M8-6/M8-9:** minimales Projekt-/Resource-Modell, Explorer und Portabilitaet.
-10. **M10:** Feature Freeze, Security, Migration, Langlauf, Dokumentation und RC.
+4. **M6-W:** gemeinsamer WindowSession-/Display-Vertrag fuer Shell und Overlay.
+5. **M7-1/M7-2:** gemeinsamer Capture-/Display-Kontext, A11y Scene/Evidence und Freshness.
+6. **M7-6:** Record -> Review -> Proposal -> explizite Workflow-Publikation.
+7. **M8-0/M8-1/M8-6/M8-9:** minimales Projekt-/Resource-Modell, Explorer und Portabilitaet.
+8. **M10:** Feature Freeze, Security, Migration, Langlauf, Dokumentation und RC.
+9. **Alpha -> Beta -> RC -> Stable:** jede Stufe setzt alle vorherigen Core-Gates voraus.
+
+M6-Editor-Haertung, Dokumentation und automatisierte Regression duerfen parallel laufen, solange
+sie keine neuen Runtime-, WindowSession- oder Capture-Vertraege vorwegnehmen. M7-V bleibt optional;
+M9-D bleibt deferred.
 
 ## Release-Stufen
 
@@ -135,14 +159,17 @@ Fehlt ein Adapter, muss WSS kontrolliert diagnostizieren und weiter nutzbar blei
 
 ## Aktuelle Release-Blocker
 
-1. M5-7 semantische Accessibility-Zielaufloesung fehlt.
-2. M5-8 einheitliche Provider- und Permission-Policy fehlt.
-3. M5-H Headless/Foreground Host und Recovery fehlen.
-4. M6-W gemeinsamer WindowSession-Vertrag und vollstaendige Panel-Geraeteabnahme fehlen.
-5. Gemeinsamer CaptureFrame-/Display-Kontext fehlt.
-6. Record -> Review -> Proposal -> Workflow ist nicht vollstaendig geschlossen.
-7. Projekt-/Resource-Portabilitaet und Backup/Restore sind nicht abgenommen.
-8. Security-, Privacy-, Langlauf-, Device-Matrix- und reproduzierbarer Release-Build fehlen.
+1. M5-8 einheitliche Provider-, Availability-, Permission- und Fallback-Policy fehlt.
+2. M5-H Headless/Foreground Host, Recovery und UI-Reattachment fehlen.
+3. M6-W gemeinsamer WindowSession-Vertrag und vollstaendige Panel-Geraeteabnahme fehlen.
+4. Gemeinsamer CaptureFrame-/Display-Kontext fehlt.
+5. Record -> Review -> Proposal -> Workflow ist nicht vollstaendig geschlossen.
+6. Projekt-/Resource-Portabilitaet und Backup/Restore sind nicht abgenommen.
+7. Security-, Privacy-, Langlauf-, Device-Matrix- und reproduzierbarer Release-Build fehlen.
+
+M5-7 ist kein offener Blocker mehr. Allgemeines `clickElement`, variable Textqueries und
+Nicht-Default-Displays bleiben sichtbare GAPs fuer M5-8/M7-2, ohne den nachgewiesenen
+`clickText`-Vertikalschnitt rueckwirkend zu entwerten.
 
 R-17 ist kein Blocker, solange Funktionen und strukturierte Fehler explizit ausserhalb des
 1.0-Sprachumfangs bleiben.

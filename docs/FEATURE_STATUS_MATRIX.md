@@ -6,6 +6,13 @@ Diese Matrix konkretisiert `FEATURE_INVENTORY.md`. `Produktpfad` unterscheidet p
 Verdrahtung (`ja`), einen produktiven Teilpfad (`teil`), isolierte Contracts/Prototypen (`nein`) und
 reine Planung (`-`). Referenzen sind repository-relativ.
 
+Audit-Baseline `09b03dd`: 146 Features, davon 54 `IMPLEMENTED`, 42 `PARTIAL`, 32 `PLANNED`,
+12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`. M5-7 wurde nach dieser Baseline abgeschlossen. Die
+42 damaligen `PARTIAL`-Eintraege bleiben deshalb in der Abschlussmatrix unten unveraendert
+nachvollziehbar; spaetere Statusverschiebungen werden separat ausgewiesen und nicht rueckwirkend in
+die Baseline eingerechnet. Aktueller Matrixstand nach M5-7: 54 `IMPLEMENTED`, 44 `PARTIAL`,
+30 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
+
 ## Architektur und Sprache
 
 | ID | Status | Produktpfad | Nachweis | Abhaengigkeit / Release |
@@ -43,7 +50,7 @@ reine Planung (`-`). Referenzen sind repository-relativ.
 | R-10 | IMPLEMENTED | ja | M5-4/M5-5 Timing- und Roundtrip-Tests | 1.0 Pflicht |
 | R-11 | IMPLEMENTED | ja | M5-3/M5-4 Lifecycle-Tests | 1.0 Pflicht |
 | R-12 | IMPLEMENTED | ja | `M5_6_NATIVE_MULTITOUCH.md`; Geraeteabnahme SM-S918B | 1.0 Pflicht |
-| R-13 | PLANNED | - | Provider Matrix M5-7 | Alpha-Blocker |
+| R-13 | PARTIAL | ja | `NativeAccessibilityProvider`, Target Resolver und M5-7 Geraetegate; `clickElement`/variable Query offen | M5-7 Kernpfad DONE, Rest M5-8/M7-2 |
 | R-14 | PLANNED | - | Provider Matrix M5-8 | Alpha-Blocker |
 | R-15 | PLANNED | - | `WINDOW_HEADLESS_DISPLAY_ROADMAP.md` M5-H | Alpha-Blocker |
 | R-16 | PLANNED | - | M5-H/M5-10 | Alpha-Blocker |
@@ -107,7 +114,7 @@ reine Planung (`-`). Referenzen sind repository-relativ.
 | V-02 | IMPLEMENTED | ja | `NativeGestureProvider` | Runtime Core |
 | V-03 | PARTIAL | ja | `SceneInspectorPanel.kt`, Scene Tree Tests | M7-2 |
 | V-04 | PARTIAL | ja | A11y Bounds, Marker/Canvas Projektionen | einheitlicher Resolver fehlt |
-| V-05 | PLANNED | - | M5-7/M7-2 | Alpha-Blocker |
+| V-05 | PARTIAL | ja | M5-7 `clickText` mit deterministischer Suche; allgemeines Elementziel offen | M7-2 |
 | V-06 | PLANNED | - | M7-1 | Alpha-Blocker |
 | V-07 | PARTIAL | ja | Marker-/Canvas-/Recorder-Crop Projektionen | M7-1/M7-7 |
 | V-08 | PLANNED | - | Vision Catalog markiert ML Kit geplant | Alpha-Ziel fuer Kern-OCR |
@@ -174,7 +181,7 @@ reine Planung (`-`). Referenzen sind repository-relativ.
 | X-10 | DEFERRED | - | separate Projekte/Konzepte | eigenes Projekt |
 | Q-01 | IMPLEMENTED | ja | 139 App-, 76 BlockEditor-, 9 Flowchart-Testdateien | laufendes Gate |
 | Q-02 | IMPLEMENTED | ja | M4 Harness und Closure Audit | laufendes Gate |
-| Q-03 | IMPLEMENTED | ja | M5-0 bis M5-6 Tests | laufendes Gate |
+| Q-03 | IMPLEMENTED | ja | M5-0 bis M5-7 Tests und reale A11y-Geraeteabnahme | laufendes Gate |
 | Q-04 | PARTIAL | ja | versionierte Geraeteabnahmen, keine vollstaendige Matrix | M10-5 |
 | Q-05 | IMPLEMENTED | ja | M3-3/M3-4 Performanceprofile | laufendes Gate |
 | Q-06 | PLANNED | - | M10-4 | RC-Blocker |
@@ -187,13 +194,70 @@ reine Planung (`-`). Referenzen sind repository-relativ.
 | Q-13 | PLANNED | - | M10-9 | Release Freeze |
 | Q-14 | PLANNED | - | M10-9 | finale Freigabe |
 
+## Abschlussmatrix der 42 PARTIAL-Features aus Audit-Baseline 09b03dd
+
+`Nachweis offen` bezeichnet den kleinsten noch fehlenden Produkt- oder Testnachweis. Ein Pebble
+darf den Status erst nach produktiver Verdrahtung und diesem Nachweis anheben. M5-7 verschiebt
+danach zusaetzlich R-13 und V-05 von `PLANNED` nach `PARTIAL`; diese beiden stehen bewusst nicht in
+der historischen 42er-Baseline.
+
+Primaere Verteilung der 42 Baseline-Eintraege: M6 Editor 5, M6-W WindowSession 6, M7
+Perception/Recorder 8, M8 Resources 5, M9 Integrationen 11, M10 Sprache/Qualitaet 4 und Post-1.0 3.
+Ueberlappende Abhaengigkeiten stehen weiterhin in den Einzelzeilen.
+
+| ID | Vorhanden | Produktverbindung fehlt | Nachweis offen | Milestone | Release | Kleinster abschliessbarer Pebble |
+| --- | --- | --- | --- | --- | --- | --- |
+| A-09 | Lexer, Parser, AST/IR, Generator | Nicht der gesamte dokumentierte V1-Umfang ist produktiv | Korpus gegen freigegebene Untermenge | M10-6 | CORE_1_0 | Untermenge einfrieren und Conformance-Korpus gruen machen |
+| A-16 | Grammar, Truth Map, API-Draft | Eine normative, versionierte Referenz | Docs-/Fixture-Abgleich | M10-6 | CORE_1_0 | V1-Referenz aus akzeptierter Untermenge publizierbar machen |
+| E-06 | Factory, Mutator-Projektion | Designer-Aenderung bis kanonische Projektionen | Produktiver Add/Reorder/Delete-Roundtrip | M6-6 | OPTIONAL_1_0 | Einen dynamischen Block end-to-end abnehmen |
+| E-07 | Material-Shape-Projektionen | Vollstaendige produktive Shape-Zuordnung | Visuelle Block-/Node-Matrix | M6-6 | OPTIONAL_1_0 | Kernformen auf Zielgeraet visuell abnehmen |
+| E-08 | ShapeMaker Design-Editor und Bridge | Stabiler Asset-Lifecycle im Projekt | Save/Edit/Reload/Port-Test | M6-6/M8-6 | OPTIONAL_1_0 | Ein `.ema`-Asset verlustfrei roundtrippen |
+| E-10 | AutoArrange, Routing, Interaktion | Robustes Standardlayout fuer grosse/verschachtelte Graphen | Determinismus- und Geraete-UX-Gate | M6-2 | CORE_1_0 | Standardfixtures zweimal identisch arrangieren und bedienen |
+| E-15 | Block-/Flow-/Scene-Inspectoren | Einheitlicher typisierter Edit-Pfad | Eingabe-, Fokus- und Undo-Geraetetest | M6-5 | CORE_1_0 | Einen Parameter in Block und Flow identisch aendern |
+| W-02 | Drag, Resize, Z-Order, Min/Max | Gemeinsamer WindowSession-Vertrag | Multi-Panel-Gesten und Recovery | M6-W | CORE_1_0 | Eine Session mit Drag/Resize/Z-Order wiederherstellen |
+| W-03 | Snap und Bounds | Einheitliche Kanten-/Panel-Snap-Policy | Alle Displaykanten und Panelnachbarn | M6-W | CORE_1_0 | Deterministischen Snap-Fixture plus Geraetetest abschliessen |
+| W-05 | SideRail, Toolbars, Sheets | Alias- und Zustandsvertrag je Panel | Panelwechsel/Fokus/Restore | M6-0/M6-W | CORE_1_0 | Historische Panel-Aliase migrieren und testen |
+| W-06 | StudioOverlayService | WindowSession, FGS und Recovery | Android-36-Lifecycle-Test | M6-W | CORE_1_0 | Overlay starten, detach/attach, stoppen und recovern |
+| W-07 | LiveMarker und OverlayStateStore | Capture-/Record-Session-Anbindung | Hide/restore, Prozessneustart | M6-W/M7-7 | CORE_1_0 | Screenshot-Hide/Restore ohne Stateverlust nachweisen |
+| H-05 | Playback-Transforms und Mapper | Globaler Display-/Koordinatenvertrag | Rotation/Insets/Display-ID-Matrix | M6-W/M7-1 | CORE_1_0 | Einen gemeinsamen Mapper fuer Capture und Aktion abnehmen |
+| H-09 | VT2VT LAN, WebSocket, USB/ADB | Releasefaehige Session-/Security-Policy | Reconnect- und Transportmatrix | M9-5 | OPTIONAL_1_0 | Zwei Geraete nach Abbruch deterministisch reconnecten |
+| H-10 | Payloads, Reducer, Mirror-Tests | Konflikt- und Versionsvertrag | Doppelte/stale Revisionen | M9-6 | OPTIONAL_1_0 | Versionierten Mirror-Roundtrip mit Konfliktdiagnose testen |
+| V-03 | A11y-Tree im Scene Inspector | Gemeinsamer Scene-/Evidence-Kontext | Reale Tree-, Selection- und Freshness-Abnahme | M7-2 | CORE_1_0 | Eine reale Scene inklusive Herkunft und Wechsel abnehmen |
+| V-04 | Bounds, Marker-/Canvas-Hit-Testing | Einheitlicher Element-/Display-Resolver | Koordinaten- und Stale-Gate | M7-2 | CORE_1_0 | Bounds-Ziel nach Scene-Aenderung sicher neu aufloesen |
+| V-07 | ROI, Crop, Canvas Detail | Gemeinsamer CaptureFrame-Kontext | Rotation/Freshness/Marker-Sync | M7-1/M7-7 | CORE_1_0 | Marker-ROI aus exakt demselben Frame roundtrippen |
+| V-10 | Vision Contracts, YOLO/LiteRT-Katalog | Produktiver WSS-Vision-Provider | Modell-/Permission-/Failure-Gate | M7-5 | OPTIONAL_1_0 | Einen optionalen Provider kontrolliert discovern/ablehnen |
+| V-11 | Unifier und Ambiguity-Projektion | Freigegebene Fusion-Policy | Mehrquellen-Fixtures mit Provenance | M7-8 | CORE_1_0 | A11y/OCR-Treffer ohne Herkunftsverlust korrelieren |
+| V-12 | Observations und Zeitmetadaten | Einheitlicher Freshness-Vertrag | Before/after und verschwundene Elemente | M7-8 | CORE_1_0 | Action mit frischer Folgeobservation belegen |
+| T-09 | Tree, Evidence, Resources | Fusion, Historie und stabile Entity-Sicht | Scene-Wechsel- und Stale-Test | M7-2/M7-7 | CORE_1_0 | Inspector-Entity ueber zwei Beobachtungen verfolgen |
+| T-10 | Junktor-Contracts und Vorschlaege | Expliziter Review-/Publish-Pfad | Record bis Workflow plus Ablehnung | M7-6 | CORE_1_0 | Einen Candidate bestaetigt als WorkspaceTransaction publizieren |
+| D-02 | Datastore Panel und Projektoren | Gemeinsamer Scope-/Ownership-Vertrag | Save/Load und Delete-Guard | M8-0 | CORE_1_0 | Eine Ressource mit Owner und Referenz persistieren |
+| D-03 | Marker-/Vision-/Recorder-Ressourcen | Einheitliche Resource IDs/Lifecycle | Import/Export und fehlende Referenz | M8-6 | CORE_1_0 | Marker samt Screenshotreferenz portabel speichern |
+| D-04 | VisualAsset Catalog, Package, Inbox | Projektweiter Asset-Lifecycle | Edit/replace/delete/where-used | M8-6 | OPTIONAL_1_0 | Ein Asset sicher ersetzen und Referenzen erhalten |
+| D-06 | ToolboxSetMode und UI | Persistente projektbezogene Toolbox-Auswahl | Reload und fehlendes Plugin | M8-6 | OPTIONAL_1_0 | Custom/Mixed-Toolbox speichern und wiederherstellen |
+| D-09 | Resource Codec, Session Store, Backupdocs | Vollstaendiges Projektpaket | Backup/Restore/Migration auf Neuinstallation | M8-9/M10-3 | CORE_1_0 | Minimalprojekt exportieren, loeschen und identisch importieren |
+| D-10 | Worldview Contracts, Unifier, Projektionen | Kein releaseverbindliches dynamisches Modell | Nur Kompatibilitaets-/Nichtblocker-Test | Post-1.0 | POST_1_0 | 1.0-Grenze und stabile Extension Points dokumentieren |
+| D-11 | ReadOnlyKnowledgeIndex und RAG-Doku | Produktiver Index/Ingestion-Pfad | Kein 1.0-Nachweis erforderlich | Post-1.0 | POST_1_0 | Read-only Vertrag isoliert als Extension erhalten |
+| I-03 | Eingebetteter ShapeMaker-Teil | Versionierter Plugin-/Asset-Vertrag | Abwesenheit und Upgrade | M8-6/M9-8 | OPTIONAL_1_0 | Designer optional laden, fehlen lassen und diagnostizieren |
+| I-04 | ChartGraph Domain und Panel | Abgenommener Kernchart-Scope | Daten-, Lifecycle- und Exporttest | M9-8 | OPTIONAL_1_0 | Einen Kernchart speichern, reloaden und exportieren |
+| I-05 | Vision Contracts und YOLO-Beschreibung | Runtime-Provider/Discovery | Availability und typed result | M7-5/M9-0 | OPTIONAL_1_0 | Vision-Provider ueber M5-8-Policy sichtbar machen |
+| I-06 | Tasker Config, Receiver, Result, Settings | Gemeinsame Provider-Registry | Permission/timeout/cancel/result | M5-8/M9-1 | OPTIONAL_1_0 | Host inventarisieren und kontrollierte Abwesenheit testen |
+| I-07 | Shizuku API, Permission, UserService | Gemeinsame Provider-Registry | Binderverlust/Permission-Recovery | M5-8/M9-2 | OPTIONAL_1_0 | Availability-Snapshot plus Permission-Diagnose vereinheitlichen |
+| I-08 | Termux RUN_COMMAND | Typed Result/Cancellation in Registry | Timeout, Prozessende, fehlende App | M5-8/M9-3 | OPTIONAL_1_0 | Einen Command mit Result und Cancellation abnehmen |
+| I-09 | Custom Tabs Open und Settings | Callback-/Navigation-Vertrag | Browserabwesenheit und Rueckkehr | M5-8/M9-4 | OPTIONAL_1_0 | Open/close/result ueber Provider-Policy testen |
+| I-10 | Scrcpy-Metadaten und VT2VT-Transporte | Kein echter Video-/Input-Host | Hostabwesenheit, reconnect, cleanup | M9-5 | OPTIONAL_1_0 | Scope auf Steuerung begrenzen oder Host nachweisen |
+| I-13 | Separates IME und Descriptor | Kein WSS-Releasevertrag | Companion-Version/Bridge-Kompatibilitaet | M9-8 | OPTIONAL_1_0 | Versionierten Bridge-Handshake dokumentieren und testen |
+| X-05 | Erweiterte ChartGraph-Darstellungen | Kein freigegebener 1.0-Chartumfang | Plugin-eigene visuelle Matrix | Post-1.0 | POST_1_0 | Kerncharts von experimentellen Familien trennen |
+| Q-04 | Einzelne Geraeteabnahmen | Vollstaendige Zielmatrix | Android/API/Display/Lifecycle-Matrix | M10-5 | CORE_1_0 | Verbindliche Minimalmatrix definieren und ersten Lauf erfassen |
+| Q-10 | Architektur-/Testdoku | Geschlossene V1-Produktreferenz | Link-, Beispiel- und Versionsaudit | M10-6 | CORE_1_0 | Freigegebene EMScript-Untermenge mit Beispielen publizieren |
+
 ## Fehlende oder unzureichende Nachweise
 
 - Kein vollstaendiger M6-Geraete- und UX-Abnahmelauf fuer alle drei Editoren und Panelgesten.
 - Kein prozessweiter Headless-/Foreground-Service-Test mit Recovery und UI-Reattachment.
 - Kein gemeinsamer Display-ID-Vertrag fuer Capture, A11y, Gesture und Remote-Sessions.
 - Kein produktiver M5-8-Nachweis fuer externe Adapter in einer einheitlichen Provider-Registry.
-- Keine abgeschlossene A11y-/OCR-Zielaufloesung fuer reale Kernworkflows.
+- M5-7 belegt semantisches `clickText`; allgemeines `clickElement` und OCR-Zielaufloesung fuer reale
+  Kernworkflows bleiben offen.
 - Kein durchgaengiger Record -> Review -> Proposal -> explizite Workflow-Publikation -> WetRun-Test.
 - Kein abgeschlossenes Projektformat fuer Explorer, Scopes, Asset-Lifecycle und Portabilitaet.
 - Keine vollstaendige Device-/Android-Versionen-, Langlauf-, Permission-, Privacy- und Security-Matrix.
