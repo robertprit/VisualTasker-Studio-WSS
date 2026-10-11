@@ -10,8 +10,8 @@ Audit-Baseline `09b03dd`: 146 Features, davon 54 `IMPLEMENTED`, 42 `PARTIAL`, 32
 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`. M5-8 wurde nach dieser Baseline abgeschlossen. Die
 42 damaligen `PARTIAL`-Eintraege bleiben deshalb in der Abschlussmatrix unten unveraendert
 nachvollziehbar; spaetere Statusverschiebungen werden separat ausgewiesen und nicht rueckwirkend in
-die Baseline eingerechnet. Aktueller Matrixstand nach M5-H: 58 `IMPLEMENTED`, 46 `PARTIAL`,
-24 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
+die Baseline eingerechnet. Aktueller Matrixstand nach M5-H und M6-W: 61 `IMPLEMENTED`, 46 `PARTIAL`,
+21 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
 
 ## Architektur und Sprache
 
@@ -84,19 +84,19 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-H: 58 `IMPLEMENTED`, 46
 | ID | Status | Produktpfad | Nachweis | Abhaengigkeit / Release |
 | --- | --- | --- | --- | --- |
 | W-01 | IMPLEMENTED | ja | `WorkspaceScreen.kt`, `PanelState` | 1.0 Pflicht |
-| W-02 | PARTIAL | ja | produktive Gesten und Session Store; offene Resize-/Focus-Haertung | M6-W |
+| W-02 | IMPLEMENTED | ja | `WindowSessionRegistry`, `StudioWindowHost`, produktive DarkPanel-Gesten | Geraete-UX-Gate offen |
 | W-03 | PARTIAL | ja | Snap-/Bounds-Logik und Roadmap-Abnahmen | M6-W |
-| W-04 | IMPLEMENTED | ja | `WorkspaceSessionStore.kt` plus Tests | M6-W Recovery erweitern |
+| W-04 | IMPLEMENTED | ja | `WorkspaceSessionStore`, `AndroidWindowSessionStore`, Persistenz-/Reattach-Tests | Geraete-Recovery offen |
 | W-05 | PARTIAL | ja | SideRail/Inspector/Toolbar in `WorkspaceScreen.kt` | M6-0 Alias-Audit |
-| W-06 | PARTIAL | ja | `StudioOverlayService.kt`, Manifest-Service | FGS-/Lifecycle-Vertrag fehlt |
+| W-06 | PARTIAL | ja | `OverlayWindowHost`, Permission-/WindowManager-Diagnosen, Cleanup/Reattach | realer Lifecycle-/FGS-Test offen |
 | W-07 | PARTIAL | ja | `LiveMarkerOverlay.kt`, `OverlayStateStore.kt` | M6-W/M7-7 |
-| W-08 | PLANNED | - | `WINDOW_HEADLESS_DISPLAY_ROADMAP.md` M6-W | Alpha-Blocker |
-| W-09 | PLANNED | - | M6-W/M10-2 | Alpha-Blocker |
+| W-08 | IMPLEMENTED | ja | `WindowSessionContracts.kt`, zentrale Registry und Hostadapter | Geraetegate vor Alpha |
+| W-09 | PARTIAL | ja | `DisplayContext`, explizite Koordinatenraeume und Insets-Clamp | Nicht-Default-Display bleibt M7-V |
 | W-10 | DEFERRED | - | M9-D | post-1.0 |
 | H-01 | IMPLEMENTED | ja | Runtime Core ohne Compose-Abhaengigkeit | Basis fuer M5-H |
 | H-02 | IMPLEMENTED | ja | `HeadlessRuntimeService`, Android-36 `specialUse`, Notification-Stop; M5-H | 1.0 Pflicht |
 | H-03 | IMPLEMENTED | ja | `RuntimeClient`, Session-StateFlow, Reattach-Geraetetest; M5-H | visuelle RailTrace-Abnahme offen |
-| H-04 | PLANNED | - | M6-W/M7-V | expliziter Display-Kontext |
+| H-04 | IMPLEMENTED | ja | M6-W `DisplayContext` und persistierte Display-ID | VirtualDisplay bleibt M7-V |
 | H-05 | PARTIAL | teil | Recorder Playback Viewport Transform und lokale Mapper | kein globaler Display-Vertrag |
 | H-06 | PLANNED | - | M7-V | optional fuer 1.0 |
 | H-07 | PLANNED | - | M7-V | optional fuer 1.0 |

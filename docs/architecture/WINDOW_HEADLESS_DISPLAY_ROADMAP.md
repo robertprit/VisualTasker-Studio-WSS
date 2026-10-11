@@ -15,8 +15,8 @@ It is planning and audit evidence only. No production implementation is implied.
 | Android runtime bridge | DONE | `AndroidRuntimeBridge` rejects double starts, exposes `StateFlow`, supports cancellation and closes its active run. | Its ownership is currently tied to a Compose coroutine scope. |
 | Headless host | GAP | No application/service-owned runtime host exists. | One process-wide owner, foreground/background lifecycle, recovery and UI reattachment. |
 | Runtime recovery | GAP | `AndroidRuntimeSnapshot` and live trace are in memory and projected in `WorkspaceScreen`. | Bounded persistent state, interrupted-session diagnosis and no automatic hazardous resume. |
-| Compose workspace panels | DONE | `PanelState`, `WorkspaceSessionStore` and `WorkspaceScreen` provide position, size, Z-order, minimize/maximize, lock, focus, snap and restoration. | Display identity and a reusable WindowSession contract are absent. |
-| Native floating overlays | DONE | `StudioOverlayService` uses `TYPE_APPLICATION_OVERLAY`, drag/resize, visibility restoration and `OverlayStateStore`. | It is a separate View-based host with no shared session, docking, profile or display contract. |
+| Compose workspace panels | DONE | `PanelState`, `WorkspaceSessionStore` and `WorkspaceScreen` retain rendering and gestures; `StudioWindowHost` projects them into the shared registry. | Real-device gesture/recovery acceptance remains. |
+| Native floating overlays | DONE | `StudioOverlayService` retains its views and handlers while `OverlayWindowHost` supplies shared session, display and diagnostic contracts. | Real Android lifecycle/recovery acceptance remains. |
 | Overlay service lifecycle | GAP | Service is `START_STICKY` and launched with `startService`. | No foreground notification/type, explicit recovery policy or target-36 background-start contract. |
 | Recording display metadata | GAP | `WindowSnapshot` and `WindowContext` contain nullable `displayId`. | Capture and target resolution do not consistently populate or enforce it. |
 | Screenshot capture | GAP | Accessibility screenshot and `AndroidRecorderCaptureSource` work on `Display.DEFAULT_DISPLAY`. | Explicit display selection, per-display metrics and capability failure. |
@@ -43,7 +43,7 @@ M7-V is new exploratory infrastructure. M9-D is deliberately later integration w
 
 ## M5-H Headless Execution Contract
 
-Status: `PLANNED`, Stable 1.0 Core.
+Status: `PARTIAL`, Stable 1.0 Core. Contract and adapters implemented; device acceptance remains.
 
 ### Required Ownership
 
@@ -97,6 +97,10 @@ Status: `PLANNED`, Stable 1.0 Core.
 
 Gate: windows can move, resize, dock, restore and survive orientation/profile changes without
 mutating workflow semantics or runtime state.
+
+Implementation evidence: `docs/architecture/M6_W_WINDOW_SESSION.md`, the `com.visualtasker.wss.window`
+package, registry/codec tests and Android instrumentation. M6-W deliberately does not create a
+VirtualDisplay or MediaProjection session.
 
 ## M7-V VirtualDisplay And Capture Foundation
 

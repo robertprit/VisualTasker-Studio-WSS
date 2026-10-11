@@ -273,6 +273,14 @@ import com.visualtasker.wss.overlay.LiveMarkerMode
 import com.visualtasker.wss.overlay.LiveMarkerResult
 import com.visualtasker.wss.overlay.LiveMarkerStore
 import com.visualtasker.wss.recording.RecordingPlaybackRuntime
+import com.visualtasker.wss.window.AndroidDisplayContextFactory
+import com.visualtasker.wss.window.StudioPanelWindowState
+import com.visualtasker.wss.window.StudioWindowHost
+import com.visualtasker.wss.window.WindowBounds
+import com.visualtasker.wss.window.WindowCoordinateSpace
+import com.visualtasker.wss.window.WindowFocusState
+import com.visualtasker.wss.window.WindowInteractionMode
+import com.visualtasker.wss.window.WindowSessionProcessRegistry
 import com.visualtasker.wss.recording.RecordingPlaybackRuntimeState
 import com.visualtasker.wss.recording.RecordingPlaybackPhase
 import com.visualtasker.wss.recording.RecordingPlaybackPreviewPolicy
@@ -2901,6 +2909,34 @@ fun WorkspaceScreen(
     val gridSizeDp = if (useLargeGrid) GridSystem.GRID_SIZE_DP_LARGE else GridSystem.GRID_SIZE_DP_SMALL
     val workspaceTopGuardPx = (WORKSPACE_TOP_BAR_HEIGHT_DP + WORKSPACE_PANEL_MARGIN_DP) * density
     val workspaceBottomGuardPx = if (dockAtTop) 0f else WORKSPACE_MINIMIZED_DOCK_HEIGHT_DP * density
+    val windowSessionRegistry = remember(context) { WindowSessionProcessRegistry.get(context) }
+    val studioWindowHost = remember(context, windowSessionRegistry) {
+        StudioWindowHost(windowSessionRegistry, AndroidDisplayContextFactory.from(context))
+    }
+    DisposableEffect(studioWindowHost) {
+        onDispose { studioWindowHost.dispose() }
+    }
+    LaunchedEffect(surfaceSize, density, focusedPanelId, panels.toList()) {
+        val displayContext = AndroidDisplayContextFactory.from(context)
+        studioWindowHost.updateDisplayContext(displayContext)
+        studioWindowHost.reconcile(
+            panels.map { panel ->
+                StudioPanelWindowState(
+                    panelId = panel.id,
+                    bounds = WindowBounds(
+                        left = panel.x,
+                        top = panel.y,
+                        width = panel.width * density,
+                        height = panel.height * density,
+                        space = WindowCoordinateSpace.LOCAL_WINDOW_PX,
+                    ),
+                    zIndex = panel.zIndex,
+                    visible = !panel.minimized,
+                    focused = panel.id == focusedPanelId,
+                )
+            }
+        )
+    }
 
     var recordingSessions by remember(context) { mutableStateOf(RecordingEventStore.recordingSessions(context)) }
     var recordingRecoveryMessage by remember { mutableStateOf<String?>(null) }
@@ -4254,6 +4290,7 @@ fun WorkspaceScreen(
                         }
                     },
                     onPositionChange = { newPos ->
+                        studioWindowHost.move(panel.id, newPos.x, newPos.y)
                         updatePanel(panels, panel.id) {
                             val panelWidthPx = it.width * density
                             val panelHeightPx = it.height * density
@@ -4265,6 +4302,7 @@ fun WorkspaceScreen(
                         }
                     },
                     onSizeChange = { w, h ->
+                        studioWindowHost.resize(panel.id, w * density, h * density)
                         updatePanel(panels, panel.id) {
                             val boundedW = w.coerceIn(PANEL_MIN_W.toInt(), maxWidthDp)
                             val boundedH = h.coerceIn(PANEL_MIN_H.toInt(), maxHeightDp)
@@ -4272,10 +4310,12 @@ fun WorkspaceScreen(
                         }
                     },
                     onZIndexChange = {
+                        studioWindowHost.bringToFront(panel.id)
                         updatePanel(panels, panel.id) { it.copy(zIndex = nextZ++) }
                     },
                     onFocusRequest = {
                         focusedPanelId = panel.id
+                        studioWindowHost.focus(panel.id, WindowFocusState.ACTIVE)
                     },
                     onMinimizeToggle = {
                         updatePanel(panels, panel.id) { it.copy(minimized = true) }
@@ -4284,6 +4324,7 @@ fun WorkspaceScreen(
                         updatePanel(panels, panel.id) { it.copy(isMaximized = !it.isMaximized) }
                     },
                     onClose = {
+                        studioWindowHost.close(panel.id)
                         panelDropBounds.remove(panel.id)
                         textEditorDropMetrics.remove(panel.id)
                         panels.removeAll { it.id == panel.id }
@@ -4298,6 +4339,18 @@ fun WorkspaceScreen(
                     },
                     onColorChange = { color ->
                         updatePanel(panels, panel.id) { it.copy(accentColor = color) }
+                    },
+                    onDragStateChange = { dragging ->
+                        studioWindowHost.setInteraction(
+                            panel.id,
+                            if (dragging) WindowInteractionMode.DRAGGING else WindowInteractionMode.INTERACTIVE,
+                        )
+                    },
+                    onResizeStateChange = { resizing ->
+                        studioWindowHost.setInteraction(
+                            panel.id,
+                            if (resizing) WindowInteractionMode.RESIZING else WindowInteractionMode.INTERACTIVE,
+                        )
                     },
                     modifier = Modifier
                         .zIndex(panel.zIndex.toFloat())

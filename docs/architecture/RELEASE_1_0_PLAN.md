@@ -29,7 +29,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M3 Workspace Operations und Source Apply | DONE | `M3_CLOSURE_AUDIT.md`; atomare Operationen, Properties, Source-Anker und Validator. |
 | M4 Three-Editor Conformance | DONE | `M4_CLOSURE_AUDIT.md`; M4-0 bis M4-3 ohne Blocker geschlossen. |
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H `DONE`; Runtime-Closure fehlt. |
-| M6 Editor Productization und Workspace UX | PLANNED | Viele Funktionen vorhanden; ein gemeinsamer Window-Session-Vertrag und M6-Gesamtgate fehlen. |
+| M6 Editor Productization und Workspace UX | ACTIVE | M6-W Vertrag/Hosts implementiert; Geraete-UX und weitere Editor-Produktgates offen. |
 | M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Scene-Inspector-Vorarbeiten vorhanden; Perception und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Datastore-/Asset-Vorarbeiten vorhanden; gemeinsame Scope- und Lifecycle-Abnahme fehlt. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Sicherheitsgate fehlen. |
@@ -74,7 +74,7 @@ Fehlersemantik und Trace sind deterministisch dokumentiert.
 | M5-7 Accessibility Target Resolution | Eine typisierte Query adressiert genau eine stabile Workflow-Entity; Preorder-Aufloesung ist deterministisch; 0/1/n Treffer ergeben NOT_FOUND/FOUND/AMBIGUOUS; stale Nodes werden vor Aktion abgewiesen; Cancellation beendet Polling/Aktion; `ACTION_CLICK` trifft Element oder klickbaren Parent; keine implizite Koordinatenfallback- oder Workspace-Mutation | JVM-Resolver-/Provider-Tests, Text-Block-Flow-Roundtrip, reale Tests fuer unique, parent, changed observation und ambiguity, RailTrace mit Querytyp, Kandidatenzahl, Status, Aktion, Display und Observation | DONE fuer `clickText`; `clickElement`, variable Query und Nicht-Default-Display bleiben GAP |
 | M5-8 Provider Policy | Bestehende Timing-, Gesture-, Accessibility-, Tasker-, Shizuku-, Termux- und CustomTabs-Hosts sind inventarisiert; jede Capability liefert Discovery, Availability, Permission und typed Result; Auswahl ist priorisiert und deterministisch; Fallback ist pro Capability explizit und im Trace sichtbar; Abwesenheit, Permission denial, Timeout, Cancellation und Providerverlust teilen stabile Fehlercodes | Registry-Unit-Tests fuer Prioritaet und Konflikt, Host-Adapter-Fixtures, kontrollierte Abwesenheits-/Permission-Tests, keine direkte zweite Dispatch-Engine | DONE; externe asynchrone Adapter bleiben M9 |
 | M5-H Headless Runtime | Genau eine prozessweite `ExecutionSession` besitzt Runner/Job/Trace; Compose kann attach/detach ohne Laufabbruch; Doppelstart, Stop, Cancellation, Prozess-/Service-Recovery und UI-Reattachment sind deterministisch; Foreground-Service und Notification-Stop entsprechen Android 36; Session-ID, Workflow-ID, Status und Trace-Retention bleiben stabil | JVM State-Machine-Tests, Service-Lifecycle-/Process-recreation-Test, Hintergrundlauf, Reattach und Stop auf SM-S918B; visuelle RailTrace-Abnahme separat | DONE; kein Auto-Replay nach Prozessverlust |
-| M6-W WindowSession | Vorhandene Panel-Persistenz, Z-Order, Drag, Resize und Snap werden wiederverwendet; Shell und `StudioOverlayService` teilen Session-, Display-, Fokus- und Touch-Routing-Vertrag; harte Bounds, Insets, Min/Max, Crash-Restore und Multi-Panel-Z-Order sind deterministisch; Window-Aktionen mutieren keinen Workflow | Pure-State-Tests, Persistenz-/Migrationstest, Rotation/Insets, Overlay attach/detach, reproduzierbarer Geraete-Gestenlauf | OPEN: gemeinsamer Vertrag und Android-36-Overlaygate fehlen |
+| M6-W WindowSession | Vorhandene Panel-Persistenz, Z-Order, Drag, Resize und Snap werden wiederverwendet; Shell und `StudioOverlayService` teilen Session-, Display-, Fokus- und Touch-Routing-Vertrag; harte Bounds, Insets, Min/Max, Crash-Restore und Multi-Panel-Z-Order sind deterministisch; Window-Aktionen mutieren keinen Workflow | Pure-State-Tests, Persistenz-/Migrationstest, Rotation/Insets, Overlay attach/detach, reproduzierbarer Geraete-Gestenlauf | PARTIAL: Vertrag, Hosts und automatisierte Gates implementiert; reale Gesten-/Prozess-Recovery-Abnahme offen |
 | M7 Perception/Recorder | Capture, Marker, Recorder, Scene Inspector und Runtime tragen denselben Display-/Frame-/Zeitkontext; bestehende Recording-Persistenz, Integrity, Review, Replay und Recovery bleiben erhalten; Record -> Candidate -> Review -> Junktor Proposal -> explizite WorkspaceTransaction -> Runtime ist nachvollziehbar; Ablehnung mutiert nichts; es entsteht keine zweite Recorder-Pipeline | Capture-/Koordinatenfixtures, persistenter Record-Neustart, Evidence-Provenienz, Publish/Reject-Integrationstest, zwei reale App-Workflows bis Trace | OPEN: gemeinsamer Capture-Kontext und Publishing-Pfad fehlen |
 
 M7-V VirtualDisplay ist kein Bestandteil dieser Gates. M9-D Remote Display bleibt bis zu einer
@@ -87,7 +87,7 @@ Gesamtstatus: `PLANNED`; vorhandene Funktionen gelten als Vorarbeit, nicht als p
 | Slice | Status | Ziel |
 | --- | --- | --- |
 | M6-0 | PLANNED | Bestandsaudit gegen den heutigen Compose-Code und die M4-Vertraege. |
-| M6-W | PLANNED | Gemeinsamer Window-/Overlay-Host fuer Sessions, Z-Order, Fokus, Drag/Resize, Snap/Dock und Layoutprofile. |
+| M6-W | PARTIAL | Gemeinsamer Window-/Overlay-Vertrag produktiv; reale Geraete-UX- und Recovery-Abnahme offen. |
 | M6-1 | PLANNED | BlockEditor Docking, Reporter, Container, Drag/Snap und Typvalidierung abnehmen. |
 | M6-2 | PLANNED | FlowEditor AutoArrange, Routing, Branches und Kantenfreiheit abnehmen. |
 | M6-3 | PLANNED | TextEditor Diagnostik, Source Mapping, Navigation und Apply-Vorschau abnehmen. |
@@ -212,9 +212,9 @@ Verbindlicher kritischer Pfad:
 Parallel erlaubt sind M6-Editor-Haertung, Dokumentationsabschluss und Regressionserweiterung. Sie
 duerfen keine noch offenen Runtime-, WindowSession- oder Capture-Vertraege vorwegnehmen.
 
-Der aktuelle kleinste sinnvolle Slice ist M6-W. M5-8 und M5-H haben Provider-Auswahl und
-prozessweiten Runtime-Host geschlossen. M6-W konsolidiert als Naechstes Panel-, Overlay-,
-Display-, Fokus- und Touch-Routing-Lebenszyklen, ohne Runtime oder Workflow-Semantik zu duplizieren.
+Der aktuelle kleinste sinnvolle Slice ist die reale M6-W-Geraeteabnahme fuer Panel-, Overlay- und
+Recovery-Gesten. Danach folgt M6-0 als Produktreife-Audit der vorhandenen Editoren. Vertrag,
+Registry und Hostadapter aus M6-W duplizieren weder Runtime noch Workflow-Semantik.
 
 ## Release-Gates
 
@@ -257,8 +257,8 @@ Display-, Fokus- und Touch-Routing-Lebenszyklen, ohne Runtime oder Workflow-Sema
 | M5-6 in `roadmap-1.md` als offen | DONE | Durch `M5_6_NATIVE_MULTITOUCH.md`, Tests und physischen SM-S918B-Nachweis ueberholt. |
 | Historische und neue M1-M10-IDs | DONE | Historische IDs bleiben; dieses Dokument ist der Master-Namensraum fuer die Release-Reihenfolge. |
 | M4-4 gegen M5-9 | DEFERRED | Strukturvertrag separat freigeben; Runtime darf ihn nicht vorwegnehmen. |
-| Headless Runtime | PLANNED | M5-H ist 1.0 Core; bestehender Runner wird gehostet, nicht dupliziert. |
-| Window/Floating Workspace | PLANNED | M6-W ist 1.0 Core und konsolidiert vorhandene Panel-/Overlay-Bausteine. |
+| Headless Runtime | DONE | M5-H hostet den bestehenden Runner prozessweit, ohne ihn zu duplizieren. |
+| Window/Floating Workspace | PARTIAL | M6-W-Vertrag und Hostadapter sind implementiert; reale Geraete- und Recovery-Abnahme bleibt offen. |
 | VirtualDisplay Foundation | PLANNED | M7-V ist optional fuer 1.0 und erfordert einen eigenen Machbarkeits-/Permission-Gate. |
 | MultiDisplay/Remote Surface | DEFERRED | M9-D folgt erst nach M7-V und freigegebenem VT2VT-Scope. |
 | Prozessuebergreifende Undo-History | GAP | Fuer M4 nicht erforderlich; vor Stable explizit als Produktanforderung annehmen oder ablehnen. |

@@ -45,7 +45,7 @@ Teilimplementierungen, isolierte Contracts und reine Planung.
 | M3 Workspace Operations und Source Apply | DONE | Atomare Transaktionen, Property Schema, Source-Anker und linearer Validator geschlossen. |
 | M4 Three-Editor Conformance | DONE | Text, Block und Flow mutieren ueber denselben kanonischen Pfad; M4-0 bis M4-3 geschlossen. |
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H sind DONE; Runtime-Closure fehlt. Kontrollfluss ist kein 1.0-Core-Blocker. |
-| M6 Editor Productization und Workspace UX | PLANNED | Erhebliche Panel-/Layout-Vorarbeiten vorhanden; gemeinsamer Window-Session-Vertrag und Produktgate fehlen. |
+| M6 Editor Productization und Workspace UX | ACTIVE | M6-W WindowSession-Vertrag und Hostadapter implementiert; reale Geraete-UX-Abnahme und Editor-Produktgates folgen. |
 | M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Vorhandene Datastore-/Asset-Bausteine muessen gegen gemeinsame Scope-Vertraege auditiert werden. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Provider-Grenzen sind noch festzulegen. |
@@ -62,7 +62,8 @@ Reconciliation 2026-10-11:
 - M5-7 besitzt nur die Runtime-Zielaufloesung. Die breitere Scene-/Perception-Fusion bleibt M7.
 - M5-8 besitzt Resolver, Auswahlpolicy und Fehlervertrag. Vollstaendige Tasker-, Shizuku-,
   Termux- und VT2VT-Produktintegration bleibt M9.
-- M5-H Headless Execution ist `DONE`; M6-W Window/Floating Workspace bleibt `PLANNED` und fuer 1.0 Core.
+- M5-H Headless Execution ist `DONE`; M6-W Window/Floating Workspace ist implementiert, die reale
+  Gesten-/Recovery-Geraeteabnahme bleibt als Abschluss-GAP fuer 1.0 Core.
 - M7-V VirtualDisplay ist `PLANNED`, aber fuer 1.0 optional. M9-D MultiDisplay-/Remote-Sessions
   bleiben `DEFERRED`, bis M7-V und der VT2VT-Scope freigegeben sind.
 - WorldviewGraph, RAG, lokale KI/SLM und weitere experimentelle Produkterweiterungen sind fuer

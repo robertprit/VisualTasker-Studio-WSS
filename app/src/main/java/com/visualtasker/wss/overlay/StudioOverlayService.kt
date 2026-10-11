@@ -7,6 +7,7 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.IBinder
+import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -22,6 +23,14 @@ import com.visualtasker.wss.accessibility.toInspectorText
 import com.visualtasker.wss.recording.RecordingOperationResult
 import com.visualtasker.wss.recording.RecordingSessionRuntime
 import com.visualtasker.wss.workspace.model.RecordingEventStore
+import com.visualtasker.wss.window.AndroidDisplayContextFactory
+import com.visualtasker.wss.window.OverlayWindowHost
+import com.visualtasker.wss.window.WindowBounds
+import com.visualtasker.wss.window.WindowCoordinateSpace
+import com.visualtasker.wss.window.WindowDiagnostic
+import com.visualtasker.wss.window.WindowDiagnosticCode
+import com.visualtasker.wss.window.WindowHostType
+import com.visualtasker.wss.window.WindowSessionProcessRegistry
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,6 +59,7 @@ class StudioOverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var stateStore: OverlayStateStore
+    private lateinit var overlayWindowHost: OverlayWindowHost
     private val overlays = linkedMapOf<String, OverlayHandle>()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var statusView: TextView? = null
@@ -67,6 +77,10 @@ class StudioOverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         stateStore = OverlayStateStore(this)
+        overlayWindowHost = OverlayWindowHost(
+            registry = WindowSessionProcessRegistry.get(this),
+            displayContext = AndroidDisplayContextFactory.from(this),
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -98,10 +112,12 @@ class StudioOverlayService : Service() {
     }
 
     override fun onDestroy() {
-        overlays.values.forEach { handle ->
+        overlays.forEach { (key, handle) ->
+            overlayWindowHost.detached(key, hidden = false)
             runCatching { windowManager.removeView(handle.root) }
         }
         overlays.clear()
+        overlayWindowHost.dispose()
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -539,8 +555,36 @@ class StudioOverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
         }
-        windowManager.addView(view, params)
+        if (!Settings.canDrawOverlays(this)) {
+            reportWindowFailure(
+                code = WindowDiagnosticCode.OVERLAY_PERMISSION_MISSING,
+                key = "live-marker",
+                message = "System overlay permission is missing",
+            )
+            return
+        }
+        val attached = runCatching { windowManager.addView(view, params) }
+        if (attached.isFailure) {
+            reportWindowFailure(
+                code = WindowDiagnosticCode.WINDOW_MANAGER_FAILURE,
+                key = "live-marker",
+                message = attached.exceptionOrNull()?.message ?: "WindowManager rejected live marker",
+            )
+            return
+        }
         overlays["live-marker"] = OverlayHandle(view, params, null)
+        val display = AndroidDisplayContextFactory.from(this)
+        overlayWindowHost.attached(
+            panelId = "live-marker",
+            bounds = WindowBounds(
+                left = 0f,
+                top = 0f,
+                width = display.physicalWidthPx.toFloat(),
+                height = display.physicalHeightPx.toFloat(),
+                space = WindowCoordinateSpace.DISPLAY_PX,
+            ),
+            passThrough = false,
+        )
         setStatus("$mode markieren${if (liveMarkerMultiGroupId != null) " · Multi" else ""}")
         recordOverlayEvent("marker.mode", "mode=$mode", mapOf("multi" to (liveMarkerMultiGroupId != null).toString()))
         showFloatingInspector()
@@ -864,17 +908,38 @@ class StudioOverlayService : Service() {
         minWidth: Int,
         minHeight: Int,
     ) {
+        if (!Settings.canDrawOverlays(this)) {
+            reportWindowFailure(
+                code = WindowDiagnosticCode.OVERLAY_PERMISSION_MISSING,
+                key = key,
+                message = "System overlay permission is missing",
+            )
+            return
+        }
         val saved = stateStore.load(key)
+        val registry = WindowSessionProcessRegistry.get(this)
+        val display = AndroidDisplayContextFactory.from(this)
+        val persistedSession = registry.find(WindowHostType.OVERLAY, key)
+        if (persistedSession != null && persistedSession.displayContext.displayId != display.displayId) {
+            reportWindowFailure(
+                code = WindowDiagnosticCode.DISPLAY_UNAVAILABLE,
+                key = key,
+                message = "Saved overlay display ${persistedSession.displayContext.displayId.value} is unavailable",
+            )
+            return
+        }
+        val persistedBounds = persistedSession?.placement?.bounds
+            ?.takeIf { it.space == WindowCoordinateSpace.DISPLAY_PX }
         val params = WindowManager.LayoutParams(
-            saved?.width?.takeIf { it > 0 } ?: width,
-            saved?.height?.takeIf { it > 0 } ?: height,
+            persistedBounds?.width?.toInt()?.takeIf { it > 0 } ?: saved?.width?.takeIf { it > 0 } ?: width,
+            persistedBounds?.height?.toInt()?.takeIf { it > 0 } ?: saved?.height?.takeIf { it > 0 } ?: height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            this.x = saved?.x ?: x
-            this.y = saved?.y ?: y
+            this.x = persistedBounds?.left?.toInt() ?: saved?.x ?: x
+            this.y = persistedBounds?.top?.toInt() ?: saved?.y ?: y
         }
 
         installDragHandler(key, dragHandle, root, params)
@@ -888,8 +953,26 @@ class StudioOverlayService : Service() {
                 minHeight = minHeight,
             )
         }
-        windowManager.addView(root, params)
+        val attached = runCatching { windowManager.addView(root, params) }
+        if (attached.isFailure) {
+            reportWindowFailure(
+                code = WindowDiagnosticCode.WINDOW_MANAGER_FAILURE,
+                key = key,
+                message = attached.exceptionOrNull()?.message ?: "WindowManager rejected overlay",
+            )
+            return
+        }
         overlays[key] = OverlayHandle(root, params, recordingStatus)
+        overlayWindowHost.attached(
+            panelId = key,
+            bounds = params.registryBounds(root, minWidth, minHeight),
+            passThrough = false,
+        )
+        root.post {
+            if (overlays[key]?.root === root && root.width > 0 && root.height > 0) {
+                overlayWindowHost.resize(key, root.width.toFloat(), root.height.toFloat())
+            }
+        }
         savePlacement(key, params, visible = true)
         updateRecordingUi()
     }
@@ -903,6 +986,7 @@ class StudioOverlayService : Service() {
             statusView = overlays["toolbar"]?.recordingStatus
         }
         savePlacement(key, handle.params, visible = false)
+        overlayWindowHost.detached(key, hidden = true)
         runCatching { windowManager.removeView(handle.root) }
         if (stopWhenEmpty && overlays.isEmpty()) {
             stopSelf()
@@ -929,6 +1013,7 @@ class StudioOverlayService : Service() {
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        overlayWindowHost.beginDrag(key)
                         lastX = event.rawX
                         lastY = event.rawY
                         dragging = false
@@ -942,7 +1027,9 @@ class StudioOverlayService : Service() {
                             dragging = true
                             params.x += dx.toInt()
                             params.y += dy.toInt()
+                            clampOverlayPosition(params, root)
                             windowManager.updateViewLayout(root, params)
+                            overlayWindowHost.move(key, params.x.toFloat(), params.y.toFloat())
                             lastX = event.rawX
                             lastY = event.rawY
                             return true
@@ -955,11 +1042,13 @@ class StudioOverlayService : Service() {
                         } else {
                             v.performClick()
                         }
+                        overlayWindowHost.endInteraction(key)
                         return true
                     }
 
                     MotionEvent.ACTION_CANCEL -> {
                         if (dragging) savePlacement(key, params, visible = true)
+                        overlayWindowHost.endInteraction(key)
                         return true
                     }
                 }
@@ -986,6 +1075,7 @@ class StudioOverlayService : Service() {
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        overlayWindowHost.beginResize(key)
                         lastX = event.rawX
                         lastY = event.rawY
                         baseWidth = params.width
@@ -1001,6 +1091,7 @@ class StudioOverlayService : Service() {
                         params.width = (baseWidth + dx).coerceAtLeast(minWidth)
                         params.height = (baseHeight + dy).coerceAtLeast(minHeight)
                         windowManager.updateViewLayout(root, params)
+                        overlayWindowHost.resize(key, params.width.toFloat(), params.height.toFloat())
                         return true
                     }
 
@@ -1009,6 +1100,7 @@ class StudioOverlayService : Service() {
                     -> {
                         resizing = false
                         savePlacement(key, params, visible = true)
+                        overlayWindowHost.endInteraction(key)
                         return true
                     }
                 }
@@ -1032,6 +1124,45 @@ class StudioOverlayService : Service() {
                 visible = visible,
             ),
         )
+    }
+
+    private fun WindowManager.LayoutParams.registryBounds(root: View, minWidth: Int, minHeight: Int): WindowBounds =
+        WindowBounds(
+            left = x.toFloat(),
+            top = y.toFloat(),
+            width = width.takeIf { it > 0 }?.toFloat() ?: root.width.takeIf { it > 0 }?.toFloat() ?: minWidth.toFloat(),
+            height = height.takeIf { it > 0 }?.toFloat() ?: root.height.takeIf { it > 0 }?.toFloat() ?: minHeight.toFloat(),
+            space = WindowCoordinateSpace.DISPLAY_PX,
+        )
+
+    private fun clampOverlayPosition(params: WindowManager.LayoutParams, root: View) {
+        val display = AndroidDisplayContextFactory.from(this)
+        val width = params.width.takeIf { it > 0 } ?: root.width.coerceAtLeast(1)
+        val height = params.height.takeIf { it > 0 } ?: root.height.coerceAtLeast(1)
+        val clamped = display.clamp(
+            WindowBounds(
+                left = params.x.toFloat(),
+                top = params.y.toFloat(),
+                width = width.toFloat(),
+                height = height.toFloat(),
+                space = WindowCoordinateSpace.DISPLAY_PX,
+            )
+        )
+        params.x = clamped.left.toInt()
+        params.y = clamped.top.toInt()
+    }
+
+    private fun reportWindowFailure(code: WindowDiagnosticCode, key: String, message: String) {
+        WindowSessionProcessRegistry.get(this).report(
+            WindowDiagnostic(
+                code = code,
+                message = message,
+                sessionId = WindowSessionProcessRegistry.get(this).find(WindowHostType.OVERLAY, key)?.id,
+                hostId = overlayWindowHost.id,
+            )
+        )
+        overlayStatusMessage = message
+        updateRecordingUi()
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()

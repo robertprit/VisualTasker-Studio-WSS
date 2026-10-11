@@ -75,6 +75,8 @@ fun DarkPanel(
     onMaximizeToggle: () -> Unit,
     onClose: () -> Unit,
     onColorChange: (Color) -> Unit,
+    onDragStateChange: (Boolean) -> Unit = {},
+    onResizeStateChange: (Boolean) -> Unit = {},
     showDefaultRailIcons: Boolean = true,
     showRailColorPicker: Boolean = true,
     railExpandedWidth: Dp = 186.dp,
@@ -240,17 +242,20 @@ fun DarkPanel(
                                     onDragStart = {
                                         Log.d(DARK_PANEL_LOG_TAG, "header dragStart panel=${panel.id} active=$isActiveTarget")
                                         isDragging = true
+                                        onDragStateChange(true)
                                         focusPanel()
                                     },
                                     onDragEnd = {
                                         Log.d(DARK_PANEL_LOG_TAG, "header dragEnd panel=${panel.id}")
                                         isDragging = false
+                                        onDragStateChange(false)
                                         position = snappedPosition(position)
                                         onPositionChange(position)
                                     },
                                     onDragCancel = {
                                         Log.d(DARK_PANEL_LOG_TAG, "header dragCancel panel=${panel.id}")
                                         isDragging = false
+                                        onDragStateChange(false)
                                     },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
@@ -366,8 +371,14 @@ fun DarkPanel(
                         modifier = Modifier.align(Alignment.BottomEnd),
                         accentColor = panel.accentColor,
                         kind = ResizeHandleKind.CornerBottomEnd,
-                        onResizeStart = { isResizing = true },
-                        onResizeEnd = { isResizing = false },
+                        onResizeStart = {
+                            isResizing = true
+                            onResizeStateChange(true)
+                        },
+                        onResizeEnd = {
+                            isResizing = false
+                            onResizeStateChange(false)
+                        },
                         onResize = { delta -> resizePanel(delta, ResizeAnchor.BottomEnd, density, position, liveWidth, liveHeight, maxWidth, maxHeight, onPositionChange, onSizeChange) { nextPosition, nextWidth, nextHeight ->
                             position = nextPosition
                             liveWidth = nextWidth
@@ -380,8 +391,14 @@ fun DarkPanel(
                             .height((animatedHeight - 72).coerceAtLeast(48).dp),
                         accentColor = panel.accentColor,
                         kind = ResizeHandleKind.EdgeRight,
-                        onResizeStart = { isResizing = true },
-                        onResizeEnd = { isResizing = false },
+                        onResizeStart = {
+                            isResizing = true
+                            onResizeStateChange(true)
+                        },
+                        onResizeEnd = {
+                            isResizing = false
+                            onResizeStateChange(false)
+                        },
                         onResize = { delta -> resizePanel(delta, ResizeAnchor.Right, density, position, liveWidth, liveHeight, maxWidth, maxHeight, onPositionChange, onSizeChange) { nextPosition, nextWidth, nextHeight ->
                             position = nextPosition
                             liveWidth = nextWidth
@@ -394,8 +411,14 @@ fun DarkPanel(
                             .width((animatedWidth - 72).coerceAtLeast(48).dp),
                         accentColor = panel.accentColor,
                         kind = ResizeHandleKind.EdgeBottom,
-                        onResizeStart = { isResizing = true },
-                        onResizeEnd = { isResizing = false },
+                        onResizeStart = {
+                            isResizing = true
+                            onResizeStateChange(true)
+                        },
+                        onResizeEnd = {
+                            isResizing = false
+                            onResizeStateChange(false)
+                        },
                         onResize = { delta -> resizePanel(delta, ResizeAnchor.Bottom, density, position, liveWidth, liveHeight, maxWidth, maxHeight, onPositionChange, onSizeChange) { nextPosition, nextWidth, nextHeight ->
                             position = nextPosition
                             liveWidth = nextWidth
