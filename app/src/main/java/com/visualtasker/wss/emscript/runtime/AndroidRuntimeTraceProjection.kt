@@ -23,6 +23,7 @@ fun AndroidRuntimeSnapshot.toExecutionTrace(
             },
             correlationId = event.entityId ?: event.relationId,
             pathTrace = event.pathTrace ?: event.diagnostic?.pathTrace,
+            targetTrace = event.targetTrace ?: event.diagnostic?.targetTrace,
         )
     }
     val finalResult = result

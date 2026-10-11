@@ -15,8 +15,8 @@ Android service classes behind a provider.
 | Swipe/polyline path | `action.swipe`, raw point list plus repeat, capability `A11Y` | Fake provider | `NativeGestureProvider` live in M5-3; absolute pixels, fixed legacy 250 ms duration | None |
 | Typed `Path` / timed `PointerPath` | V1 catalog-backed value constructors plus existing `action.swipe` | Typed value construction, variable binding and deterministic lowering | `NativeGestureProvider` live; M5-5 adds LET/SET, dynamic geometry/timing, editor roundtrip and structured trace | None |
 | MultiPath/multitouch | V1 `multiPath(...)` value plus `multiSwipe(...)` action | Typed construction, variable binding and deterministic lowering | `NativeGestureProvider` live in M5-6; synchronized line/Bezier pointers, delay/holds, common cancellation and bounded trace | None |
-| Semantic `clickElement` | Planned A11y target plus optional relative bounds point | Not implemented | Contract only; requires A11y/worldview resolver | None |
-| Semantic `clickText` | Existing text command; target resolver not in M5 | Not implemented | Contract only; requires A11y text resolver | None |
+| Semantic `clickElement` | No approved catalog command; typed `ElementRef` contract exists | Not implemented | M5-7 contract only; syntax/runtime binding remains a GAP | None |
+| Semantic `clickText` | Existing `action.clickText` / `click("text")` | Deterministic query and trace contract | `NativeAccessibilityProvider` live in M5-7; native `ACTION_CLICK`, stale validation, ambiguity rejection | None |
 | Semantic `clickImage` / `clickTemplate` | Planned image/template target and search region | Not implemented | Contract only; requires Vision provider | None |
 | Clipboard/file/cache/system | Core catalog | Fake provider | Existing BasicRun environment later | None |
 | Tasker | Tasker catalog/plugin contracts | Not implemented | Optional provider | None |
@@ -61,7 +61,8 @@ The supported subset has a debug-only physical gate for straight, quadratic and 
 slow/fast timing, cancellation, variable-bound PointerPath execution and M5-6 PinchIn, PinchOut,
 parallel, opposing, delayed and cancellable MultiPath execution. The test surface records actual
 pointer count, span delta and start skew; callback completion alone is not device acceptance.
-Semantic target resolution remains a documented gap rather than an implicit fallback.
+Semantic text target resolution is live in M5-7. `clickElement`, variable-bound click text and
+non-default displays remain explicit gaps rather than implicit fallback behavior.
 
 ## Runtime Host And Display Context
 
@@ -70,7 +71,7 @@ Semantic target resolution remains a documented gap rather than an implicit fall
 | UI-bound Android bridge | DONE | `AndroidRuntimeBridge` hosts exactly one runner per bridge and rejects double starts. |
 | Process-wide headless host | PLANNED | M5-H must reuse the runner, own lifecycle outside Compose and support status reattachment. |
 | Persistent runtime status/trace | GAP | Bridge state and live trace are in-memory and projected by `WorkspaceScreen`; no headless recovery record exists. |
-| Explicit target display | GAP | Native gesture availability exposes bounds only; no display ID is carried through invocation or trace. |
+| Explicit target display | PARTIAL | M5-7 semantic target contracts and trace carry display ID and reject non-default displays; coordinate gestures still expose bounds only. |
 | Virtual-display provider | PLANNED | M7-V is an optional feasibility slice, not an implicit capability of the gesture provider. |
 | Remote display session | DEFERRED | M9-D follows only after M7-V and the VT2VT transport/session scope are accepted. |
 

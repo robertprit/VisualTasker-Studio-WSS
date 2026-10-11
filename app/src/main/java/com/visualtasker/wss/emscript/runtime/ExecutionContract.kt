@@ -141,6 +141,17 @@ data class ExecutionDiagnostic(
     val message: String,
     val entityId: String? = null,
     val pathTrace: PointerPathTraceInfo? = null,
+    val targetTrace: TargetResolutionTraceInfo? = null,
+)
+
+data class TargetResolutionTraceInfo(
+    val queryType: String,
+    val candidateCount: Int,
+    val resolutionStatus: String,
+    val action: String? = null,
+    val fallbackUsed: Boolean = false,
+    val displayId: Int,
+    val observationStatus: String? = null,
 )
 
 data class PointerPathTraceInfo(
@@ -182,6 +193,7 @@ data class ExecutionTraceEvent(
     val value: ExecutionValue? = null,
     val diagnostic: ExecutionDiagnostic? = null,
     val pathTrace: PointerPathTraceInfo? = null,
+    val targetTrace: TargetResolutionTraceInfo? = null,
 )
 
 data class ExecutionResult(
@@ -217,9 +229,19 @@ data class ProviderInvocation(
 )
 
 sealed interface ProviderResult {
-    data class Success(val value: ExecutionValue = ExecutionValue.VoidValue) : ProviderResult
-    data class Failure(val code: String, val message: String) : ProviderResult
-    data class Cancelled(val message: String = "Provider invocation cancelled.") : ProviderResult
+    data class Success(
+        val value: ExecutionValue = ExecutionValue.VoidValue,
+        val targetTrace: TargetResolutionTraceInfo? = null,
+    ) : ProviderResult
+    data class Failure(
+        val code: String,
+        val message: String,
+        val targetTrace: TargetResolutionTraceInfo? = null,
+    ) : ProviderResult
+    data class Cancelled(
+        val message: String = "Provider invocation cancelled.",
+        val targetTrace: TargetResolutionTraceInfo? = null,
+    ) : ProviderResult
 }
 
 interface ExecutionProvider {

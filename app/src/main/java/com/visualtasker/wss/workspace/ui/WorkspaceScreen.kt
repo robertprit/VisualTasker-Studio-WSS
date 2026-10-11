@@ -609,6 +609,7 @@ private const val BLOCKEDITOR_TEST_WORKSPACE_VERSION_PREF_KEY = "blockeditor_tes
 private const val M5_2_TOUCH_TEST_TARGET_PREF_KEY = "m5_2_touch_test_target_visible"
 private const val M5_3_GESTURE_TEST_MODE_PREF_KEY = "m5_3_gesture_test_mode"
 private const val M5_3_CANCEL_REQUEST_PREF_KEY = "m5_3_cancel_request"
+private const val M5_7_ACCESSIBILITY_TEST_MODE_PREF_KEY = "m5_7_accessibility_test_mode"
 private const val BLOCKEDITOR_PALETTE_INSERT_MODE_PREF_KEY = "blockeditor_palette_insert_mode"
 private const val BLOCKEDITOR_MINIMAP_VISIBLE_PREF_KEY = "blockeditor_minimap_visible"
 private const val TOOLBOX_SET_MODE_PREF_KEY = "toolbox_set_mode"
@@ -1079,9 +1080,11 @@ fun WorkspaceScreen(
     val vt2vtSnapshot by vt2vtManager.state.collectAsState()
     val uiPrefs = remember(context) { context.getSharedPreferences("panel_ui_options", Context.MODE_PRIVATE) }
     val runtimeGestureTestRun = uiPrefs.getString(M5_3_GESTURE_TEST_MODE_PREF_KEY, null)
+    val runtimeAccessibilityTestRun = uiPrefs.getString(M5_7_ACCESSIBILITY_TEST_MODE_PREF_KEY, null)
     val runtimeGestureTestMode = runtimeGestureTestRun?.substringBefore(':')
     val showRuntimeTouchTestTarget = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
-        (uiPrefs.getBoolean(M5_2_TOUCH_TEST_TARGET_PREF_KEY, false) || runtimeGestureTestRun != null)
+        (uiPrefs.getBoolean(M5_2_TOUCH_TEST_TARGET_PREF_KEY, false) ||
+            runtimeGestureTestRun != null || runtimeAccessibilityTestRun != null)
     var runtimeTouchTestHitCount by rememberSaveable(runtimeGestureTestRun) { mutableIntStateOf(0) }
     var runtimeGestureDeltaX by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     var runtimeGestureDeltaY by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
@@ -1090,6 +1093,8 @@ fun WorkspaceScreen(
     var runtimeGesturePointerCount by rememberSaveable(runtimeGestureTestRun) { mutableIntStateOf(0) }
     var runtimeGestureSpanDelta by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     var runtimeGesturePointerStartSkewMs by rememberSaveable(runtimeGestureTestRun) { mutableLongStateOf(0L) }
+    var runtimeAccessibilityHitCount by rememberSaveable(runtimeAccessibilityTestRun) { mutableIntStateOf(0) }
+    var runtimeAccessibilityDynamicState by rememberSaveable(runtimeAccessibilityTestRun) { mutableStateOf(false) }
     LaunchedEffect(uiPrefs) {
         if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
             uiPrefs.edit()
@@ -2249,16 +2254,24 @@ fun WorkspaceScreen(
             ?.content
             .orEmpty()
 
-    fun applyTextEditorDraftChange(content: String, source: String, pushUndo: Boolean = true) {
+    fun applyTextEditorDraftChange(
+        content: String,
+        source: String,
+        pushUndo: Boolean = true,
+        forceApply: Boolean = false,
+        replaceWorkspace: Boolean = false,
+    ) {
         val current = currentManualEmscriptDraft()
-        if (content == current) return
-        if (pushUndo) {
+        if (content == current && !forceApply) return
+        if (pushUndo && content != current) {
             emscriptEditorUiState.pushUndo(EmscriptEditorSession.MANUAL_TAB_ID, current)
         }
-        emscriptSession = emscriptSession
-            .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
-            .updateManualContent(content)
-        uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+        if (content != current) {
+            emscriptSession = emscriptSession
+                .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
+                .updateManualContent(content)
+            uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+        }
         studioLogStore.append(
             level = StudioLogLevel.DEBUG,
             source = "EMSCRIPT",
@@ -2270,7 +2283,7 @@ fun WorkspaceScreen(
         when (val preview = emscriptApplyGuard.preview(
             content,
             workspaceId = "workflow-main",
-            previousDocument = workflowState.document,
+            previousDocument = workflowState.document.takeUnless { replaceWorkspace },
         )) {
             is EmscriptApplyGuardResult.Success -> {
                 applyWorkspaceJsonChange(preview.serializedWorkspaceJson, "$WORKFLOW_SOURCE_EMSCRIPT_APPLY:$source")
@@ -2285,6 +2298,23 @@ fun WorkspaceScreen(
                     groupKey = "emscript:draft-apply-failed:$source"
                 )
             }
+        }
+    }
+    LaunchedEffect(runtimeAccessibilityTestRun) {
+        if (runtimeAccessibilityTestRun != null) {
+            val testSource = when (runtimeAccessibilityTestRun.substringBefore(':')) {
+                "ambiguous" -> "click(\"M5 A11y Ambiguous\")"
+                "parent" -> "click(\"M5 A11y Parent Child\")"
+                "dynamic" -> "click(\"M5 A11y Dynamic\")"
+                else -> "click(\"M5 A11y Unique\")"
+            }
+            applyTextEditorDraftChange(
+                content = testSource,
+                source = "m5-7:device-gate",
+                pushUndo = false,
+                forceApply = true,
+                replaceWorkspace = true,
+            )
         }
     }
 
@@ -4535,7 +4565,18 @@ fun WorkspaceScreen(
         }
         BlockEditorDropTrace.markActive("HOST_PANEL_LOOP_RETURN")
 
-        if (showRuntimeTouchTestTarget) {
+        if (runtimeAccessibilityTestRun != null) {
+            RuntimeAccessibilityTestTarget(
+                hitCount = runtimeAccessibilityHitCount,
+                dynamicState = runtimeAccessibilityDynamicState,
+                onUniqueClick = { runtimeAccessibilityHitCount += 1 },
+                onParentClick = { runtimeAccessibilityHitCount += 1 },
+                onDynamicClick = {
+                    runtimeAccessibilityHitCount += 1
+                    runtimeAccessibilityDynamicState = !runtimeAccessibilityDynamicState
+                },
+            )
+        } else if (showRuntimeTouchTestTarget) {
             RuntimeTouchTestTarget(
                 hitCount = runtimeTouchTestHitCount,
                 mode = runtimeGestureTestMode ?: "click",
@@ -11970,6 +12011,44 @@ private fun WorkspaceTopAppBar(
                         Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeAccessibilityTestTarget(
+    hitCount: Int,
+    dynamicState: Boolean,
+    onUniqueClick: () -> Unit,
+    onParentClick: () -> Unit,
+    onDynamicClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.width(320.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("M5-7 Accessibility · Aktionen $hitCount", fontWeight = FontWeight.Bold)
+            Button(onClick = onUniqueClick, modifier = Modifier.fillMaxWidth()) {
+                Text("M5 A11y Unique")
+            }
+            Button(onClick = onParentClick, modifier = Modifier.fillMaxWidth()) {
+                Text("M5 A11y Parent Child")
+            }
+            Button(onClick = onDynamicClick, modifier = Modifier.fillMaxWidth()) {
+                Text(if (dynamicState) "M5 A11y Changed" else "M5 A11y Dynamic")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("M5 A11y Ambiguous") }
+                TextButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("M5 A11y Ambiguous") }
             }
         }
     }

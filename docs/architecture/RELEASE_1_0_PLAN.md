@@ -53,7 +53,7 @@ Gesamtstatus: `ACTIVE`
 | M5-4 Typed PointerPath | DONE | Line, quadratische/kubische Bezier-Segmente und Timing. |
 | M5-5 Typed Path Bindings | DONE | Variablengebundene Pfadwerte und Drei-Editor-Roundtrip. |
 | M5-6 Native MultiTouch | DONE | Synchronisierte Pointer, Pinch-Nachweis und gemeinsame Cancellation. |
-| M5-7 Semantic Accessibility | PLANNED | `clickElement`, `clickText`, Bounds und deterministische Node-Aufloesung. |
+| M5-7 Semantic Accessibility | DONE | `clickText`, typisierte Targets, deterministische Aufloesung, native Aktion und Target-Trace; dokumentierte Sprach-/Display-GAPs. |
 | M5-8 Provider Resolution | PLANNED | Registry-Policy, Verfuegbarkeit, Berechtigungen, Fehlercodes und explizite Fallbacks. |
 | M5-H Headless Execution | PLANNED | Ein prozessweiter Runtime Host, Foreground-/Background-Vertrag, Recovery und UI-Reattachment. |
 | M5-9 Runtime Control Flow | PLANNED | Funktionen, Calls, Return und strukturierte Fehler nach Sprach-/Editor-Freigabe. |
@@ -187,10 +187,9 @@ Gesamtstatus: `PLANNED`
    Integrationen werden nicht in den Runtime-Kern gezogen.
 10. M10 beginnt nach festgelegtem 1.0-Scope und Feature-Freeze.
 
-Der aktuelle kleinste sinnvolle Slice ist M5-7: zuerst vorhandene A11y-Baum-, Bounds- und
-Text-Vertraege inventarisieren, dann genau einen semantischen Zieltyp durch Planner, Provider,
-Trace und sicheren Geraetetest fuehren. OCR, Vision-Fusion und externe Provider gehoeren nicht in
-diesen Slice.
+Der aktuelle kleinste sinnvolle Slice ist M5-8: die bereits produktiven Timing-, Gesture- und
+Accessibility-Provider erhalten eine gemeinsame Resolver-, Availability-, Berechtigungs- und
+Fehlercode-Policy. OCR, Vision-Fusion und externe Provider gehoeren nicht in diesen Slice.
 
 ## Release-Gates
 
@@ -276,8 +275,8 @@ Stable-1.0-Blocker:
 
 ## Naechste Zehn Freizugebende Slices
 
-1. `PLANNED` M5-7 A11y-Vertragsinventur und ein vertikaler semantischer Zielpfad.
-2. `PLANNED` M5-7 Abschluss mit deterministischer Mehrdeutigkeit, Trace und Geraetegate.
+1. `DONE` M5-7 A11y-Vertragsinventur und vertikaler semantischer Zielpfad.
+2. `DONE` M5-7 Abschluss mit deterministischer Mehrdeutigkeit, Trace und Geraetegate.
 3. `PLANNED` M5-8 Provider-Resolution, Availability und Fehlercode-Vertrag.
 4. `PLANNED` M5-H Headless Host, Foreground-Vertrag und UI-Reattachment.
 5. `PLANNED` M4-4 Entscheidungs- und Conformance-Slice fuer strukturierte Fehler.

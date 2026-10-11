@@ -39,7 +39,7 @@ class AndroidRuntimeBridge(
         providers = ExecutionProviderRegistry(
             listOf(
                 AndroidWaitExecutionProvider(),
-                NativeGestureProvider(),
+                NativeAccessibilityProvider(),
             ),
         ),
     ),

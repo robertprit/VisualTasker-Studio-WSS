@@ -11,7 +11,7 @@ RuntimeAdapter und Diagnose auseinanderlaufen koennen.
 | Capability | Definition Source(s) | Consumers | Provider Path | Duplicate Definition? | Direct Dispatch? | Type Drift? | Authority / Risk Metadata? | Empfohlener Owner | Prioritaet |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Core `wait`, `log`, `beep`, `vibrate` | CommandCatalog, Parser, Runtime | BlockEditor, FlowEditor, TextEditor, RailTrace | Runtime intern / Device | Ja, verteilt | Teilweise | Niedrig | Teilweise | CommandCatalog + CapabilityDescriptor | Hoch |
-| A11Y `click`, `clickText`, `touch`, `swipe` | CommandCatalog, Parser, RuntimeGate | BlockEditor, FlowEditor, Runtime, LogConsole | Accessibility/Device Adapter | Ja | Ja | Mittel | Teilweise | CapabilityRegistry | Hoch |
+| A11Y `click`, `clickText`, `touch`, `swipe` | CommandCatalog, Parser, RuntimeGate | BlockEditor, FlowEditor, Runtime, LogConsole | M5-7 NativeAccessibilityProvider plus delegated NativeGestureProvider | Ja | Ja | Mittel | M5-7 target policy/trace; registry policy remains M5-8 | CapabilityRegistry | Hoch |
 | Variablen `let`, `set`, Read/Write | CommandCatalog, Parser, Runtime | Alle Editoren, Runtime, RailTrace | WorkflowRuntime | Ja | Teilweise | Mittel | Gering | Workflow/CommandCatalog gemeinsam | Hoch |
 | Branch/Loop Control | BlockRegistry, Parser, IR, FlowProjector | BlockEditor, FlowEditor, Runtime | WorkflowRuntime | Ja | Nein | Mittel | Gering | Workflow IR | Hoch |
 | Reporter/Operator/Comparator | BlockRegistry, Parser, FlowProjector | BlockEditor, FlowEditor, Runtime | ExpressionEvaluator | Ja | Teilweise | Hoch | Gering | Expression/CommandCatalog | Hoch |

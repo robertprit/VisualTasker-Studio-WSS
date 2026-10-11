@@ -31,7 +31,10 @@ fun ExecutionTrace.toRailTraceSteps(
             timestampMs = operation.index * 180L,
             durationMs = 140L,
             activityName = operation.status.toRuntimeLaneLabel(this.mode),
-            detail = operation.pathTrace?.let { trace ->
+            detail = operation.targetTrace?.let { trace ->
+                "${operation.message} | ${trace.queryType} ${trace.resolutionStatus}, " +
+                    "${trace.candidateCount} candidates, ${trace.action ?: "no action"}"
+            } ?: operation.pathTrace?.let { trace ->
                 "${operation.message} | ${trace.gestureKind} ${trace.pointerCount} pointer, " +
                     "${trace.segmentCount} segments, ${trace.plannedTotalDurationMs ?: "?"} ms"
             } ?: operation.message,
@@ -63,6 +66,15 @@ fun ExecutionTrace.toRailTraceSteps(
                     put("plannedTotalDurationMs", trace.plannedTotalDurationMs?.toString().orEmpty())
                     put("gestureStatus", trace.status)
                     trace.cancellationPosition?.let { put("cancellationPosition", it) }
+                }
+                operation.targetTrace?.let { trace ->
+                    put("targetQueryType", trace.queryType)
+                    put("targetCandidateCount", trace.candidateCount.toString())
+                    put("targetResolutionStatus", trace.resolutionStatus)
+                    put("targetDisplayId", trace.displayId.toString())
+                    put("targetFallbackUsed", trace.fallbackUsed.toString())
+                    trace.action?.let { put("targetAction", it) }
+                    trace.observationStatus?.let { put("targetObservationStatus", it) }
                 }
             },
         )

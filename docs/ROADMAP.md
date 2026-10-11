@@ -105,8 +105,11 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   Cancellation, Three-Editor-Roundtrip und pointerbezogener RailTrace-Nachweis. Pinch-in/out,
   parallele, gegenlaeufige und um 250 ms versetzte Pointer sowie aktiver Abbruch sind auf dem
   SM-S918B anhand realer Pointer-Ereignisse abgenommen.
-- [PLANNED] M5-7: semantische Accessibility-Ziele fuer `clickElement`, `clickText`, Bounds und
-  deterministische Node-Aufloesung ueber den bestehenden Runner.
+- [x] M5-7: semantisches `clickText`, typisierte Element-/Query-/Bounds-Vertraege,
+  deterministische Node-Aufloesung, native `ACTION_CLICK`-Ausfuehrung und strukturierter Target-
+  Trace. Der SM-S918B-Gate belegt eindeutige Ziele, klickbare Parents, verzögerte Scene-Aenderung,
+  Mehrdeutigkeitsabbruch und RailTrace-Provenienz. `clickElement`, variable Textqueries und
+  Nicht-Default-Displays bleiben explizite GAPs.
 - [PLANNED] M5-8: explizite Provider-Aufloesung, Verfuegbarkeit, Berechtigungsstatus, Auswahlpolicy
   und vereinheitlichte Fehlercodes.
 - [PLANNED] M5-H: UI-unabhaengiger, prozessweit eindeutiger Headless Runtime Host mit explizitem

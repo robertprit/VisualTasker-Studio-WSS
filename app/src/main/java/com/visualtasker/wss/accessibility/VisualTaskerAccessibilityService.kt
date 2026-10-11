@@ -22,6 +22,15 @@ import com.visualtasker.wss.workspace.model.WindowSnapshot
 import com.visualtasker.wss.workspace.model.WorldviewRect
 import com.visualtasker.wss.recording.A11yNodeSnapshot
 import com.visualtasker.wss.recording.RecordingSessionRuntime
+import com.visualtasker.wss.targeting.AccessibilityTargetResolver
+import com.visualtasker.wss.targeting.AccessibilityTreeSnapshot
+import com.visualtasker.wss.targeting.ElementBoundsPx
+import com.visualtasker.wss.targeting.ElementQuery
+import com.visualtasker.wss.targeting.ElementRef
+import com.visualtasker.wss.targeting.ObservedAccessibilityElement
+import com.visualtasker.wss.targeting.TargetActionSubmission
+import com.visualtasker.wss.targeting.TargetResolutionPolicy
+import com.visualtasker.wss.targeting.TargetResolutionStatus
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -115,11 +124,59 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
         )
 
     suspend fun clickText(text: String): Boolean {
-        val target = rootInActiveWindow?.findFirstTextMatch(text) ?: return false
-        val bounds = Rect()
-        target.getBoundsInScreen(bounds)
-        if (bounds.isEmpty) return false
-        return clickPoint(bounds.centerX(), bounds.centerY())
+        val snapshot = captureTargetTree(DEFAULT_TARGET_DISPLAY_ID) ?: return false
+        val resolution = AccessibilityTargetResolver.resolve(
+            snapshot = snapshot,
+            query = ElementQuery(
+                text = text,
+                displayId = DEFAULT_TARGET_DISPLAY_ID,
+                matchTextOrDescription = true,
+            ),
+            policy = TargetResolutionPolicy(displayId = DEFAULT_TARGET_DISPLAY_ID),
+        )
+        val target = resolution.match?.actionTarget ?: return false
+        return resolution.status == TargetResolutionStatus.FOUND &&
+            performTargetClick(target) == TargetActionSubmission.ACCEPTED
+    }
+
+    fun captureTargetTree(displayId: Int): AccessibilityTreeSnapshot? {
+        if (displayId != DEFAULT_TARGET_DISPLAY_ID) return null
+        val root = rootInActiveWindow ?: return null
+        val now = System.currentTimeMillis()
+        val windowId = root.windowId.toString()
+        return AccessibilityTreeSnapshot(
+            snapshotId = "a11y-$windowId-$now",
+            capturedAtEpochMs = now,
+            displayId = DEFAULT_TARGET_DISPLAY_ID,
+            windowId = windowId,
+            packageName = root.packageName?.toString(),
+            root = root.toObservedTargetNode(
+                nodeId = "node-0",
+                parentNodeId = null,
+                childOrder = 0,
+                displayId = DEFAULT_TARGET_DISPLAY_ID,
+                windowId = windowId,
+            ),
+        )
+    }
+
+    fun performTargetClick(target: ElementRef): TargetActionSubmission {
+        if (target.displayId != DEFAULT_TARGET_DISPLAY_ID) return TargetActionSubmission.REJECTED
+        val root = rootInActiveWindow ?: return TargetActionSubmission.STALE
+        val current = root.findBySnapshotPath(target.snapshotNodeId) ?: return TargetActionSubmission.STALE
+        val bounds = Rect().also(current::getBoundsInScreen)
+        val stillMatches = current.packageName?.toString() == target.packageName &&
+            current.className?.toString().orEmpty() == target.className &&
+            current.viewIdResourceName == target.viewId &&
+            ElementBoundsPx(bounds.left, bounds.top, bounds.right, bounds.bottom) == target.bounds
+        if (!stillMatches) return TargetActionSubmission.STALE
+        return if (current.isEnabled && current.isVisibleToUser &&
+            current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        ) {
+            TargetActionSubmission.ACCEPTED
+        } else {
+            TargetActionSubmission.REJECTED
+        }
     }
 
     suspend fun clickPoint(x: Int, y: Int): Boolean =
@@ -594,6 +651,7 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        const val DEFAULT_TARGET_DISPLAY_ID = Display.DEFAULT_DISPLAY
         private const val NO_ACTIVE_GESTURE = 0L
         private const val GESTURE_CALLBACK_GRACE_MS = 5_000L
         private const val MAX_CANCELLABLE_PHASE_DURATION_MS = 200L
@@ -793,6 +851,60 @@ private fun AccessibilityNodeInfo.toRecordingNode(
     )
 }
 
+private fun AccessibilityNodeInfo.toObservedTargetNode(
+    nodeId: String,
+    parentNodeId: String?,
+    childOrder: Int,
+    displayId: Int,
+    windowId: String?,
+): ObservedAccessibilityElement {
+    val bounds = Rect().also(::getBoundsInScreen)
+    return ObservedAccessibilityElement(
+        ref = ElementRef(
+            snapshotNodeId = nodeId,
+            packageName = packageName?.toString(),
+            className = className?.toString().orEmpty(),
+            viewId = viewIdResourceName,
+            bounds = ElementBoundsPx(bounds.left, bounds.top, bounds.right, bounds.bottom),
+            windowId = windowId,
+            displayId = displayId,
+        ),
+        parentNodeId = parentNodeId,
+        childOrder = childOrder,
+        text = text?.toString(),
+        contentDescription = contentDescription?.toString(),
+        clickable = isClickable,
+        enabled = isEnabled,
+        visible = isVisibleToUser,
+        children = buildList {
+            for (index in 0 until childCount) {
+                getChild(index)?.let { child ->
+                    add(
+                        child.toObservedTargetNode(
+                            nodeId = "$nodeId.$index",
+                            parentNodeId = nodeId,
+                            childOrder = index,
+                            displayId = displayId,
+                            windowId = windowId,
+                        ),
+                    )
+                }
+            }
+        },
+    )
+}
+
+private fun AccessibilityNodeInfo.findBySnapshotPath(snapshotNodeId: String): AccessibilityNodeInfo? {
+    if (snapshotNodeId == "node-0") return this
+    if (!snapshotNodeId.startsWith("node-0.")) return null
+    var current: AccessibilityNodeInfo = this
+    snapshotNodeId.removePrefix("node-0.").split('.').forEach { segment ->
+        val childIndex = segment.toIntOrNull() ?: return null
+        current = current.getChild(childIndex) ?: return null
+    }
+    return current
+}
+
 data class RuntimePoint(
     val x: Int,
     val y: Int,
@@ -862,20 +974,6 @@ private fun AccessibilityNodeInfo.toInspectorSnapshot(
         visible = isVisibleToUser,
         timestampMs = timestampMs,
     )
-}
-
-private fun AccessibilityNodeInfo.findFirstTextMatch(query: String): AccessibilityNodeInfo? {
-    val needle = query.trim()
-    if (needle.isEmpty()) return null
-    val ownText = listOfNotNull(text, contentDescription)
-        .map(CharSequence::toString)
-        .any { it.contains(needle, ignoreCase = true) }
-    if (ownText) return this
-    for (index in 0 until childCount) {
-        val match = getChild(index)?.findFirstTextMatch(needle)
-        if (match != null) return match
-    }
-    return null
 }
 
 private fun AccessibilityEvent.trustedActivityName(): String? {

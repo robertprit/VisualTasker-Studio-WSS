@@ -704,6 +704,22 @@ class ThreeEditorConformanceTest {
         assertTrue(runs.all { it.sourceApplyPlan.transaction.operations.isEmpty() })
     }
 
+    @Test
+    fun accessibilityTextTargetSurvivesThreeEditorsAndSaveReload() {
+        val result = assertSupportedRoundtrip(
+            "click(\"Login\")",
+            "m5-7-accessibility-target",
+        )
+        val reloaded = ThreeEditorConformanceHarness.saveReload(result.reappliedDocument)
+
+        assertEquals(
+            result.reappliedSnapshot.fingerprints,
+            ThreeEditorConformanceHarness.snapshot(reloaded).fingerprints,
+        )
+        assertTrue(result.generatedSource.contains("click(\"Login\")"))
+        assertTrue(result.flowNodeIds.containsAll(result.blockProjection.keys.map { "block:$it" }))
+    }
+
     private fun assertSupportedRoundtrip(source: String, workspaceId: String) =
         ThreeEditorConformanceHarness.roundtrip(source, workspaceId).also { result ->
             assertTrue(result.blockProjection.isNotEmpty())

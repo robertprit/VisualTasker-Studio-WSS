@@ -29,6 +29,7 @@ class DeterministicExecutionRunner(
             value: ExecutionValue? = null,
             diagnostic: ExecutionDiagnostic? = null,
             pathTrace: PointerPathTraceInfo? = null,
+            targetTrace: TargetResolutionTraceInfo? = null,
         ) {
             val traceEvent = ExecutionTraceEvent(
                 index = trace.size + 1,
@@ -41,6 +42,7 @@ class DeterministicExecutionRunner(
                 value = value,
                 diagnostic = diagnostic,
                 pathTrace = pathTrace,
+                targetTrace = targetTrace,
             )
             trace += traceEvent
             traceObserver(traceEvent)
@@ -95,6 +97,7 @@ class DeterministicExecutionRunner(
                 ExecutionTraceEventKind.CANCELLED,
                 entityId = cancelled.entityId,
                 pathTrace = cancelled.pathTrace,
+                targetTrace = cancelled.targetTrace,
             )
             result(request, lifecycle, context, diagnostics, trace)
         } catch (failed: ExecutionFailed) {
@@ -294,6 +297,7 @@ private class Machine(
                     providerId = provider.id,
                     value = value,
                     pathTrace = values.gestureTraceInfoOrNull(commandId, status = "COMPLETED"),
+                    targetTrace = result.targetTrace,
                 )
             }
             is ProviderResult.Failure -> fail(
@@ -305,6 +309,7 @@ private class Machine(
                     status = "FAILED",
                     invalidSegmentIndex = result.message.segmentIndexOrNull(),
                 ),
+                targetTrace = result.targetTrace,
             )
             is ProviderResult.Cancelled -> throw ExecutionCancelled(
                 entityId,
@@ -313,6 +318,7 @@ private class Machine(
                     status = "CANCELLED",
                     cancellationPosition = "provider-dispatch",
                 ),
+                result.targetTrace,
             )
         }
     }
@@ -333,6 +339,7 @@ private class Machine(
         providerId: String? = null,
         value: ExecutionValue? = null,
         pathTrace: PointerPathTraceInfo? = null,
+        targetTrace: TargetResolutionTraceInfo? = null,
     ) {
         val traceEvent = ExecutionTraceEvent(
             index = trace.size + 1,
@@ -344,6 +351,7 @@ private class Machine(
             providerId = providerId,
             value = value,
             pathTrace = pathTrace,
+            targetTrace = targetTrace,
         )
         trace += traceEvent
         traceObserver(traceEvent)
@@ -354,12 +362,22 @@ private class Machine(
         message: String,
         entityId: String,
         pathTrace: PointerPathTraceInfo? = null,
-    ): Nothing = throw ExecutionFailed(ExecutionDiagnostic(code, message, entityId, pathTrace))
+        targetTrace: TargetResolutionTraceInfo? = null,
+    ): Nothing = throw ExecutionFailed(
+        ExecutionDiagnostic(
+            code = code,
+            message = message,
+            entityId = entityId,
+            pathTrace = pathTrace,
+            targetTrace = targetTrace,
+        ),
+    )
 }
 
 private class ExecutionCancelled(
     val entityId: String,
     val pathTrace: PointerPathTraceInfo? = null,
+    val targetTrace: TargetResolutionTraceInfo? = null,
 ) : RuntimeException()
 private class ExecutionFailed(val diagnostic: ExecutionDiagnostic) : RuntimeException(diagnostic.message)
 
