@@ -42,6 +42,42 @@ fun AndroidRuntimeSnapshot.toExecutionTrace(
     )
 }
 
+fun ExecutionSessionSnapshot.toExecutionTrace(): ExecutionTrace? = AndroidRuntimeSnapshot(
+    state = state.toExecutionState(),
+    requestId = sessionId.value,
+    workflowId = workflowId,
+    activeEntityId = activeEntityId,
+    trace = trace,
+    result = result,
+).toExecutionTrace(startedAtEpochMs = startedAtEpochMs ?: 0L)?.copy(
+    completedAtEpochMs = endedAtEpochMs,
+    failureMessage = when {
+        cancellationReason != null -> "Cancellation: ${cancellationReason.name}"
+        else -> result?.diagnostics?.joinToString("\n") { it.message }?.takeIf(String::isNotBlank)
+    },
+)
+
+fun ExecutionSessionSnapshot.toAndroidRuntimeSnapshot(): AndroidRuntimeSnapshot = AndroidRuntimeSnapshot(
+    state = state.toExecutionState(),
+    requestId = sessionId.value,
+    workflowId = workflowId,
+    activeEntityId = activeEntityId,
+    trace = trace,
+    result = result,
+)
+
+private fun ExecutionSessionState.toExecutionState(): ExecutionState = when (this) {
+    ExecutionSessionState.CREATED -> ExecutionState.CREATED
+    ExecutionSessionState.STARTING -> ExecutionState.VALIDATING
+    ExecutionSessionState.RUNNING -> ExecutionState.RUNNING
+    ExecutionSessionState.STOPPING -> ExecutionState.RUNNING
+    ExecutionSessionState.CANCELLED -> ExecutionState.CANCELLED
+    ExecutionSessionState.COMPLETED -> ExecutionState.COMPLETED
+    ExecutionSessionState.FAILED,
+    ExecutionSessionState.INTERRUPTED,
+    -> ExecutionState.FAILED
+}
+
 private fun ExecutionTraceEvent.toOperationStatus(): ExecutionOperationStatus = when {
     kind == ExecutionTraceEventKind.CANCELLED -> ExecutionOperationStatus.Cancelled
     kind == ExecutionTraceEventKind.DIAGNOSTIC -> ExecutionOperationStatus.Failed

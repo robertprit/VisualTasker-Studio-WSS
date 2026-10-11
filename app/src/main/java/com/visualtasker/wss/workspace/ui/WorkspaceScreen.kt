@@ -309,8 +309,11 @@ import com.visualtasker.wss.emscript.runtime.RuntimeDatastoreLoadResult
 import com.visualtasker.wss.emscript.runtime.EmscriptRuntimeDiagnosticException
 import com.visualtasker.wss.emscript.runtime.RuntimeQueryDiagnosticCodes
 import com.visualtasker.wss.emscript.runtime.EmscriptValue
-import com.visualtasker.wss.emscript.runtime.AndroidRuntimeBridge
+import com.visualtasker.wss.emscript.runtime.AndroidRuntimeSnapshot
+import com.visualtasker.wss.emscript.runtime.ExecutionCancellationReason
+import com.visualtasker.wss.emscript.runtime.RuntimeClient
 import com.visualtasker.wss.emscript.runtime.ExecutionState
+import com.visualtasker.wss.emscript.runtime.toAndroidRuntimeSnapshot
 import com.visualtasker.wss.emscript.runtime.toToolboxCapability
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntime
 import com.visualtasker.wss.emscript.runtime.WorkspaceBasicRuntimeEnvironment
@@ -2002,19 +2005,17 @@ fun WorkspaceScreen(
             ),
         )
     }
-    val androidRuntimeBridge = remember(coroutineScope) {
-        AndroidRuntimeBridge(scope = coroutineScope)
+    val runtimeClient = remember(context.applicationContext) {
+        RuntimeClient(context.applicationContext)
     }
-    val androidRuntimeSnapshot by androidRuntimeBridge.state.collectAsState()
-    DisposableEffect(androidRuntimeBridge) {
-        onDispose(androidRuntimeBridge::close)
-    }
-    DisposableEffect(androidRuntimeBridge, uiPrefs) {
+    val executionSession by runtimeClient.session.collectAsState()
+    val androidRuntimeSnapshot = executionSession?.toAndroidRuntimeSnapshot() ?: AndroidRuntimeSnapshot()
+    DisposableEffect(runtimeClient, uiPrefs) {
         if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
             onDispose { }
         } else {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == M5_3_CANCEL_REQUEST_PREF_KEY) androidRuntimeBridge.stop()
+                if (key == M5_3_CANCEL_REQUEST_PREF_KEY) runtimeClient.stop()
             }
             uiPrefs.registerOnSharedPreferenceChangeListener(listener)
             onDispose { uiPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -2804,9 +2805,10 @@ fun WorkspaceScreen(
             )
             return
         }
-        val started = androidRuntimeBridge.start(
+        val started = runtimeClient.start(
             document = workflowState.document,
             workflowId = workflowState.document.id,
+            workspaceRevision = workflowState.revision.toLong(),
         )
         if (started) {
             workspaceDryRunResult = null
@@ -2971,8 +2973,8 @@ fun WorkspaceScreen(
             emptyList()
         }
     }
-    val liveRuntimeSteps = remember(androidRuntimeSnapshot) {
-        androidRuntimeSnapshot.toExecutionTrace()
+    val liveRuntimeSteps = remember(executionSession) {
+        executionSession?.toExecutionTrace()
             ?.toRailTraceSteps(idPrefix = "live-run")
             .orEmpty()
     }
@@ -3754,7 +3756,7 @@ fun WorkspaceScreen(
                     )
                 },
                 onStop = {
-                    if (androidRuntimeBridge.stop()) {
+                    if (runtimeClient.stop(ExecutionCancellationReason.USER_STOP)) {
                         studioLogStore.append(
                             level = StudioLogLevel.INFO,
                             source = "WORKSPACE",

@@ -84,6 +84,6 @@ bleiben der Regressionsnachweis.
 
 - Externe Hosts sind Discovery- und Diagnose-integriert; ihre vollstaendige ExecutionProvider-
   Ausfuehrung bleibt M9.
-- Ein prozessweiter Headless Host bleibt M5-H.
-- Persistente Runtime-Recovery und Trace-Retention bleiben M5-H/M5-10.
+- Der prozessweite Headless Host und ein begrenzter Recovery-Checkpoint sind seit M5-H produktiv.
+- Vollstaendige persistente Trace-Retention und Langlauf-Abnahme bleiben M5-10.
 - Vision, OCR, Remote Execution und neue Sprachfeatures sind nicht Teil dieses Slices.

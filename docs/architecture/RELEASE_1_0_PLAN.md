@@ -28,7 +28,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M2 Canonical Workflow Core | DONE | WorkflowGraph/WorkspaceDocument als einzige semantische Wahrheit. |
 | M3 Workspace Operations und Source Apply | DONE | `M3_CLOSURE_AUDIT.md`; atomare Operationen, Properties, Source-Anker und Validator. |
 | M4 Three-Editor Conformance | DONE | `M4_CLOSURE_AUDIT.md`; M4-0 bis M4-3 ohne Blocker geschlossen. |
-| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-7 `DONE`; Provider-Policy, Headless Host und Runtime-Closure fehlen. |
+| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H `DONE`; Runtime-Closure fehlt. |
 | M6 Editor Productization und Workspace UX | PLANNED | Viele Funktionen vorhanden; ein gemeinsamer Window-Session-Vertrag und M6-Gesamtgate fehlen. |
 | M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Scene-Inspector-Vorarbeiten vorhanden; Perception und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Datastore-/Asset-Vorarbeiten vorhanden; gemeinsame Scope- und Lifecycle-Abnahme fehlt. |
@@ -54,8 +54,8 @@ Gesamtstatus: `ACTIVE`
 | M5-5 Typed Path Bindings | DONE | Variablengebundene Pfadwerte und Drei-Editor-Roundtrip. |
 | M5-6 Native MultiTouch | DONE | Synchronisierte Pointer, Pinch-Nachweis und gemeinsame Cancellation. |
 | M5-7 Semantic Accessibility | DONE | `clickText`, typisierte Targets, deterministische Aufloesung, native Aktion und Target-Trace; dokumentierte Sprach-/Display-GAPs. |
-| M5-8 Provider Resolution | PLANNED | Registry-Policy, Verfuegbarkeit, Berechtigungen, Fehlercodes und explizite Fallbacks. |
-| M5-H Headless Execution | PLANNED | Ein prozessweiter Runtime Host, Foreground-/Background-Vertrag, Recovery und UI-Reattachment. |
+| M5-8 Provider Resolution | DONE | Registry-Policy, Verfuegbarkeit, Berechtigungen, Fehlercodes und explizite Fallbacks. |
+| M5-H Headless Execution | DONE | Ein prozessweiter Runtime Host, Foreground-/Background-Vertrag, Recovery und UI-Reattachment. |
 | M5-9 Runtime Control Flow | PLANNED | Funktionen, Calls, Return und strukturierte Fehler nach Sprach-/Editor-Freigabe. |
 | M5-10 Runtime Closure | PLANNED | Vollstaendige Matrix, Recovery, Retention, Langlauf und Closure-Audit. |
 
@@ -72,8 +72,8 @@ Fehlersemantik und Trace sind deterministisch dokumentiert.
 | Gate | Abnahmekriterien | Verbindlicher Nachweis | Status / Blocker |
 | --- | --- | --- | --- |
 | M5-7 Accessibility Target Resolution | Eine typisierte Query adressiert genau eine stabile Workflow-Entity; Preorder-Aufloesung ist deterministisch; 0/1/n Treffer ergeben NOT_FOUND/FOUND/AMBIGUOUS; stale Nodes werden vor Aktion abgewiesen; Cancellation beendet Polling/Aktion; `ACTION_CLICK` trifft Element oder klickbaren Parent; keine implizite Koordinatenfallback- oder Workspace-Mutation | JVM-Resolver-/Provider-Tests, Text-Block-Flow-Roundtrip, reale Tests fuer unique, parent, changed observation und ambiguity, RailTrace mit Querytyp, Kandidatenzahl, Status, Aktion, Display und Observation | DONE fuer `clickText`; `clickElement`, variable Query und Nicht-Default-Display bleiben GAP |
-| M5-8 Provider Policy | Bestehende Timing-, Gesture-, Accessibility-, Tasker-, Shizuku-, Termux- und CustomTabs-Hosts sind inventarisiert; jede Capability liefert Discovery, Availability, Permission und typed Result; Auswahl ist priorisiert und deterministisch; Fallback ist pro Capability explizit und im Trace sichtbar; Abwesenheit, Permission denial, Timeout, Cancellation und Providerverlust teilen stabile Fehlercodes | Registry-Unit-Tests fuer Prioritaet und Konflikt, Host-Adapter-Fixtures, kontrollierte Abwesenheits-/Permission-Tests, keine direkte zweite Dispatch-Engine | OPEN: gemeinsame Policy und Adaptereinordnung fehlen |
-| M5-H Headless Runtime | Genau eine prozessweite `ExecutionSession` besitzt Runner/Job/Trace; Compose kann attach/detach ohne Laufabbruch; Doppelstart, Stop, Cancellation, Prozess-/Service-Recovery und UI-Reattachment sind deterministisch; Foreground-Service und Notification-Stop entsprechen Android 36; Session-ID, Workflow-ID, Status und Trace-Retention bleiben stabil | JVM State-Machine-Tests, Service-Lifecycle-/Process-recreation-Test, Hintergrundlauf mit sichtbarer Notification, Reattach und Stop auf Zielgeraet | OPEN: Bridge ist noch Shell-owned |
+| M5-8 Provider Policy | Bestehende Timing-, Gesture-, Accessibility-, Tasker-, Shizuku-, Termux- und CustomTabs-Hosts sind inventarisiert; jede Capability liefert Discovery, Availability, Permission und typed Result; Auswahl ist priorisiert und deterministisch; Fallback ist pro Capability explizit und im Trace sichtbar; Abwesenheit, Permission denial, Timeout, Cancellation und Providerverlust teilen stabile Fehlercodes | Registry-Unit-Tests fuer Prioritaet und Konflikt, Host-Adapter-Fixtures, kontrollierte Abwesenheits-/Permission-Tests, keine direkte zweite Dispatch-Engine | DONE; externe asynchrone Adapter bleiben M9 |
+| M5-H Headless Runtime | Genau eine prozessweite `ExecutionSession` besitzt Runner/Job/Trace; Compose kann attach/detach ohne Laufabbruch; Doppelstart, Stop, Cancellation, Prozess-/Service-Recovery und UI-Reattachment sind deterministisch; Foreground-Service und Notification-Stop entsprechen Android 36; Session-ID, Workflow-ID, Status und Trace-Retention bleiben stabil | JVM State-Machine-Tests, Service-Lifecycle-/Process-recreation-Test, Hintergrundlauf, Reattach und Stop auf SM-S918B; visuelle RailTrace-Abnahme separat | DONE; kein Auto-Replay nach Prozessverlust |
 | M6-W WindowSession | Vorhandene Panel-Persistenz, Z-Order, Drag, Resize und Snap werden wiederverwendet; Shell und `StudioOverlayService` teilen Session-, Display-, Fokus- und Touch-Routing-Vertrag; harte Bounds, Insets, Min/Max, Crash-Restore und Multi-Panel-Z-Order sind deterministisch; Window-Aktionen mutieren keinen Workflow | Pure-State-Tests, Persistenz-/Migrationstest, Rotation/Insets, Overlay attach/detach, reproduzierbarer Geraete-Gestenlauf | OPEN: gemeinsamer Vertrag und Android-36-Overlaygate fehlen |
 | M7 Perception/Recorder | Capture, Marker, Recorder, Scene Inspector und Runtime tragen denselben Display-/Frame-/Zeitkontext; bestehende Recording-Persistenz, Integrity, Review, Replay und Recovery bleiben erhalten; Record -> Candidate -> Review -> Junktor Proposal -> explizite WorkspaceTransaction -> Runtime ist nachvollziehbar; Ablehnung mutiert nichts; es entsteht keine zweite Recorder-Pipeline | Capture-/Koordinatenfixtures, persistenter Record-Neustart, Evidence-Provenienz, Publish/Reject-Integrationstest, zwei reale App-Workflows bis Trace | OPEN: gemeinsamer Capture-Kontext und Publishing-Pfad fehlen |
 
@@ -207,14 +207,14 @@ Gesamtstatus: `PLANNED`
 
 Verbindlicher kritischer Pfad:
 
-`M5-7 DONE -> M5-8 -> M5-H -> M6-W -> M7 Capture/Display -> M7 Recorder-to-Workflow -> M8 Portability -> M10 Hardening -> Alpha -> Beta -> RC -> Stable`
+`M5-H DONE -> M6-W -> M7 Capture/Display -> M7 Recorder-to-Workflow -> M8 Portability -> M10 Hardening -> Alpha -> Beta -> RC -> Stable`
 
 Parallel erlaubt sind M6-Editor-Haertung, Dokumentationsabschluss und Regressionserweiterung. Sie
 duerfen keine noch offenen Runtime-, WindowSession- oder Capture-Vertraege vorwegnehmen.
 
-Der aktuelle kleinste sinnvolle Slice ist M5-8: die bereits produktiven Timing-, Gesture- und
-Accessibility-Provider erhalten eine gemeinsame Resolver-, Availability-, Berechtigungs- und
-Fehlercode-Policy. OCR, Vision-Fusion und externe Provider gehoeren nicht in diesen Slice.
+Der aktuelle kleinste sinnvolle Slice ist M6-W. M5-8 und M5-H haben Provider-Auswahl und
+prozessweiten Runtime-Host geschlossen. M6-W konsolidiert als Naechstes Panel-, Overlay-,
+Display-, Fokus- und Touch-Routing-Lebenszyklen, ohne Runtime oder Workflow-Semantik zu duplizieren.
 
 ## Release-Gates
 

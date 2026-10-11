@@ -10,8 +10,8 @@ Audit-Baseline `09b03dd`: 146 Features, davon 54 `IMPLEMENTED`, 42 `PARTIAL`, 32
 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`. M5-8 wurde nach dieser Baseline abgeschlossen. Die
 42 damaligen `PARTIAL`-Eintraege bleiben deshalb in der Abschlussmatrix unten unveraendert
 nachvollziehbar; spaetere Statusverschiebungen werden separat ausgewiesen und nicht rueckwirkend in
-die Baseline eingerechnet. Aktueller Matrixstand nach M5-8: 55 `IMPLEMENTED`, 45 `PARTIAL`,
-28 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
+die Baseline eingerechnet. Aktueller Matrixstand nach M5-H: 58 `IMPLEMENTED`, 46 `PARTIAL`,
+24 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
 
 ## Architektur und Sprache
 
@@ -42,7 +42,7 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-8: 55 `IMPLEMENTED`, 45
 | R-02 | IMPLEMENTED | ja | `DeterministicExecutionRunner.kt` | 1.0 Pflicht |
 | R-03 | IMPLEMENTED | ja | `ExecutionContract.kt`, `ExecutionTrace.kt` | 1.0 Pflicht |
 | R-04 | IMPLEMENTED | ja | `ExecutionProviderRegistry` | M5-8 erweitert Policy |
-| R-05 | IMPLEMENTED | ja | `AndroidRuntimeBridge.kt`; M5-1 | Headless Host fehlt |
+| R-05 | IMPLEMENTED | ja | `RuntimeClient`, `RuntimeProcessHost`; M5-1/M5-H | produktiver Shell-Pfad headless |
 | R-06 | IMPLEMENTED | ja | `AndroidWaitExecutionProvider.kt` | 1.0 Pflicht |
 | R-07 | IMPLEMENTED | ja | `NativeGestureProvider`; M5-2 | A11y Service erforderlich |
 | R-08 | IMPLEMENTED | ja | `NativeTouchProvider.kt`; M5-3 | 1.0 Pflicht |
@@ -52,8 +52,8 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-8: 55 `IMPLEMENTED`, 45
 | R-12 | IMPLEMENTED | ja | `M5_6_NATIVE_MULTITOUCH.md`; Geraeteabnahme SM-S918B | 1.0 Pflicht |
 | R-13 | PARTIAL | ja | `NativeAccessibilityProvider`, Target Resolver und M5-7 Geraetegate; `clickElement`/variable Query offen | M5-7 Kernpfad DONE, Rest M5-8/M7-2 |
 | R-14 | IMPLEMENTED | ja | `ProviderPolicy.kt`, deterministische Registry, sichere Fallback- und Trace-Tests; M5-8 | 1.0 Pflicht |
-| R-15 | PLANNED | - | `WINDOW_HEADLESS_DISPLAY_ROADMAP.md` M5-H | Alpha-Blocker |
-| R-16 | PLANNED | - | M5-H/M5-10 | Alpha-Blocker |
+| R-15 | IMPLEMENTED | ja | `ExecutionSessionManager`, `AndroidRuntimeHost`, `HeadlessRuntimeService`; M5-H | 1.0 Pflicht |
+| R-16 | PARTIAL | ja | bounded Checkpoint, `INTERRUPTED`, kein Auto-Replay; M5-H | Langlauf/Retention M5-10 |
 | R-17 | BLOCKED | - | M5-9 benoetigt freigegebenen M4-4-Sprachvertrag | Scope-Entscheidung erforderlich |
 | R-18 | PLANNED | - | M5-Pebbles/M5-10 | Debugger optional, Langlauf Pflicht |
 
@@ -94,8 +94,8 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-8: 55 `IMPLEMENTED`, 45
 | W-09 | PLANNED | - | M6-W/M10-2 | Alpha-Blocker |
 | W-10 | DEFERRED | - | M9-D | post-1.0 |
 | H-01 | IMPLEMENTED | ja | Runtime Core ohne Compose-Abhaengigkeit | Basis fuer M5-H |
-| H-02 | PLANNED | - | M5-H | Alpha-Blocker |
-| H-03 | PLANNED | - | M5-H | Alpha-Blocker |
+| H-02 | IMPLEMENTED | ja | `HeadlessRuntimeService`, Android-36 `specialUse`, Notification-Stop; M5-H | 1.0 Pflicht |
+| H-03 | IMPLEMENTED | ja | `RuntimeClient`, Session-StateFlow, Reattach-Geraetetest; M5-H | visuelle RailTrace-Abnahme offen |
 | H-04 | PLANNED | - | M6-W/M7-V | expliziter Display-Kontext |
 | H-05 | PARTIAL | teil | Recorder Playback Viewport Transform und lokale Mapper | kein globaler Display-Vertrag |
 | H-06 | PLANNED | - | M7-V | optional fuer 1.0 |
@@ -253,7 +253,8 @@ Ueberlappende Abhaengigkeiten stehen weiterhin in den Einzelzeilen.
 ## Fehlende oder unzureichende Nachweise
 
 - Kein vollstaendiger M6-Geraete- und UX-Abnahmelauf fuer alle drei Editoren und Panelgesten.
-- Kein prozessweiter Headless-/Foreground-Service-Test mit Recovery und UI-Reattachment.
+- Visuelle RailTrace-Abnahme der laufenden Headless-Session steht noch aus; Prozesshost,
+  Foreground-Service, Recovery, Reattach und Stop sind automatisiert und auf SM-S918B getestet.
 - Kein gemeinsamer Display-ID-Vertrag fuer Capture, A11y, Gesture und Remote-Sessions.
 - M5-8 erfasst externe Hosts einheitlich; vollstaendige asynchrone ExecutionProvider-Resultate fuer Tasker, Shizuku, Termux und Custom Tabs bleiben offen.
 - M5-7 belegt semantisches `clickText`; allgemeines `clickElement` und OCR-Zielaufloesung fuer reale

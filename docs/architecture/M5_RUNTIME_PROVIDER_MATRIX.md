@@ -38,8 +38,8 @@ Android service classes behind a provider.
 8. Timeout, cancellation and unknown/maybe-executed effects never trigger an automatic retry.
 9. Provider calls and results are traceable by capability, provider ID, selection reason and workflow entity.
 
-M5-8 still contains no global provider singleton. The productive `AndroidRuntimeBridge` constructs
-one explicit registry containing the native timing and native gesture providers. The gesture
+M5-H owns one process-wide `AndroidRuntimeHost`. It constructs one explicit registry containing
+the native timing and native gesture providers and exposes it through `RuntimeClient`. The gesture
 gateway reuses the already connected `VisualTaskerAccessibilityService`; it does not activate that
 service and fails closed when Android has not connected it. All other capabilities continue to fail
 closed until a later, separately approved provider slice.
@@ -70,9 +70,9 @@ non-default displays remain explicit gaps rather than implicit fallback behavior
 
 | Contract | Status | Current boundary |
 | --- | --- | --- |
-| UI-bound Android bridge | DONE | `AndroidRuntimeBridge` hosts exactly one runner per bridge and rejects double starts. |
-| Process-wide headless host | PLANNED | M5-H must reuse the runner, own lifecycle outside Compose and support status reattachment. |
-| Persistent runtime status/trace | GAP | Bridge state and live trace are in-memory and projected by `WorkspaceScreen`; no headless recovery record exists. |
+| UI-bound Android bridge | DONE | Compatibility bridge remains tested; productive Shell execution now uses `RuntimeClient`. |
+| Process-wide headless host | DONE | `RuntimeProcessHost` reuses the runner, owns lifecycle outside Compose and supports status reattachment. |
+| Persistent runtime status/trace | PARTIAL | Bounded non-sensitive recovery checkpoint and live session trace exist; full retained trace history remains M5-10. |
 | Explicit target display | PARTIAL | M5-7 semantic target contracts and trace carry display ID and reject non-default displays; coordinate gestures still expose bounds only. |
 | Virtual-display provider | PLANNED | M7-V is an optional feasibility slice, not an implicit capability of the gesture provider. |
 | Remote display session | DEFERRED | M9-D follows only after M7-V and the VT2VT transport/session scope are accepted. |

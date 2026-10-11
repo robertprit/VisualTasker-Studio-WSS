@@ -44,7 +44,7 @@ Teilimplementierungen, isolierte Contracts und reine Planung.
 | M2 Canonical Workflow Core | DONE | Ein kanonisches Workspace-/Workflow-Dokument ist die semantische Wahrheit. |
 | M3 Workspace Operations und Source Apply | DONE | Atomare Transaktionen, Property Schema, Source-Anker und linearer Validator geschlossen. |
 | M4 Three-Editor Conformance | DONE | Text, Block und Flow mutieren ueber denselben kanonischen Pfad; M4-0 bis M4-3 geschlossen. |
-| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 sind DONE; Headless Host und Closure fehlen. Kontrollfluss ist kein 1.0-Core-Blocker. |
+| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H sind DONE; Runtime-Closure fehlt. Kontrollfluss ist kein 1.0-Core-Blocker. |
 | M6 Editor Productization und Workspace UX | PLANNED | Erhebliche Panel-/Layout-Vorarbeiten vorhanden; gemeinsamer Window-Session-Vertrag und Produktgate fehlen. |
 | M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Vorhandene Datastore-/Asset-Bausteine muessen gegen gemeinsame Scope-Vertraege auditiert werden. |
@@ -62,7 +62,7 @@ Reconciliation 2026-10-11:
 - M5-7 besitzt nur die Runtime-Zielaufloesung. Die breitere Scene-/Perception-Fusion bleibt M7.
 - M5-8 besitzt Resolver, Auswahlpolicy und Fehlervertrag. Vollstaendige Tasker-, Shizuku-,
   Termux- und VT2VT-Produktintegration bleibt M9.
-- M5-H Headless Execution und M6-W Window/Floating Workspace sind `PLANNED` und fuer 1.0 Core.
+- M5-H Headless Execution ist `DONE`; M6-W Window/Floating Workspace bleibt `PLANNED` und fuer 1.0 Core.
 - M7-V VirtualDisplay ist `PLANNED`, aber fuer 1.0 optional. M9-D MultiDisplay-/Remote-Sessions
   bleiben `DEFERRED`, bis M7-V und der VT2VT-Scope freigegeben sind.
 - WorldviewGraph, RAG, lokale KI/SLM und weitere experimentelle Produkterweiterungen sind fuer
@@ -70,7 +70,7 @@ Reconciliation 2026-10-11:
 
 Verbindlicher 1.0-Pfad nach dem Feature-Audit-Follow-up:
 
-`M5-8 DONE -> M5-H -> M6-W -> M7 Capture/Display -> M7 Recorder-to-Workflow -> M8 Portability -> M10 Hardening -> Alpha -> Beta -> RC -> Stable`
+`M5-H DONE -> M6-W -> M7 Capture/Display -> M7 Recorder-to-Workflow -> M8 Portability -> M10 Hardening -> Alpha -> Beta -> RC -> Stable`
 
 M6-Editor-Haertung, Dokumentation und Regressionstests duerfen parallel laufen. M7-V bleibt
 optional, M9-D deferred. Die lueckenlose Scope-Klassifikation aller 146 Features und die
@@ -121,7 +121,7 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   Nicht-Default-Displays bleiben explizite GAPs.
 - [x] M5-8: explizite Provider-Aufloesung, Capability Discovery, getrennte Verfuegbarkeits- und
   Berechtigungszustaende, sichere Fallback-Policy sowie Provider-Provenienz in Runtime/RailTrace.
-- [PLANNED] M5-H: UI-unabhaengiger, prozessweit eindeutiger Headless Runtime Host mit explizitem
+- [x] M5-H: UI-unabhaengiger, prozessweit eindeutiger Headless Runtime Host mit explizitem
   Start/Stop, Cancellation, Recovery, Status-Reattachment und kontrollierter Trace-Retention.
 - [PLANNED] M5-9: Funktionen, Calls, Return und strukturierte Fehler nach vorheriger Freigabe der
   benoetigten Sprach-/Editor-Vertraege.
@@ -143,6 +143,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_3_NATIVE_GESTURE_PROVIDER.md`
 - `docs/architecture/M5_4_TYPED_POINTER_PATH.md`
 - `docs/architecture/M5_5_TYPED_PATH_BINDINGS.md`
+- `docs/architecture/M5_H_HEADLESS_RUNTIME.md`
 - `docs/architecture/M5_6_NATIVE_MULTITOUCH.md`
 - `docs/architecture/M5_7_ACCESSIBILITY_TARGET_RESOLUTION.md`
 - `docs/architecture/M5_8_PROVIDER_POLICY.md`
