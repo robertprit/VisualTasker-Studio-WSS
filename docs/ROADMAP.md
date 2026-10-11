@@ -21,9 +21,45 @@ VisualTasker Studio WSS fasst die alte VisualTasker Studio App und die Workspace
 - AI/ML/Vision erzeugen spaeter strukturierte Results und Proposals, aber keine direkten Mutationen; siehe `docs/adr/0003-ai-proposals-and-structured-results.md`.
 - Der FlowEditor soll kein zweiter zweidimensionaler BlockEditor werden. Er bleibt eine semantische Workflow-/Analyse-Projektion mit optionalen Detail-Layern.
 
+## Master Roadmap 1.0
+
+Die verbindliche Release-Planung steht in
+[`docs/architecture/RELEASE_1_0_PLAN.md`](architecture/RELEASE_1_0_PLAN.md). Sie verwendet
+ausschliesslich die Statuswerte `DONE`, `ACTIVE`, `PLANNED`, `DEFERRED`, `GAP` und `BLOCKED`.
+Die weiter unten erhaltenen, gleich benannten Feature-Meilensteine sind historische
+Produkt-Workstreams. Sie bleiben als Nachweis bestehen, bestimmen aber nicht mehr die Reihenfolge
+der Architektur- und Release-Slices.
+
+| Master-Meilenstein | Status | Verbindlicher Stand |
+| --- | --- | --- |
+| M1 EMScript- und Strukturgrundlagen | DONE | Sprach-, Struktur- und Identitaetsgrundlagen vorhanden. |
+| M2 Canonical Workflow Core | DONE | Ein kanonisches Workspace-/Workflow-Dokument ist die semantische Wahrheit. |
+| M3 Workspace Operations und Source Apply | DONE | Atomare Transaktionen, Property Schema, Source-Anker und linearer Validator geschlossen. |
+| M4 Three-Editor Conformance | DONE | Text, Block und Flow mutieren ueber denselben kanonischen Pfad; M4-0 bis M4-3 geschlossen. |
+| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-6 sind DONE; semantische Ziele, Provider-Policy, Kontrollfluss und Closure fehlen. |
+| M6 Editor Productization und Workspace UX | PLANNED | Erhebliche Vorarbeiten vorhanden, aber noch kein formales Produkt-Abnahmegate. |
+| M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline nicht geschlossen. |
+| M8 Resources, Data Hub und Workspace Explorer | PLANNED | Vorhandene Datastore-/Asset-Bausteine muessen gegen gemeinsame Scope-Vertraege auditiert werden. |
+| M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Provider-Grenzen sind noch festzulegen. |
+| M10 Release Hardening | PLANNED | Beginnt nach den freigegebenen Produkt-Slices und dem Feature-Freeze. |
+
+Reconciliation 2026-10-11:
+
+- Die Vorlage `roadmap-1.md` fuehrte M5-6 noch als offen. Der belegte Stand in
+  `M5_6_NATIVE_MULTITOUCH.md` sowie die zugehoerigen Tests und Geraetenachweise setzen M5-6 auf
+  `DONE`.
+- M4-4 bleibt `DEFERRED`. Der strukturelle Editor-Vertrag fuer
+  `TRY/CATCH/FINALLY/THROW` muss vor dem entsprechenden Runtime-Anteil von M5-9 explizit
+  freigegeben werden.
+- M5-7 besitzt nur die Runtime-Zielaufloesung. Die breitere Scene-/Perception-Fusion bleibt M7.
+- M5-8 besitzt Resolver, Auswahlpolicy und Fehlervertrag. Vollstaendige Tasker-, Shizuku-,
+  Termux- und VT2VT-Produktintegration bleibt M9.
+- WorldviewGraph, RAG, lokale KI/SLM und weitere experimentelle Produkterweiterungen sind fuer
+  nach 1.0 `DEFERRED`, solange keine ausdrueckliche Scope-Aenderung erfolgt.
+
 ## Aktueller Status
 
-### Architekturtrack M3/M4
+### Architekturtrack M3 Bis M5
 
 Dieser Architekturtrack ist die aktuelle Arbeitssequenz und nicht mit der historischen
 Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwechseln.
@@ -39,7 +75,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
 - [x] M4-1: verbleibende Block-/Flow-Semantikaktionen auf explizite `WorkspaceTransaction`s bringen.
 - [x] M4-2: Insert/Delete/Reorder/Detach/Reconnect plus Undo/Redo ueber alle drei Projektionen pruefen.
 - [x] M4-3: Shell-History, Undo/Redo, Selection-Reconciliation und Three-Editor-Closure-Gate.
-- [ ] M4-4: optionale spaetere Strukturerweiterung fuer `TRY/CATCH/FINALLY/THROW`; keine Runtime-Ausfuehrung.
+- [DEFERRED] M4-4: optionale Strukturerweiterung fuer `TRY/CATCH/FINALLY/THROW`; muss vor dem
+  entsprechenden M5-9-Runtime-Anteil als eigener Vertrag freigegeben werden.
 - [x] M5-0: deterministischer Execution-Contract, WorkflowGraph-Planung, JVM-Runner, Provider-Grenze,
   Cancellation und kanonisch referenzierter Trace fuer den bestehenden Sprachumfang.
 - [x] M5-1: Android Runtime Bridge, globaler Start/Stop, beobachtbare Runtime-Zustaende,
@@ -57,6 +94,13 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   Cancellation, Three-Editor-Roundtrip und pointerbezogener RailTrace-Nachweis. Pinch-in/out,
   parallele, gegenlaeufige und um 250 ms versetzte Pointer sowie aktiver Abbruch sind auf dem
   SM-S918B anhand realer Pointer-Ereignisse abgenommen.
+- [PLANNED] M5-7: semantische Accessibility-Ziele fuer `clickElement`, `clickText`, Bounds und
+  deterministische Node-Aufloesung ueber den bestehenden Runner.
+- [PLANNED] M5-8: explizite Provider-Aufloesung, Verfuegbarkeit, Berechtigungsstatus, Auswahlpolicy
+  und vereinheitlichte Fehlercodes.
+- [PLANNED] M5-9: Funktionen, Calls, Return und strukturierte Fehler nach vorheriger Freigabe der
+  benoetigten Sprach-/Editor-Vertraege.
+- [PLANNED] M5-10: Runtime-Closure mit Capability-Matrix, Recovery, Retention und Langlauftests.
 
 Verbindliche Nachweise:
 
@@ -76,6 +120,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_5_TYPED_PATH_BINDINGS.md`
 - `docs/architecture/M5_6_NATIVE_MULTITOUCH.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
+- `docs/architecture/RELEASE_1_0_PLAN.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
 eine gemeinsame semantische History fuer Text-, Block- und Flow-Urspruenge; 10 Integrationstests
@@ -153,13 +198,14 @@ Generische `touch.*`-Escape-Hatches und semantische Zielaufloesung bleiben getre
 - MainScreen ist als produktiver Pfad stillgelegt; ein adaptiver Studio-Panel-Preset ist in den Workspace-Layout-Einstellungen verfuegbar.
 - Einstellungen sind noch nicht vollstaendig uebergreifend konsolidiert.
 
-## Meilensteine Bis Stable V1
+## Historische Produkt-Workstreams Bis Stable V1
 
-Aktueller Arbeitsstamm: Editor-/Runtime-Kern und Stable-V1-Haertung. M1, M2.1 und
-M9.1 sind technisch abgeschlossen. Die noch offenen VisualAsset-Details bleiben
-in M6.1 zurueckgestellt. Der neue Konsolidierungs- und Cleanup-Auftrag ist als
-C7 vorgemerkt und startet erst nach dem aktuellen Hauptarbeitsstamm mit einer
-strikt lesenden Bestandsaufnahme.
+Die folgenden IDs werden zur Wahrung der Projektgeschichte unveraendert beibehalten. Sie bezeichnen
+Feature-Workstreams und sind nicht mit den Master-Meilensteinen im Release-1.0-Plan gleichzusetzen.
+Ihre offenen Punkte werden vor Umsetzung dem passenden Master-Slice zugeordnet; abgeschlossene
+Punkte bleiben als Implementierungsnachweis erhalten. M1, M2.1 und M9.1 dieses historischen
+Namensraums sind technisch abgeschlossen. VisualAsset-Details in M6.1 und C7 Cleanup bleiben
+zurueckgestellt, bis der aktive Master-Pfad sie benoetigt oder ausdruecklich freigibt.
 
 ### M1: Editor-Core Finalisieren
 
