@@ -116,6 +116,7 @@ sealed interface EmscriptValue {
     data class PathSegmentValue(val value: PointerPathSegment) : EmscriptValue
     data class PathValue(val value: PointerPathGeometry) : EmscriptValue
     data class PointerPathValue(val value: PointerPath) : EmscriptValue
+    data class MultiPathValue(val value: MultiPointerGesture) : EmscriptValue
     data class TaskerVariableValue(val name: String, val value: String) : EmscriptValue {
         init {
             require(name.isNotBlank()) { "Tasker variable name must not be blank." }
@@ -590,6 +591,7 @@ private fun EmscriptValue.asDouble(context: String): Double =
         is EmscriptValue.PathSegmentValue,
         is EmscriptValue.PathValue,
         is EmscriptValue.PointerPathValue,
+        is EmscriptValue.MultiPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -614,6 +616,7 @@ private fun EmscriptValue.asBoolean(context: String): Boolean =
         is EmscriptValue.PathSegmentValue,
         is EmscriptValue.PathValue,
         is EmscriptValue.PointerPathValue,
+        is EmscriptValue.MultiPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -640,6 +643,7 @@ private fun EmscriptValue.render(): String =
         is EmscriptValue.PathSegmentValue -> value::class.simpleName ?: "PathSegment"
         is EmscriptValue.PathValue -> "Path(${value.segments.size} segments)"
         is EmscriptValue.PointerPathValue -> "PointerPath(${value.geometry.segments.size} segments)"
+        is EmscriptValue.MultiPathValue -> "MultiPath(${value.pointers.size} pointers)"
         EmscriptValue.NullValue -> "null"
     }
 
@@ -657,6 +661,7 @@ private fun EmscriptValue.runtimeType(): LanguageTypeRef = when (this) {
     is EmscriptValue.PathSegmentValue -> DomainTypes.PATH_SEGMENT.ref
     is EmscriptValue.PathValue -> DomainTypes.PATH.ref
     is EmscriptValue.PointerPathValue -> DomainTypes.POINTER_PATH.ref
+    is EmscriptValue.MultiPathValue -> DomainTypes.MULTI_PATH.ref
     EmscriptValue.NullValue -> error(
         "NULL_LITERAL_DECISION_REQUIRED: absent besitzt ohne erwarteten Typ keinen ableitbaren Basistyp",
     )
@@ -669,6 +674,7 @@ internal val PATH_VALUE_CONSTRUCTOR_NAMES = setOf(
     "cubicBezierSegment",
     "path",
     "pointerPath",
+    "multiPath",
 )
 
 internal fun List<EmscriptValue>.toEmscriptListValue(): EmscriptValue.ListValue {
@@ -688,6 +694,7 @@ internal fun evaluatePathValueConstructor(
         "cubicbeziersegment" -> "geometry.cubicBezierSegment"
         "path" -> "geometry.path"
         "pointerpath" -> "gesture.pointerPath"
+        "multipath" -> "gesture.multiPath"
         else -> error("Unsupported path constructor '$commandName'")
     }
     return when (val result = PointerPathRuntimeConstructors.evaluate(
@@ -709,6 +716,7 @@ private fun EmscriptValue.toExecutionPathValue(): ExecutionValue = when (this) {
     is EmscriptValue.PathSegmentValue -> ExecutionValue.PathSegmentValue(value)
     is EmscriptValue.PathValue -> ExecutionValue.PathValue(value)
     is EmscriptValue.PointerPathValue -> ExecutionValue.PointerPathValue(value)
+    is EmscriptValue.MultiPathValue -> ExecutionValue.MultiPathValue(value)
     else -> error("Path constructor cannot consume $this")
 }
 
@@ -717,6 +725,7 @@ private fun ExecutionValue.toEmscriptPathValue(): EmscriptValue = when (this) {
     is ExecutionValue.PathSegmentValue -> EmscriptValue.PathSegmentValue(value)
     is ExecutionValue.PathValue -> EmscriptValue.PathValue(value)
     is ExecutionValue.PointerPathValue -> EmscriptValue.PointerPathValue(value)
+    is ExecutionValue.MultiPathValue -> EmscriptValue.MultiPathValue(value)
     is ExecutionValue.ListValue -> values.map(ExecutionValue::toEmscriptPathValue).toEmscriptListValue()
     else -> error("Path constructor returned unsupported value $this")
 }

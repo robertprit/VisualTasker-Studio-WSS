@@ -31,7 +31,10 @@ fun ExecutionTrace.toRailTraceSteps(
             timestampMs = operation.index * 180L,
             durationMs = 140L,
             activityName = operation.status.toRuntimeLaneLabel(this.mode),
-            detail = operation.message,
+            detail = operation.pathTrace?.let { trace ->
+                "${operation.message} | ${trace.gestureKind} ${trace.pointerCount} pointer, " +
+                    "${trace.segmentCount} segments, ${trace.plannedTotalDurationMs ?: "?"} ms"
+            } ?: operation.message,
             properties = buildMap {
                 put("runId", this@toRailTraceSteps.runId.value)
                 put("operationId", operation.id.value)
@@ -49,6 +52,17 @@ fun ExecutionTrace.toRailTraceSteps(
                     put("sourceId", source.id)
                     source.edgeTargetId?.let { put("edgeTargetId", it) }
                     source.edgeKind?.let { put("edgeKind", it) }
+                }
+                operation.pathTrace?.let { trace ->
+                    put("gestureKind", trace.gestureKind)
+                    put("pointerCount", trace.pointerCount.toString())
+                    put("pointerIds", trace.pointerIds.joinToString(","))
+                    put("pointerStartOffsetsMs", trace.pointerStartOffsetsMs.joinToString(","))
+                    put("pointerEndOffsetsMs", trace.pointerEndOffsetsMs.joinToString(","))
+                    put("pointerSegmentCounts", trace.pointerSegmentCounts.joinToString(","))
+                    put("plannedTotalDurationMs", trace.plannedTotalDurationMs?.toString().orEmpty())
+                    put("gestureStatus", trace.status)
+                    trace.cancellationPosition?.let { put("cancellationPosition", it) }
                 }
             },
         )

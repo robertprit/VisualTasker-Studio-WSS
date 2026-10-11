@@ -53,6 +53,10 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   Gesamt-/Segment-/Speed-Timing, Holds, Delay, Repeat, Roundtrip und nativer Android-Fortsetzung.
 - [x] M5-5: `Point`, `PathSegment`, `Path` und `PointerPath` als typisierte, variablengebundene
   Runtime-Werte mit statischer Typpruefung, Three-Editor-Roundtrip und strukturiertem Trace.
+- [x] M5-6: typisierter `MultiPath`, synchronisierte native Mehrfinger-Ausfuehrung, gemeinsame
+  Cancellation, Three-Editor-Roundtrip und pointerbezogener RailTrace-Nachweis. Pinch-in/out,
+  parallele, gegenlaeufige und um 250 ms versetzte Pointer sowie aktiver Abbruch sind auf dem
+  SM-S918B anhand realer Pointer-Ereignisse abgenommen.
 
 Verbindliche Nachweise:
 
@@ -70,6 +74,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_3_NATIVE_GESTURE_PROVIDER.md`
 - `docs/architecture/M5_4_TYPED_POINTER_PATH.md`
 - `docs/architecture/M5_5_TYPED_PATH_BINDINGS.md`
+- `docs/architecture/M5_6_NATIVE_MULTITOUCH.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
@@ -110,6 +115,13 @@ typisierte Reporter; LET/SET, dynamische Koordinaten und Timing-Werte laufen dur
 ExecutionRunner und NativeGestureProvider. Text-, Block- und Flow-Projektion erhalten Identitaeten,
 Source-Anker, unbekannte Metadaten und die drei Timing-Modi. Multitouch und semantische
 Vision-/A11y-Zielaufloesung bleiben explizite Folgegrenzen.
+
+M5-6 schliesst das native Multitouch-GAP mit dem bereits spezifizierten `MultiPath`-/`multiSwipe`-
+Vertrag. Mehrere Pointer teilen einen globalen Zeitstrahl, behalten eigene IDs, Geometrie, Holds,
+Start-Offsets und Endzeitpunkte und werden als eine abbrechbare Provider-Operation ausgefuehrt.
+Zeitversetzte Pointer muessen in Androids erstem gemeinsamen Descriptor vollstaendig darstellbar
+sein; nicht verlaesslich fortsetzbare Timing-Grenzen werden vor dem Dispatch abgewiesen.
+Generische `touch.*`-Escape-Hatches und semantische Zielaufloesung bleiben getrennte Folgearbeiten.
 
 ### Stabil / Nutzbar
 

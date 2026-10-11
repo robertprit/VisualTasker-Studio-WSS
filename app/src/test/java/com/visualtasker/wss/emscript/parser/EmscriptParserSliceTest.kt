@@ -17,6 +17,7 @@ import de.visualtasker.workflow.semantics.ir.validateSemantics
 import de.visualtasker.blockeditor.registry.BlockTypes
 import de.visualtasker.workflow.semantics.CommandArgument
 import de.visualtasker.workflow.semantics.CommandArgumentType
+import de.visualtasker.workflow.semantics.CommandCatalogEntry
 import de.visualtasker.workflow.semantics.CommandCatalogKind
 import de.visualtasker.workflow.semantics.CommandCatalogRole
 import de.visualtasker.workflow.semantics.VisualTaskerCommandCatalog
@@ -740,9 +741,7 @@ class EmscriptParserSliceTest {
         val entries = VisualTaskerCommandCatalog.allEntries()
             .filter { it.kind == CommandCatalogKind.STATEMENT && it.block != null }
             .sortedBy { it.canonicalName }
-        val source = entries.joinToString(separator = "\n") { entry ->
-            "${entry.canonicalName}(${entry.arguments.joinToString(",") { it.sampleArgument() }})"
-        }
+        val source = entries.joinToString(separator = "\n") { entry -> entry.sampleStatementSource() }
 
         val parsed = EmscriptParserSlice().parse(source)
         assertTrue(parsed.issues.joinToString { "${it.line}:${it.column} ${it.message}" }, parsed.isSuccess)
@@ -912,6 +911,15 @@ class EmscriptParserSliceTest {
             CommandArgumentType.ANY -> defaultValue?.takeIf { it.isNotBlank() } ?: "{}"
             CommandArgumentType.STATEMENT_BODY -> "{}"
         }
+
+    private fun CommandCatalogEntry.sampleStatementSource(): String = when (id) {
+        "action.multiSwipe" ->
+            "multiSwipe(multiPath([" +
+                "pointerPath(path(point(100,400),point(200,300)),duration=100,pointerId=0)," +
+                "pointerPath(path(point(300,400),point(200,300)),duration=100,pointerId=1)" +
+                "]))"
+        else -> "$canonicalName(${arguments.joinToString(",") { it.sampleArgument() }})"
+    }
 
     private fun CommandArgument.sampleExpressionArgument(): String =
         when (type) {

@@ -565,6 +565,7 @@ private fun EmscriptValue.asDoubleDryRun(context: String): Double =
         is EmscriptValue.PathSegmentValue,
         is EmscriptValue.PathValue,
         is EmscriptValue.PointerPathValue,
+        is EmscriptValue.MultiPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -586,6 +587,7 @@ private fun EmscriptValue.asBooleanDryRun(context: String): Boolean =
         is EmscriptValue.PathSegmentValue,
         is EmscriptValue.PathValue,
         is EmscriptValue.PointerPathValue,
+        is EmscriptValue.MultiPathValue,
         is EmscriptValue.ImageMatchValue,
         is EmscriptValue.TextMatchValue,
         is EmscriptValue.MarkerValue,
@@ -612,6 +614,7 @@ private fun EmscriptValue.renderDryRun(): String =
         is EmscriptValue.PathSegmentValue -> value::class.simpleName ?: "PathSegment"
         is EmscriptValue.PathValue -> "Path(${value.segments.size} segments)"
         is EmscriptValue.PointerPathValue -> "PointerPath(${value.geometry.segments.size} segments)"
+        is EmscriptValue.MultiPathValue -> "MultiPath(${value.pointers.size} pointers)"
         EmscriptValue.NullValue -> "null"
     }
 

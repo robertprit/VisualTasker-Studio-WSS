@@ -112,6 +112,26 @@ class ThreeEditorConformanceTest {
     }
 
     @Test
+    fun multiPathSurvivesTextBlockFlowPersistenceAndSourceApply() {
+        val result = assertSupportedRoundtrip(
+            """
+                LET left:Path = path(point(100,500),point(100,100))
+                LET right:Path = path(point(300,500),point(300,100))
+                LET gesture:MultiPath = multiPath([pointerPath(left,duration=500,delay=0,pointerId=4),pointerPath(right,duration=700,delay=50,pointerId=9)])
+                multiSwipe(gesture)
+            """.trimIndent(),
+            "typed-multi-path",
+        )
+
+        assertTrue(result.generatedSource, result.generatedSource.contains("let gesture:MultiPath"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("multiPath(["))
+        assertTrue(result.generatedSource, result.generatedSource.contains("pointerId=4"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("pointerId=9"))
+        assertTrue(result.generatedSource, result.generatedSource.contains("multiSwipe(gesture)"))
+        assertTrue(result.flowNodeIds.containsAll(result.blockProjection.keys.map { "block:$it" }))
+    }
+
+    @Test
     fun pathTimingEditsConvergeThroughBlockAndFlowWithUndoRedoAndStableIdentity() {
         val imported = (ThreeEditorConformanceHarness.importSource(
             "LET route:PointerPath = pointerPath(path(point(100,200),point(300,400)),duration=600)\nswipe(route)",

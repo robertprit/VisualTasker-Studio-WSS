@@ -81,7 +81,19 @@ data class PointerPath(
     val pointerId: Int,
     val geometry: PointerPathGeometry,
     val timing: PointerPathTiming,
+    val pointerIdExplicit: Boolean = false,
 )
+
+data class MultiPointerGesture(
+    val pointers: List<PointerPath>,
+) {
+    init {
+        require(pointers.size >= 2) { "MultiPath requires at least two PointerPath values." }
+        require(pointers.map(PointerPath::pointerId).distinct().size == pointers.size) {
+            "MultiPath pointer IDs must be unique."
+        }
+    }
+}
 
 data class ResolvedPointerPathSegment(
     val geometry: PointerPathSegment,
@@ -101,6 +113,12 @@ data class ResolvedPointerPath(
     val totalDispatchDurationMs: Long = delayMs + startHoldMs + movementDurationMs + endHoldMs
 }
 
+data class ResolvedMultiPointerGesture(
+    val pointers: List<ResolvedPointerPath>,
+) {
+    val plannedTotalDurationMs: Long = pointers.maxOf(ResolvedPointerPath::totalDispatchDurationMs)
+}
+
 sealed interface PointerPathParseResult {
     data class Success(
         val pointerPath: PointerPath,
@@ -118,11 +136,40 @@ sealed interface PointerPathResolutionResult {
     data class Failure(val code: String, val message: String) : PointerPathResolutionResult
 }
 
+sealed interface MultiPointerResolutionResult {
+    data class Success(val gesture: ResolvedMultiPointerGesture) : MultiPointerResolutionResult
+    data class Failure(val code: String, val message: String) : MultiPointerResolutionResult
+}
+
+object MultiPointerGestureLowerer {
+    fun resolve(gesture: MultiPointerGesture): MultiPointerResolutionResult {
+        val resolved = mutableListOf<ResolvedPointerPath>()
+        gesture.pointers.forEachIndexed { index, pointer ->
+            if (pointer.timing.repeat != 1) {
+                return failure(
+                    "TOUCH_MULTIPATH_REPEAT_AMBIGUOUS",
+                    "MultiPath pointer $index must use repeat=1; repeat the complete gesture instead.",
+                )
+            }
+            when (val result = PointerPathLowerer.resolve(pointer)) {
+                is PointerPathResolutionResult.Failure -> return failure(
+                    result.code,
+                    "MultiPath pointer $index (${pointer.pointerId}): ${result.message}",
+                )
+                is PointerPathResolutionResult.Success -> resolved += result.pointerPath
+            }
+        }
+        return MultiPointerResolutionResult.Success(ResolvedMultiPointerGesture(resolved))
+    }
+
+    private fun failure(code: String, message: String) = MultiPointerResolutionResult.Failure(code, message)
+}
+
 object PointerPathLowerer {
     fun resolve(pointerPath: PointerPath): PointerPathResolutionResult {
         val geometry = pointerPath.geometry
-        if (pointerPath.pointerId != 0) {
-            return failure("TOUCH_MULTITOUCH_UNSUPPORTED", "M5-4 supports only pointerId 0.")
+        if (pointerPath.pointerId < 0) {
+            return failure("TOUCH_POINTER_ID_INVALID", "PointerPath pointerId must not be negative.")
         }
         if (geometry.startPoint.x < 0.0 || geometry.startPoint.y < 0.0 ||
             geometry.allPoints.any { it.x < 0.0 || it.y < 0.0 }
@@ -308,6 +355,7 @@ object PointerPathRuntimeConstructors {
             }
             "geometry.path" -> ExecutionValue.PathValue(path(arguments))
             "gesture.pointerPath" -> pointerPath(arguments, argumentNames)
+            "gesture.multiPath" -> multiPath(arguments)
             else -> return failure("PATH_CONSTRUCTOR_UNSUPPORTED", "Unsupported path constructor '$commandId'.")
         }
         PointerPathConstructionResult.Success(value)
@@ -380,8 +428,37 @@ object PointerPathRuntimeConstructors {
                     delayMs = bound.optionalWholeLong("delay", positive = false) ?: 0L,
                     repeat = bound.optionalWholeLong("repeat", positive = true)?.toIntChecked("repeat") ?: 1,
                 ),
+                pointerIdExplicit = "pointerId" in bound,
             ),
         )
+    }
+
+    private fun multiPath(arguments: List<ExecutionValue>): ExecutionValue.MultiPathValue {
+        val values = arguments.singleOrNull()
+            ?.let { (it as? ExecutionValue.ListValue)?.values }
+            ?: arguments
+        if (values.size < 2 || values.any { it !is ExecutionValue.PointerPathValue }) {
+            throw PathBindingException(
+                "TOUCH_MULTIPATH_VALUES_REQUIRED",
+                "multiPath requires at least two PointerPath values.",
+            )
+        }
+        val pointers = values.map { (it as ExecutionValue.PointerPathValue).value }
+        val explicitIds = pointers.filter(PointerPath::pointerIdExplicit).map(PointerPath::pointerId)
+        if (explicitIds.distinct().size != explicitIds.size) {
+            throw PathBindingException("TOUCH_POINTER_ID_DUPLICATE", "Explicit MultiPath pointer IDs must be unique.")
+        }
+        val usedIds = explicitIds.toMutableSet()
+        var candidate = 0
+        val normalized = pointers.map { pointer ->
+            if (pointer.pointerIdExplicit) {
+                pointer
+            } else {
+                while (candidate in usedIds) candidate += 1
+                pointer.copy(pointerId = candidate.also(usedIds::add))
+            }
+        }
+        return ExecutionValue.MultiPathValue(MultiPointerGesture(normalized))
     }
 
     private fun bind(
@@ -476,7 +553,53 @@ fun PointerPath.traceInfo(
         status = status,
         invalidSegmentIndex = invalidSegmentIndex,
         cancellationPosition = cancellationPosition,
+        pointerCount = 1,
+        pointerIds = listOf(pointerId),
+        pointerStartOffsetsMs = listOf(timing.delayMs),
+        pointerEndOffsetsMs = listOfNotNull(resolved?.pointerPath?.totalDispatchDurationMs),
+        pointerSegmentCounts = listOf(geometry.segments.size),
+        gestureKind = "SINGLE_TOUCH",
     )
+}
+
+fun MultiPointerGesture.traceInfo(
+    status: String,
+    cancellationPosition: String? = null,
+): PointerPathTraceInfo {
+    val resolved = MultiPointerGestureLowerer.resolve(this) as? MultiPointerResolutionResult.Success
+    val resolvedPointers = resolved?.gesture?.pointers.orEmpty()
+    return PointerPathTraceInfo(
+        segmentCount = pointers.sumOf { it.geometry.segments.size },
+        segmentTypes = pointers.flatMap { pointer ->
+            pointer.geometry.segments.map { segment ->
+                when (segment) {
+                    is PointerPathSegment.Line -> "LINE"
+                    is PointerPathSegment.QuadraticBezier -> "QUADRATIC_BEZIER"
+                    is PointerPathSegment.CubicBezier -> "CUBIC_BEZIER"
+                }
+            }
+        },
+        plannedTotalDurationMs = resolved?.gesture?.plannedTotalDurationMs,
+        status = status,
+        cancellationPosition = cancellationPosition,
+        pointerCount = pointers.size,
+        pointerIds = pointers.map(PointerPath::pointerId),
+        pointerStartOffsetsMs = pointers.map { it.timing.delayMs },
+        pointerEndOffsetsMs = resolvedPointers.map(ResolvedPointerPath::totalDispatchDurationMs),
+        pointerSegmentCounts = pointers.map { it.geometry.segments.size },
+        gestureKind = "MULTI_TOUCH",
+    )
+}
+
+fun List<ExecutionValue>.gestureTraceInfoOrNull(
+    commandId: String,
+    status: String,
+    invalidSegmentIndex: Int? = null,
+    cancellationPosition: String? = null,
+): PointerPathTraceInfo? = when {
+    commandId in setOf("action.multiSwipe", "multiSwipe") ->
+        (firstOrNull() as? ExecutionValue.MultiPathValue)?.value?.traceInfo(status, cancellationPosition)
+    else -> gesturePointerPathOrNull(commandId)?.traceInfo(status, invalidSegmentIndex, cancellationPosition)
 }
 
 fun List<ExecutionValue>.gesturePointerPathOrNull(commandId: String): PointerPath? {
@@ -524,7 +647,12 @@ object PointerPathSourceCodec {
         } else {
             val (geometry, consumed) = decodeTopLevelGeometry(arguments)
             val timing = decodeTiming(arguments.drop(consumed), defaultDurationMs = DEFAULT_DURATION_MS)
-            PointerPath(pointerId = timing.pointerId, geometry = geometry, timing = timing.value)
+            PointerPath(
+                pointerId = timing.pointerId,
+                geometry = geometry,
+                timing = timing.value,
+                pointerIdExplicit = timing.pointerIdExplicit,
+            )
         }
         return PointerPathParseResult.Success(decoded, legacySyntax = false)
     }
@@ -558,7 +686,12 @@ object PointerPathSourceCodec {
         }
         val geometry = decodeGeometry(positional.single().value)
         val timing = decodeTiming(call.arguments.filter { it.name != null }, defaultDurationMs = null)
-        return PointerPath(pointerId = timing.pointerId, geometry = geometry, timing = timing.value)
+        return PointerPath(
+            pointerId = timing.pointerId,
+            geometry = geometry,
+            timing = timing.value,
+            pointerIdExplicit = timing.pointerIdExplicit,
+        )
     }
 
     private fun decodeTopLevelGeometry(arguments: List<SourceArgument>): Pair<PointerPathGeometry, Int> {
@@ -702,6 +835,7 @@ object PointerPathSourceCodec {
         val pointerId = unique["pointerId"]?.nonNegativeWholeNumber("pointerId")?.toInt() ?: 0
         return DecodedTiming(
             pointerId = pointerId,
+            pointerIdExplicit = "pointerId" in unique,
             value = PointerPathTiming(
                 durationMs = duration,
                 segmentDurationsMs = segmentDurations,
@@ -765,7 +899,11 @@ object PointerPathSourceCodec {
 
     private fun failure(code: String, message: String) = PointerPathParseResult.Failure(code, message)
 
-    private data class DecodedTiming(val pointerId: Int, val value: PointerPathTiming)
+    private data class DecodedTiming(
+        val pointerId: Int,
+        val pointerIdExplicit: Boolean,
+        val value: PointerPathTiming,
+    )
 
     const val DEFAULT_DURATION_MS = 250L
 }

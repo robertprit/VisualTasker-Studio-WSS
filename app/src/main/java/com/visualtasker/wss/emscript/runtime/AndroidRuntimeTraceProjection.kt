@@ -71,6 +71,7 @@ private fun ExecutionValue.toEmscriptValue(): EmscriptValue = when (this) {
     is ExecutionValue.PathSegmentValue -> EmscriptValue.PathSegmentValue(value)
     is ExecutionValue.PathValue -> EmscriptValue.PathValue(value)
     is ExecutionValue.PointerPathValue -> EmscriptValue.PointerPathValue(value)
+    is ExecutionValue.MultiPathValue -> EmscriptValue.MultiPathValue(value)
     ExecutionValue.NullValue,
     ExecutionValue.VoidValue,
     -> EmscriptValue.NullValue

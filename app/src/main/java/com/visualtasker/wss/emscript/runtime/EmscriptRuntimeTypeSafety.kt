@@ -39,6 +39,7 @@ internal object EmscriptRuntimeTypeSafety {
             DomainTypes.PATH_SEGMENT.ref,
             DomainTypes.PATH.ref,
             DomainTypes.POINTER_PATH.ref,
+            DomainTypes.MULTI_PATH.ref,
             -> error("Domain value '$expectedType' requires an explicit constructor.")
             else -> error("Unsupported expression return type '$expectedType'")
         }
@@ -58,6 +59,7 @@ internal object EmscriptRuntimeTypeSafety {
         is EmscriptValue.PathSegmentValue -> DomainTypes.PATH_SEGMENT.ref
         is EmscriptValue.PathValue -> DomainTypes.PATH.ref
         is EmscriptValue.PointerPathValue -> DomainTypes.POINTER_PATH.ref
+        is EmscriptValue.MultiPathValue -> DomainTypes.MULTI_PATH.ref
         EmscriptValue.NullValue -> error("Absent values require an expected nullable type")
     }
 }

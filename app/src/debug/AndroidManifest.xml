@@ -17,6 +17,12 @@
                 <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_FAST" />
                 <action android:name="com.visualtasker.wss.debug.M5_4_PREPARE_CANCELLATION" />
                 <action android:name="com.visualtasker.wss.debug.M5_5_PREPARE_VARIABLE_PATH" />
+                <action android:name="com.visualtasker.wss.debug.M5_6_PREPARE_PINCH_IN" />
+                <action android:name="com.visualtasker.wss.debug.M5_6_PREPARE_PINCH_OUT" />
+                <action android:name="com.visualtasker.wss.debug.M5_6_PREPARE_PARALLEL" />
+                <action android:name="com.visualtasker.wss.debug.M5_6_PREPARE_OPPOSING" />
+                <action android:name="com.visualtasker.wss.debug.M5_6_PREPARE_DELAYED" />
+                <action android:name="com.visualtasker.wss.debug.M5_6_PREPARE_CANCELLATION" />
                 <action android:name="com.visualtasker.wss.debug.M5_2_RESTORE" />
             </intent-filter>
         </receiver>

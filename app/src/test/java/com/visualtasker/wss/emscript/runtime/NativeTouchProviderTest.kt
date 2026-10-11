@@ -145,6 +145,146 @@ class NativeTouchProviderTest {
     }
 
     @Test
+    fun multiSwipeDispatchesTwoPointersAsOneGestureOperation() {
+        val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
+        val gesture = multiGesture(
+            pointer(0, 100.0, 400.0, 100.0, 200.0),
+            pointer(1, 300.0, 400.0, 300.0, 200.0),
+        )
+
+        val result = provider(gateway).invoke(multiSwipeInvocation(gesture), context())
+
+        assertTrue(result is ProviderResult.Success)
+        assertEquals(1, gateway.dispatchCount)
+        assertEquals(listOf(0, 1), gateway.gestureBatches.single().map(TouchGesturePath::pointerId))
+    }
+
+    @Test
+    fun multiSwipePreservesPinchInAndPinchOutGeometry() {
+        fun dispatchedSpan(gesture: MultiPointerGesture): Pair<Float, Float> {
+            val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
+            val result = provider(gateway).invoke(multiSwipeInvocation(gesture), context())
+            assertTrue(result is ProviderResult.Success)
+            val segments = gateway.gestureBatches.single().map { it.segments.single() }
+            return (segments[1].from.x - segments[0].from.x) to
+                (segments[1].to.x - segments[0].to.x)
+        }
+
+        val pinchIn = dispatchedSpan(
+            multiGesture(
+                pointer(0, 100.0, 400.0, 260.0, 400.0),
+                pointer(1, 500.0, 400.0, 340.0, 400.0),
+            ),
+        )
+        val pinchOut = dispatchedSpan(
+            multiGesture(
+                pointer(0, 260.0, 400.0, 100.0, 400.0),
+                pointer(1, 340.0, 400.0, 500.0, 400.0),
+            ),
+        )
+
+        assertTrue("Pinch-in must reduce pointer span: $pinchIn", pinchIn.second < pinchIn.first)
+        assertTrue("Pinch-out must increase pointer span: $pinchOut", pinchOut.second > pinchOut.first)
+    }
+
+    @Test
+    fun multiSwipePreservesOppositeDirectionsDelaysAndDurations() {
+        val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
+        val gesture = multiGesture(
+            pointer(0, 100.0, 300.0, 300.0, 300.0, durationMs = 200L),
+            pointer(1, 300.0, 500.0, 100.0, 500.0, durationMs = 450L, delayMs = 75L),
+        )
+
+        val result = provider(gateway).invoke(multiSwipeInvocation(gesture), context())
+
+        assertTrue(result is ProviderResult.Success)
+        val paths = gateway.gestureBatches.single()
+        assertEquals(TouchGesturePoint(100f, 300f), paths[0].segments.single().from)
+        assertEquals(TouchGesturePoint(300f, 300f), paths[0].segments.single().to)
+        assertEquals(TouchGesturePoint(300f, 500f), paths[1].segments.single().from)
+        assertEquals(TouchGesturePoint(100f, 500f), paths[1].segments.single().to)
+        assertEquals(75L, paths[1].startDelayMs)
+        assertEquals(450L, paths[1].durationMs)
+    }
+
+    @Test
+    fun multiSwipeSupportsThreePointersAndBezierSegments() {
+        val gateway = FakeTouchGateway(autoResult = TouchGestureResult.Completed)
+        val curved = PointerPath(
+            pointerId = 2,
+            geometry = PointerPathGeometry(
+                PointerPathPoint(500.0, 600.0),
+                listOf(
+                    PointerPathSegment.QuadraticBezier(
+                        PointerPathPoint(500.0, 600.0),
+                        PointerPathPoint(600.0, 400.0),
+                        PointerPathPoint(700.0, 600.0),
+                    ),
+                ),
+            ),
+            timing = PointerPathTiming(durationMs = 350L),
+        )
+        val gesture = multiGesture(
+            pointer(0, 100.0, 700.0, 200.0, 500.0),
+            pointer(1, 300.0, 700.0, 400.0, 500.0),
+            curved,
+        )
+
+        val result = provider(gateway).invoke(multiSwipeInvocation(gesture), context())
+
+        assertTrue(result is ProviderResult.Success)
+        assertEquals(3, gateway.gestureBatches.single().size)
+        assertTrue(gateway.gestureBatches.single()[2].segments.single() is TouchGestureSegment.QuadraticBezier)
+    }
+
+    @Test
+    fun multiSwipeCancellationCancelsTheSharedGestureOnce() {
+        val gateway = FakeTouchGateway()
+        val token = MutableCancellationToken()
+        val result = AtomicReference<ProviderResult>()
+        val gesture = multiGesture(
+            pointer(0, 100.0, 400.0, 100.0, 200.0, durationMs = 5_000L),
+            pointer(1, 300.0, 400.0, 300.0, 200.0, durationMs = 5_000L),
+        )
+        val thread = Thread {
+            result.set(provider(gateway).invoke(multiSwipeInvocation(gesture), context(token)))
+        }.apply { start() }
+        assertTrue(gateway.awaitDispatch())
+
+        token.cancel()
+        thread.join(1_000L)
+
+        assertTrue(result.get() is ProviderResult.Cancelled)
+        assertEquals(1, gateway.cancelCount)
+        assertFalse(thread.isAlive)
+    }
+
+    @Test
+    fun multiSwipeRejectsAndroidPointerLimitBeforeDispatch() {
+        val gateway = FakeTouchGateway(
+            autoResult = TouchGestureResult.Completed,
+            availabilityProvider = {
+                TouchAvailability(
+                    connected = true,
+                    canPerformGestures = true,
+                    displayBounds = TouchDisplayBounds(0, 0, 1080, 2400),
+                    maxPointerCount = 2,
+                )
+            },
+        )
+        val gesture = multiGesture(
+            pointer(0, 100.0, 400.0, 100.0, 200.0),
+            pointer(1, 300.0, 400.0, 300.0, 200.0),
+            pointer(2, 500.0, 400.0, 500.0, 200.0),
+        )
+
+        val result = provider(gateway).invoke(multiSwipeInvocation(gesture), context())
+
+        assertFailure(result, "TOUCH_POINTER_COUNT_ANDROID_LIMIT")
+        assertFalse(gateway.wasDispatched)
+    }
+
+    @Test
     fun typedPointerPathPhaseOverAndroidLimitIsRejectedBeforeDispatch() {
         val gateway = FakeTouchGateway(
             availabilityProvider = {
@@ -714,6 +854,34 @@ class NativeTouchProviderTest {
         arguments = listOf(ExecutionValue.PointerPathValue(pointerPath)),
     )
 
+    private fun multiSwipeInvocation(gesture: MultiPointerGesture) = ProviderInvocation(
+        requestId = "request",
+        workflowId = "workflow",
+        entityId = "multi-swipe-block",
+        commandId = "action.multiSwipe",
+        capability = NativeGestureProvider.A11Y_CAPABILITY,
+        arguments = listOf(ExecutionValue.MultiPathValue(gesture)),
+    )
+
+    private fun multiGesture(vararg pointers: PointerPath) = MultiPointerGesture(pointers.toList())
+
+    private fun pointer(
+        id: Int,
+        fromX: Double,
+        fromY: Double,
+        toX: Double,
+        toY: Double,
+        durationMs: Long = 250L,
+        delayMs: Long = 0L,
+    ) = PointerPath(
+        pointerId = id,
+        geometry = PointerPathGeometry(
+            PointerPathPoint(fromX, fromY),
+            listOf(PointerPathSegment.Line(PointerPathPoint(fromX, fromY), PointerPathPoint(toX, toY))),
+        ),
+        timing = PointerPathTiming(durationMs = durationMs, delayMs = delayMs),
+    )
+
     private fun pointList(vararg coordinates: Double): ExecutionValue.ListValue =
         ExecutionValue.ListValue(coordinates.map(ExecutionValue::NumberValue))
 
@@ -748,10 +916,11 @@ private class FakeTouchGateway(
     private var availabilityCount = 0
     private var dispatchAttempts = 0
     val paths = mutableListOf<TouchGesturePath>()
+    val gestureBatches = mutableListOf<List<TouchGesturePath>>()
     var cancelCount: Int = 0
         private set
     val dispatchCount: Int
-        get() = paths.size
+        get() = gestureBatches.size
     val wasDispatched: Boolean
         get() = dispatchCount > 0
 
@@ -764,9 +933,22 @@ private class FakeTouchGateway(
         path: TouchGesturePath,
         onResult: (TouchGestureResult) -> Unit,
     ): TouchGestureSubmission {
+        return recordDispatch(listOf(path), onResult)
+    }
+
+    override fun dispatchGesture(
+        paths: List<TouchGesturePath>,
+        onResult: (TouchGestureResult) -> Unit,
+    ): TouchGestureSubmission = recordDispatch(paths, onResult)
+
+    private fun recordDispatch(
+        dispatchedPaths: List<TouchGesturePath>,
+        onResult: (TouchGestureResult) -> Unit,
+    ): TouchGestureSubmission {
         val index = dispatchAttempts++
         dispatchErrorSequence.getOrNull(index)?.let { throw it }
-        paths += path
+        paths += dispatchedPaths
+        gestureBatches += dispatchedPaths
         callbacks += onResult
         dispatched.countDown()
         val selectedSubmission = submissionSequence.getOrNull(index) ?: submission

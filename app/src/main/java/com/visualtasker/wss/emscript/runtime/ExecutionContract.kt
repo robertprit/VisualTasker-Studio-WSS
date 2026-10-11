@@ -128,6 +128,7 @@ sealed interface ExecutionValue {
     data class PathSegmentValue(val value: PointerPathSegment) : ExecutionValue
     data class PathValue(val value: PointerPathGeometry) : ExecutionValue
     data class PointerPathValue(val value: PointerPath) : ExecutionValue
+    data class MultiPathValue(val value: MultiPointerGesture) : ExecutionValue
     data object NullValue : ExecutionValue
     data object VoidValue : ExecutionValue
 }
@@ -149,6 +150,12 @@ data class PointerPathTraceInfo(
     val status: String,
     val invalidSegmentIndex: Int? = null,
     val cancellationPosition: String? = null,
+    val pointerCount: Int = 1,
+    val pointerIds: List<Int> = listOf(0),
+    val pointerStartOffsetsMs: List<Long> = emptyList(),
+    val pointerEndOffsetsMs: List<Long> = emptyList(),
+    val pointerSegmentCounts: List<Int> = emptyList(),
+    val gestureKind: String = "SINGLE_TOUCH",
 )
 
 enum class ExecutionTraceEventKind {

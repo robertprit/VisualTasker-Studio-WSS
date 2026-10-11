@@ -2,7 +2,13 @@ package com.visualtasker.wss.workspace.model
 
 import com.visualtasker.wss.emscript.parser.EmscriptWorkspaceImporter
 import com.visualtasker.wss.emscript.runtime.ExecutionMode
+import com.visualtasker.wss.emscript.runtime.ExecutionOperationId
+import com.visualtasker.wss.emscript.runtime.ExecutionOperationStatus
+import com.visualtasker.wss.emscript.runtime.ExecutionRunId
+import com.visualtasker.wss.emscript.runtime.ExecutionTrace
 import com.visualtasker.wss.emscript.runtime.EmscriptDryRunResult
+import com.visualtasker.wss.emscript.runtime.OperationResult
+import com.visualtasker.wss.emscript.runtime.PointerPathTraceInfo
 import com.visualtasker.wss.emscript.runtime.WorkspaceDryRunRuntime
 import com.visualtasker.wss.emscript.runtime.dryRunEventIndexOrNull
 import com.visualtasker.wss.emscript.runtime.toRailTraceSteps
@@ -186,5 +192,52 @@ class RailTraceModelsTest {
                 it.properties["sourceKind"] == "Block"
         })
         assertEquals(2, "dry-run-2".dryRunEventIndexOrNull())
+    }
+
+    @Test
+    fun multiTouchTraceProjectsBoundedPointerTimingMetadata() {
+        val runId = ExecutionRunId("run:multi-touch")
+        val trace = ExecutionTrace(
+            runId = runId,
+            mode = ExecutionMode.LiveRun,
+            sourceSessionId = "session:multi-touch",
+            startedAtEpochMs = 100L,
+            completedAtEpochMs = 700L,
+            completed = true,
+            operations = listOf(
+                OperationResult(
+                    id = ExecutionOperationId("run:multi-touch:op:1"),
+                    runId = runId,
+                    index = 1,
+                    kind = "provider",
+                    status = ExecutionOperationStatus.Succeeded,
+                    message = "Multi-pointer gesture completed.",
+                    command = "multiSwipe",
+                    pathTrace = PointerPathTraceInfo(
+                        segmentCount = 3,
+                        segmentTypes = listOf("Line", "QuadraticBezier", "Line"),
+                        plannedTotalDurationMs = 600L,
+                        status = "COMPLETED",
+                        pointerCount = 2,
+                        pointerIds = listOf(4, 9),
+                        pointerStartOffsetsMs = listOf(0L, 100L),
+                        pointerEndOffsetsMs = listOf(600L, 500L),
+                        pointerSegmentCounts = listOf(2, 1),
+                        gestureKind = "MULTI_TOUCH",
+                    ),
+                ),
+            ),
+        )
+
+        val step = trace.toRailTraceSteps().single()
+
+        assertTrue(step.detail.orEmpty().contains("MULTI_TOUCH 2 pointer"))
+        assertEquals("MULTI_TOUCH", step.properties["gestureKind"])
+        assertEquals("2", step.properties["pointerCount"])
+        assertEquals("4,9", step.properties["pointerIds"])
+        assertEquals("0,100", step.properties["pointerStartOffsetsMs"])
+        assertEquals("600,500", step.properties["pointerEndOffsetsMs"])
+        assertEquals("2,1", step.properties["pointerSegmentCounts"])
+        assertEquals("COMPLETED", step.properties["gestureStatus"])
     }
 }

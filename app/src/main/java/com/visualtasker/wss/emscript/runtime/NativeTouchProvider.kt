@@ -29,6 +29,7 @@ data class TouchAvailability(
     val canPerformGestures: Boolean,
     val displayBounds: TouchDisplayBounds?,
     val maxGestureDurationMs: Long = DEFAULT_ANDROID_MAX_GESTURE_DURATION_MS,
+    val maxPointerCount: Int = DEFAULT_ANDROID_MAX_POINTER_COUNT,
 )
 
 data class TouchDisplayBounds(
@@ -94,6 +95,15 @@ interface TouchGestureGateway {
         onResult: (TouchGestureResult) -> Unit,
     ): TouchGestureSubmission
 
+    fun dispatchGesture(
+        paths: List<TouchGesturePath>,
+        onResult: (TouchGestureResult) -> Unit,
+    ): TouchGestureSubmission = if (paths.size == 1) {
+        dispatchGesture(paths.single(), onResult)
+    } else {
+        TouchGestureSubmission.Rejected
+    }
+
     fun cancelActiveGesture() = Unit
 }
 
@@ -109,6 +119,7 @@ class AccessibilityTouchGestureGateway(
                 TouchDisplayBounds(bounds.left, bounds.top, bounds.right, bounds.bottom)
             },
             maxGestureDurationMs = service?.maxGestureDurationMs() ?: DEFAULT_ANDROID_MAX_GESTURE_DURATION_MS,
+            maxPointerCount = service?.maxGesturePointerCount() ?: DEFAULT_ANDROID_MAX_POINTER_COUNT,
         )
     }
 
@@ -149,6 +160,39 @@ class AccessibilityTouchGestureGateway(
                     },
                 )
             }
+        }
+        return when (submission) {
+            AccessibilityGestureSubmission.Accepted -> TouchGestureSubmission.Accepted
+            AccessibilityGestureSubmission.Busy -> TouchGestureSubmission.Busy
+            AccessibilityGestureSubmission.Rejected -> TouchGestureSubmission.Rejected
+        }
+    }
+
+    override fun dispatchGesture(
+        paths: List<TouchGesturePath>,
+        onResult: (TouchGestureResult) -> Unit,
+    ): TouchGestureSubmission {
+        if (paths.size == 1) return dispatchGesture(paths.single(), onResult)
+        val service = serviceProvider() ?: return TouchGestureSubmission.Rejected
+        val submission = service.dispatchMultiPointerGesture(
+            paths.map { path ->
+                AccessibilityPointerPath(
+                    pointerId = path.pointerId,
+                    startPoint = path.segments.first().from.toAccessibilityPoint(),
+                    segments = path.segments.map { segment -> segment.toAccessibilitySegment() },
+                    startHoldMs = path.startHoldMs,
+                    endHoldMs = path.endHoldMs,
+                    delayMs = path.startDelayMs,
+                )
+            },
+        ) { result ->
+            onResult(
+                when (result) {
+                    AccessibilityGestureResult.Completed -> TouchGestureResult.Completed
+                    AccessibilityGestureResult.Cancelled -> TouchGestureResult.Cancelled
+                    AccessibilityGestureResult.Rejected -> TouchGestureResult.Rejected
+                },
+            )
         }
         return when (submission) {
             AccessibilityGestureSubmission.Accepted -> TouchGestureSubmission.Accepted
@@ -223,7 +267,15 @@ class NativeGestureProvider(
                 "Pixel (${point.x}, ${point.y}) is outside display bounds $initialBounds.",
             )
         }
-        validated.path.androidDurationViolation(initialAvailability.maxGestureDurationMs)?.let { message ->
+        if (validated.paths.size > initialAvailability.maxPointerCount) {
+            return failure(
+                "TOUCH_POINTER_COUNT_ANDROID_LIMIT",
+                "Gesture uses ${validated.paths.size} pointers; Android supports ${initialAvailability.maxPointerCount}.",
+            )
+        }
+        validated.paths.firstNotNullOfOrNull { path ->
+            path.androidDurationViolation(initialAvailability.maxGestureDurationMs)
+        }?.let { message ->
             return failure("TOUCH_DURATION_ANDROID_LIMIT", message)
         }
         if (!sequenceInFlight.compareAndSet(false, true)) {
@@ -235,7 +287,7 @@ class NativeGestureProvider(
                 if (context.cancellationToken.isCancellationRequested) {
                     return ProviderResult.Cancelled("Gesture sequence cancelled before dispatch ${iteration + 1}.")
                 }
-                when (val result = awaitGesture(invocation, context, validated.path, initialBounds)) {
+                when (val result = awaitGesture(invocation, context, validated.paths, initialBounds)) {
                     is ProviderResult.Success -> Unit
                     else -> return result
                 }
@@ -252,14 +304,14 @@ class NativeGestureProvider(
     private fun awaitGesture(
         invocation: ProviderInvocation,
         context: ExecutionContext,
-        path: TouchGesturePath,
+        paths: List<TouchGesturePath>,
         initialBounds: TouchDisplayBounds,
     ): ProviderResult {
         val latch = CountDownLatch(1)
         val completion = AtomicReference<TouchGestureResult?>(null)
         val callbackOpen = AtomicBoolean(true)
         val submission = try {
-            gateway.dispatchGesture(path) { result ->
+            gateway.dispatchGesture(paths) { result ->
                 if (callbackOpen.compareAndSet(true, false)) {
                     completion.set(result)
                     latch.countDown()
@@ -286,7 +338,7 @@ class NativeGestureProvider(
 
         val effectiveTimeoutMs = maxOf(
             callbackTimeoutMs.coerceAtLeast(1L),
-            path.expectedTimelineDurationMs() + CALLBACK_TIMEOUT_GRACE_MS,
+            paths.maxOf { it.expectedTimelineDurationMs() } + CALLBACK_TIMEOUT_GRACE_MS,
         )
         val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(effectiveTimeoutMs)
         while (true) {
@@ -400,6 +452,7 @@ class NativeGestureProvider(
     private fun ProviderInvocation.toGestureRequest(): GestureRequest? = when (commandId) {
         "input.clickPoint", "clickPoint" -> GestureRequest.Click(arguments)
         "action.swipe", "swipe" -> GestureRequest.Swipe(arguments)
+        "action.multiSwipe", "multiSwipe" -> GestureRequest.MultiSwipe(arguments)
         else -> null
     }
 
@@ -426,7 +479,7 @@ class NativeGestureProvider(
                 ValidatedGesture(
                     points = listOf(point),
                     repeat = 1,
-                    path = TouchGesturePath(listOf(point), CLICK_DURATION_MS),
+                    paths = listOf(TouchGesturePath(listOf(point), CLICK_DURATION_MS)),
                     interRepeatDelayMs = 0L,
                 ),
             )
@@ -485,10 +538,28 @@ class NativeGestureProvider(
                 ValidatedGesture(
                     points = points,
                     repeat = repeat,
-                    path = TouchGesturePath(points, LEGACY_SWIPE_DURATION_MS),
+                    paths = listOf(TouchGesturePath(points, LEGACY_SWIPE_DURATION_MS)),
                     interRepeatDelayMs = repeatDispatchIntervalMs,
                 ),
             )
+        }
+        is GestureRequest.MultiSwipe -> {
+            val gesture = (arguments.singleOrNull() as? ExecutionValue.MultiPathValue)?.value
+                ?: return validationFailure(
+                    "TOUCH_MULTIPATH_REQUIRED",
+                    "multiSwipe requires exactly one MultiPath value.",
+                )
+            when (val resolved = MultiPointerGestureLowerer.resolve(gesture)) {
+                is MultiPointerResolutionResult.Failure -> validationFailure(resolved.code, resolved.message)
+                is MultiPointerResolutionResult.Success -> GestureValidation.Success(
+                    ValidatedGesture(
+                        points = resolved.gesture.pointers.flatMap { it.allTouchPoints() },
+                        repeat = 1,
+                        paths = resolved.gesture.pointers.map { it.toTouchGesturePath() },
+                        interRepeatDelayMs = 0L,
+                    ),
+                )
+            }
         }
     }
 
@@ -561,12 +632,13 @@ class NativeGestureProvider(
 
         data class Click(override val arguments: List<ExecutionValue>) : GestureRequest
         data class Swipe(override val arguments: List<ExecutionValue>) : GestureRequest
+        data class MultiSwipe(override val arguments: List<ExecutionValue>) : GestureRequest
     }
 
     private data class ValidatedGesture(
         val points: List<TouchGesturePoint>,
         val repeat: Int,
-        val path: TouchGesturePath,
+        val paths: List<TouchGesturePath>,
         val interRepeatDelayMs: Long,
     )
 
@@ -618,7 +690,7 @@ class NativeGestureProvider(
         return ValidatedGesture(
             points = coordinates,
             repeat = repeat,
-            path = TouchGesturePath(
+            paths = listOf(TouchGesturePath(
                 points = coordinates,
                 durationMs = movementDurationMs,
                 pointerId = pointerId,
@@ -626,10 +698,16 @@ class NativeGestureProvider(
                 startDelayMs = delayMs,
                 startHoldMs = startHoldMs,
                 endHoldMs = endHoldMs,
-            ),
+            )),
             interRepeatDelayMs = 0L,
         )
     }
+
+    private fun ResolvedPointerPath.toTouchGesturePath(): TouchGesturePath =
+        toValidatedGesture().paths.single()
+
+    private fun ResolvedPointerPath.allTouchPoints(): List<TouchGesturePoint> =
+        toValidatedGesture().points
 
     private fun PointerPathPoint.toTouchPoint(): TouchGesturePoint = TouchGesturePoint(x.toFloat(), y.toFloat())
 
@@ -673,11 +751,19 @@ class NativeGestureProvider(
         const val LEGACY_SWIPE_DURATION_MS = 250L
         private const val CALLBACK_TIMEOUT_GRACE_MS = 5_000L
         val A11Y_CAPABILITY = ExecutionCapability(CommandCapability.A11Y.name)
-        val SUPPORTED_COMMAND_IDS = setOf("input.clickPoint", "clickPoint", "action.swipe", "swipe")
+        val SUPPORTED_COMMAND_IDS = setOf(
+            "input.clickPoint",
+            "clickPoint",
+            "action.swipe",
+            "swipe",
+            "action.multiSwipe",
+            "multiSwipe",
+        )
         private val rawPointListRegex = Regex("^\\[\\s*(.*?)\\s*]$")
     }
 }
 
 private const val DEFAULT_ANDROID_MAX_GESTURE_DURATION_MS = 60_000L
+private const val DEFAULT_ANDROID_MAX_POINTER_COUNT = 10
 
 typealias NativeTouchProvider = NativeGestureProvider

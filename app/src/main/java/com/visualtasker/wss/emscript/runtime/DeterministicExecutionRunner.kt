@@ -267,13 +267,13 @@ private class Machine(
             entityId = entityId,
         )
         val values = arguments.map(::evaluate)
-        val pointerPath = values.gesturePointerPathOrNull(commandId)
+        val runningGestureTrace = values.gestureTraceInfoOrNull(commandId, status = "RUNNING")
         emit(
             kind = ExecutionTraceEventKind.PROVIDER_STARTED,
             entityId = entityId,
             capability = capability,
             providerId = provider.id,
-            pathTrace = pointerPath?.traceInfo(status = "RUNNING"),
+            pathTrace = runningGestureTrace,
         )
         return when (val result = provider.invoke(
             ProviderInvocation(
@@ -293,21 +293,26 @@ private class Machine(
                     capability = capability,
                     providerId = provider.id,
                     value = value,
-                    pathTrace = pointerPath?.traceInfo(status = "COMPLETED"),
+                    pathTrace = values.gestureTraceInfoOrNull(commandId, status = "COMPLETED"),
                 )
             }
             is ProviderResult.Failure -> fail(
                 result.code,
                 result.message,
                 entityId,
-                pathTrace = pointerPath?.traceInfo(
+                pathTrace = values.gestureTraceInfoOrNull(
+                    commandId = commandId,
                     status = "FAILED",
                     invalidSegmentIndex = result.message.segmentIndexOrNull(),
                 ),
             )
             is ProviderResult.Cancelled -> throw ExecutionCancelled(
                 entityId,
-                pointerPath?.traceInfo(status = "CANCELLED", cancellationPosition = "provider-dispatch"),
+                values.gestureTraceInfoOrNull(
+                    commandId = commandId,
+                    status = "CANCELLED",
+                    cancellationPosition = "provider-dispatch",
+                ),
             )
         }
     }

@@ -1087,6 +1087,9 @@ fun WorkspaceScreen(
     var runtimeGestureDeltaY by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     var runtimeGestureTravel by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
     var runtimeGestureDurationMs by rememberSaveable(runtimeGestureTestRun) { mutableLongStateOf(0L) }
+    var runtimeGesturePointerCount by rememberSaveable(runtimeGestureTestRun) { mutableIntStateOf(0) }
+    var runtimeGestureSpanDelta by rememberSaveable(runtimeGestureTestRun) { mutableFloatStateOf(0f) }
+    var runtimeGesturePointerStartSkewMs by rememberSaveable(runtimeGestureTestRun) { mutableLongStateOf(0L) }
     LaunchedEffect(uiPrefs) {
         if (!uiPrefs.getBoolean(FLOWCHART_SEMANTIC_VISIBILITY_MIGRATION_PREF_KEY, false)) {
             uiPrefs.edit()
@@ -4540,12 +4543,22 @@ fun WorkspaceScreen(
                 deltaY = runtimeGestureDeltaY,
                 travel = runtimeGestureTravel,
                 durationMs = runtimeGestureDurationMs,
-                onGesture = { delta, travel, durationMs ->
+                pointerCount = runtimeGesturePointerCount,
+                spanDelta = runtimeGestureSpanDelta,
+                pointerStartSkewMs = runtimeGesturePointerStartSkewMs,
+                runtimeDiagnostic = androidRuntimeSnapshot.result
+                    ?.diagnostics
+                    ?.lastOrNull()
+                    ?.let { "${it.code}: ${it.message}" },
+                onGesture = { metrics ->
                     runtimeTouchTestHitCount += 1
-                    runtimeGestureDeltaX = delta.x
-                    runtimeGestureDeltaY = delta.y
-                    runtimeGestureTravel = travel
-                    runtimeGestureDurationMs = durationMs
+                    runtimeGestureDeltaX = metrics.primaryDelta.x
+                    runtimeGestureDeltaY = metrics.primaryDelta.y
+                    runtimeGestureTravel = metrics.travel
+                    runtimeGestureDurationMs = metrics.durationMs
+                    runtimeGesturePointerCount = metrics.pointerCount
+                    runtimeGestureSpanDelta = metrics.spanDelta
+                    runtimeGesturePointerStartSkewMs = metrics.pointerStartSkewMs
                 },
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -11962,6 +11975,15 @@ private fun WorkspaceTopAppBar(
     }
 }
 
+private data class RuntimeGestureTestMetrics(
+    val primaryDelta: Offset,
+    val travel: Float,
+    val durationMs: Long,
+    val pointerCount: Int,
+    val spanDelta: Float,
+    val pointerStartSkewMs: Long,
+)
+
 @Composable
 private fun RuntimeTouchTestTarget(
     hitCount: Int,
@@ -11970,7 +11992,11 @@ private fun RuntimeTouchTestTarget(
     deltaY: Float,
     travel: Float,
     durationMs: Long,
-    onGesture: (Offset, Float, Long) -> Unit,
+    pointerCount: Int,
+    spanDelta: Float,
+    pointerStartSkewMs: Long,
+    runtimeDiagnostic: String?,
+    onGesture: (RuntimeGestureTestMetrics) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -11980,22 +12006,59 @@ private fun RuntimeTouchTestTarget(
             .pointerInput(mode) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    var delta = Offset.Zero
+                    val latestPositions = mutableMapOf(down.id to down.position)
+                    val downTimes = mutableMapOf(down.id to down.uptimeMillis)
                     var distance = 0f
                     var lastUptimeMillis = down.uptimeMillis
-                    drag(down.id) { change ->
-                        val movement = change.positionChange()
-                        delta += movement
-                        distance += movement.getDistance()
-                        lastUptimeMillis = change.uptimeMillis
-                        change.consume()
-                    }
-                    onGesture(delta, distance, (lastUptimeMillis - down.uptimeMillis).coerceAtLeast(0L))
+                    var maxPointerCount = 1
+                    var firstMultiSpan: Float? = null
+                    var lastMultiSpan: Float? = null
+                    do {
+                        val event = awaitPointerEvent()
+                        val participating = event.changes.filter { it.pressed || it.previousPressed }
+                        participating.forEach { change ->
+                            if (change.pressed && !change.previousPressed) {
+                                downTimes.putIfAbsent(change.id, change.uptimeMillis)
+                            }
+                            distance += change.positionChange().getDistance()
+                            latestPositions[change.id] = change.position
+                            lastUptimeMillis = maxOf(lastUptimeMillis, change.uptimeMillis)
+                            change.consume()
+                        }
+                        maxPointerCount = maxOf(maxPointerCount, participating.size)
+                        if (participating.size >= 2) {
+                            val positions = participating.map { it.position }
+                            val span = positions.indices.maxOf { firstIndex ->
+                                positions.indices.maxOf { secondIndex ->
+                                    (positions[firstIndex] - positions[secondIndex]).getDistance()
+                                }
+                            }
+                            if (firstMultiSpan == null) firstMultiSpan = span
+                            lastMultiSpan = span
+                        }
+                    } while (event.changes.any { it.pressed })
+                    val primaryEnd = latestPositions[down.id] ?: down.position
+                    val sortedDownTimes = downTimes.values.sorted()
+                    onGesture(
+                        RuntimeGestureTestMetrics(
+                            primaryDelta = primaryEnd - down.position,
+                            travel = distance,
+                            durationMs = (lastUptimeMillis - down.uptimeMillis).coerceAtLeast(0L),
+                            pointerCount = maxPointerCount,
+                            spanDelta = (lastMultiSpan ?: 0f) - (firstMultiSpan ?: 0f),
+                            pointerStartSkewMs = sortedDownTimes.getOrNull(1)
+                                ?.minus(sortedDownTimes.first())
+                                ?.coerceAtLeast(0L)
+                                ?: 0L,
+                        ),
+                    )
                 }
             }
             .semantics {
                 contentDescription = "M5 Gesture-Testziel $mode $hitCount delta ${deltaX.toInt()} ${deltaY.toInt()} " +
-                    "travel ${travel.toInt()} duration $durationMs"
+                    "travel ${travel.toInt()} duration $durationMs pointers $pointerCount " +
+                    "spanDelta ${spanDelta.toInt()} startSkew $pointerStartSkewMs" +
+                    runtimeDiagnostic?.let { " diagnostic $it" }.orEmpty()
             },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -12019,8 +12082,12 @@ private fun RuntimeTouchTestTarget(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "$mode  ${deltaX.toInt()}, ${deltaY.toInt()}  Weg ${travel.toInt()}  ${durationMs}ms",
+                text = "$mode  P$pointerCount  ${deltaX.toInt()}, ${deltaY.toInt()}  Weg ${travel.toInt()}",
                 style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                text = "Spanne ${spanDelta.toInt()}  Startversatz ${pointerStartSkewMs}ms  Dauer ${durationMs}ms",
+                style = MaterialTheme.typography.labelSmall,
             )
         }
     }

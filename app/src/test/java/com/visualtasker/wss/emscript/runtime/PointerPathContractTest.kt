@@ -178,14 +178,74 @@ class PointerPathContractTest {
     }
 
     @Test
-    fun `nonzero pointer id is an explicit M5-4 boundary`() {
+    fun `nonzero pointer id is accepted by the shared M5-6 contract`() {
         val parsed = success(
             "pointerPath(path(point(0,0),point(10,10)),duration=100,pointerId=1)",
         )
         val result = PointerPathLowerer.resolve(parsed.pointerPath)
 
-        assertTrue(result is PointerPathResolutionResult.Failure)
-        assertEquals("TOUCH_MULTITOUCH_UNSUPPORTED", (result as PointerPathResolutionResult.Failure).code)
+        assertTrue(result is PointerPathResolutionResult.Success)
+        assertEquals(1, (result as PointerPathResolutionResult.Success).pointerPath.pointerId)
+    }
+
+    @Test
+    fun `multiPath assigns stable ids to omitted pointer ids`() {
+        val first = pointerPath(0.0, 10.0, 100.0, 10.0)
+        val second = pointerPath(0.0, 20.0, 100.0, 20.0)
+
+        val result = PointerPathRuntimeConstructors.evaluate(
+            "gesture.multiPath",
+            listOf(
+                ExecutionValue.ListValue(
+                    listOf(ExecutionValue.PointerPathValue(first), ExecutionValue.PointerPathValue(second)),
+                ),
+            ),
+        )
+
+        assertTrue(result is PointerPathConstructionResult.Success)
+        val gesture = ((result as PointerPathConstructionResult.Success).value as ExecutionValue.MultiPathValue).value
+        assertEquals(listOf(0, 1), gesture.pointers.map(PointerPath::pointerId))
+        assertEquals(listOf(0, 1), gesture.pointers.map(PointerPath::pointerId).distinct())
+    }
+
+    @Test
+    fun `multiPath preserves explicit pointer ids and rejects duplicates`() {
+        val first = pointerPath(0.0, 10.0, 100.0, 10.0).copy(pointerId = 7, pointerIdExplicit = true)
+        val second = pointerPath(0.0, 20.0, 100.0, 20.0).copy(pointerId = 3, pointerIdExplicit = true)
+        val success = PointerPathRuntimeConstructors.evaluate(
+            "gesture.multiPath",
+            listOf(ExecutionValue.PointerPathValue(first), ExecutionValue.PointerPathValue(second)),
+        )
+        val duplicate = PointerPathRuntimeConstructors.evaluate(
+            "gesture.multiPath",
+            listOf(ExecutionValue.PointerPathValue(first), ExecutionValue.PointerPathValue(second.copy(pointerId = 7))),
+        )
+
+        assertEquals(
+            listOf(7, 3),
+            (((success as PointerPathConstructionResult.Success).value as ExecutionValue.MultiPathValue).value)
+                .pointers.map(PointerPath::pointerId),
+        )
+        assertTrue(duplicate is PointerPathConstructionResult.Failure)
+        assertEquals("TOUCH_POINTER_ID_DUPLICATE", (duplicate as PointerPathConstructionResult.Failure).code)
+    }
+
+    @Test
+    fun `multiPath lowering keeps independent delays durations and common completion`() {
+        val gesture = MultiPointerGesture(
+            listOf(
+                pointerPath(0.0, 10.0, 100.0, 10.0).copy(pointerId = 0),
+                pointerPath(0.0, 20.0, 200.0, 20.0, durationMs = 500L, delayMs = 50L).copy(pointerId = 1),
+            ),
+        )
+
+        val result = MultiPointerGestureLowerer.resolve(gesture)
+
+        assertTrue(result is MultiPointerResolutionResult.Success)
+        val resolved = (result as MultiPointerResolutionResult.Success).gesture
+        assertEquals(550L, resolved.plannedTotalDurationMs)
+        assertEquals(listOf(0L, 50L), resolved.pointers.map(ResolvedPointerPath::delayMs))
+        assertEquals(listOf(250L, 500L), resolved.pointers.map(ResolvedPointerPath::movementDurationMs))
     }
 
     @Test
@@ -283,4 +343,20 @@ class PointerPathContractTest {
         .removeSuffix(")")
 
     private fun point(x: Double, y: Double) = PointerPathPoint(x, y)
+
+    private fun pointerPath(
+        fromX: Double,
+        fromY: Double,
+        toX: Double,
+        toY: Double,
+        durationMs: Long = 250L,
+        delayMs: Long = 0L,
+    ) = PointerPath(
+        pointerId = 0,
+        geometry = PointerPathGeometry(
+            point(fromX, fromY),
+            listOf(PointerPathSegment.Line(point(fromX, fromY), point(toX, toY))),
+        ),
+        timing = PointerPathTiming(durationMs = durationMs, delayMs = delayMs),
+    )
 }

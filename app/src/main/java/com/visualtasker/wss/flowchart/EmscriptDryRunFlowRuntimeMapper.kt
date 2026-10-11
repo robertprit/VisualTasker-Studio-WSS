@@ -230,6 +230,7 @@ object EmscriptDryRunFlowRuntimeMapper {
         is EmscriptValue.PathSegmentValue -> value::class.simpleName ?: "PathSegment"
         is EmscriptValue.PathValue -> "Path(${value.segments.size} segments)"
         is EmscriptValue.PointerPathValue -> "PointerPath(${value.geometry.segments.size} segments)"
+        is EmscriptValue.MultiPathValue -> "MultiPath(${value.pointers.size} pointers)"
         EmscriptValue.NullValue -> "null"
     }
 }

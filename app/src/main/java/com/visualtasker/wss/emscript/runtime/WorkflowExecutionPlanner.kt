@@ -489,6 +489,7 @@ class WorkflowExecutionPlanner(
             "geometry.cubicBezierSegment",
             "geometry.path",
             "gesture.pointerPath",
+            "gesture.multiPath",
         )
     }
 

@@ -22,6 +22,12 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             ACTION_PREPARE_FAST -> preparePointerPath(context, PointerPathGateMode.Fast)
             ACTION_PREPARE_POINTER_CANCELLATION -> preparePointerPath(context, PointerPathGateMode.Cancellation)
             ACTION_PREPARE_VARIABLE_PATH -> preparePointerPath(context, PointerPathGateMode.Variable)
+            ACTION_PREPARE_PINCH_IN -> prepareMultiPointer(context, MultiPointerGateMode.PinchIn)
+            ACTION_PREPARE_PINCH_OUT -> prepareMultiPointer(context, MultiPointerGateMode.PinchOut)
+            ACTION_PREPARE_PARALLEL -> prepareMultiPointer(context, MultiPointerGateMode.Parallel)
+            ACTION_PREPARE_OPPOSING -> prepareMultiPointer(context, MultiPointerGateMode.Opposing)
+            ACTION_PREPARE_DELAYED -> prepareMultiPointer(context, MultiPointerGateMode.Delayed)
+            ACTION_PREPARE_MULTI_CANCELLATION -> prepareMultiPointer(context, MultiPointerGateMode.Cancellation)
             ACTION_CANCEL -> requestCancellation(context)
             ACTION_RESTORE -> restore(context)
             else -> return
@@ -168,6 +174,78 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             "${mode.name.lowercase()} gate prepared: $path $timing"
     }
 
+    private fun prepareMultiPointer(context: Context, mode: MultiPointerGateMode) {
+        val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        ensureBackup(context, preferences)
+        val metrics = context.resources.displayMetrics
+        val centerX = metrics.widthPixels / 2
+        val centerY = metrics.heightPixels / 2
+        val wideLeft = centerX - metrics.widthPixels / 6
+        val wideRight = centerX + metrics.widthPixels / 6
+        val nearLeft = centerX - metrics.widthPixels / 28
+        val nearRight = centerX + metrics.widthPixels / 28
+        val upperY = centerY - metrics.heightPixels / 24
+        val lowerY = centerY + metrics.heightPixels / 24
+        val durationMs = if (mode == MultiPointerGateMode.Cancellation) 5_000L else 1_000L
+        val first = when (mode) {
+            MultiPointerGateMode.PinchIn -> pathSource(wideLeft, centerY, nearLeft, centerY)
+            MultiPointerGateMode.PinchOut -> pathSource(nearLeft, centerY, wideLeft, centerY)
+            MultiPointerGateMode.Parallel,
+            MultiPointerGateMode.Delayed,
+            MultiPointerGateMode.Cancellation,
+            -> pathSource(wideLeft, upperY, wideRight, upperY)
+            MultiPointerGateMode.Opposing -> pathSource(wideLeft, upperY, wideRight, upperY)
+        }
+        val second = when (mode) {
+            MultiPointerGateMode.PinchIn -> pathSource(wideRight, centerY, nearRight, centerY)
+            MultiPointerGateMode.PinchOut -> pathSource(nearRight, centerY, wideRight, centerY)
+            MultiPointerGateMode.Parallel,
+            MultiPointerGateMode.Cancellation,
+            -> pathSource(wideLeft, lowerY, wideRight, lowerY)
+            MultiPointerGateMode.Opposing,
+            MultiPointerGateMode.Delayed,
+            -> pathSource(wideRight, lowerY, wideLeft, lowerY)
+        }
+        val secondDelayMs = if (mode == MultiPointerGateMode.Delayed) 250L else 0L
+        val secondDurationMs = if (mode == MultiPointerGateMode.Delayed) 600L else durationMs
+        // Android cannot add a new pointer after a continued stroke. Keep the delayed gate's
+        // pre-activation interval free of section boundaries; holds remain covered by the
+        // simultaneous device gates and by the planner tests.
+        val startHoldMs = if (mode == MultiPointerGateMode.Delayed) 0L else 80L
+        val endHoldMs = if (mode == MultiPointerGateMode.Delayed) 0L else 80L
+        val script = buildString {
+            appendLine(
+                    "LET finger0 = pointerPath($first,pointerId=0,duration=$durationMs," +
+                    "startHold=$startHoldMs,endHold=$endHoldMs)",
+            )
+            appendLine(
+                    "LET finger1 = pointerPath($second,pointerId=1,duration=$secondDurationMs," +
+                    "startHold=$startHoldMs,endHold=$endHoldMs,delay=$secondDelayMs)",
+            )
+            appendLine("LET gesture = multiPath([finger0,finger1])")
+            append("multiSwipe(gesture)")
+        }
+        val imported = EmscriptWorkspaceImporter().import(
+            script,
+            workspaceId = "m5-6-device-shell-${mode.name.lowercase()}",
+        )
+        check(imported.isSuccess) { imported.issues.joinToString { it.message } }
+
+        preferences.edit()
+            .putString(WORKSPACE_KEY, WorkflowSerializer.serialize(requireNotNull(imported.document)))
+            .putInt(WORKSPACE_VERSION_KEY, Int.MAX_VALUE)
+            .putBoolean(TEST_TARGET_KEY, false)
+            .putString(GESTURE_TEST_MODE_KEY, "m5-6-${mode.name.lowercase()}:${System.nanoTime()}")
+            .remove(STEPPER_STATE_KEY)
+            .commit()
+        launchWorkspace(context)
+        resultCode = RESULT_PREPARED
+        resultData = "M5-6 ${mode.name.lowercase()} gate prepared: duration=$durationMs delay=$secondDelayMs"
+    }
+
+    private fun pathSource(fromX: Int, fromY: Int, toX: Int, toY: Int): String =
+        "path(point($fromX,$fromY),point($toX,$toY))"
+
     private fun ensureBackup(
         context: Context,
         preferences: android.content.SharedPreferences,
@@ -260,6 +338,13 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
             "com.visualtasker.wss.debug.M5_4_PREPARE_CANCELLATION"
         private const val ACTION_PREPARE_VARIABLE_PATH =
             "com.visualtasker.wss.debug.M5_5_PREPARE_VARIABLE_PATH"
+        private const val ACTION_PREPARE_PINCH_IN = "com.visualtasker.wss.debug.M5_6_PREPARE_PINCH_IN"
+        private const val ACTION_PREPARE_PINCH_OUT = "com.visualtasker.wss.debug.M5_6_PREPARE_PINCH_OUT"
+        private const val ACTION_PREPARE_PARALLEL = "com.visualtasker.wss.debug.M5_6_PREPARE_PARALLEL"
+        private const val ACTION_PREPARE_OPPOSING = "com.visualtasker.wss.debug.M5_6_PREPARE_OPPOSING"
+        private const val ACTION_PREPARE_DELAYED = "com.visualtasker.wss.debug.M5_6_PREPARE_DELAYED"
+        private const val ACTION_PREPARE_MULTI_CANCELLATION =
+            "com.visualtasker.wss.debug.M5_6_PREPARE_CANCELLATION"
         private const val ACTION_RESTORE = "com.visualtasker.wss.debug.M5_2_RESTORE"
         private const val PREFS_NAME = "panel_ui_options"
         private const val BACKUP_PREFS_NAME = "m5_2_device_gate_backup"
@@ -290,5 +375,14 @@ class NativeTouchDeviceGateReceiver : BroadcastReceiver() {
         Fast,
         Cancellation,
         Variable,
+    }
+
+    private enum class MultiPointerGateMode {
+        PinchIn,
+        PinchOut,
+        Parallel,
+        Opposing,
+        Delayed,
+        Cancellation,
     }
 }

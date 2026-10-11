@@ -14,7 +14,7 @@ Android service classes behind a provider.
 | Coordinate click `clickPoint(x,y)` | `input.clickPoint`, capability `A11Y` | Fake provider | `NativeGestureProvider` live since M5-2 | None |
 | Swipe/polyline path | `action.swipe`, raw point list plus repeat, capability `A11Y` | Fake provider | `NativeGestureProvider` live in M5-3; absolute pixels, fixed legacy 250 ms duration | None |
 | Typed `Path` / timed `PointerPath` | V1 catalog-backed value constructors plus existing `action.swipe` | Typed value construction, variable binding and deterministic lowering | `NativeGestureProvider` live; M5-5 adds LET/SET, dynamic geometry/timing, editor roundtrip and structured trace | None |
-| MultiPath/multitouch | V1 contract | Not implemented | Out of M5-4 scope; nonzero pointer IDs fail explicitly | None |
+| MultiPath/multitouch | V1 `multiPath(...)` value plus `multiSwipe(...)` action | Typed construction, variable binding and deterministic lowering | `NativeGestureProvider` live in M5-6; synchronized line/Bezier pointers, delay/holds, common cancellation and bounded trace | None |
 | Semantic `clickElement` | Planned A11y target plus optional relative bounds point | Not implemented | Contract only; requires A11y/worldview resolver | None |
 | Semantic `clickText` | Existing text command; target resolver not in M5 | Not implemented | Contract only; requires A11y text resolver | None |
 | Semantic `clickImage` / `clickTemplate` | Planned image/template target and search region | Not implemented | Contract only; requires Vision provider | None |
@@ -58,5 +58,17 @@ legacy numeric list or frozen V1 Path/PointerPath constructors. Legacy input ret
 hold and delay remain PointerPath timing and never become Path geometry.
 
 The supported subset has a debug-only physical gate for straight, quadratic and cubic paths,
-slow/fast timing, cancellation and variable-bound PointerPath execution. Multitouch and semantic
-target resolution remain documented gaps rather than implicit fallbacks.
+slow/fast timing, cancellation, variable-bound PointerPath execution and M5-6 PinchIn, PinchOut,
+parallel, opposing, delayed and cancellable MultiPath execution. The test surface records actual
+pointer count, span delta and start skew; callback completion alone is not device acceptance.
+Semantic target resolution remains a documented gap rather than an implicit fallback.
+
+M5-6 maps every MultiPath to one provider operation and one globally synchronized Android phase
+timeline. The service keys continuations by pointer ID and releases all still-continuing strokes
+together on cancellation. The generic `touch.*` escape-hatch family and high-level push/pull/pan/
+rotate actions are not silently mapped to this contract.
+
+Physical acceptance on SM-S918B covers two-pointer PinchIn/Out, parallel and opposing movement,
+a measured 250 ms delayed start and cancellation with both contacts observed. Android combinations
+that would require a delayed pointer itself to cross a continuation boundary are rejected before
+dispatch instead of being degraded to disconnected contacts or SingleTouch.
