@@ -2,7 +2,7 @@ package com.visualtasker.wss.recording
 
 const val STEP_CANDIDATE_SCHEMA_VERSION = 1
 
-enum class CandidateAction { TAP }
+enum class CandidateAction { TAP, SWIPE, WAIT, SCREENSHOT, UNSUPPORTED }
 enum class StepReviewStatus {
     UNREVIEWED,
     CONFIRMED,
@@ -28,6 +28,10 @@ enum class ConfidenceReason {
     MISSING_BEFORE_SCENE,
     MISSING_AFTER_SCENE,
     CORRUPT_SOURCE_REFERENCE,
+    RECORDED_GESTURE,
+    RECORDED_CAPTURE,
+    SYNTHETIC_WAIT,
+    UNSUPPORTED_INTERACTION,
 }
 
 enum class StepCandidateDiagnosticSeverity { INFO, WARNING, ERROR }
@@ -82,6 +86,32 @@ sealed interface CandidateTarget {
         override val xPx: Int,
         override val yPx: Int,
     ) : CandidateTarget
+
+    data class SwipePath(
+        val start: RecordingPoint,
+        val end: RecordingPoint,
+        val points: List<RecordingPoint>,
+        val durationMs: Long,
+        val pointerId: Int?,
+    ) : CandidateTarget {
+        override val xPx: Int get() = start.xPx
+        override val yPx: Int get() = start.yPx
+    }
+
+    data class Delay(val durationMs: Long) : CandidateTarget {
+        override val xPx: Int = 0
+        override val yPx: Int = 0
+    }
+
+    data class Capture(val assetReference: String) : CandidateTarget {
+        override val xPx: Int = 0
+        override val yPx: Int = 0
+    }
+
+    data class Unsupported(val recordedType: String) : CandidateTarget {
+        override val xPx: Int = 0
+        override val yPx: Int = 0
+    }
 }
 
 enum class ObservedOutcomeKind { UNCHANGED, SCENE_TRANSITION, MISSING_AFTER, FAILED, PARTIAL }
@@ -176,6 +206,7 @@ data class ReviewDiagnostic(
 data class ReviewedStepDocument(
     val sessionId: String,
     val sourceCandidateDocumentId: String,
+    val sourceRecordVersion: Int,
     val steps: List<ReviewedStep>,
     val unresolvedCount: Int,
     val rejectedCount: Int,

@@ -3,7 +3,7 @@ package com.visualtasker.wss.recording
 object StepCandidateAssembler {
     fun assemble(playback: RecordingPlaybackDocument): StepCandidateDocument {
         val candidates = playback.entries.sortedBy(RecordingPlaybackEntry::sequence).mapNotNull { entry ->
-            assembleTap(playback, entry)
+            assembleInteraction(playback, entry)
         }.mapIndexed { index, candidate -> candidate.copy(ordinal = index + 1) }
         return StepCandidateDocument(
             documentId = "step-candidates:${playback.sessionId}:record-v${playback.schemaVersion}",
@@ -24,6 +24,18 @@ object StepCandidateAssembler {
                 )
             },
         )
+    }
+
+    private fun assembleInteraction(
+        playback: RecordingPlaybackDocument,
+        entry: RecordingPlaybackEntry,
+    ): StepCandidate? = when (val payload = entry.interaction.interaction.payload) {
+        is RecordingInteractionPayload.Tap -> assembleTap(playback, entry)
+        is RecordingInteractionPayload.Swipe -> assembleSwipe(playback, entry, payload)
+        is RecordingInteractionPayload.Screenshot -> assembleScreenshot(playback, entry, payload)
+        is RecordingInteractionPayload.Text,
+        is RecordingInteractionPayload.Window,
+        -> assembleUnsupported(playback, entry)
     }
 
     private fun assembleTap(
@@ -124,6 +136,112 @@ object StepCandidateAssembler {
             beforeSceneRef = beforeRef,
             observedOutcome = outcome,
             evidence = evidence,
+            confidence = confidence,
+            reviewStatus = status,
+            diagnostics = diagnostics,
+        )
+    }
+
+    private fun assembleSwipe(
+        playback: RecordingPlaybackDocument,
+        entry: RecordingPlaybackEntry,
+        swipe: RecordingInteractionPayload.Swipe,
+    ): StepCandidate {
+        val points = buildList {
+            add(swipe.start)
+            swipe.path.forEach { point -> if (point != last()) add(point) }
+            if (swipe.end != last()) add(swipe.end)
+        }
+        val target = CandidateTarget.SwipePath(
+            start = swipe.start,
+            end = swipe.end,
+            points = points,
+            durationMs = swipe.durationMs,
+            pointerId = swipe.pointerId,
+        )
+        return genericCandidate(
+            playback = playback,
+            entry = entry,
+            action = CandidateAction.SWIPE,
+            target = target,
+            label = "Swipe ${swipe.start.xPx},${swipe.start.yPx} -> ${swipe.end.xPx},${swipe.end.yPx}",
+            confidence = CandidateConfidence(ConfidenceLevel.HIGH, listOf(ConfidenceReason.RECORDED_GESTURE)),
+            status = StepReviewStatus.UNREVIEWED,
+        )
+    }
+
+    private fun assembleScreenshot(
+        playback: RecordingPlaybackDocument,
+        entry: RecordingPlaybackEntry,
+        screenshot: RecordingInteractionPayload.Screenshot,
+    ): StepCandidate = genericCandidate(
+        playback = playback,
+        entry = entry,
+        action = CandidateAction.SCREENSHOT,
+        target = CandidateTarget.Capture(screenshot.resource.resourceId),
+        label = "Screenshot ${screenshot.resource.resourceId.substringAfterLast('/')}",
+        confidence = CandidateConfidence(ConfidenceLevel.HIGH, listOf(ConfidenceReason.RECORDED_CAPTURE)),
+        status = StepReviewStatus.UNREVIEWED,
+    )
+
+    private fun assembleUnsupported(
+        playback: RecordingPlaybackDocument,
+        entry: RecordingPlaybackEntry,
+    ): StepCandidate {
+        val type = entry.interaction.interaction.type.name
+        return genericCandidate(
+            playback = playback,
+            entry = entry,
+            action = CandidateAction.UNSUPPORTED,
+            target = CandidateTarget.Unsupported(type),
+            label = "Nicht unterstuetzt: $type",
+            confidence = CandidateConfidence(ConfidenceLevel.UNKNOWN, listOf(ConfidenceReason.UNSUPPORTED_INTERACTION)),
+            status = StepReviewStatus.UNSUPPORTED,
+            diagnostics = listOf(
+                diagnostic(
+                    "INTERACTION_UNSUPPORTED",
+                    "Recording-Interaktion $type besitzt noch kein kanonisches EMScript-Mapping.",
+                    entry.interaction.interaction.interactionId,
+                )
+            ),
+        )
+    }
+
+    private fun genericCandidate(
+        playback: RecordingPlaybackDocument,
+        entry: RecordingPlaybackEntry,
+        action: CandidateAction,
+        target: CandidateTarget,
+        label: String,
+        confidence: CandidateConfidence,
+        status: StepReviewStatus,
+        diagnostics: List<StepCandidateDiagnostic> = emptyList(),
+    ): StepCandidate {
+        val interaction = entry.interaction.interaction
+        val before = entry.beforeScene
+        return StepCandidate(
+            candidateId = "step-candidate:${playback.sessionId}:${interaction.interactionId}:v${playback.schemaVersion}",
+            sessionId = playback.sessionId,
+            ordinal = 0,
+            sourceEntryId = entry.entryId,
+            sourceInteractionId = interaction.interactionId,
+            action = action,
+            target = target,
+            displayLabel = label,
+            beforeSceneRef = before?.toSceneReference(),
+            observedOutcome = entry.toObservedOutcome(),
+            evidence = CandidateEvidence(
+                beforeFrameId = before?.primaryFrame?.frame?.frameId,
+                beforeAssetReference = before?.primaryFrame?.frame?.assetReference,
+                beforeA11ySnapshotId = before?.a11ySnapshot?.snapshotId,
+                afterFrameId = entry.afterScene?.primaryFrame?.frame?.frameId,
+                afterAssetReference = entry.afterScene?.primaryFrame?.frame?.assetReference,
+                afterA11ySnapshotId = entry.afterScene?.a11ySnapshot?.snapshotId,
+                tapXpx = target.xPx,
+                tapYpx = target.yPx,
+                targetBounds = null,
+                evidenceRefs = entry.evidence.map(RecordingEvidenceRef::evidenceId),
+            ),
             confidence = confidence,
             reviewStatus = status,
             diagnostics = diagnostics,
@@ -253,4 +371,8 @@ private fun CandidateTarget.defaultLabel(): String = when (this) {
         ?: resourceId?.substringAfterLast('/')
         ?: className.substringAfterLast('.')
     is CandidateTarget.Coordinate -> "Tap $xPx, $yPx"
+    is CandidateTarget.SwipePath -> "Swipe ${start.xPx}, ${start.yPx} -> ${end.xPx}, ${end.yPx}"
+    is CandidateTarget.Delay -> "Wait ${durationMs} ms"
+    is CandidateTarget.Capture -> "Screenshot ${assetReference ?: "ohne Asset"}"
+    is CandidateTarget.Unsupported -> "Nicht unterstuetzt: $recordedType"
 }

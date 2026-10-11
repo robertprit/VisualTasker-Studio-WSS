@@ -296,6 +296,11 @@ import com.visualtasker.wss.recording.RecordingSessionRuntime
 import com.visualtasker.wss.recording.RecordingSessionStatus
 import com.visualtasker.wss.recording.RecordingIntegrityIssue
 import com.visualtasker.wss.recording.RecordingIntegritySeverity
+import com.visualtasker.wss.recording.RecorderPublishConfirmation
+import com.visualtasker.wss.recording.RecorderPublishPreview
+import com.visualtasker.wss.recording.RecorderPublishRequest
+import com.visualtasker.wss.recording.RecorderPublishResult
+import com.visualtasker.wss.recording.RecorderWorkflowPublisher
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
@@ -571,6 +576,7 @@ import de.visualtasker.blockeditor.compose.ui.CategoryPalettePanel
 import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.workflow.serialization.WorkflowDecodeResult
 import de.visualtasker.workflow.serialization.WorkflowSerializer
+import de.visualtasker.workflow.core.SemanticEntityKind
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
@@ -1271,6 +1277,14 @@ fun WorkspaceScreen(
         )
     }
     val workspaceHistory = remember(uiPrefs) { WorkspaceShellHistoryController() }
+    val recorderWorkflowPublisher = remember(context) {
+        RecorderWorkflowPublisher(assetExists = { reference ->
+            val direct = File(reference)
+            direct.isFile || File(runtimeFilesRoot(context), reference).isFile
+        })
+    }
+    var recorderPublishPreview by remember { mutableStateOf<RecorderPublishPreview?>(null) }
+    var recorderPublishMessage by remember { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
     val runtimeDatastoreLoad = remember(context) { loadRuntimeDatastore(context) }
@@ -2213,6 +2227,29 @@ fun WorkspaceScreen(
             )
         }
         BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_RETURN", "result=appliedOrUnchanged")
+    }
+    fun recorderPublishRequest(): RecorderPublishRequest? {
+        val candidates = recordingPlaybackRuntimeState.candidateDocument ?: return null
+        val reviewed = recordingPlaybackRuntimeState.reviewedDocument ?: return null
+        val workflow = workflowState.canonicalDocument.entities.singleOrNull {
+            it.ref.kind == SemanticEntityKind.Workflow
+        } ?: return null
+        return RecorderPublishRequest(
+            recorderDocumentId = candidates.documentId,
+            sourceRevision = reviewed.sourceRecordVersion,
+            targetWorkspaceId = workflowState.document.id,
+            targetWorkflowEntityId = workflow.ref.id.value,
+            expectedWorkspaceRevision = workflowState.document.version,
+        )
+    }
+    LaunchedEffect(
+        recordingPlaybackRuntimeState.candidateDocument?.documentId,
+        recordingPlaybackRuntimeState.candidateDocument?.sourceRecordVersion,
+        recordingPlaybackRuntimeState.reviewDecisions,
+        workflowState.document.version,
+    ) {
+        recorderPublishPreview = null
+        recorderPublishMessage = null
     }
     LaunchedEffect(
         vt2vtSnapshot.remoteWorkspaceMirror?.checksum,
@@ -4168,6 +4205,61 @@ fun WorkspaceScreen(
                                 },
                                 onNextUnreviewed = RecordingPlaybackRuntime::nextUnreviewed,
                                 onBeginTargetCorrection = RecordingPlaybackRuntime::showBeforePhase,
+                                publishPreview = recorderPublishPreview,
+                                publishMessage = recorderPublishMessage,
+                                onCreatePublishPreview = createPreview@{
+                                    val request = recorderPublishRequest()
+                                    val candidates = recordingPlaybackRuntimeState.candidateDocument
+                                    val reviewed = recordingPlaybackRuntimeState.reviewedDocument
+                                    if (request == null || candidates == null || reviewed == null) {
+                                        recorderPublishMessage = "Recorder-Review oder Ziel-Workflow ist nicht bereit."
+                                        return@createPreview
+                                    }
+                                    recorderPublishPreview = recorderWorkflowPublisher.preview(
+                                        request = request,
+                                        candidates = candidates,
+                                        reviewed = reviewed,
+                                        current = workflowState.document,
+                                    )
+                                    recorderPublishMessage = if (recorderPublishPreview?.canPublish == true) {
+                                        "Vorschau bereit. Der Workspace ist noch unveraendert."
+                                    } else {
+                                        "Vorschau enthaelt blockierende Diagnosen."
+                                    }
+                                },
+                                onConfirmPublish = confirmPublish@{
+                                    val preview = recorderPublishPreview ?: return@confirmPublish
+                                    val request = recorderPublishRequest() ?: return@confirmPublish
+                                    val confirmed = request.copy(
+                                        confirmation = RecorderPublishConfirmation(
+                                            previewToken = preview.confirmationToken,
+                                            confirmedAtEpochMs = System.currentTimeMillis(),
+                                        ),
+                                    )
+                                    when (val result = recorderWorkflowPublisher.apply(
+                                        request = confirmed,
+                                        preview = preview,
+                                        current = workflowState.document,
+                                    )) {
+                                        is RecorderPublishResult.Success -> {
+                                            applyWorkspaceJsonChange(
+                                                WorkflowSerializer.serialize(result.document),
+                                                "recorder:publish:${confirmed.recorderDocumentId}",
+                                            )
+                                            recorderPublishMessage = "${result.publishedEntityIds.size} Recorder-Schritte veroeffentlicht."
+                                        }
+                                        is RecorderPublishResult.AlreadyPublished -> {
+                                            recorderPublishMessage = "Recorder-Schritte wurden bereits veroeffentlicht."
+                                        }
+                                        is RecorderPublishResult.Failure -> {
+                                            recorderPublishMessage = result.diagnostics.joinToString("\n") { it.message }
+                                        }
+                                    }
+                                },
+                                onDiscardPublishPreview = {
+                                    recorderPublishPreview = null
+                                    recorderPublishMessage = null
+                                },
                             )
                             isVisualAssetPanel -> VisualAssetExpandedRail(
                                 editorState = visualAssetEditorState,

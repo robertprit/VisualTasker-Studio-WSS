@@ -57,6 +57,7 @@ object ReviewedStepProjector {
         return ReviewedStepDocument(
             sessionId = candidates.sessionId,
             sourceCandidateDocumentId = candidates.documentId,
+            sourceRecordVersion = candidates.sourceRecordVersion,
             steps = reviewed,
             unresolvedCount = unresolved,
             rejectedCount = rejected,

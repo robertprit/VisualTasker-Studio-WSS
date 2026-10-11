@@ -185,6 +185,7 @@ object RecordingPlaybackRuntime {
     ) {
         val runtime = _state.value
         val candidate = runtime.candidateDocument?.candidates?.firstOrNull { it.candidateId == candidateId } ?: return
+        if (candidate.action != CandidateAction.TAP) return
         val entry = runtime.playback.document?.entries?.firstOrNull { it.entryId == candidate.sourceEntryId } ?: return
         val node = entry.beforeScene?.a11ySnapshot?.rootNode?.findPlaybackNode(targetNodeId) ?: return
         val target = CandidateTarget.A11y(
@@ -226,6 +227,7 @@ object RecordingPlaybackRuntime {
         displayLabel: String? = null,
     ) {
         val candidate = _state.value.candidateDocument?.candidates?.firstOrNull { it.candidateId == candidateId } ?: return
+        if (candidate.action != CandidateAction.TAP) return
         val target = CandidateTarget.Coordinate(candidate.evidence.tapXpx, candidate.evidence.tapYpx)
         saveReview(
             context = context,
@@ -322,6 +324,11 @@ internal fun resolveSelectedTargetNodeId(
     return when (effectiveTarget) {
         is CandidateTarget.Coordinate -> null
         is CandidateTarget.A11y -> effectiveTarget.nodeId
+        is CandidateTarget.Capture,
+        is CandidateTarget.Delay,
+        is CandidateTarget.SwipePath,
+        is CandidateTarget.Unsupported,
+        -> null
         null -> requestedTargetNodeId ?: existingTargetNodeId
     }
 }

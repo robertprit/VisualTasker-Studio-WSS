@@ -30,7 +30,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M4 Three-Editor Conformance | DONE | `M4_CLOSURE_AUDIT.md`; M4-0 bis M4-3 ohne Blocker geschlossen. |
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H `DONE`; Runtime-Closure fehlt. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W Vertrag/Hosts implementiert; Geraete-UX und weitere Editor-Produktgates offen. |
-| M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-/Observation-Vertrag implementiert; OCR/OpenCV-Live-Provider und Closure sind offen. |
+| M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-/Observation-Vertrag und M7-1 Recorder-Publishing implementiert; OCR/OpenCV-Live-Provider und Closure sind offen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Datastore-/Asset-Vorarbeiten vorhanden; gemeinsame Scope- und Lifecycle-Abnahme fehlt. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Sicherheitsgate fehlen. |
 | M10 Release Hardening | PLANNED | Noch kein Feature-Freeze und kein vollstaendiges Release-Gate. |
@@ -75,7 +75,7 @@ Fehlersemantik und Trace sind deterministisch dokumentiert.
 | M5-8 Provider Policy | Bestehende Timing-, Gesture-, Accessibility-, Tasker-, Shizuku-, Termux- und CustomTabs-Hosts sind inventarisiert; jede Capability liefert Discovery, Availability, Permission und typed Result; Auswahl ist priorisiert und deterministisch; Fallback ist pro Capability explizit und im Trace sichtbar; Abwesenheit, Permission denial, Timeout, Cancellation und Providerverlust teilen stabile Fehlercodes | Registry-Unit-Tests fuer Prioritaet und Konflikt, Host-Adapter-Fixtures, kontrollierte Abwesenheits-/Permission-Tests, keine direkte zweite Dispatch-Engine | DONE; externe asynchrone Adapter bleiben M9 |
 | M5-H Headless Runtime | Genau eine prozessweite `ExecutionSession` besitzt Runner/Job/Trace; Compose kann attach/detach ohne Laufabbruch; Doppelstart, Stop, Cancellation, Prozess-/Service-Recovery und UI-Reattachment sind deterministisch; Foreground-Service und Notification-Stop entsprechen Android 36; Session-ID, Workflow-ID, Status und Trace-Retention bleiben stabil | JVM State-Machine-Tests, Service-Lifecycle-/Process-recreation-Test, Hintergrundlauf, Reattach und Stop auf SM-S918B; visuelle RailTrace-Abnahme separat | DONE; kein Auto-Replay nach Prozessverlust |
 | M6-W WindowSession | Vorhandene Panel-Persistenz, Z-Order, Drag, Resize und Snap werden wiederverwendet; Shell und `StudioOverlayService` teilen Session-, Display-, Fokus- und Touch-Routing-Vertrag; harte Bounds, Insets, Min/Max, Crash-Restore und Multi-Panel-Z-Order sind deterministisch; Window-Aktionen mutieren keinen Workflow | Pure-State-Tests, Persistenz-/Migrationstest, Rotation/Insets, Overlay attach/detach, reproduzierbarer Geraete-Gestenlauf | PARTIAL: Vertrag, Hosts und automatisierte Gates implementiert; reale Gesten-/Prozess-Recovery-Abnahme offen |
-| M7 Perception/Recorder | Capture, Marker, Recorder, Scene Inspector und Runtime tragen denselben Display-/Frame-/Zeitkontext; bestehende Recording-Persistenz, Integrity, Review, Replay und Recovery bleiben erhalten; Record -> Candidate -> Review -> Junktor Proposal -> explizite WorkspaceTransaction -> Runtime ist nachvollziehbar; Ablehnung mutiert nichts; es entsteht keine zweite Recorder-Pipeline | Capture-/Koordinatenfixtures, persistenter Record-Neustart, Evidence-Provenienz, Publish/Reject-Integrationstest, zwei reale App-Workflows bis Trace | ACTIVE: M7-0 Capture-Kontext implementiert; OCR/OpenCV, Publishing und reale Capture-Abnahme offen |
+| M7 Perception/Recorder | Capture, Marker, Recorder, Scene Inspector und Runtime tragen denselben Display-/Frame-/Zeitkontext; bestehende Recording-Persistenz, Integrity, Review, Replay und Recovery bleiben erhalten; Record -> Candidate -> Review -> Junktor Proposal -> explizite WorkspaceTransaction -> Runtime ist nachvollziehbar; Ablehnung mutiert nichts; es entsteht keine zweite Recorder-Pipeline | Capture-/Koordinatenfixtures, persistenter Record-Neustart, Evidence-Provenienz, Publish/Reject-Integrationstest, zwei reale App-Workflows bis Trace | ACTIVE: M7-0 Capture-Kontext und M7-1 Publishing implementiert; OCR/OpenCV und reale interaktive Abnahme offen |
 
 M7-V VirtualDisplay ist kein Bestandteil dieser Gates. M9-D Remote Display bleibt bis zu einer
 separaten Scope-Freigabe deferred.
@@ -315,3 +315,15 @@ Stable-1.0-Blocker:
 
 Die Pebbles 1 bis 5 bilden M5-8, 6 bis 8 M5-H, 9 M6-W und 10 den Einstieg in M7. Vorhandene
 Vorarbeiten werden inventarisiert und nicht neu gebaut.
+## M7-1 Recorder-to-Workflow Publishing
+
+- [x] RawRecord, StepCandidate, Review und ReviewedStep als bestehende Recorder-Pipeline wiederverwenden.
+- [x] Typisierte Request-, Mapping-, Plan-, Preview-, Diagnostic- und Result-Vertraege.
+- [x] Tap, Swipe/PointerPath, Wait und Screenshot auf vorhandene EMScript-Kommandos abbilden.
+- [x] Preview ohne Mutation und explizite tokengebundene Bestaetigung.
+- [x] Atomarer Apply ueber SourceApplyPlan, WorkspaceTransaction und Shell-History.
+- [x] Deterministische neue Statement-/Relations-IDs, Idempotenz und persistierte Provenienz.
+- [x] Text-, Block- und Flow-Projektion, Save/Reload sowie Runtime-Capability-Gate automatisiert geprueft.
+- [ ] Vollstaendige interaktive Geraeteabnahme auf SM-S918B nach ausdruecklicher ADB-/Screenshot-Freigabe.
+
+M7-0-Gaps fuer reale Capture-Abnahme, OCR und OpenCV bleiben unveraendert offen. Multi-Root-/Projekt-Explorer, neue Provider und M8-Arbeiten sind nicht Teil von M7-1.

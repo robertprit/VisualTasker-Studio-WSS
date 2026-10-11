@@ -3,6 +3,7 @@ package com.visualtasker.wss.recording.persistence
 import androidx.room.withTransaction
 import com.visualtasker.wss.recording.CandidateAction
 import com.visualtasker.wss.recording.CandidateTarget
+import com.visualtasker.wss.recording.RecordingPoint
 import com.visualtasker.wss.recording.StepProposalSnapshot
 import com.visualtasker.wss.recording.StepReviewDecision
 import com.visualtasker.wss.recording.StepReviewStatus
@@ -91,6 +92,22 @@ private fun CandidateTarget.toJson(): JSONObject = when (this) {
         .put("xPx", xPx)
         .put("yPx", yPx)
         .put("alternativeNodeIds", JSONArray(alternativeNodeIds))
+    is CandidateTarget.SwipePath -> JSONObject()
+        .put("kind", "SWIPE_PATH")
+        .put("start", start.toJson())
+        .put("end", end.toJson())
+        .put("points", JSONArray(points.map(RecordingPoint::toJson)))
+        .put("durationMs", durationMs)
+        .put("pointerId", pointerId ?: JSONObject.NULL)
+    is CandidateTarget.Delay -> JSONObject()
+        .put("kind", "DELAY")
+        .put("durationMs", durationMs)
+    is CandidateTarget.Capture -> JSONObject()
+        .put("kind", "CAPTURE")
+        .put("assetReference", assetReference)
+    is CandidateTarget.Unsupported -> JSONObject()
+        .put("kind", "UNSUPPORTED")
+        .put("recordedType", recordedType)
 }
 
 private fun JSONObject.toTarget(): CandidateTarget = when (getString("kind")) {
@@ -115,8 +132,29 @@ private fun JSONObject.toTarget(): CandidateTarget = when (getString("kind")) {
             List(array.length()) { index -> array.getString(index) }
         },
     )
+    "SWIPE_PATH" -> CandidateTarget.SwipePath(
+        start = getJSONObject("start").toPoint(),
+        end = getJSONObject("end").toPoint(),
+        points = getJSONArray("points").let { array ->
+            List(array.length()) { index -> array.getJSONObject(index).toPoint() }
+        },
+        durationMs = getLong("durationMs"),
+        pointerId = if (isNull("pointerId")) null else getInt("pointerId"),
+    )
+    "DELAY" -> CandidateTarget.Delay(getLong("durationMs"))
+    "CAPTURE" -> CandidateTarget.Capture(getString("assetReference"))
+    "UNSUPPORTED" -> CandidateTarget.Unsupported(getString("recordedType"))
     else -> CandidateTarget.Coordinate(getInt("xPx"), getInt("yPx"))
 }
+
+private fun com.visualtasker.wss.recording.RecordingPoint.toJson() = JSONObject()
+    .put("xPx", xPx)
+    .put("yPx", yPx)
+
+private fun JSONObject.toPoint() = com.visualtasker.wss.recording.RecordingPoint(
+    xPx = getInt("xPx"),
+    yPx = getInt("yPx"),
+)
 
 private fun JSONObject.putNullable(key: String, value: String?): JSONObject = put(key, value ?: JSONObject.NULL)
 private fun JSONObject.nullableString(key: String): String? = if (isNull(key)) null else getString(key)

@@ -85,6 +85,9 @@ import com.visualtasker.wss.recording.StepCandidateDocument
 import com.visualtasker.wss.recording.StepReviewDecision
 import com.visualtasker.wss.recording.StepReviewStatus
 import com.visualtasker.wss.recording.CandidateTarget
+import com.visualtasker.wss.recording.CandidateAction
+import com.visualtasker.wss.recording.RecorderPublishDiagnosticSeverity
+import com.visualtasker.wss.recording.RecorderPublishPreview
 import com.visualtasker.wss.recording.deepestNodeAt
 import com.visualtasker.wss.recording.findPlaybackNode
 import com.visualtasker.wss.workspace.model.ObservationProvider
@@ -146,6 +149,11 @@ internal fun SceneInspectorReviewRail(
     onUseCoordinateTarget: (String, String) -> Unit,
     onNextUnreviewed: () -> Unit,
     onBeginTargetCorrection: () -> Unit,
+    publishPreview: RecorderPublishPreview? = null,
+    publishMessage: String? = null,
+    onCreatePublishPreview: () -> Unit = {},
+    onConfirmPublish: () -> Unit = {},
+    onDiscardPublishPreview: () -> Unit = {},
 ) {
     val candidate = candidateDocument?.candidates?.getOrNull(playbackState?.selectedEntryIndex ?: -1)
     val decision = candidate?.let { selected ->
@@ -196,6 +204,89 @@ internal fun SceneInspectorReviewRail(
                 onLater = { onReviewStatus(candidate.candidateId, StepReviewStatus.DEFERRED, reviewUiState.label) },
                 onNextUnreviewed = onNextUnreviewed,
             )
+        }
+        RecorderPublishCard(
+            reviewedDocument = reviewedDocument,
+            preview = publishPreview,
+            message = publishMessage,
+            onCreatePreview = onCreatePublishPreview,
+            onConfirm = onConfirmPublish,
+            onDiscard = onDiscardPublishPreview,
+        )
+    }
+}
+
+@Composable
+private fun RecorderPublishCard(
+    reviewedDocument: ReviewedStepDocument?,
+    preview: RecorderPublishPreview?,
+    message: String?,
+    onCreatePreview: () -> Unit,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        shape = RoundedCornerShape(7.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, SceneAccent.copy(alpha = 0.46f)),
+    ) {
+        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Als Workflow veroeffentlichen", style = MaterialTheme.typography.titleSmall, color = SceneAccent)
+            if (preview == null) {
+                Text(
+                    "Gepruefte Recorder-Schritte werden erst nach Vorschau und ausdruecklicher Bestaetigung in den aktiven Workflow uebernommen.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onCreatePreview,
+                    enabled = reviewedDocument?.steps?.isNotEmpty() == true,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Vorschau erstellen") }
+            } else {
+                Text(
+                    "${preview.newStepCount} neue Schritte | ${preview.plan?.addedRelationCount ?: 0} Relationen | " +
+                        "${preview.coordinateFallbackCount} Koordinaten-Fallbacks",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(
+                    "Ziel: ${preview.request.targetWorkflowEntityId} | " +
+                        "Ausgelassen: ${preview.plan?.omittedStepCount ?: 0}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Capabilities: ${preview.usedCapabilities.joinToString().ifBlank { "keine" }}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                preview.diagnostics.forEach { diagnostic ->
+                    Text(
+                        "${diagnostic.code}: ${diagnostic.message}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when (diagnostic.severity) {
+                            RecorderPublishDiagnosticSeverity.ERROR -> MaterialTheme.colorScheme.error
+                            RecorderPublishDiagnosticSeverity.WARNING -> Color(0xFFFFC857)
+                            RecorderPublishDiagnosticSeverity.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                preview.plan?.runtimeCapabilities?.summary?.let { summary ->
+                    Text(summary, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (preview.alreadyPublished) {
+                    Text("Diese Recorder-Schritte sind bereits veroeffentlicht.", style = MaterialTheme.typography.labelSmall)
+                } else {
+                    Button(onClick = onConfirm, enabled = preview.canPublish, modifier = Modifier.fillMaxWidth()) {
+                        Text("Veroeffentlichung bestaetigen")
+                    }
+                }
+                TextButton(onClick = onDiscard, modifier = Modifier.fillMaxWidth()) { Text("Vorschau verwerfen") }
+            }
+            message?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -507,7 +598,7 @@ private fun StepCandidateReviewCard(
                 textStyle = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "Vorschlag: Tap -> ${candidate.target.reviewLabel()} | ${candidate.confidence.level.name}: ${candidate.confidence.reasons.joinToString { it.name }}",
+                "Vorschlag: ${candidate.action.name} -> ${candidate.target.reviewLabel()} | ${candidate.confidence.level.name}: ${candidate.confidence.reasons.joinToString { it.name }}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -515,7 +606,7 @@ private fun StepCandidateReviewCard(
             )
             decision?.correctedProposal?.let { corrected ->
                 Text(
-                    "Korrektur: Tap -> ${corrected.target.reviewLabel()}",
+                    "Korrektur: ${corrected.action.name} -> ${corrected.target.reviewLabel()}",
                     style = MaterialTheme.typography.labelSmall,
                     color = reviewStatusColor(StepReviewStatus.CORRECTED),
                     maxLines = 2,
@@ -532,20 +623,22 @@ private fun StepCandidateReviewCard(
             }
             reviewError?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
             Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Bestaetigen") }
-            TextButton(
-                onClick = { onCorrectionModeChange(!correctionMode) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (correctionMode) "Abbrechen" else "Ziel korrigieren")
-            }
-            if (correctionMode) {
-                Button(
-                    onClick = onApplyCorrection,
-                    enabled = pendingTargetNodeId != null,
+            if (candidate.action == CandidateAction.TAP) {
+                TextButton(
+                    onClick = { onCorrectionModeChange(!correctionMode) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Ausgewaehltes Ziel uebernehmen") }
+                ) {
+                    Text(if (correctionMode) "Abbrechen" else "Ziel korrigieren")
+                }
+                if (correctionMode) {
+                    Button(
+                        onClick = onApplyCorrection,
+                        enabled = pendingTargetNodeId != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Ausgewaehltes Ziel uebernehmen") }
+                }
+                TextButton(onClick = onUseCoordinate, modifier = Modifier.fillMaxWidth()) { Text("Koordinate verwenden") }
             }
-            TextButton(onClick = onUseCoordinate, modifier = Modifier.fillMaxWidth()) { Text("Koordinate verwenden") }
             TextButton(onClick = onReject, modifier = Modifier.fillMaxWidth()) { Text("Verwerfen") }
             TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("Spaeter pruefen") }
             TextButton(onClick = onNextUnreviewed, modifier = Modifier.fillMaxWidth()) { Text("Naechster offener Step") }
@@ -559,6 +652,10 @@ private fun CandidateTarget.reviewLabel(): String = when (this) {
         ?: resourceId?.substringAfterLast('/')
         ?: className.substringAfterLast('.')
     is CandidateTarget.Coordinate -> "Koordinate $xPx,$yPx"
+    is CandidateTarget.SwipePath -> "${points.size} Punkte, ${durationMs} ms"
+    is CandidateTarget.Delay -> "$durationMs ms"
+    is CandidateTarget.Capture -> assetReference
+    is CandidateTarget.Unsupported -> recordedType
 }
 
 private fun reviewStatusColor(status: StepReviewStatus): Color = when (status) {

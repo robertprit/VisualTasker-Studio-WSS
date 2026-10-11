@@ -150,6 +150,53 @@ class RecorderRoomPersistenceTest {
     }
 
     @Test
+    fun extendedPublishTargetsRoundtripWithoutSchemaChange() = runBlocking {
+        var db = openDatabase()
+        val fixture = initialFixture()
+        RoomRecorderSessionStore(db).apply {
+            createSession(fixture.preparing)
+            persistInitialState(fixture.recording, fixture.scene, fixture.asset, fixture.frame, fixture.snapshot)
+        }
+        val targets = listOf(
+            CandidateAction.SWIPE to CandidateTarget.SwipePath(
+                start = RecordingPoint(10, 20),
+                end = RecordingPoint(80, 90),
+                points = listOf(RecordingPoint(10, 20), RecordingPoint(40, 50), RecordingPoint(80, 90)),
+                durationMs = 450,
+                pointerId = 0,
+            ),
+            CandidateAction.WAIT to CandidateTarget.Delay(750),
+            CandidateAction.SCREENSHOT to CandidateTarget.Capture("screenshots/capture.png"),
+            CandidateAction.UNSUPPORTED to CandidateTarget.Unsupported("WINDOW"),
+        )
+        val decisions = targets.mapIndexed { index, (action, target) ->
+            StepReviewDecision(
+                decisionId = "review:extended-$index",
+                candidateId = "candidate:extended-$index",
+                sourceSessionId = fixture.recording.sessionId,
+                sourceRecordVersion = fixture.recording.schemaVersion,
+                status = StepReviewStatus.CONFIRMED,
+                originalProposal = StepProposalSnapshot(action, target, "extended-$index"),
+                correctedProposal = null,
+                selectedTargetNodeId = null,
+                reasonCode = null,
+                note = null,
+                decidedAtEpochMs = 3_000L + index,
+            )
+        }
+        val store = RoomStepReviewStore(db)
+        decisions.forEach { store.save(it) }
+        db.close()
+        database = null
+
+        db = openDatabase()
+        val loaded = RoomStepReviewStore(db).loadForSession(fixture.recording.sessionId)
+            .associateBy(StepReviewDecision::decisionId)
+
+        decisions.forEach { expected -> assertEquals(expected, loaded[expected.decisionId]) }
+    }
+
+    @Test
     fun reviewForUnknownSessionIsRejected() = runBlocking {
         val store = RoomStepReviewStore(openDatabase())
         val result = runCatching {

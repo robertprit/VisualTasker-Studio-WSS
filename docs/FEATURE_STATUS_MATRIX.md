@@ -131,7 +131,7 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M7-0: 62 `IMPLEMENTED`, 46
 | T-07 | IMPLEMENTED | ja | Playback Controller/Projection und UI | M7 Pflicht |
 | T-08 | IMPLEMENTED | ja | Replay Bookmark/Recovery Tests | M7 Pflicht |
 | T-09 | PARTIAL | ja | Scene Inspector Tree/Evidence/Resources | Sensor-Fusion/Historie offen |
-| T-10 | PARTIAL | teil | `JunktorContracts.kt`, Vorschlagsprojektionen | Freigabe-/Publish-Pfad offen |
+| T-10 | IMPLEMENTED | ja | `JunktorContracts.kt`, Review, `RecorderWorkflowPublisher`, Scene-Inspector-Preview, atomarer Publish | Interaktive Geraeteabnahme offen |
 | T-11 | PLANNED | - | M5/M7 Roadmap | optional nach Runtime Closure |
 | T-12 | DEFERRED | - | Release Plan Erweiterungen | post-1.0 |
 
