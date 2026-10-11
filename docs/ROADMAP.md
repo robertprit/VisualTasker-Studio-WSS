@@ -30,6 +30,14 @@ Die weiter unten erhaltenen, gleich benannten Feature-Meilensteine sind historis
 Produkt-Workstreams. Sie bleiben als Nachweis bestehen, bestimmen aber nicht mehr die Reihenfolge
 der Architektur- und Release-Slices.
 
+Der am 2026-10-11 gegen Module, Produktverdrahtung, Tests und Milestone-Nachweise abgeglichene
+Feature-Bestand steht in [`FEATURE_INVENTORY.md`](FEATURE_INVENTORY.md) und
+[`FEATURE_STATUS_MATRIX.md`](FEATURE_STATUS_MATRIX.md). Der daraus abgeleitete verbindliche
+Pflicht- und Optionalumfang fuer Stable 1.0 steht in
+[`architecture/RELEASE_1_0_SCOPE.md`](architecture/RELEASE_1_0_SCOPE.md). Diese Dokumente
+korrigieren keine historische Abnahme rueckwirkend; sie unterscheiden produktiven Code,
+Teilimplementierungen, isolierte Contracts und reine Planung.
+
 | Master-Meilenstein | Status | Verbindlicher Stand |
 | --- | --- | --- |
 | M1 EMScript- und Strukturgrundlagen | DONE | Sprach-, Struktur- und Identitaetsgrundlagen vorhanden. |
