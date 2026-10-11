@@ -64,7 +64,7 @@
         <Key android:codes="-420" android:keyLabel="IF" android:keyWidth="12%p" />
         <Key android:codes="-421" android:keyLabel="click" android:keyWidth="12%p" />
         <Key android:codes="-422" android:keyLabel="swipe" android:keyWidth="12%p" />
-        <Key android:codes="-423" android:keyLabel="wait" android:keyWidth="12%p" />
+        <Key android:codes="-6" android:keyLabel="13x4" android:keyWidth="12%p" />
         <Key android:codes="32" android:keyLabel="Space" android:keyWidth="18%p" android:keyEdgeFlags="right" />
     </Row>
 </Keyboard>

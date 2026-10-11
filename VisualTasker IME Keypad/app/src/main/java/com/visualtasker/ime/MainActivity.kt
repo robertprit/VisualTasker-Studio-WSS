@@ -1,21 +1,29 @@
 package com.visualtasker.ime
 
 import android.content.Intent
+import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
 import android.view.KeyEvent
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Spinner
 import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
-import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import com.visualtasker.ime.storage.PrefsStore
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: PrefsStore
     private lateinit var keycodeOptions: List<KeyCodeItem>
+    private val fontOptions = listOf(
+        FontOption("Roboto (Material3 Default)", PrefsStore.FONT_ROBOTO),
+        FontOption("Noto Sans", PrefsStore.FONT_NOTO)
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,6 +44,8 @@ class MainActivity : AppCompatActivity() {
         val s211 = findViewById<Spinner>(R.id.spinnerSpecial211)
         val s212 = findViewById<Spinner>(R.id.spinnerSpecial212)
         val s213 = findViewById<Spinner>(R.id.spinnerSpecial213)
+        val fontSpinner = findViewById<Spinner>(R.id.spinnerFontFamily)
+        val custom13x4Config = findViewById<EditText>(R.id.custom13x4Config)
         val vtSlot1Label = findViewById<EditText>(R.id.vtSlot1Label)
         val vtSlot1Script = findViewById<EditText>(R.id.vtSlot1Script)
         val vtSlot2Label = findViewById<EditText>(R.id.vtSlot2Label)
@@ -47,6 +57,13 @@ class MainActivity : AppCompatActivity() {
             keycodeOptions.map { it.label }
         )
         listOf(s210, s211, s212, s213).forEach { it.adapter = adapter }
+
+        val fontAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            fontOptions.map { it.label }
+        )
+        fontSpinner.adapter = fontAdapter
 
         darkSwitch.isChecked = prefs.isDarkKeyboardEnabled()
         argbSwitch.isChecked = prefs.isColorInsertModeArgb()
@@ -64,8 +81,28 @@ class MainActivity : AppCompatActivity() {
         vtSlot1Script.setText(slot1.script)
         vtSlot2Label.setText(slot2.label)
         vtSlot2Script.setText(slot2.script)
+        custom13x4Config.setText(prefs.getCustom13x4BindingsAsConfigText())
+        setFontSpinnerSelection(fontSpinner, prefs.getSelectedFontFamily())
+        applyFontToViewTree(window.decorView, prefs.getSelectedFontFamily())
+
+        fontSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selectedFont = fontOptions.getOrNull(position)?.prefValue ?: PrefsStore.FONT_ROBOTO
+                applyFontToViewTree(window.decorView, selectedFont)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
 
         findViewById<Button>(R.id.saveSettingsButton).setOnClickListener {
+            if (!prefs.updateCustom13x4BindingsFromConfig(custom13x4Config.text.toString())) {
+                Toast.makeText(
+                    this,
+                    "13x4-Konfiguration ungültig: bitte genau 52 Zeilen im Format Label=Ausgabe",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
             prefs.setDarkKeyboardEnabled(darkSwitch.isChecked)
             prefs.setColorInsertModeArgb(argbSwitch.isChecked)
             prefs.setClipboardHistoryEnabled(clipboardSwitch.isChecked)
@@ -77,6 +114,7 @@ class MainActivity : AppCompatActivity() {
             prefs.setSpecialKeyMapping(-213, selectedKeyCode(s213))
             prefs.setVtKeySlot(1, vtSlot1Label.text.toString(), vtSlot1Script.text.toString())
             prefs.setVtKeySlot(2, vtSlot2Label.text.toString(), vtSlot2Script.text.toString())
+            prefs.setSelectedFontFamily(selectedFontValue(fontSpinner))
             Toast.makeText(this, "Einstellungen gespeichert", Toast.LENGTH_SHORT).show()
         }
     }
@@ -88,6 +126,30 @@ class MainActivity : AppCompatActivity() {
     private fun setSpinnerSelection(spinner: Spinner, keyCode: Int) {
         val index = keycodeOptions.indexOfFirst { it.keyCode == keyCode }
         spinner.setSelection(if (index >= 0) index else 0)
+    }
+
+    private fun selectedFontValue(spinner: Spinner): String {
+        return fontOptions.getOrNull(spinner.selectedItemPosition)?.prefValue ?: PrefsStore.FONT_ROBOTO
+    }
+
+    private fun setFontSpinnerSelection(spinner: Spinner, prefValue: String) {
+        val index = fontOptions.indexOfFirst { it.prefValue == prefValue }
+        spinner.setSelection(if (index >= 0) index else 0)
+    }
+
+    private fun applyFontToViewTree(root: View, fontFamily: String) {
+        val typeface = when (fontFamily) {
+            PrefsStore.FONT_NOTO -> Typeface.create("Noto Sans", Typeface.NORMAL)
+            else -> Typeface.create("sans-serif", Typeface.NORMAL)
+        }
+        when (root) {
+            is TextView -> root.typeface = typeface
+        }
+        if (root is android.view.ViewGroup) {
+            for (i in 0 until root.childCount) {
+                applyFontToViewTree(root.getChildAt(i), fontFamily)
+            }
+        }
     }
 
     private fun buildAndroidKeycodeList(): List<KeyCodeItem> {
@@ -109,4 +171,9 @@ class MainActivity : AppCompatActivity() {
 data class KeyCodeItem(
     val label: String,
     val keyCode: Int
+)
+
+data class FontOption(
+    val label: String,
+    val prefValue: String
 )

@@ -11,14 +11,18 @@ import android.inputmethodservice.InputMethodService
 import android.inputmethodservice.Keyboard
 import android.inputmethodservice.KeyboardView
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.graphics.Typeface
 import android.view.ContextThemeWrapper
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.SoundEffectConstants
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -62,6 +66,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
     private lateinit var symbolsKeyboard: Keyboard
     private lateinit var functionKeyboard: Keyboard
     private lateinit var keypadKeyboard: Keyboard
+    private lateinit var custom13x4Keyboard: Keyboard
     private lateinit var prefsStore: PrefsStore
 
     private var memoryValue: Double = 0.0
@@ -81,6 +86,18 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
     private val gestureEngine = GestureEngine()
     private val stylusSupport = AndroidStylusSupport()
     private lateinit var handwritingRecognizer: DigitalInkHandwritingRecognizer
+    private val repeatHandler = Handler(Looper.getMainLooper())
+    private var repeatingPrimaryCode: Int? = null
+    private val repeatRunnable = object : Runnable {
+        override fun run() {
+            when (repeatingPrimaryCode) {
+                -5 -> inputFacade.deleteSelectionOrCharacterBeforeCursor()
+                32 -> insertText(" ")
+                else -> return
+            }
+            repeatHandler.postDelayed(this, KEY_REPEAT_INTERVAL_MS)
+        }
+    }
 
     private val taskerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -131,6 +148,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
         symbolsKeyboard = Keyboard(this, R.xml.keyboard_symbols)
         functionKeyboard = Keyboard(this, R.xml.keyboard_function)
         keypadKeyboard = Keyboard(this, R.xml.keyboard_keypad)
+        custom13x4Keyboard = Keyboard(this, R.xml.keyboard_custom_13x4)
+        applyCustom13x4Bindings()
 
         keyboardView.keyboard = qwertzKeyboard
         keyboardView.setOnKeyboardActionListener(this)
@@ -139,6 +158,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
 
         bindIconBar(root)
         bindRightNumpad(root)
+        applyConfiguredFont(root)
 
         return root
     }
@@ -146,8 +166,12 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         stylusSupport.setMode(StylusMode.KEYBOARD)
+        stopRepeatIfNeeded()
+        applyCustom13x4Bindings()
         applyContextProfile(info)
         prefsStore.consumePendingTaskerText()?.let { insertText(it) }
+        applyKeyboardStyle()
+        applyConfiguredFont(keyboardView.rootView)
     }
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
@@ -160,6 +184,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
             -2 -> switchKeyboard(symbolsKeyboard)
             -3 -> switchKeyboard(functionKeyboard)
             -4 -> switchKeyboard(keypadKeyboard)
+            -6 -> switchKeyboard(custom13x4Keyboard)
             -20 -> sendKeyDownUp(KeyEvent.KEYCODE_DPAD_UP)
             -21 -> sendKeyDownUp(KeyEvent.KEYCODE_DPAD_DOWN)
             -22 -> sendKeyDownUp(KeyEvent.KEYCODE_DPAD_LEFT)
@@ -187,6 +212,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
             -211 -> triggerConfiguredSpecialKey(-211) { renderColorSheet() }
             -212 -> triggerConfiguredSpecialKey(-212) { renderClipboardSheet() }
             -213 -> triggerConfiguredSpecialKey(-213) { renderMacrosSheet() }
+            in -651..-600 -> triggerCustom13x4Key(primaryCode)
             in -311..-300 -> sendFunctionKey(primaryCode)
             10 -> inputFacade.performImeActionOrEnter()
             else -> commitCharacter(primaryCode)
@@ -402,6 +428,52 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
     private fun applyKeyboardStyle() {
         val dark = prefsStore.isDarkKeyboardEnabled()
         keyboardView.setBackgroundColor(if (dark) Color.parseColor("#111111") else Color.parseColor("#F2F2F2"))
+    }
+
+    private fun applyConfiguredFont(root: View) {
+        val fontFamily = prefsStore.getSelectedFontFamily()
+        val typeface = when (fontFamily) {
+            PrefsStore.FONT_NOTO -> Typeface.create("Noto Sans", Typeface.NORMAL)
+            else -> Typeface.create("sans-serif", Typeface.NORMAL)
+        }
+        applyTypefaceRecursively(root, typeface)
+        keyboardView.invalidateAllKeys()
+    }
+
+    private fun applyTypefaceRecursively(view: View, typeface: Typeface) {
+        if (view is TextView) {
+            view.typeface = typeface
+        }
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                applyTypefaceRecursively(view.getChildAt(index), typeface)
+            }
+        }
+    }
+
+    private fun applyCustom13x4Bindings() {
+        if (!::custom13x4Keyboard.isInitialized) return
+        val bindings = prefsStore.getCustom13x4Bindings()
+        val customKeys = custom13x4Keyboard.keys
+            .filter { it.codes?.firstOrNull() in -651..-600 }
+            .sortedBy { it.codes.first() }
+        customKeys.forEachIndexed { index, key ->
+            val binding = bindings.getOrNull(index)
+            key.label = binding?.label ?: "K${(index + 1).toString().padStart(2, '0')}"
+        }
+        if (::keyboardView.isInitialized && keyboardView.keyboard == custom13x4Keyboard) {
+            keyboardView.invalidateAllKeys()
+        }
+    }
+
+    private fun triggerCustom13x4Key(primaryCode: Int) {
+        val index = primaryCode - (-600)
+        val binding = prefsStore.getCustom13x4Bindings().getOrNull(index) ?: return
+        if (binding.output.isBlank()) {
+            Toast.makeText(this, "${binding.label} ist leer", Toast.LENGTH_SHORT).show()
+            return
+        }
+        insertText(binding.output)
     }
 
     private fun renderCalculatorSheet() {
@@ -1079,8 +1151,19 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
         }
     }
 
-    override fun onPress(primaryCode: Int) = Unit
-    override fun onRelease(primaryCode: Int) = Unit
+    override fun onPress(primaryCode: Int) {
+        if (primaryCode == -5 || primaryCode == 32) {
+            repeatingPrimaryCode = primaryCode
+            repeatHandler.removeCallbacks(repeatRunnable)
+            repeatHandler.postDelayed(repeatRunnable, KEY_REPEAT_START_DELAY_MS)
+        }
+    }
+
+    override fun onRelease(primaryCode: Int) {
+        if (repeatingPrimaryCode == primaryCode) {
+            stopRepeatIfNeeded()
+        }
+    }
     override fun onText(text: CharSequence?) = Unit
     override fun swipeLeft() = Unit
     override fun swipeRight() = Unit
@@ -1089,4 +1172,19 @@ class KeyboardImeService : InputMethodService(), KeyboardView.OnKeyboardActionLi
         hideSheet()
     }
     override fun swipeUp() = Unit
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        stopRepeatIfNeeded()
+        super.onFinishInputView(finishingInput)
+    }
+
+    private fun stopRepeatIfNeeded() {
+        repeatingPrimaryCode = null
+        repeatHandler.removeCallbacks(repeatRunnable)
+    }
+
+    companion object {
+        private const val KEY_REPEAT_START_DELAY_MS = 350L
+        private const val KEY_REPEAT_INTERVAL_MS = 60L
+    }
 }

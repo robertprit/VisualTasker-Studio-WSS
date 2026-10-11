@@ -62,6 +62,18 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="Material3 Schrift"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/spinnerFontFamily"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:text="Sondertastenbelegung (vollständige Android-Keycodes)"
             android:textStyle="bold" />
@@ -109,6 +121,22 @@
             android:id="@+id/spinnerSpecial213"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Freies 13x4 Layout (52 Zeilen: Label=Ausgabe, \\n für Zeilenumbruch, \\t für Tab)"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/custom13x4Config"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:gravity="top|start"
+            android:hint="Beispiel: A=hello"
+            android:inputType="textMultiLine|textNoSuggestions"
+            android:minLines="8" />
 
         <TextView
             android:layout_width="match_parent"

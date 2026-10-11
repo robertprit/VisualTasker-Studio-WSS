@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
+    android:horizontalGap="1%p"
+    android:keyHeight="42dp"
+    android:keyWidth="7%p"
+    android:verticalGap="6dp">
+
+    <Row>
+        <Key android:codes="-600" android:keyLabel="K01" android:keyEdgeFlags="left" />
+        <Key android:codes="-601" android:keyLabel="K02" />
+        <Key android:codes="-602" android:keyLabel="K03" />
+        <Key android:codes="-603" android:keyLabel="K04" />
+        <Key android:codes="-604" android:keyLabel="K05" />
+        <Key android:codes="-605" android:keyLabel="K06" />
+        <Key android:codes="-606" android:keyLabel="K07" />
+        <Key android:codes="-607" android:keyLabel="K08" />
+        <Key android:codes="-608" android:keyLabel="K09" />
+        <Key android:codes="-609" android:keyLabel="K10" />
+        <Key android:codes="-610" android:keyLabel="K11" />
+        <Key android:codes="-611" android:keyLabel="K12" />
+        <Key android:codes="-612" android:keyLabel="K13" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="-613" android:keyLabel="K14" android:keyEdgeFlags="left" />
+        <Key android:codes="-614" android:keyLabel="K15" />
+        <Key android:codes="-615" android:keyLabel="K16" />
+        <Key android:codes="-616" android:keyLabel="K17" />
+        <Key android:codes="-617" android:keyLabel="K18" />
+        <Key android:codes="-618" android:keyLabel="K19" />
+        <Key android:codes="-619" android:keyLabel="K20" />
+        <Key android:codes="-620" android:keyLabel="K21" />
+        <Key android:codes="-621" android:keyLabel="K22" />
+        <Key android:codes="-622" android:keyLabel="K23" />
+        <Key android:codes="-623" android:keyLabel="K24" />
+        <Key android:codes="-624" android:keyLabel="K25" />
+        <Key android:codes="-625" android:keyLabel="K26" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="-626" android:keyLabel="K27" android:keyEdgeFlags="left" />
+        <Key android:codes="-627" android:keyLabel="K28" />
+        <Key android:codes="-628" android:keyLabel="K29" />
+        <Key android:codes="-629" android:keyLabel="K30" />
+        <Key android:codes="-630" android:keyLabel="K31" />
+        <Key android:codes="-631" android:keyLabel="K32" />
+        <Key android:codes="-632" android:keyLabel="K33" />
+        <Key android:codes="-633" android:keyLabel="K34" />
+        <Key android:codes="-634" android:keyLabel="K35" />
+        <Key android:codes="-635" android:keyLabel="K36" />
+        <Key android:codes="-636" android:keyLabel="K37" />
+        <Key android:codes="-637" android:keyLabel="K38" />
+        <Key android:codes="-638" android:keyLabel="K39" android:keyEdgeFlags="right" />
+    </Row>
+
+    <Row>
+        <Key android:codes="-639" android:keyLabel="K40" android:keyEdgeFlags="left" />
+        <Key android:codes="-640" android:keyLabel="K41" />
+        <Key android:codes="-641" android:keyLabel="K42" />
+        <Key android:codes="-642" android:keyLabel="K43" />
+        <Key android:codes="-643" android:keyLabel="K44" />
+        <Key android:codes="-644" android:keyLabel="K45" />
+        <Key android:codes="-645" android:keyLabel="K46" />
+        <Key android:codes="-646" android:keyLabel="K47" />
+        <Key android:codes="-647" android:keyLabel="K48" />
+        <Key android:codes="-648" android:keyLabel="K49" />
+        <Key android:codes="-649" android:keyLabel="K50" />
+        <Key android:codes="-650" android:keyLabel="K51" />
+        <Key android:codes="-651" android:keyLabel="K52" android:keyEdgeFlags="right" />
+    </Row>
+</Keyboard>
