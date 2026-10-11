@@ -61,6 +61,7 @@ data class OperationResult(
     val evidenceRefs: List<String> = emptyList(),
     val pathTrace: PointerPathTraceInfo? = null,
     val targetTrace: TargetResolutionTraceInfo? = null,
+    val providerTrace: ProviderResolutionTraceInfo? = null,
 )
 
 data class ExecutionTrace(

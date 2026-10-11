@@ -7,11 +7,11 @@ Verdrahtung (`ja`), einen produktiven Teilpfad (`teil`), isolierte Contracts/Pro
 reine Planung (`-`). Referenzen sind repository-relativ.
 
 Audit-Baseline `09b03dd`: 146 Features, davon 54 `IMPLEMENTED`, 42 `PARTIAL`, 32 `PLANNED`,
-12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`. M5-7 wurde nach dieser Baseline abgeschlossen. Die
+12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`. M5-8 wurde nach dieser Baseline abgeschlossen. Die
 42 damaligen `PARTIAL`-Eintraege bleiben deshalb in der Abschlussmatrix unten unveraendert
 nachvollziehbar; spaetere Statusverschiebungen werden separat ausgewiesen und nicht rueckwirkend in
-die Baseline eingerechnet. Aktueller Matrixstand nach M5-7: 54 `IMPLEMENTED`, 44 `PARTIAL`,
-30 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
+die Baseline eingerechnet. Aktueller Matrixstand nach M5-8: 55 `IMPLEMENTED`, 45 `PARTIAL`,
+28 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
 
 ## Architektur und Sprache
 
@@ -51,7 +51,7 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-7: 54 `IMPLEMENTED`, 44
 | R-11 | IMPLEMENTED | ja | M5-3/M5-4 Lifecycle-Tests | 1.0 Pflicht |
 | R-12 | IMPLEMENTED | ja | `M5_6_NATIVE_MULTITOUCH.md`; Geraeteabnahme SM-S918B | 1.0 Pflicht |
 | R-13 | PARTIAL | ja | `NativeAccessibilityProvider`, Target Resolver und M5-7 Geraetegate; `clickElement`/variable Query offen | M5-7 Kernpfad DONE, Rest M5-8/M7-2 |
-| R-14 | PLANNED | - | Provider Matrix M5-8 | Alpha-Blocker |
+| R-14 | IMPLEMENTED | ja | `ProviderPolicy.kt`, deterministische Registry, sichere Fallback- und Trace-Tests; M5-8 | 1.0 Pflicht |
 | R-15 | PLANNED | - | `WINDOW_HEADLESS_DISPLAY_ROADMAP.md` M5-H | Alpha-Blocker |
 | R-16 | PLANNED | - | M5-H/M5-10 | Alpha-Blocker |
 | R-17 | BLOCKED | - | M5-9 benoetigt freigegebenen M4-4-Sprachvertrag | Scope-Entscheidung erforderlich |
@@ -162,7 +162,7 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-7: 54 `IMPLEMENTED`, 44
 | I-09 | PARTIAL | ja | `CustomChromeTabRegistration.open` und Settings | Callback-/Navigation-Vertrag offen |
 | I-10 | PARTIAL | teil | Scrcpy Session Store plus VT2VT Transports | kein echter scrcpy Video-Host |
 | I-11 | PLANNED | - | Integration Catalog Contracts | keine Implementierung im Host |
-| I-12 | PLANNED | - | M5-8/M9-0 | Alpha/Beta Grenze |
+| I-12 | PARTIAL | teil | `AndroidOptionalProviderInventory`, bestehende Host-Statusvertraege; M5-8 | Ausfuehrungsadapter bleiben M9 |
 | I-13 | PARTIAL | nein | separates IME-Projekt und Shell Descriptor | eigenes Produkt-WIP |
 
 ## KI, Benchmarks und Release
@@ -255,7 +255,7 @@ Ueberlappende Abhaengigkeiten stehen weiterhin in den Einzelzeilen.
 - Kein vollstaendiger M6-Geraete- und UX-Abnahmelauf fuer alle drei Editoren und Panelgesten.
 - Kein prozessweiter Headless-/Foreground-Service-Test mit Recovery und UI-Reattachment.
 - Kein gemeinsamer Display-ID-Vertrag fuer Capture, A11y, Gesture und Remote-Sessions.
-- Kein produktiver M5-8-Nachweis fuer externe Adapter in einer einheitlichen Provider-Registry.
+- M5-8 erfasst externe Hosts einheitlich; vollstaendige asynchrone ExecutionProvider-Resultate fuer Tasker, Shizuku, Termux und Custom Tabs bleiben offen.
 - M5-7 belegt semantisches `clickText`; allgemeines `clickElement` und OCR-Zielaufloesung fuer reale
   Kernworkflows bleiben offen.
 - Kein durchgaengiger Record -> Review -> Proposal -> explizite Workflow-Publikation -> WetRun-Test.

@@ -10,6 +10,7 @@ import com.visualtasker.wss.targeting.TargetResolution
 import com.visualtasker.wss.targeting.TargetResolutionPolicy
 import com.visualtasker.wss.targeting.TargetResolutionStatus
 import de.visualtasker.workflow.semantics.CommandCapability
+import de.visualtasker.emscript.contract.ProviderId
 
 enum class AccessibilityTargetAvailability {
     AVAILABLE,
@@ -53,6 +54,58 @@ class NativeAccessibilityProvider(
 ) : ExecutionProvider {
     override val id: String = PROVIDER_ID
     override val capabilities: Set<ExecutionCapability> = setOf(A11Y_CAPABILITY)
+    override val descriptor: ProviderDescriptor = ProviderDescriptor(
+        id = ProviderId(PROVIDER_ID),
+        displayName = "Android native accessibility",
+        host = "AccessibilityService",
+        capabilities = setOf(
+            CapabilityDescriptor(
+                id = A11Y_CAPABILITY.toCapabilityId(),
+                runtimeCapability = A11Y_CAPABILITY,
+                inputTypes = listOf(ProviderValueType.ANY),
+                resultType = ProviderValueType.VOID,
+                sideEffect = ProviderSideEffect.INPUT,
+            ),
+        ),
+        requirements = ProviderRequirements(
+            permissions = setOf("android.permission.BIND_ACCESSIBILITY_SERVICE"),
+            requiresConnection = true,
+        ),
+        priority = 100,
+    )
+
+    override fun supports(request: CapabilityRequest): Boolean =
+        request.invocation.capability == A11Y_CAPABILITY &&
+            (request.invocation.commandId in SEMANTIC_CLICK_COMMAND_IDS || gestureProvider.supports(request))
+
+    override fun availability(
+        request: CapabilityRequest,
+        context: ExecutionContext,
+    ): ProviderAvailability {
+        if (request.invocation.commandId !in SEMANTIC_CLICK_COMMAND_IDS) {
+            return gestureProvider.availability(request, context)
+        }
+        return when (targetGateway.availability()) {
+            AccessibilityTargetAvailability.AVAILABLE -> ProviderAvailability(
+                connection = ProviderConnectionState.CONNECTED,
+                permission = ProviderPermissionState.GRANTED,
+            )
+            AccessibilityTargetAvailability.PERMISSION_DENIED -> ProviderAvailability(
+                connection = ProviderConnectionState.CONNECTED,
+                permission = ProviderPermissionState.DENIED,
+                execution = ProviderExecutionState.NOT_EXECUTABLE,
+                diagnosticCode = "ACCESSIBILITY_PERMISSION_DENIED",
+                message = "Accessibility permission is not granted.",
+            )
+            AccessibilityTargetAvailability.SERVICE_UNAVAILABLE -> ProviderAvailability(
+                connection = ProviderConnectionState.DISCONNECTED,
+                permission = ProviderPermissionState.UNKNOWN,
+                execution = ProviderExecutionState.NOT_EXECUTABLE,
+                diagnosticCode = "ACCESSIBILITY_SERVICE_UNAVAILABLE",
+                message = "VisualTasker AccessibilityService is not connected.",
+            )
+        }
+    }
 
     override fun invoke(invocation: ProviderInvocation, context: ExecutionContext): ProviderResult {
         if (invocation.commandId !in SEMANTIC_CLICK_COMMAND_IDS) {

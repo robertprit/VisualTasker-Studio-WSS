@@ -58,6 +58,7 @@ class AndroidRuntimeBridge(
         document: WorkspaceDocument,
         workflowId: String,
         entryPointEntityId: String? = null,
+        providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
     ): Boolean = synchronized(lock) {
         if (closed || activeToken != null) return false
         val requestId = requestIdFactory()
@@ -78,6 +79,7 @@ class AndroidRuntimeBridge(
                         workflowId = workflowId,
                         document = document,
                         entryPointEntityId = entryPointEntityId,
+                        providerPolicies = providerPolicies,
                     ),
                     cancellationToken = token,
                     traceObserver = { event -> publishTrace(requestId, event) },

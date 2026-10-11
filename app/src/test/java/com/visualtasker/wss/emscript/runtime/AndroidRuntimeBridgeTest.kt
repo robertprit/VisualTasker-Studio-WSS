@@ -126,10 +126,18 @@ class AndroidRuntimeBridgeTest {
         val completed = fixture.awaitTerminal()
 
         val trace = completed.toExecutionTrace()
+        val railSteps = trace?.toRailTraceSteps().orEmpty()
 
         assertNotNull(trace)
         assertEquals(ExecutionMode.LiveRun, trace?.mode)
         assertTrue(trace.orEmptyOperations().any { it.sourceRef?.id != null })
+        assertTrue(
+            railSteps.any { step ->
+                step.properties["providerId"] == AndroidWaitExecutionProvider.PROVIDER_ID &&
+                    step.properties["providerSelectionReason"] == ProviderSelectionReason.PRIORITY.name &&
+                    step.properties["providerResultStatus"] == "SUCCEEDED"
+            },
+        )
         fixture.close()
     }
 
@@ -179,7 +187,7 @@ class AndroidRuntimeBridgeTest {
                 ExecutionState.FAILED,
                 ExecutionState.CANCELLED,
                 ExecutionState.REJECTED,
-            )
+            ) && it.result != null
         }
 
         fun close() {

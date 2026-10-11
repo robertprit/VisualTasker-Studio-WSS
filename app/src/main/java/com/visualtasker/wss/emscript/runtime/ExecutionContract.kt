@@ -19,6 +19,7 @@ data class ExecutionRequest(
     val document: WorkspaceDocument,
     val entryPointEntityId: String? = null,
     val initialVariables: Map<String, ExecutionValue> = emptyMap(),
+    val providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
 )
 
 data class ExecutionPlan(
@@ -35,6 +36,7 @@ data class ExecutionContext(
     val workflowId: String,
     val variables: MutableMap<String, ExecutionValue>,
     val cancellationToken: CancellationToken,
+    val providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
 )
 
 sealed interface ExecutionStep {
@@ -142,6 +144,7 @@ data class ExecutionDiagnostic(
     val entityId: String? = null,
     val pathTrace: PointerPathTraceInfo? = null,
     val targetTrace: TargetResolutionTraceInfo? = null,
+    val providerTrace: ProviderResolutionTraceInfo? = null,
 )
 
 data class TargetResolutionTraceInfo(
@@ -194,6 +197,7 @@ data class ExecutionTraceEvent(
     val diagnostic: ExecutionDiagnostic? = null,
     val pathTrace: PointerPathTraceInfo? = null,
     val targetTrace: TargetResolutionTraceInfo? = null,
+    val providerTrace: ProviderResolutionTraceInfo? = null,
 )
 
 data class ExecutionResult(
@@ -237,6 +241,8 @@ sealed interface ProviderResult {
         val code: String,
         val message: String,
         val targetTrace: TargetResolutionTraceInfo? = null,
+        val failureClass: ProviderFailureClass = ProviderFailureClass.EXECUTION_FAILED,
+        val effectStatus: ProviderEffectStatus = ProviderEffectStatus.UNKNOWN,
     ) : ProviderResult
     data class Cancelled(
         val message: String = "Provider invocation cancelled.",
@@ -247,6 +253,15 @@ sealed interface ProviderResult {
 interface ExecutionProvider {
     val id: String
     val capabilities: Set<ExecutionCapability>
+    val descriptor: ProviderDescriptor
+        get() = defaultDescriptor()
+
+    fun supports(request: CapabilityRequest): Boolean = request.invocation.capability in capabilities
+
+    fun availability(
+        request: CapabilityRequest,
+        context: ExecutionContext,
+    ): ProviderAvailability = ProviderAvailability.available()
 
     fun invoke(
         invocation: ProviderInvocation,
@@ -257,10 +272,119 @@ interface ExecutionProvider {
 class ExecutionProviderRegistry(
     providers: List<ExecutionProvider>,
 ) {
-    private val providers = providers.toList()
+    private val providers = providers.toList().also { entries ->
+        val duplicateIds = entries.groupBy { it.descriptor.id }.filterValues { it.size > 1 }.keys
+        require(duplicateIds.isEmpty()) {
+            "Duplicate execution provider IDs: ${duplicateIds.joinToString { it.value }}"
+        }
+    }
+
+    fun descriptors(): List<ProviderDescriptor> = providers
+        .map(ExecutionProvider::descriptor)
+        .sortedBy { it.id.value }
+
+    fun discover(
+        request: CapabilityRequest,
+        context: ExecutionContext,
+    ): List<ProviderDiscovery> = providers
+        .sortedBy { it.descriptor.id.value }
+        .map { provider ->
+            val compatible = provider.supports(request)
+            ProviderDiscovery(
+                descriptor = provider.descriptor,
+                compatible = compatible,
+                availability = if (compatible) {
+                    provider.availability(request, context)
+                } else {
+                    ProviderAvailability(
+                        capability = ProviderCapabilityState.UNSUPPORTED,
+                        execution = ProviderExecutionState.NOT_EXECUTABLE,
+                        diagnosticCode = "PROVIDER_CAPABILITY_UNSUPPORTED",
+                        message = "Provider '${provider.descriptor.id.value}' does not support '${request.invocation.commandId}'.",
+                    )
+                },
+            )
+        }
 
     fun resolve(capability: ExecutionCapability): ExecutionProvider? =
-        providers.firstOrNull { capability in it.capabilities }
+        providers
+            .filter { capability in it.capabilities }
+            .sortedWith(compareByDescending<ExecutionProvider> { it.descriptor.priority }.thenBy { it.descriptor.id.value })
+            .firstOrNull()
+
+    fun resolve(
+        request: CapabilityRequest,
+        context: ExecutionContext,
+    ): ProviderResolution {
+        val capability = request.invocation.capability
+        val compatible = providers.filter { provider ->
+            provider.descriptor.id !in request.policy.excludedProviderIds && provider.supports(request)
+        }
+        request.policy.explicitProviderId?.let { explicitId ->
+            val provider = providers.firstOrNull { it.descriptor.id == explicitId }
+                ?: return ProviderResolution.Rejected(
+                    ProviderFailure(
+                        code = "PROVIDER_EXPLICIT_NOT_REGISTERED",
+                        message = "Explicit provider '${explicitId.value}' is not registered.",
+                        failureClass = ProviderFailureClass.NOT_REGISTERED,
+                        effectStatus = ProviderEffectStatus.NOT_EXECUTED,
+                        providerId = explicitId,
+                    ),
+                )
+            if (explicitId in request.policy.excludedProviderIds || !provider.supports(request)) {
+                return ProviderResolution.Rejected(
+                    ProviderFailure(
+                        code = "PROVIDER_EXPLICIT_INCOMPATIBLE",
+                        message = "Explicit provider '${explicitId.value}' is excluded or incompatible with '${capability.value}'.",
+                        failureClass = ProviderFailureClass.CAPABILITY_UNAVAILABLE,
+                        effectStatus = ProviderEffectStatus.NOT_EXECUTED,
+                        providerId = explicitId,
+                    ),
+                )
+            }
+            val availability = provider.availability(request, context)
+            return if (availability.isExecutable) {
+                ProviderResolution.Selected(provider, emptyList(), ProviderSelectionReason.EXPLICIT, availability)
+            } else {
+                ProviderResolution.Rejected(availability.toFailure(explicitId), availability)
+            }
+        }
+        if (compatible.isEmpty()) {
+            return ProviderResolution.Rejected(
+                ProviderFailure(
+                    code = "CAPABILITY_PROVIDER_MISSING",
+                    message = "No provider supplies capability '${capability.value}' for '${request.invocation.commandId}'.",
+                    failureClass = ProviderFailureClass.NOT_REGISTERED,
+                    effectStatus = ProviderEffectStatus.NOT_EXECUTED,
+                ),
+            )
+        }
+        val preferredOrder = request.policy.preferredProviderIds.withIndex().associate { (index, id) -> id to index }
+        val ordered = compatible.sortedWith(
+            compareBy<ExecutionProvider> { preferredOrder[it.descriptor.id] ?: Int.MAX_VALUE }
+                .thenByDescending { it.descriptor.priority }
+                .thenBy { it.descriptor.id.value },
+        )
+        val inspected = ordered.map { provider -> provider to provider.availability(request, context) }
+        val selectedIndex = inspected.indexOfFirst { (_, availability) -> availability.isExecutable }
+        if (selectedIndex < 0) {
+            val (provider, availability) = inspected.first()
+            return ProviderResolution.Rejected(availability.toFailure(provider.descriptor.id), availability)
+        }
+        val (selected, availability) = inspected[selectedIndex]
+        val reason = when {
+            selected.descriptor.id in preferredOrder -> ProviderSelectionReason.PREFERRED
+            compatible.size > 1 && compatible.count { it.descriptor.priority == selected.descriptor.priority } > 1 ->
+                ProviderSelectionReason.STABLE_ID_TIE_BREAK
+            else -> ProviderSelectionReason.PRIORITY
+        }
+        val fallbacks = if (request.policy.fallbackMode == ProviderFallbackMode.SAFE_PRE_EXECUTION_ONLY) {
+            inspected.drop(selectedIndex + 1).filter { it.second.isExecutable }.map { it.first }
+        } else {
+            emptyList()
+        }
+        return ProviderResolution.Selected(selected, fallbacks, reason, availability)
+    }
 }
 
 sealed interface ExecutionPlanResult {

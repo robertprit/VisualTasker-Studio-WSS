@@ -2,6 +2,7 @@ package com.visualtasker.wss.emscript.runtime
 
 import de.visualtasker.workflow.semantics.CommandCapability
 import de.visualtasker.emscript.contract.EmscriptV1CommandIds
+import de.visualtasker.emscript.contract.ProviderId
 import kotlin.math.ceil
 
 class AndroidWaitExecutionProvider(
@@ -10,6 +11,25 @@ class AndroidWaitExecutionProvider(
 ) : ExecutionProvider {
     override val id: String = PROVIDER_ID
     override val capabilities: Set<ExecutionCapability> = setOf(TIMING_CAPABILITY)
+    override val descriptor: ProviderDescriptor = ProviderDescriptor(
+        id = ProviderId(PROVIDER_ID),
+        displayName = "Android native timing",
+        host = "Android runtime",
+        capabilities = setOf(
+            CapabilityDescriptor(
+                id = TIMING_CAPABILITY.toCapabilityId(),
+                runtimeCapability = TIMING_CAPABILITY,
+                inputTypes = listOf(ProviderValueType.NUMBER),
+                resultType = ProviderValueType.VOID,
+                sideEffect = ProviderSideEffect.DELAY,
+            ),
+        ),
+        priority = 100,
+    )
+
+    override fun supports(request: CapabilityRequest): Boolean =
+        request.invocation.capability == TIMING_CAPABILITY &&
+            request.invocation.commandId in setOf("wait", EmscriptV1CommandIds.ACTION_WAIT.value)
 
     override fun invoke(
         invocation: ProviderInvocation,

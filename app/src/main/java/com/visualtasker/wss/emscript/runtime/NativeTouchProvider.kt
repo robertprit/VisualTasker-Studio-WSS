@@ -239,8 +239,72 @@ class NativeGestureProvider(
 ) : ExecutionProvider {
     override val id: String = PROVIDER_ID
     override val capabilities: Set<ExecutionCapability> = setOf(A11Y_CAPABILITY)
+    override val descriptor: ProviderDescriptor = ProviderDescriptor(
+        id = de.visualtasker.emscript.contract.ProviderId(PROVIDER_ID),
+        displayName = "Android native touch",
+        host = "AccessibilityService",
+        capabilities = setOf(
+            CapabilityDescriptor(
+                id = A11Y_CAPABILITY.toCapabilityId(),
+                runtimeCapability = A11Y_CAPABILITY,
+                inputTypes = listOf(ProviderValueType.ANY),
+                resultType = ProviderValueType.VOID,
+                sideEffect = ProviderSideEffect.INPUT,
+            ),
+        ),
+        requirements = ProviderRequirements(
+            permissions = setOf("android.permission.BIND_ACCESSIBILITY_SERVICE"),
+            requiresConnection = true,
+        ),
+        priority = 90,
+    )
 
     private val sequenceInFlight = AtomicBoolean(false)
+
+    override fun supports(request: CapabilityRequest): Boolean =
+        request.invocation.capability == A11Y_CAPABILITY && request.invocation.commandId in SUPPORTED_COMMAND_IDS
+
+    override fun availability(
+        request: CapabilityRequest,
+        context: ExecutionContext,
+    ): ProviderAvailability {
+        val availability = gateway.safeAvailability() ?: return ProviderAvailability(
+            connection = ProviderConnectionState.UNKNOWN,
+            permission = ProviderPermissionState.UNKNOWN,
+            execution = ProviderExecutionState.UNKNOWN,
+            diagnosticCode = "TOUCH_AVAILABILITY_FAILED",
+            message = "Accessibility gesture availability could not be read.",
+        )
+        return when {
+            !availability.connected -> ProviderAvailability(
+                connection = ProviderConnectionState.DISCONNECTED,
+                permission = ProviderPermissionState.UNKNOWN,
+                execution = ProviderExecutionState.NOT_EXECUTABLE,
+                diagnosticCode = "ACCESSIBILITY_SERVICE_UNAVAILABLE",
+                message = "VisualTasker AccessibilityService is not connected.",
+            )
+            !availability.canPerformGestures -> ProviderAvailability(
+                connection = ProviderConnectionState.CONNECTED,
+                permission = ProviderPermissionState.GRANTED,
+                capability = ProviderCapabilityState.UNAVAILABLE,
+                execution = ProviderExecutionState.NOT_EXECUTABLE,
+                diagnosticCode = "ACCESSIBILITY_GESTURES_UNAVAILABLE",
+                message = "The connected AccessibilityService cannot perform gestures.",
+            )
+            availability.displayBounds?.isValid != true -> ProviderAvailability(
+                connection = ProviderConnectionState.CONNECTED,
+                permission = ProviderPermissionState.GRANTED,
+                capability = ProviderCapabilityState.UNAVAILABLE,
+                execution = ProviderExecutionState.NOT_EXECUTABLE,
+                diagnosticCode = "TOUCH_DISPLAY_UNAVAILABLE",
+                message = "No valid physical display bounds are available.",
+            )
+            else -> ProviderAvailability(
+                connection = ProviderConnectionState.CONNECTED,
+                permission = ProviderPermissionState.GRANTED,
+            )
+        }
+    }
 
     override fun invoke(
         invocation: ProviderInvocation,

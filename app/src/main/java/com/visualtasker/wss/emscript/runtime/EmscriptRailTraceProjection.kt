@@ -31,7 +31,10 @@ fun ExecutionTrace.toRailTraceSteps(
             timestampMs = operation.index * 180L,
             durationMs = 140L,
             activityName = operation.status.toRuntimeLaneLabel(this.mode),
-            detail = operation.targetTrace?.let { trace ->
+            detail = operation.providerTrace?.let { trace ->
+                "${operation.message} | ${trace.providerId ?: "no provider"} ${trace.resultStatus ?: trace.executionStatus}, " +
+                    "${trace.selectionReason}, fallback ${trace.fallbackDecision}"
+            } ?: operation.targetTrace?.let { trace ->
                 "${operation.message} | ${trace.queryType} ${trace.resolutionStatus}, " +
                     "${trace.candidateCount} candidates, ${trace.action ?: "no action"}"
             } ?: operation.pathTrace?.let { trace ->
@@ -75,6 +78,22 @@ fun ExecutionTrace.toRailTraceSteps(
                     put("targetFallbackUsed", trace.fallbackUsed.toString())
                     trace.action?.let { put("targetAction", it) }
                     trace.observationStatus?.let { put("targetObservationStatus", it) }
+                }
+                operation.providerTrace?.let { trace ->
+                    put("providerCapabilityId", trace.capabilityId)
+                    trace.providerId?.let { put("providerId", it) }
+                    put("providerSelectionReason", trace.selectionReason)
+                    put("providerRegistered", trace.registered.toString())
+                    put("providerInstalled", trace.installed)
+                    put("providerConnected", trace.connected)
+                    put("providerPermission", trace.permissionState)
+                    put("providerCapabilityState", trace.capabilityState)
+                    put("providerExecutionStatus", trace.executionStatus)
+                    put("providerFallbackDecision", trace.fallbackDecision)
+                    put("providerCancelled", trace.cancelled.toString())
+                    put("providerTimedOut", trace.timedOut.toString())
+                    trace.failureClass?.let { put("providerFailureClass", it) }
+                    trace.resultStatus?.let { put("providerResultStatus", it) }
                 }
             },
         )
