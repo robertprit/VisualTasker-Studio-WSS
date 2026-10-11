@@ -89,6 +89,17 @@ data class CaptureFrameEntity(
     val densityDpi: Int,
     val captureStatus: String,
     val coordinateSpace: String,
+    val sourceCaptureFrameId: String?,
+    val displayId: Int?,
+    val captureSource: String?,
+    val insetLeftPx: Int?,
+    val insetTopPx: Int?,
+    val insetRightPx: Int?,
+    val insetBottomPx: Int?,
+    val captureLeftPx: Float?,
+    val captureTopPx: Float?,
+    val captureWidthPx: Float?,
+    val captureHeightPx: Float?,
 )
 
 @Entity(

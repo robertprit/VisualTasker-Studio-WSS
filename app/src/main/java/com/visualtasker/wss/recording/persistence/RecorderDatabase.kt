@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RecordingInteractionEntity::class,
         StepReviewDecisionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class RecorderDatabase : RoomDatabase() {
@@ -32,7 +32,7 @@ abstract class RecorderDatabase : RoomDatabase() {
                 context.applicationContext,
                 RecorderDatabase::class.java,
                 "visualtasker-recording.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -115,6 +115,23 @@ abstract class RecorderDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `recording_sessions` ADD COLUMN `resumedFromSessionId` TEXT")
                 db.execSQL("UPDATE `recording_sessions` SET `schemaVersion` = 3")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `sourceCaptureFrameId` TEXT")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `displayId` INTEGER")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `captureSource` TEXT")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `insetLeftPx` INTEGER")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `insetTopPx` INTEGER")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `insetRightPx` INTEGER")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `insetBottomPx` INTEGER")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `captureLeftPx` REAL")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `captureTopPx` REAL")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `captureWidthPx` REAL")
+                db.execSQL("ALTER TABLE `recording_capture_frames` ADD COLUMN `captureHeightPx` REAL")
+                db.execSQL("UPDATE `recording_sessions` SET `schemaVersion` = 4")
             }
         }
     }

@@ -23,6 +23,7 @@ Android service classes behind a provider.
 | Shizuku | Shell capability metadata | Discovery through existing registration | Optional provider PARTIAL; suspend timeout/result adapter remains M9 | None |
 | Termux | Termux catalog/plugin registration | Discovery through existing registration | Optional provider PARTIAL; process result/cancellation remains M9 | None |
 | Vision/OCR/OCV/YOLO | Vision catalog/plugin contracts | Not implemented | Vision plugin provider later | None |
+| Display capture | Workspace/Recorder/Overlay screenshot paths | Separate from command execution | M7-0 `CaptureFrameService` reuses M5-8 selection/availability types and Accessibility screenshot provider | None |
 | ChartGraph | Chart query adapters | Not implemented | ChartGraph provider later | None |
 | Custom Chrome Tab | Browser capability metadata | Discovery through existing registration | Optional provider PARTIAL; navigation callbacks remain M9 | None |
 
@@ -96,3 +97,8 @@ M5-8 adds request-local provider policy, deterministic discovery and safe fallba
 registry. `AndroidOptionalProviderInventory` reuses Tasker, Shizuku, Termux and Custom Tabs status
 contracts without registering incomplete asynchronous hosts as successful execution providers.
 Their exact completion/cancellation adapters remain explicit M9 gaps.
+
+M7-0 applies the same `ProviderSelectionPolicy`, `ProviderAvailability` and stable `ProviderId`
+contract to display capture without registering capture as an EMScript execution side effect.
+Capture has its own typed result and lifecycle because a frame is shared evidence, not a scalar
+runtime value. See `M7_CAPTURE_PROVIDER_MATRIX.md`.

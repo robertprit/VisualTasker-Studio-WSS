@@ -1,12 +1,13 @@
 package com.visualtasker.wss.recording
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.hardware.display.DisplayManager
 import android.view.Display
-import android.view.Surface
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
-import java.io.File
+import com.visualtasker.wss.capture.CaptureFrameProcessService
+import com.visualtasker.wss.capture.CaptureRequest
+import com.visualtasker.wss.capture.CaptureResult
+import com.visualtasker.wss.window.AndroidDisplayContextFactory
 
 class AndroidRecorderCaptureSource(
     private val context: Context,
@@ -16,23 +17,29 @@ class AndroidRecorderCaptureSource(
         val service = checkNotNull(serviceProvider()) { "Accessibility service is not connected." }
         val window = checkNotNull(service.currentWindowContext()) { "Window context is unavailable." }
         val root = checkNotNull(service.currentRecordingA11yTree()) { "Accessibility root is unavailable." }
-        val temporary = File(context.cacheDir, "recorder-capture-${System.nanoTime()}.png")
-        try {
-            check(service.takeScreenshotTo(temporary) && temporary.isFile) { "Screenshot capture failed." }
-            val bytes = temporary.readBytes()
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-            check(options.outWidth > 0 && options.outHeight > 0) { "Screenshot dimensions are invalid." }
+        val display = checkNotNull(context.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)) {
+            "Default display is unavailable."
+        }
+        val displayContext = AndroidDisplayContextFactory.from(context.createDisplayContext(display))
+        val result = CaptureFrameProcessService.get(context).capture(
+            CaptureRequest(
+                requestId = "recorder-${System.nanoTime()}",
+                displayContext = displayContext,
+            )
+        )
+        val success = result as? CaptureResult.Success
+            ?: error((result as CaptureResult.Failure).failure.message)
+        success.lease.use { lease ->
+            val metadata = lease.frame.metadata
+            val insets = metadata.actualDisplayContext.insets
+            val bounds = metadata.captureBoundsDisplayPx
             val primaryWindow = window.windows.firstOrNull { it.active } ?: window.windows.firstOrNull()
             return RecorderCapture(
-                pngBytes = bytes,
-                widthPx = options.outWidth,
-                heightPx = options.outHeight,
-                rotation = context.getSystemService(DisplayManager::class.java)
-                    ?.getDisplay(Display.DEFAULT_DISPLAY)
-                    ?.rotation
-                    ?: Surface.ROTATION_0,
-                densityDpi = context.resources.displayMetrics.densityDpi,
+                pngBytes = lease.readBytes(),
+                widthPx = metadata.widthPx,
+                heightPx = metadata.heightPx,
+                rotation = metadata.rotation,
+                densityDpi = metadata.densityDpi,
                 windowContext = RecordingWindowContext(
                     packageName = window.packageName,
                     activityName = window.activityName,
@@ -40,9 +47,18 @@ class AndroidRecorderCaptureSource(
                     title = primaryWindow?.title,
                 ),
                 a11yRoot = root,
+                sourceCaptureFrameId = lease.frame.id.value,
+                displayId = metadata.actualDisplayContext.displayId.value,
+                captureSource = metadata.source.name,
+                insetLeftPx = insets.leftPx,
+                insetTopPx = insets.topPx,
+                insetRightPx = insets.rightPx,
+                insetBottomPx = insets.bottomPx,
+                captureLeftPx = bounds.left,
+                captureTopPx = bounds.top,
+                captureWidthPx = bounds.width,
+                captureHeightPx = bounds.height,
             )
-        } finally {
-            temporary.delete()
         }
     }
 }

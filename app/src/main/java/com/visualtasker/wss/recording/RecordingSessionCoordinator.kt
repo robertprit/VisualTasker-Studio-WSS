@@ -296,6 +296,17 @@ class RecordingSessionCoordinator(
         rotation = rotation,
         densityDpi = densityDpi,
         captureStatus = if (stored.created) RecordingCaptureStatus.CAPTURED else RecordingCaptureStatus.REUSED,
+        sourceCaptureFrameId = sourceCaptureFrameId,
+        displayId = displayId,
+        captureSource = captureSource,
+        insetLeftPx = insetLeftPx,
+        insetTopPx = insetTopPx,
+        insetRightPx = insetRightPx,
+        insetBottomPx = insetBottomPx,
+        captureLeftPx = captureLeftPx,
+        captureTopPx = captureTopPx,
+        captureWidthPx = captureWidthPx,
+        captureHeightPx = captureHeightPx,
     )
 
     private fun RecorderCapture.toSnapshot(sessionId: String, sceneId: String, frameId: String) = A11ySnapshot(

@@ -198,6 +198,7 @@ data class ExecutionTraceEvent(
     val pathTrace: PointerPathTraceInfo? = null,
     val targetTrace: TargetResolutionTraceInfo? = null,
     val providerTrace: ProviderResolutionTraceInfo? = null,
+    val captureTrace: CaptureTraceInfo? = null,
 )
 
 data class ExecutionResult(

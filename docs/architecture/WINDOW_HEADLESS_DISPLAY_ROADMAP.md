@@ -18,8 +18,8 @@ It is planning and audit evidence only. No production implementation is implied.
 | Compose workspace panels | DONE | `PanelState`, `WorkspaceSessionStore` and `WorkspaceScreen` retain rendering and gestures; `StudioWindowHost` projects them into the shared registry. | Real-device gesture/recovery acceptance remains. |
 | Native floating overlays | DONE | `StudioOverlayService` retains its views and handlers while `OverlayWindowHost` supplies shared session, display and diagnostic contracts. | Real Android lifecycle/recovery acceptance remains. |
 | Overlay service lifecycle | GAP | Service is `START_STICKY` and launched with `startService`. | No foreground notification/type, explicit recovery policy or target-36 background-start contract. |
-| Recording display metadata | GAP | `WindowSnapshot` and `WindowContext` contain nullable `displayId`. | Capture and target resolution do not consistently populate or enforce it. |
-| Screenshot capture | GAP | Accessibility screenshot and `AndroidRecorderCaptureSource` work on `Display.DEFAULT_DISPLAY`. | Explicit display selection, per-display metrics and capability failure. |
+| Recording display metadata | DONE | Recorder schema 5 persists nullable display, source, insets and capture bounds while legacy frames remain readable. | Real non-default-display recording remains a device gate. |
+| Screenshot capture | DONE | `CaptureFrameService` reuses Accessibility capture with explicit display, typed mismatch/failure and shared leases. | Real capture and non-default-display acceptance remain. |
 | Gesture dispatch | GAP | Accessibility gestures validate physical bounds and support typed single/multi-pointer paths. | `GestureDescription.Builder.setDisplayId` is not used; display ID is absent from provider requests and trace. |
 | Virtual display | PLANNED | No `VirtualDisplay`, `MediaProjection` or display-surface owner exists. | M7-V feasibility contract and owned test surface. |
 | VT2VT | DONE | Peer, transport, pairing, workspace/runtime mirror and reconnect foundations exist. | No DisplaySession registry or remote-surface contract. |

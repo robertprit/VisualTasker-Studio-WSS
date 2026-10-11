@@ -46,7 +46,7 @@ Teilimplementierungen, isolierte Contracts und reine Planung.
 | M4 Three-Editor Conformance | DONE | Text, Block und Flow mutieren ueber denselben kanonischen Pfad; M4-0 bis M4-3 geschlossen. |
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H sind DONE; Runtime-Closure fehlt. Kontrollfluss ist kein 1.0-Core-Blocker. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W WindowSession-Vertrag und Hostadapter implementiert; reale Geraete-UX-Abnahme und Editor-Produktgates folgen. |
-| M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
+| M7 Perception, Recorder und Inspection | ACTIVE | M7-0 gemeinsamer Capture-/Observation-Vertrag produktiv; OCR/OpenCV-Live-Provider und Perception-Closure folgen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Vorhandene Datastore-/Asset-Bausteine muessen gegen gemeinsame Scope-Vertraege auditiert werden. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Provider-Grenzen sind noch festzulegen. |
 | M10 Release Hardening | PLANNED | Beginnt nach den freigegebenen Produkt-Slices und dem Feature-Freeze. |
@@ -124,6 +124,9 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   Berechtigungszustaende, sichere Fallback-Policy sowie Provider-Provenienz in Runtime/RailTrace.
 - [x] M5-H: UI-unabhaengiger, prozessweit eindeutiger Headless Runtime Host mit explizitem
   Start/Stop, Cancellation, Recovery, Status-Reattachment und kontrollierter Trace-Retention.
+- [x] M7-0: displaybewusster CaptureFrameProvider, gemeinsamer Frame-Lifecycle, Recorder-/Inspector-
+  Provenienz, Koordinatenmapper und typisierte Capture-Fehler. Produktive OCR-/OpenCV-Provider
+  bleiben als M7-3/M7-4 offen.
 - [PLANNED] M5-9: Funktionen, Calls, Return und strukturierte Fehler nach vorheriger Freigabe der
   benoetigten Sprach-/Editor-Vertraege.
 - [PLANNED] M5-10: Runtime-Closure mit Capability-Matrix, Recovery, Retention und Langlauftests.

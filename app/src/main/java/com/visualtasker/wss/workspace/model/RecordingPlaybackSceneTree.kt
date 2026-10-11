@@ -94,6 +94,18 @@ object RecordingPlaybackSceneTreeProjector {
                     put("rotation", it.rotation.toString())
                     put("densityDpi", it.densityDpi.toString())
                     put("captureStatus", it.captureStatus.name)
+                    it.sourceCaptureFrameId?.let { id -> put("captureFrameId", id) }
+                    it.displayId?.let { id -> put("displayId", id.toString()) }
+                    it.captureSource?.let { source -> put("captureSource", source) }
+                    put("coordinateSpace", it.coordinateSpace)
+                    if (it.captureLeftPx != null && it.captureTopPx != null &&
+                        it.captureWidthPx != null && it.captureHeightPx != null
+                    ) {
+                        put(
+                            "captureBoundsDisplayPx",
+                            "${it.captureLeftPx},${it.captureTopPx},${it.captureWidthPx},${it.captureHeightPx}",
+                        )
+                    }
                 }
             },
         )
@@ -106,7 +118,14 @@ object RecordingPlaybackSceneTreeProjector {
             if (snapshot == null) "nicht aufgezeichnet" else snapshot.status.name,
             SceneInspectorNodeKind.Elements,
             provider = ObservationProvider.Accessibility,
-            properties = mapOf("status" to (snapshot?.status?.name ?: "nicht aufgezeichnet")),
+            properties = buildMap {
+                put("status", snapshot?.status?.name ?: "nicht aufgezeichnet")
+                snapshot?.frameId?.let { put("recordingFrameId", it) }
+                scene.primaryFrame?.frame?.sourceCaptureFrameId?.let { put("captureFrameId", it) }
+                snapshot?.capturedAtEpochMs?.let { put("snapshotTimestampEpochMs", it.toString()) }
+                scene.primaryFrame?.frame?.capturedAtEpochMs?.let { put("frameTimestampEpochMs", it.toString()) }
+                put("atomicallyCaptured", "false")
+            },
             children = snapshot?.rootNode?.let { listOf(it.toInspectorNode(panelId)) }.orEmpty(),
         )
     }

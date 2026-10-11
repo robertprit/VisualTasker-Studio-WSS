@@ -260,6 +260,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.visualtasker.wss.accessibility.RuntimePoint
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
+import com.visualtasker.wss.capture.CaptureFrameProcessService
+import com.visualtasker.wss.capture.CaptureRequest
+import com.visualtasker.wss.capture.CaptureResult
+import com.visualtasker.wss.capture.captureToFile
 import com.visualtasker.wss.components.IconMotionConfig
 import com.visualtasker.wss.components.IconMotionEngine
 import com.visualtasker.wss.components.DarkPanel
@@ -1398,7 +1402,13 @@ fun WorkspaceScreen(
                 screenshot = { path ->
                     val target = runtimeFileFor(context, path.ifBlank { "screenshots/latest.png" })
                     if (target != null) {
-                        VisualTaskerAccessibilityService.current()?.takeScreenshotTo(target) ?: false
+                        CaptureFrameProcessService.get(context).captureToFile(
+                            CaptureRequest(
+                                requestId = "runtime-${System.nanoTime()}",
+                                displayContext = AndroidDisplayContextFactory.from(context),
+                            ),
+                            target,
+                        ) is CaptureResult.Success
                     } else {
                         false
                     }
@@ -4175,7 +4185,13 @@ fun WorkspaceScreen(
                                     val target = File(runtimeFilesRoot(context), "screenshots/capture-${System.currentTimeMillis()}.png")
                                     target.parentFile?.mkdirs()
                                     coroutineScope.launch {
-                                        val ok = VisualTaskerAccessibilityService.current()?.takeScreenshotTo(target) ?: false
+                                        val ok = CaptureFrameProcessService.get(context).captureToFile(
+                                            CaptureRequest(
+                                                requestId = "workspace-${System.nanoTime()}",
+                                                displayContext = AndroidDisplayContextFactory.from(context),
+                                            ),
+                                            target,
+                                        ) is CaptureResult.Success
                                         studioLogStore.append(
                                             level = if (ok) StudioLogLevel.INFO else StudioLogLevel.ERROR,
                                             source = "SCREENSHOT",

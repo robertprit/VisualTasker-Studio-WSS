@@ -62,6 +62,17 @@ data class OperationResult(
     val pathTrace: PointerPathTraceInfo? = null,
     val targetTrace: TargetResolutionTraceInfo? = null,
     val providerTrace: ProviderResolutionTraceInfo? = null,
+    val captureTrace: CaptureTraceInfo? = null,
+)
+
+data class CaptureTraceInfo(
+    val frameId: String,
+    val displayId: Int,
+    val source: String,
+    val coordinateSpace: String,
+    val capturedAtEpochMs: Long,
+    val widthPx: Int,
+    val heightPx: Int,
 )
 
 data class ExecutionTrace(

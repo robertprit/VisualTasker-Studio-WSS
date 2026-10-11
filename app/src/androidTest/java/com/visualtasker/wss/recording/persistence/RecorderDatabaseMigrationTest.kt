@@ -75,4 +75,37 @@ class RecorderDatabaseMigrationTest {
             assertEquals(true, cursor.isNull(2))
         }
     }
+
+    @Test
+    fun migration4To5AddsNullableCaptureProvenanceAndKeepsLegacyFramesReadable() {
+        helper.createDatabase(databaseName, 4).apply {
+            execSQL(
+                "INSERT INTO recording_sessions VALUES ('session-1',3,'COMPLETED',1000,1000,2000,'test','{}','scene-1','scene-1',NULL,NULL)",
+            )
+            execSQL(
+                "INSERT INTO recording_scenes VALUES ('scene-1','session-1',1,1000,1000,2000,'frame-1','{}','CLOSED')",
+            )
+            execSQL(
+                "INSERT INTO recording_screenshot_assets VALUES ('hash','asset.png',4,1000)",
+            )
+            execSQL(
+                "INSERT INTO recording_capture_frames VALUES ('frame-1','session-1','scene-1',1000,1000,'hash','asset.png',100,200,0,320,'CAPTURED','screen_px')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(databaseName, 5, true, RecorderDatabase.MIGRATION_4_5)
+        migrated.query(
+            "SELECT sourceCaptureFrameId, displayId, captureSource FROM recording_capture_frames WHERE frameId='frame-1'",
+        ).use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(true, cursor.isNull(0))
+            assertEquals(true, cursor.isNull(1))
+            assertEquals(true, cursor.isNull(2))
+        }
+        migrated.query("SELECT schemaVersion FROM recording_sessions WHERE sessionId='session-1'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(4, cursor.getInt(0))
+        }
+    }
 }

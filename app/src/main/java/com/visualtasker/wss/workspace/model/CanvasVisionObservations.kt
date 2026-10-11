@@ -12,6 +12,9 @@ object CanvasVisionObservationFactory {
         assetId: String?,
         referenceId: String?,
         observedAtEpochMs: Long,
+        sourceCaptureFrameId: String? = null,
+        displayId: Int? = null,
+        coordinateSpace: String = "screenshot_px",
     ): WorldObservation {
         val normalizedMatchKind = matchKind.trim().uppercase()
         val provider = when (normalizedMatchKind) {
@@ -47,6 +50,9 @@ object CanvasVisionObservationFactory {
                 "assetId" to assetId.orEmpty(),
                 "referenceId" to referenceId.orEmpty(),
                 "source" to "vision-panel",
+                "captureFrameId" to sourceCaptureFrameId.orEmpty(),
+                "displayId" to displayId?.toString().orEmpty(),
+                "coordinateSpace" to coordinateSpace,
             ).filterValues { it.isNotBlank() },
         )
     }

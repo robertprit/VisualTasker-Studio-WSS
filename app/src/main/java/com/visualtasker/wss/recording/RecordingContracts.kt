@@ -1,6 +1,6 @@
 package com.visualtasker.wss.recording
 
-const val RECORDING_SCHEMA_VERSION = 3
+const val RECORDING_SCHEMA_VERSION = 4
 
 enum class RecordingSessionStatus { PREPARING, RECORDING, STOPPING, COMPLETED, PARTIAL, INTERRUPTED, FAILED, PAUSED }
 enum class RecordingSceneStatus { OPEN, CLOSED }
@@ -68,6 +68,17 @@ data class CaptureFrame(
     val densityDpi: Int,
     val captureStatus: RecordingCaptureStatus,
     val coordinateSpace: String = "screen_px",
+    val sourceCaptureFrameId: String? = null,
+    val displayId: Int? = null,
+    val captureSource: String? = null,
+    val insetLeftPx: Int? = null,
+    val insetTopPx: Int? = null,
+    val insetRightPx: Int? = null,
+    val insetBottomPx: Int? = null,
+    val captureLeftPx: Float? = null,
+    val captureTopPx: Float? = null,
+    val captureWidthPx: Float? = null,
+    val captureHeightPx: Float? = null,
 )
 
 data class A11yNodeSnapshot(
@@ -245,6 +256,17 @@ data class RecorderCapture(
     val densityDpi: Int,
     val windowContext: RecordingWindowContext,
     val a11yRoot: A11yNodeSnapshot,
+    val sourceCaptureFrameId: String? = null,
+    val displayId: Int? = null,
+    val captureSource: String? = null,
+    val insetLeftPx: Int? = null,
+    val insetTopPx: Int? = null,
+    val insetRightPx: Int? = null,
+    val insetBottomPx: Int? = null,
+    val captureLeftPx: Float? = null,
+    val captureTopPx: Float? = null,
+    val captureWidthPx: Float? = null,
+    val captureHeightPx: Float? = null,
 )
 
 data class PersistedRecordingSession(

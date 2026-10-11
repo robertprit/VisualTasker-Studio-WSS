@@ -70,11 +70,17 @@ internal fun ScreenshotAssetEntity.toDomain() = ScreenshotAsset(assetHash, asset
 internal fun CaptureFrame.toEntity() = CaptureFrameEntity(
     frameId, sessionId, sceneId, capturedAtEpochMs, capturedAtElapsedRealtimeNanos, assetHash, assetReference,
     widthPx, heightPx, rotation, densityDpi, captureStatus.name, coordinateSpace,
+    sourceCaptureFrameId, displayId, captureSource,
+    insetLeftPx, insetTopPx, insetRightPx, insetBottomPx,
+    captureLeftPx, captureTopPx, captureWidthPx, captureHeightPx,
 )
 
 internal fun CaptureFrameEntity.toDomain() = CaptureFrame(
     frameId, sessionId, sceneId, capturedAtEpochMs, capturedAtElapsedRealtimeNanos, assetHash, assetReference,
     widthPx, heightPx, rotation, densityDpi, RecordingCaptureStatus.valueOf(captureStatus), coordinateSpace,
+    sourceCaptureFrameId, displayId, captureSource,
+    insetLeftPx, insetTopPx, insetRightPx, insetBottomPx,
+    captureLeftPx, captureTopPx, captureWidthPx, captureHeightPx,
 )
 
 internal fun A11ySnapshot.toEntity() = A11ySnapshotEntity(

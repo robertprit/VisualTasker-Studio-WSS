@@ -20,6 +20,10 @@ import android.widget.TextView
 import com.visualtasker.wss.MainActivity
 import com.visualtasker.wss.accessibility.VisualTaskerAccessibilityService
 import com.visualtasker.wss.accessibility.toInspectorText
+import com.visualtasker.wss.capture.CaptureFrameProcessService
+import com.visualtasker.wss.capture.CaptureRequest
+import com.visualtasker.wss.capture.CaptureResult
+import com.visualtasker.wss.capture.captureToFile
 import com.visualtasker.wss.recording.RecordingOperationResult
 import com.visualtasker.wss.recording.RecordingSessionRuntime
 import com.visualtasker.wss.workspace.model.RecordingEventStore
@@ -471,7 +475,13 @@ class StudioOverlayService : Service() {
             setOverlaysVisible(false)
             delay(180)
             val ok = try {
-                service.takeScreenshotTo(target)
+                CaptureFrameProcessService.get(this@StudioOverlayService).captureToFile(
+                    request = CaptureRequest(
+                        requestId = "overlay-${System.nanoTime()}",
+                        displayContext = AndroidDisplayContextFactory.from(this@StudioOverlayService),
+                    ),
+                    target = target,
+                ) is CaptureResult.Success
             } finally {
                 setOverlaysVisible(true)
             }

@@ -309,11 +309,11 @@ class VisualTaskerAccessibilityService : AccessibilityService() {
         return dispatchPathGesture(path, durationMs.coerceAtLeast(1L))
     }
 
-    suspend fun takeScreenshotTo(file: File): Boolean {
+    suspend fun takeScreenshotTo(file: File, displayId: Int = Display.DEFAULT_DISPLAY): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
         return suspendCancellableCoroutine { continuation ->
             takeScreenshot(
-                Display.DEFAULT_DISPLAY,
+                displayId,
                 mainExecutor,
                 object : TakeScreenshotCallback {
                     override fun onSuccess(screenshot: ScreenshotResult) {

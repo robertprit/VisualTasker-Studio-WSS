@@ -10,8 +10,8 @@ Audit-Baseline `09b03dd`: 146 Features, davon 54 `IMPLEMENTED`, 42 `PARTIAL`, 32
 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`. M5-8 wurde nach dieser Baseline abgeschlossen. Die
 42 damaligen `PARTIAL`-Eintraege bleiben deshalb in der Abschlussmatrix unten unveraendert
 nachvollziehbar; spaetere Statusverschiebungen werden separat ausgewiesen und nicht rueckwirkend in
-die Baseline eingerechnet. Aktueller Matrixstand nach M5-H und M6-W: 61 `IMPLEMENTED`, 46 `PARTIAL`,
-21 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
+die Baseline eingerechnet. Aktueller Matrixstand nach M7-0: 62 `IMPLEMENTED`, 46 `PARTIAL`,
+20 `PLANNED`, 12 `DEFERRED`, 5 `CONCEPT` und 1 `BLOCKED`.
 
 ## Architektur und Sprache
 
@@ -115,14 +115,14 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M5-H und M6-W: 61 `IMPLEME
 | V-03 | PARTIAL | ja | `SceneInspectorPanel.kt`, Scene Tree Tests | M7-2 |
 | V-04 | PARTIAL | ja | A11y Bounds, Marker/Canvas Projektionen | einheitlicher Resolver fehlt |
 | V-05 | PARTIAL | ja | M5-7 `clickText` mit deterministischer Suche; allgemeines Elementziel offen | M7-2 |
-| V-06 | PLANNED | - | M7-1 | Alpha-Blocker |
-| V-07 | PARTIAL | ja | Marker-/Canvas-/Recorder-Crop Projektionen | M7-1/M7-7 |
+| V-06 | IMPLEMENTED | ja | `CaptureFrameService`, Accessibility-Provider, Frame-Leases und M7-0 Tests | reale Capture-Abnahme offen |
+| V-07 | PARTIAL | ja | gemeinsamer Capture-Koordinatenmapper plus Marker-/Canvas-/Recorder-Crop-Projektionen | visuelle Marker-Synchronisation M7-7 |
 | V-08 | PLANNED | - | Vision Catalog markiert ML Kit geplant | Alpha-Ziel fuer Kern-OCR |
 | V-09 | PLANNED | - | Vision Catalog markiert OpenCV geplant | optional 1.0 |
 | V-10 | PARTIAL | teil | Vision Contracts dependency; YOLO/LiteRT Katalog; Provider separat | optional 1.0 |
 | V-11 | PARTIAL | teil | `WorldviewEntityUnifier`, Ambiguity-Projektionen | M7-8 |
 | V-12 | PARTIAL | teil | Recorder/Worldview Observations und Zeitmetadaten | M7-8 |
-| T-01 | IMPLEMENTED | ja | `RecordingSessionCoordinator`, Room v3 | M7-0 Gate |
+| T-01 | IMPLEMENTED | ja | `RecordingSessionCoordinator`, Room v5 mit Capture-Provenienz | M7-0 Gate |
 | T-02 | IMPLEMENTED | ja | Recorder Persistence, `ScreenshotAssetStore` | M7 Pflicht |
 | T-03 | IMPLEMENTED | ja | `StepCandidateAssembler`, Candidate Tests | M7-6 |
 | T-04 | IMPLEMENTED | ja | `StepReviewStore`, ReviewedStepProjector | M7-6 |
