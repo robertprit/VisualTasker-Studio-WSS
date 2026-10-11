@@ -63,6 +63,22 @@ parallel, opposing, delayed and cancellable MultiPath execution. The test surfac
 pointer count, span delta and start skew; callback completion alone is not device acceptance.
 Semantic target resolution remains a documented gap rather than an implicit fallback.
 
+## Runtime Host And Display Context
+
+| Contract | Status | Current boundary |
+| --- | --- | --- |
+| UI-bound Android bridge | DONE | `AndroidRuntimeBridge` hosts exactly one runner per bridge and rejects double starts. |
+| Process-wide headless host | PLANNED | M5-H must reuse the runner, own lifecycle outside Compose and support status reattachment. |
+| Persistent runtime status/trace | GAP | Bridge state and live trace are in-memory and projected by `WorkspaceScreen`; no headless recovery record exists. |
+| Explicit target display | GAP | Native gesture availability exposes bounds only; no display ID is carried through invocation or trace. |
+| Virtual-display provider | PLANNED | M7-V is an optional feasibility slice, not an implicit capability of the gesture provider. |
+| Remote display session | DEFERRED | M9-D follows only after M7-V and the VT2VT transport/session scope are accepted. |
+
+Every future pointer, capture and semantic-target invocation must carry one explicit display
+context. Absence or loss of that context is a typed failure; it must never silently fall back to the
+default display. Headless execution changes the Android host only and must not create a second
+`ExecutionRunner`, provider registry or trace model.
+
 M5-6 maps every MultiPath to one provider operation and one globally synchronized Android phase
 timeline. The service keys continuations by pointer ID and releases all still-continuing strokes
 together on cancellation. The generic `touch.*` escape-hatch family and high-level push/pull/pan/

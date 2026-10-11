@@ -36,9 +36,9 @@ der Architektur- und Release-Slices.
 | M2 Canonical Workflow Core | DONE | Ein kanonisches Workspace-/Workflow-Dokument ist die semantische Wahrheit. |
 | M3 Workspace Operations und Source Apply | DONE | Atomare Transaktionen, Property Schema, Source-Anker und linearer Validator geschlossen. |
 | M4 Three-Editor Conformance | DONE | Text, Block und Flow mutieren ueber denselben kanonischen Pfad; M4-0 bis M4-3 geschlossen. |
-| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-6 sind DONE; semantische Ziele, Provider-Policy, Kontrollfluss und Closure fehlen. |
-| M6 Editor Productization und Workspace UX | PLANNED | Erhebliche Vorarbeiten vorhanden, aber noch kein formales Produkt-Abnahmegate. |
-| M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline nicht geschlossen. |
+| M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-6 sind DONE; semantische Ziele, Provider-Policy, Headless Host, Kontrollfluss und Closure fehlen. |
+| M6 Editor Productization und Workspace UX | PLANNED | Erhebliche Panel-/Layout-Vorarbeiten vorhanden; gemeinsamer Window-Session-Vertrag und Produktgate fehlen. |
+| M7 Perception, Recorder und Inspection | PLANNED | Recorder/RailTrace/Inspector-Grundlagen vorhanden; Perception-Pipeline und optionale VirtualDisplay-Foundation sind nicht geschlossen. |
 | M8 Resources, Data Hub und Workspace Explorer | PLANNED | Vorhandene Datastore-/Asset-Bausteine muessen gegen gemeinsame Scope-Vertraege auditiert werden. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Provider-Grenzen sind noch festzulegen. |
 | M10 Release Hardening | PLANNED | Beginnt nach den freigegebenen Produkt-Slices und dem Feature-Freeze. |
@@ -54,6 +54,9 @@ Reconciliation 2026-10-11:
 - M5-7 besitzt nur die Runtime-Zielaufloesung. Die breitere Scene-/Perception-Fusion bleibt M7.
 - M5-8 besitzt Resolver, Auswahlpolicy und Fehlervertrag. Vollstaendige Tasker-, Shizuku-,
   Termux- und VT2VT-Produktintegration bleibt M9.
+- M5-H Headless Execution und M6-W Window/Floating Workspace sind `PLANNED` und fuer 1.0 Core.
+- M7-V VirtualDisplay ist `PLANNED`, aber fuer 1.0 optional. M9-D MultiDisplay-/Remote-Sessions
+  bleiben `DEFERRED`, bis M7-V und der VT2VT-Scope freigegeben sind.
 - WorldviewGraph, RAG, lokale KI/SLM und weitere experimentelle Produkterweiterungen sind fuer
   nach 1.0 `DEFERRED`, solange keine ausdrueckliche Scope-Aenderung erfolgt.
 
@@ -98,6 +101,8 @@ Feature-Nummerierung der weiter unten stehenden Stable-V1-Meilensteine zu verwec
   deterministische Node-Aufloesung ueber den bestehenden Runner.
 - [PLANNED] M5-8: explizite Provider-Aufloesung, Verfuegbarkeit, Berechtigungsstatus, Auswahlpolicy
   und vereinheitlichte Fehlercodes.
+- [PLANNED] M5-H: UI-unabhaengiger, prozessweit eindeutiger Headless Runtime Host mit explizitem
+  Start/Stop, Cancellation, Recovery, Status-Reattachment und kontrollierter Trace-Retention.
 - [PLANNED] M5-9: Funktionen, Calls, Return und strukturierte Fehler nach vorheriger Freigabe der
   benoetigten Sprach-/Editor-Vertraege.
 - [PLANNED] M5-10: Runtime-Closure mit Capability-Matrix, Recovery, Retention und Langlauftests.
@@ -120,6 +125,7 @@ Verbindliche Nachweise:
 - `docs/architecture/M5_5_TYPED_PATH_BINDINGS.md`
 - `docs/architecture/M5_6_NATIVE_MULTITOUCH.md`
 - `docs/architecture/M5_RUNTIME_PROVIDER_MATRIX.md`
+- `docs/architecture/WINDOW_HEADLESS_DISPLAY_ROADMAP.md`
 - `docs/architecture/RELEASE_1_0_PLAN.md`
 
 M4-3 schliesst die unterstuetzte Drei-Editor-Architektur ab. Die produktive Compose-Shell verwendet
