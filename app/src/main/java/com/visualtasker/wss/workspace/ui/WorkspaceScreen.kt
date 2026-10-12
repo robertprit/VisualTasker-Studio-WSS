@@ -375,6 +375,8 @@ import com.visualtasker.wss.workspace.model.flowchartConnectionOptions
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
 import com.visualtasker.wss.workspace.data.ProjectWorkspaceStore
+import com.visualtasker.wss.workspace.data.ProjectPackageAndroidIO
+import com.visualtasker.wss.workspace.data.ProjectPackageIoResult
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
 import com.visualtasker.wss.workspace.data.supportedWorkspacePanelTypes
 import com.visualtasker.wss.workspace.model.PanelAction
@@ -389,6 +391,9 @@ import com.visualtasker.wss.workspace.model.ProjectExplorerProjector
 import com.visualtasker.wss.workspace.model.ProjectExplorerUiState
 import com.visualtasker.wss.workspace.model.ProjectInventoryDiagnosticCode
 import com.visualtasker.wss.workspace.model.ProjectInventoryIntegrator
+import com.visualtasker.wss.workspace.model.PROJECT_PACKAGE_EXTENSION
+import com.visualtasker.wss.workspace.model.PROJECT_PACKAGE_MIME_TYPE
+import com.visualtasker.wss.workspace.model.ProjectPackageConflictMode
 import com.visualtasker.wss.workspace.model.ProjectResourceBridge
 import com.visualtasker.wss.workspace.model.definitionIdOrNull
 import com.visualtasker.wss.workspace.model.resourceIdOrNull
@@ -616,12 +621,14 @@ import de.visualtasker.flowchart.layout.FlowLayoutConfig
 import de.visualtasker.flowchart.layout.FlowPinnedNodePolicy
 import de.visualtasker.flowchart.serialization.FlowGraphJsonCodec
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -2378,6 +2385,89 @@ fun WorkspaceScreen(
     }
     fun redoProjectChange() {
         acceptProjectMutation(projectExplorerController.redo(projectDocument), "project-explorer:redo")
+    }
+    fun activateImportedProject(importedProject: ProjectDocument, importedAsCopy: Boolean) {
+        projectExplorerController.clearHistory()
+        projectSelections.clear()
+        projectDocument = importedProject
+        projectInventoryDiagnostics = emptyList()
+        projectExplorerUiState = ProjectExplorerUiState()
+        val activeDocument = importedProject.activeRoot()?.workspace
+            ?: WorkspaceDocument("workspace:package:${importedProject.id.value}")
+        replaceWorkflowState(
+            nextWorkflowState = WorkspaceWorkflowState.fromDocument(
+                document = activeDocument,
+                mutationSource = "project-package:import",
+                resources = ProjectResourceBridge.toWorkspaceBundle(importedProject),
+            ),
+            source = "project-package:import",
+            syncProject = false,
+        )
+        workspaceSelectionState = WorkspaceSelectionState()
+        val projectedSource = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
+        automaticDraftApplyGate.suppressNext(projectedSource)
+        emscriptSession = emscriptSession
+            .updateGeneratedFromBlocks(projectedSource)
+            .replaceManualContent(projectedSource)
+        emscriptEditorUiState.resetDocumentState(EmscriptEditorSession.MANUAL_TAB_ID)
+        emscriptFileManager.scripts["draft"] = projectedSource
+        projectExplorerDiagnostic = if (importedAsCopy) {
+            "Projektpaket als Kopie importiert: ${importedProject.manifest.name}"
+        } else {
+            "Projektpaket importiert: ${importedProject.manifest.name}"
+        }
+    }
+    fun projectPackageFailureMessage(result: ProjectPackageIoResult.Failed): String =
+        result.diagnostics.joinToString("; ") { diagnostic -> diagnostic.message }
+    fun importProjectPackage(uri: android.net.Uri, conflictMode: ProjectPackageConflictMode) {
+        val currentProject = projectDocument
+        coroutineScope.launch {
+            when (
+                val result = withContext(Dispatchers.IO) {
+                    ProjectPackageAndroidIO.importProject(
+                        context = context.applicationContext,
+                        uri = uri,
+                        currentProject = currentProject,
+                        conflictMode = conflictMode,
+                    )
+                }
+            ) {
+                is ProjectPackageIoResult.Imported -> activateImportedProject(result.project, result.importedAsCopy)
+                is ProjectPackageIoResult.Failed -> projectExplorerDiagnostic = projectPackageFailureMessage(result)
+                ProjectPackageIoResult.Cancelled -> projectExplorerDiagnostic = "Projektimport abgebrochen."
+                is ProjectPackageIoResult.Exported -> Unit
+            }
+        }
+    }
+    val exportProjectPackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(PROJECT_PACKAGE_MIME_TYPE),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val snapshot = projectDocument
+        coroutineScope.launch {
+            when (
+                val result = withContext(Dispatchers.IO) {
+                    ProjectPackageAndroidIO.exportProject(
+                        context = context.applicationContext,
+                        uri = uri,
+                        project = snapshot,
+                    )
+                }
+            ) {
+                is ProjectPackageIoResult.Exported -> {
+                    projectExplorerDiagnostic = "Projektpaket exportiert · ${result.byteCount} Bytes · ${result.fingerprint.take(12)}"
+                }
+                is ProjectPackageIoResult.Failed -> projectExplorerDiagnostic = projectPackageFailureMessage(result)
+                ProjectPackageIoResult.Cancelled -> projectExplorerDiagnostic = "Projektexport abgebrochen."
+                is ProjectPackageIoResult.Imported -> Unit
+            }
+        }
+    }
+    val importProjectPackageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { importProjectPackage(it, ProjectPackageConflictMode.Abort) }
+    }
+    val importProjectPackageAsCopyLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { importProjectPackage(it, ProjectPackageConflictMode.ImportAsCopy) }
     }
     val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
         BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_ENTER", "source=$source")
@@ -4792,6 +4882,24 @@ fun WorkspaceScreen(
                             },
                             onUndo = ::undoProjectChange,
                             onRedo = ::redoProjectChange,
+                            onExportProject = {
+                                val name = projectDocument.manifest.name
+                                    .lowercase(Locale.ROOT)
+                                    .replace(Regex("[^a-z0-9._-]+"), "-")
+                                    .trim('-')
+                                    .ifBlank { "visualtasker-project" }
+                                exportProjectPackageLauncher.launch("$name.$PROJECT_PACKAGE_EXTENSION")
+                            },
+                            onImportProject = {
+                                importProjectPackageLauncher.launch(
+                                    arrayOf(PROJECT_PACKAGE_MIME_TYPE, "application/zip", "application/octet-stream"),
+                                )
+                            },
+                            onImportProjectAsCopy = {
+                                importProjectPackageAsCopyLauncher.launch(
+                                    arrayOf(PROJECT_PACKAGE_MIME_TYPE, "application/zip", "application/octet-stream"),
+                                )
+                            },
                         ),
                         steps = projectedSteps,
                         actionSink = bridge,
@@ -5598,6 +5706,9 @@ private fun WorkspacePanelContent(
             onOpenRoot = projectExplorer.onOpenRoot,
             onUndo = projectExplorer.onUndo,
             onRedo = projectExplorer.onRedo,
+            onExportProject = projectExplorer.onExportProject,
+            onImportProject = projectExplorer.onImportProject,
+            onImportProjectAsCopy = projectExplorer.onImportProjectAsCopy,
         )
         PanelType.RecorderSteps -> RecorderStepsPanel(
             steps = steps,

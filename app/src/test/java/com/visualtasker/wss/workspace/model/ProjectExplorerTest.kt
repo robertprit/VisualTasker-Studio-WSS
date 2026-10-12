@@ -246,6 +246,20 @@ class ProjectExplorerTest {
     }
 
     @Test
+    fun projectActivationClearsUndoAndRedoHistory() {
+        val controller = ProjectExplorerController()
+        val original = project()
+        val changed = success(controller.execute(original, ProjectOperation.RenameRoot(op("rename-before-import"), ROOT_A, "Changed")))
+        assertTrue(controller.canUndo)
+
+        controller.clearHistory()
+
+        assertFalse(controller.canUndo)
+        assertFalse(controller.canRedo)
+        assertEquals(ProjectExplorerDiagnosticCode.NothingToUndo, rejected(controller.undo(changed)).diagnostic.code)
+    }
+
+    @Test
     fun uiStateDefaultsExposeRealCategoriesAndNoFakeItems() {
         val state = ProjectExplorerUiState()
 

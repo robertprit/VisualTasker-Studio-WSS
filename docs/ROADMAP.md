@@ -47,7 +47,7 @@ Teilimplementierungen, isolierte Contracts und reine Planung.
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H sind DONE; Runtime-Closure fehlt. Kontrollfluss ist kein 1.0-Core-Blocker. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W WindowSession-Vertrag und Hostadapter implementiert; reale Geraete-UX-Abnahme und Editor-Produktgates folgen. |
 | M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-Kontext und M7-1 kontrolliertes Recorder-to-Workflow-Publishing produktiv; OCR/OpenCV-Live-Provider und Perception-Closure folgen. |
-| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-2 verbinden Projektvertrag, nativen Explorer sowie reale Ressourcen-/Variablenbestaende; Provider, Portabilitaet und Asset-Lifecycle folgen. |
+| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-3 verbinden Projektvertrag, Explorer, reale Bestaende und portable `.vtpkg`-Pakete; Runtime-Provider und weitergehender Asset-Lifecycle folgen. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Provider-Grenzen sind noch festzulegen. |
 | M10 Release Hardening | PLANNED | Beginnt nach den freigegebenen Produkt-Slices und dem Feature-Freeze. |
 
@@ -457,6 +457,10 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 - [x] M8-2: Bestehende Images, Screenshots, Templates, Points, Regions, Paths und Shapes einmalig in `ProjectDocument` uebernehmen und produktive Mutationen ueber atomare `ProjectOperation`s fuehren.
 - [x] M8-2: Local-/Script-Deklarationen root-lokal halten, Project-/AppShared-Deklarationen projektweit anbinden und nicht implementierte Runtime-/External-Provider als GAP diagnostizieren.
 - [x] M8-2: Explizite Resource-/Variable-Referenzen, Where-used, Delete-Guards, Save/Reload und Undo/Redo auf reale Bestaende anwenden.
+- [x] M8-3: Versionierte `.vtpkg`-Projektpakete mit ProjectSerializer-Snapshot, portablem Asset-Manifest und stabilen Inhalts-Fingerprints einfuehren.
+- [x] M8-3: ProjectLocal-/Embedded-Assets hashen und relokieren; AppShared-, External- und fluechtige Capture-Abhaengigkeiten explizit deklarieren.
+- [x] M8-3: Bounded Preflight, Traversal-/ZIP-Bomb-Schutz, isoliertes Staging, Konflikt/Kopie und atomaren Import-Rollback absichern.
+- [ ] M8-3 Device-Gate: SAF Export/Import nur mit einem ausdruecklich freigegebenen isolierten Testprojekt abnehmen.
 
 - [ ] Screenshot Panel Funktionen in Canvas/Vision/Marker sauber aufteilen.
 - [ ] Inspector-Funktionen in Inspector/Debug/Datastore trennen.

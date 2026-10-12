@@ -24,6 +24,9 @@ class ProjectWorkspaceStore(context: Context) {
         prefs.edit().putString(PROJECT_KEY, ProjectSerializer.serialize(project)).apply()
     }
 
+    fun saveProjectAtomically(project: ProjectDocument): Boolean =
+        prefs.edit().putString(PROJECT_KEY, ProjectSerializer.serialize(project)).commit()
+
     fun loadExplorerState(): ProjectExplorerUiState {
         val raw = prefs.getString(EXPLORER_STATE_KEY, null) ?: return ProjectExplorerUiState()
         return runCatching {

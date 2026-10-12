@@ -336,6 +336,8 @@ class ProjectExplorerController(
         ?.let { ProjectExplorerMutationResult.Success(it.project) }
         ?: ProjectExplorerMutationResult.Rejected(project, ProjectExplorerDiagnostic(ProjectExplorerDiagnosticCode.NothingToRedo, "No project change to redo."))
 
+    fun clearHistory() = history.clear()
+
     private fun guard(
         operation: ProjectOperation,
         context: ProjectExplorerMutationContext,

@@ -139,15 +139,15 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M7-0: 62 `IMPLEMENTED`, 46
 
 | ID | Status | Produktpfad | Nachweis | Abhaengigkeit / Release |
 | --- | --- | --- | --- | --- |
-| D-01 | IMPLEMENTED | ja | `ProjectDocument`, `ProjectSerializer`, nativer `ProjectExplorerPanel`, `ProjectWorkspaceStore` | Paketformat folgt in M8-9 |
-| D-02 | IMPLEMENTED | ja | Typisierte ProjectResources, M8-2 Bestandsintegration, exakte Payload-Projektion, Referenzen, Where-Used und Delete-Guard | Physischer Asset-Lifecycle in M8-6 erweitern |
+| D-01 | IMPLEMENTED | ja | `ProjectDocument`, `ProjectSerializer`, nativer `ProjectExplorerPanel`, `ProjectWorkspaceStore`, `.vtpkg`-Paketvertrag | Mehrprojekt-Katalog/Backup in M8-9 |
+| D-02 | IMPLEMENTED | ja | Typisierte ProjectResources, M8-2-Bestand, M8-3 Hash/Relocation/Release-Guard, Referenzen, Where-Used und Delete-Guard | Automatische GC bewusst nicht implementiert |
 | D-03 | PARTIAL | ja | M8-2 bindet Screenshot-/Marker-/Template-Bestaende an; Vision-/Recorder-Observations bleiben abgeleitete Worldview-Daten | M8-6 |
 | D-04 | PARTIAL | ja | VisualAsset Catalog/Package/Inbox/Runtime | M8-6 |
 | D-05 | IMPLEMENTED | ja | `LegacyStudioResourceImporter/Mapper` plus Tests | Migration-Gate |
 | D-06 | PARTIAL | ja | `ToolboxSetMode` und VisualAsset-UI | M8-6 |
 | D-07 | IMPLEMENTED | ja | WSS Drag contracts, effects, Compose-DnD adapter | M8-7 erweitern |
 | D-08 | PARTIAL | ja | M8-1 Explorer plus M8-2 Scope-Trennung, reale Where-used-Referenzen und Provider-GAP-Diagnosen | Runtime-/Storage-Provider M8-4/M8-5 |
-| D-09 | PARTIAL | teil | ProjectSerializer erhaelt M8-2 Resource-Payloads; Paketexport, Relocation und Restore fehlen | M8-9/M10-3 |
+| D-09 | IMPLEMENTED | ja | M8-3 `.vtpkg`, deterministischer Export, sicherer Preflight, Relokation, Konflikt/Kopie und atomarer Import | Device-SAF-Gate und Backup/Restore M10-3 |
 | D-10 | PARTIAL | teil | Worldview Contracts/Unifier/Panel Projections | kein dynamisches World Model |
 | D-11 | PARTIAL | teil | `ReadOnlyKnowledgeIndex.kt`, RAG Architekturdoc | read-only, post-1.0 Ausbau |
 | D-12 | DEFERRED | - | Release Plan Erweiterungen | post-1.0 |
@@ -260,6 +260,6 @@ Ueberlappende Abhaengigkeiten stehen weiterhin in den Einzelzeilen.
 - M5-7 belegt semantisches `clickText`; allgemeines `clickElement` und OCR-Zielaufloesung fuer reale
   Kernworkflows bleiben offen.
 - Kein durchgaengiger Record -> Review -> Proposal -> explizite Workflow-Publikation -> WetRun-Test.
-- Kein abgeschlossenes Projektformat fuer Explorer, Scopes, Asset-Lifecycle und Portabilitaet.
+- Portable `.vtpkg`-Pakete sind implementiert; Mehrprojekt-Katalog, automatische Asset-GC und ein freigegebener realer SAF-Restore-Test stehen noch aus.
 - Keine vollstaendige Device-/Android-Versionen-, Langlauf-, Permission-, Privacy- und Security-Matrix.
 - Kein signierter, reproduzierbarer Release-Candidate-Nachweis.

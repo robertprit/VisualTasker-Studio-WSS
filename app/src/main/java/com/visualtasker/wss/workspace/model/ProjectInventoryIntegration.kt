@@ -115,6 +115,14 @@ object ProjectResourceBridge {
 
     fun isInline(resource: ProjectResource): Boolean = resource.location.startsWith(INLINE_LOCATION_PREFIX)
 
+    fun resolveInlineAsset(resource: ProjectResource): ResolvedProjectAsset? =
+        resource.metadata[RESOURCE_PAYLOAD_KEY]?.let { payload ->
+            ResolvedProjectAsset(
+                bytes = payload.toByteArray(Charsets.UTF_8),
+                mimeType = "application/vnd.visualtasker.workspace-resource+json",
+            )
+        }
+
     private fun isExternalLocation(value: String): Boolean =
         value.startsWith("/") ||
             value.startsWith("file:") ||

@@ -25,16 +25,22 @@ import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +86,9 @@ internal data class ProjectExplorerPanelBindings(
     val onOpenRoot: (WorkflowRootId, PanelType) -> Unit,
     val onUndo: () -> Unit,
     val onRedo: () -> Unit,
+    val onExportProject: () -> Unit,
+    val onImportProject: () -> Unit,
+    val onImportProjectAsCopy: () -> Unit,
 )
 
 @Composable
@@ -96,8 +105,12 @@ internal fun ProjectExplorerPanel(
     onOpenRoot: (WorkflowRootId, PanelType) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onExportProject: () -> Unit,
+    onImportProject: () -> Unit,
+    onImportProjectAsCopy: () -> Unit,
 ) {
     var dialog by remember { mutableStateOf<ProjectExplorerDialog?>(null) }
+    var packageMenuExpanded by remember { mutableStateOf(false) }
     val selected = projection.item(uiState.selectedItemKey)
     val query = uiState.searchQuery.trim()
     val visibleSections = projection.sections.mapNotNull { section ->
@@ -124,6 +137,31 @@ internal fun ProjectExplorerPanel(
             }
             IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.semantics { contentDescription = "Projektänderung wiederholen" }) {
                 Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = null)
+            }
+            Box {
+                IconButton(
+                    onClick = { packageMenuExpanded = true },
+                    modifier = Modifier.semantics { contentDescription = "Projektpaket-Aktionen" },
+                ) {
+                    Icon(Icons.Default.MoreVert, contentDescription = null)
+                }
+                DropdownMenu(expanded = packageMenuExpanded, onDismissRequest = { packageMenuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Exportieren") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                        onClick = { packageMenuExpanded = false; onExportProject() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Importieren") },
+                        leadingIcon = { Icon(Icons.Default.UploadFile, contentDescription = null) },
+                        onClick = { packageMenuExpanded = false; onImportProject() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Als Kopie importieren") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                        onClick = { packageMenuExpanded = false; onImportProjectAsCopy() },
+                    )
+                }
             }
             FilledTonalIconButton(onClick = { dialog = ProjectExplorerDialog.CreateRoot }, modifier = Modifier.semantics { contentDescription = "Workflow anlegen" }) {
                 Icon(Icons.Default.Add, contentDescription = null)
