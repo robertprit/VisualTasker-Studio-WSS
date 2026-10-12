@@ -20,6 +20,9 @@ data class ExecutionRequest(
     val entryPointEntityId: String? = null,
     val initialVariables: Map<String, ExecutionValue> = emptyMap(),
     val providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
+    val projectId: String? = null,
+    val workflowRootId: String? = null,
+    val projectRevision: Long? = null,
 )
 
 data class ExecutionPlan(
@@ -29,6 +32,9 @@ data class ExecutionPlan(
     val entryPointEntityId: String,
     val steps: List<ExecutionStep>,
     val requiredCapabilities: Set<ExecutionCapability>,
+    val projectId: String? = null,
+    val workflowRootId: String? = null,
+    val projectRevision: Long? = null,
 )
 
 data class ExecutionContext(

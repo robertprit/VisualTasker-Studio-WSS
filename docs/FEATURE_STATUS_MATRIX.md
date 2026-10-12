@@ -139,8 +139,8 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M7-0: 62 `IMPLEMENTED`, 46
 
 | ID | Status | Produktpfad | Nachweis | Abhaengigkeit / Release |
 | --- | --- | --- | --- | --- |
-| D-01 | IMPLEMENTED | ja | `WorkspaceSessionStore.kt` | Projektformat M8-0 erweitern |
-| D-02 | PARTIAL | ja | Datastore Panel und Domain-/Resource-Projektoren | M8-0 |
+| D-01 | IMPLEMENTED | ja | `WorkspaceSessionStore.kt`, `ProjectDocument`, `ProjectSerializer` | Projekt-Explorer und Paketformat folgen |
+| D-02 | IMPLEMENTED | ja | Typisierte ProjectResources, Referenzen, Where-Used, Delete-Guard und Codec | Asset-Paket/Lifecycle in M8-6 erweitern |
 | D-03 | PARTIAL | ja | WorkspaceResources, Marker/Vision/Recorder Projektionen | M8-6 |
 | D-04 | PARTIAL | ja | VisualAsset Catalog/Package/Inbox/Runtime | M8-6 |
 | D-05 | IMPLEMENTED | ja | `LegacyStudioResourceImporter/Mapper` plus Tests | Migration-Gate |

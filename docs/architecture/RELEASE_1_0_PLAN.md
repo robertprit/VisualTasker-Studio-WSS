@@ -125,11 +125,11 @@ und Confidence nicht vernichten.
 
 ## M8 Resources, Data Hub Und Workspace Explorer
 
-Gesamtstatus: `PLANNED`
+Gesamtstatus: `IN_PROGRESS`
 
 | Slice | Status | Ziel |
 | --- | --- | --- |
-| M8-0 | PLANNED | Ressourcen-, Scope-, Eigentums- und Persistenzvertraege. |
+| M8-0 | DONE | Kanonischer Projekt-, Multi-Root-, Scope-, Ressourcen-, Persistenz-, Runtime- und Recorder-Vertrag. |
 | M8-1 | PLANNED | Workspace Explorer fuer Workflows, Scripts, Funktionen und Ressourcen. |
 | M8-2 | PLANNED | Mehrere Workflow-Roots und referenzierte Subworkflows. |
 | M8-3 | PLANNED | Funktionsbibliothek mit stabilen IDs und Call-Referenzen. |
@@ -140,8 +140,10 @@ Gesamtstatus: `PLANNED`
 | M8-8 | PLANNED | Where-Used, Rename, Delete Guards und Resource Lifecycle. |
 | M8-9 | PLANNED | Import/Export, Migration und Projektportabilitaet. |
 
-Vorhandene Datastore-, VisualAsset-, DnD- und Worldview-Vorarbeiten werden in M8-0 inventarisiert
-und wiederverwendet. Es wird kein paralleler Resource Manager oder zweites Projektmodell gebaut.
+M8-0 fuehrt `ProjectDocument` als Eigentums- und Referenzgrenze ueber den vorhandenen
+`WorkspaceDocument` ein. WorkflowGraph, WorkspaceOperations und Editorprojektionen bleiben
+kanonisch; es wurde weder ein paralleler Resource Manager noch ein zweites Workflow-Modell gebaut.
+Explorer, Funktionsruntime und portable Asset-Pakete bleiben Folgeslices.
 
 ## M9 Integrationen, VT2VT Und Erweiterbarkeit
 

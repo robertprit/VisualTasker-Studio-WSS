@@ -22,6 +22,9 @@ class AndroidExecutionSessionStore(context: Context) : ExecutionSessionCheckpoin
                 lastProviderId = json.optStringOrNull("lastProviderId"),
                 cancellationReason = json.optStringOrNull("cancellationReason")
                     ?.let(ExecutionCancellationReason::valueOf),
+                projectId = json.optStringOrNull("projectId"),
+                workflowRootId = json.optStringOrNull("workflowRootId"),
+                projectRevision = json.optLongOrNull("projectRevision"),
             )
         }.getOrNull()
     }
@@ -39,6 +42,9 @@ class AndroidExecutionSessionStore(context: Context) : ExecutionSessionCheckpoin
         checkpoint.lastEntityId?.let { json.put("lastEntityId", it) }
         checkpoint.lastProviderId?.let { json.put("lastProviderId", it) }
         checkpoint.cancellationReason?.let { json.put("cancellationReason", it.name) }
+        checkpoint.projectId?.let { json.put("projectId", it) }
+        checkpoint.workflowRootId?.let { json.put("workflowRootId", it) }
+        checkpoint.projectRevision?.let { json.put("projectRevision", it) }
         preferences.edit().putString(KEY_CHECKPOINT, json.toString()).apply()
     }
 
@@ -50,6 +56,6 @@ class AndroidExecutionSessionStore(context: Context) : ExecutionSessionCheckpoin
     private companion object {
         const val PREFS_NAME = "execution_session_checkpoint"
         const val KEY_CHECKPOINT = "latest"
-        const val CHECKPOINT_SCHEMA = 1
+        const val CHECKPOINT_SCHEMA = 2
     }
 }

@@ -20,6 +20,9 @@ class RuntimeClient(
         workspaceRevision: Long,
         entryPointEntityId: String? = null,
         providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
+        projectId: String? = null,
+        workflowRootId: String? = null,
+        projectRevision: Long? = null,
     ): Boolean {
         val sessionId = host.reserve(
             document = document,
@@ -27,6 +30,9 @@ class RuntimeClient(
             workspaceRevision = workspaceRevision,
             entryPointEntityId = entryPointEntityId,
             providerPolicies = providerPolicies,
+            projectId = projectId,
+            workflowRootId = workflowRootId,
+            projectRevision = projectRevision,
         ) ?: return false
         val intent = HeadlessRuntimeService.startIntent(appContext, sessionId)
         return runCatching {

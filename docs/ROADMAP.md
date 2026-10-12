@@ -445,6 +445,16 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 
 ### M8: Alte Studio-Funktionen Modular Uebernehmen
 
+- [x] M8-0: Kanonischen ProjectDocument-Vertrag mit stabilen IDs und Revisionen einfuehren.
+- [x] M8-0: Mehrere unabhaengige Workflow-Roots ohne Graph-Merging verwalten.
+- [x] M8-0: Definitionen, Variablen-Scopes, typisierte Ressourcen und Referenzintegritaet festlegen.
+- [x] M8-0: Atomare ProjectOperations, Rollback sowie Undo/Redo bereitstellen.
+- [x] M8-0: Deterministischen Projekt-Serializer und idempotente Single-Root-Migration liefern.
+- [x] M8-0: Aktiven Root in Text-, Block- und Flow-Projektionen gemeinsam oeffnen.
+- [x] M8-0: Runtime- und Headless-Sessions explizit an ProjectId und WorkflowRootId binden.
+- [x] M8-0: Recorder-Publishing rootgenau und revisionsgesichert integrieren.
+- [ ] M8-1: Projekt-Explorer auf dem M8-0-Vertrag aufbauen.
+
 - [ ] Screenshot Panel Funktionen in Canvas/Vision/Marker sauber aufteilen.
 - [ ] Inspector-Funktionen in Inspector/Debug/Datastore trennen.
 - [ ] Template-Hilfsfunktionen als Codegenerator-/Vision-Komponenten uebernehmen.

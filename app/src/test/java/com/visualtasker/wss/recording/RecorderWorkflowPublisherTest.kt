@@ -10,6 +10,12 @@ import com.visualtasker.wss.workspace.model.WorkspaceShellHistoryController
 import com.visualtasker.wss.workspace.model.WorkspaceWorkflowState
 import de.visualtasker.blockeditor.emscript.EmscriptGenerator
 import de.visualtasker.workflow.core.SemanticEntityKind
+import de.visualtasker.workflow.core.ProjectDocument
+import de.visualtasker.workflow.core.ProjectId
+import de.visualtasker.workflow.core.ProjectManifest
+import de.visualtasker.workflow.core.ProjectRevision
+import de.visualtasker.workflow.core.ProjectWorkflowRoot
+import de.visualtasker.workflow.core.WorkflowRootId
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 import org.junit.Assert.assertEquals
@@ -379,6 +385,74 @@ class RecorderWorkflowPublisherTest {
 
         assertFalse(preview.canPublish)
         assertTrue(preview.diagnostics.any { it.code == "PUBLISH_WORKFLOW_NOT_FOUND" })
+    }
+
+    @Test
+    fun projectPublishTargetsOneExplicitRootAndLeavesOtherRootUntouched() {
+        val fixture = fixture(step(CandidateAction.TAP, a11y("Login")))
+        val rootA = WorkflowRootId("root:a")
+        val rootB = WorkflowRootId("root:b")
+        val untouched = import("wait(9)", "workspace-b")
+        val project = ProjectDocument(
+            id = ProjectId("project:recorder"),
+            revision = ProjectRevision(4),
+            manifest = ProjectManifest("Recorder", rootA),
+            roots = mapOf(
+                rootA to ProjectWorkflowRoot(rootA, "A", fixture.current),
+                rootB to ProjectWorkflowRoot(rootB, "B", untouched),
+            ),
+        )
+        val request = fixture.request.copy(
+            targetProjectId = project.id.value,
+            targetProjectRevision = project.revision.value,
+            targetWorkflowRootId = rootA.value,
+        )
+        val projectPublisher = RecorderProjectWorkflowPublisher(publisher)
+        val preview = projectPublisher.preview(request, fixture.candidates, fixture.reviewed, project)
+        val result = projectPublisher.apply(request.confirm(preview.workspacePreview), preview, project)
+
+        assertTrue(result.toString(), result is RecorderProjectPublishResult.Success)
+        result as RecorderProjectPublishResult.Success
+        assertTrue(source(result.project.roots.getValue(rootA).workspace).contains("Login"))
+        assertEquals(untouched, result.project.roots.getValue(rootB).workspace)
+        assertEquals("A", preview.rootName)
+    }
+
+    @Test
+    fun staleProjectRevisionBlocksRecorderPublishWithoutMutation() {
+        val fixture = fixture(step(CandidateAction.TAP, a11y("Login")))
+        val root = WorkflowRootId("root:a")
+        val project = ProjectDocument(
+            id = ProjectId("project:recorder"),
+            revision = ProjectRevision(4),
+            manifest = ProjectManifest("Recorder", root),
+            roots = mapOf(root to ProjectWorkflowRoot(root, "A", fixture.current)),
+        )
+        val request = fixture.request.copy(targetProjectId = project.id.value, targetProjectRevision = 3, targetWorkflowRootId = root.value)
+
+        val preview = RecorderProjectWorkflowPublisher(publisher).preview(request, fixture.candidates, fixture.reviewed, project)
+
+        assertFalse(preview.canPublish)
+        assertTrue(preview.diagnostics.any { it.code == "PUBLISH_PROJECT_REVISION_CONFLICT" })
+        assertEquals(fixture.current, project.roots.getValue(root).workspace)
+    }
+
+    @Test
+    fun missingProjectRootProducesTypedRecorderDiagnostic() {
+        val fixture = fixture(step(CandidateAction.TAP, a11y("Login")))
+        val root = WorkflowRootId("root:a")
+        val project = ProjectDocument(
+            id = ProjectId("project:recorder"),
+            revision = ProjectRevision(1),
+            manifest = ProjectManifest("Recorder", root),
+            roots = mapOf(root to ProjectWorkflowRoot(root, "A", fixture.current)),
+        )
+        val request = fixture.request.copy(targetProjectId = project.id.value, targetProjectRevision = 1, targetWorkflowRootId = "root:missing")
+
+        val preview = RecorderProjectWorkflowPublisher(publisher).preview(request, fixture.candidates, fixture.reviewed, project)
+
+        assertFalse(preview.canPublish)
+        assertTrue(preview.diagnostics.any { it.code == "PUBLISH_PROJECT_ROOT_NOT_FOUND" })
     }
 
     private fun fixture(

@@ -33,6 +33,9 @@ data class ExecutionSessionRequest(
     val entryPointEntityId: String? = null,
     val initialVariables: Map<String, ExecutionValue> = emptyMap(),
     val providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
+    val projectId: String? = null,
+    val workflowRootId: String? = null,
+    val projectRevision: Long? = null,
 )
 
 data class ExecutionSessionSnapshot(
@@ -48,6 +51,9 @@ data class ExecutionSessionSnapshot(
     val result: ExecutionResult? = null,
     val cancellationReason: ExecutionCancellationReason? = null,
     val recoveredAfterProcessLoss: Boolean = false,
+    val projectId: String? = null,
+    val workflowRootId: String? = null,
+    val projectRevision: Long? = null,
 ) {
     val isActive: Boolean
         get() = state in setOf(
@@ -72,6 +78,9 @@ data class ExecutionSessionCheckpoint(
     val lastEntityId: String?,
     val lastProviderId: String?,
     val cancellationReason: ExecutionCancellationReason?,
+    val projectId: String? = null,
+    val workflowRootId: String? = null,
+    val projectRevision: Long? = null,
 )
 
 interface ExecutionSessionCheckpointStore {
@@ -90,6 +99,9 @@ internal fun ExecutionSessionSnapshot.toCheckpoint(): ExecutionSessionCheckpoint
     lastEntityId = activeEntityId,
     lastProviderId = trace.lastOrNull { it.providerId != null }?.providerId,
     cancellationReason = cancellationReason,
+    projectId = projectId,
+    workflowRootId = workflowRootId,
+    projectRevision = projectRevision,
 )
 
 internal fun ExecutionSessionState.requireTransitionTo(next: ExecutionSessionState) {

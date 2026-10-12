@@ -241,6 +241,30 @@ class ExecutionSessionManagerTest {
         assertTrue(failure is IllegalArgumentException)
     }
 
+    @Test
+    fun headlessSessionRetainsProjectAndRootBinding() {
+        val fixture = fixture("wait(1)")
+        val sessionId = requireNotNull(
+            fixture.manager.start(
+                workflowId = "root:main",
+                workspaceRevision = fixture.document.version,
+                document = fixture.document,
+                projectId = "project:demo",
+                workflowRootId = "root:main",
+                projectRevision = 12L,
+            ),
+        )
+        val completed = fixture.awaitTerminal()
+
+        assertEquals(sessionId, completed.sessionId)
+        assertEquals("project:demo", completed.projectId)
+        assertEquals("root:main", completed.workflowRootId)
+        assertEquals(12L, completed.projectRevision)
+        assertEquals("project:demo", completed.executionPlan?.projectId)
+        assertEquals("root:main", completed.executionPlan?.workflowRootId)
+        fixture.close()
+    }
+
     private fun fixture(script: String): Fixture {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val provider = AndroidWaitExecutionProvider()

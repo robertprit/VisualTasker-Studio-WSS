@@ -35,6 +35,9 @@ data class RecorderPublishRequest(
     val expectedWorkspaceRevision: Long,
     val allowPartial: Boolean = false,
     val confirmation: RecorderPublishConfirmation? = null,
+    val targetProjectId: String? = null,
+    val targetProjectRevision: Long? = null,
+    val targetWorkflowRootId: String? = null,
 )
 
 enum class RecorderPublishDiagnosticSeverity { INFO, WARNING, ERROR }
@@ -134,6 +137,9 @@ class RecorderWorkflowPublisher(
             append(request.targetWorkflowEntityId).append('|')
             append(request.targetRootEntityId).append('|')
             append(request.expectedWorkspaceRevision).append('|')
+            append(request.targetProjectId).append('|')
+            append(request.targetProjectRevision).append('|')
+            append(request.targetWorkflowRootId).append('|')
             provisionalMappings.forEach { append(it.sourceCandidateId).append(':').append(it.commandSource).append('|') }
         }
         val token = "recorder-publish:${tokenSeed.sha256(32)}"

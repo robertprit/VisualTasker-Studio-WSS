@@ -81,6 +81,9 @@ class WorkflowExecutionPlanner(
                     entryPointEntityId = entry.value,
                     steps = steps,
                     requiredCapabilities = collectCapabilities(steps),
+                    projectId = request.projectId,
+                    workflowRootId = request.workflowRootId,
+                    projectRevision = request.projectRevision,
                 ),
             )
         }.getOrElse { error ->

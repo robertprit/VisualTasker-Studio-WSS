@@ -40,6 +40,9 @@ class ExecutionSessionManager(
         entryPointEntityId: String? = null,
         initialVariables: Map<String, ExecutionValue> = emptyMap(),
         providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
+        projectId: String? = null,
+        workflowRootId: String? = null,
+        projectRevision: Long? = null,
     ): ExecutionSessionId? = synchronized(lock) {
         if (mutableCurrentSession.value?.isActive == true || reservedRequest != null) return null
         val sessionId = ExecutionSessionId(sessionIdFactory())
@@ -51,6 +54,9 @@ class ExecutionSessionManager(
             entryPointEntityId = entryPointEntityId,
             initialVariables = initialVariables,
             providerPolicies = providerPolicies,
+            projectId = projectId,
+            workflowRootId = workflowRootId,
+            projectRevision = projectRevision,
         )
         reservedRequest = request
         publish(
@@ -60,6 +66,9 @@ class ExecutionSessionManager(
                 workspaceRevision = workspaceRevision,
                 state = ExecutionSessionState.CREATED,
                 providerPolicies = providerPolicies,
+                projectId = projectId,
+                workflowRootId = workflowRootId,
+                projectRevision = projectRevision,
             ),
         )
         sessionId
@@ -87,6 +96,9 @@ class ExecutionSessionManager(
         entryPointEntityId: String? = null,
         initialVariables: Map<String, ExecutionValue> = emptyMap(),
         providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
+        projectId: String? = null,
+        workflowRootId: String? = null,
+        projectRevision: Long? = null,
     ): ExecutionSessionId? {
         val sessionId = reserve(
             workflowId,
@@ -95,6 +107,9 @@ class ExecutionSessionManager(
             entryPointEntityId,
             initialVariables,
             providerPolicies,
+            projectId,
+            workflowRootId,
+            projectRevision,
         ) ?: return null
         return sessionId.takeIf(::startReserved)
     }
@@ -140,6 +155,9 @@ class ExecutionSessionManager(
             entryPointEntityId = request.entryPointEntityId,
             initialVariables = request.initialVariables,
             providerPolicies = request.providerPolicies,
+            projectId = request.projectId,
+            workflowRootId = request.workflowRootId,
+            projectRevision = request.projectRevision,
         )
         val plan = when (val planned = planner.plan(runtimeRequest)) {
             is ExecutionPlanResult.Ready -> planned.plan
@@ -297,6 +315,9 @@ class ExecutionSessionManager(
                 result = result,
                 cancellationReason = ExecutionCancellationReason.PROCESS_LOSS,
                 recoveredAfterProcessLoss = true,
+                projectId = checkpoint.projectId,
+                workflowRootId = checkpoint.workflowRootId,
+                projectRevision = checkpoint.projectRevision,
             ),
         )
     }

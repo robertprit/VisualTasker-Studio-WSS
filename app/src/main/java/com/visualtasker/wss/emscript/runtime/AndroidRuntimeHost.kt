@@ -18,12 +18,18 @@ class AndroidRuntimeHost(
         workspaceRevision: Long,
         entryPointEntityId: String? = null,
         providerPolicies: Map<ExecutionCapability, ProviderSelectionPolicy> = emptyMap(),
+        projectId: String? = null,
+        workflowRootId: String? = null,
+        projectRevision: Long? = null,
     ): ExecutionSessionId? = sessions.reserve(
         workflowId = workflowId,
         workspaceRevision = workspaceRevision,
         document = document,
         entryPointEntityId = entryPointEntityId,
         providerPolicies = providerPolicies,
+        projectId = projectId,
+        workflowRootId = workflowRootId,
+        projectRevision = projectRevision,
     )
 
     fun startReserved(sessionId: ExecutionSessionId): Boolean = sessions.startReserved(sessionId)
