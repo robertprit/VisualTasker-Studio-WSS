@@ -87,6 +87,7 @@ internal val supportedWorkspacePanelTypes: Set<PanelType> = setOf(
     PanelType.Marker,
     PanelType.Vision,
     PanelType.Datastore,
+    PanelType.ProjectExplorer,
     PanelType.M3Director,
     PanelType.ChartGraph,
     PanelType.RuntimeLog,
@@ -108,6 +109,7 @@ internal fun defaultAccentForPanelType(type: PanelType): androidx.compose.ui.gra
     PanelType.Marker -> androidx.compose.ui.graphics.Color(0xFFFF5DA2)
     PanelType.Vision -> androidx.compose.ui.graphics.Color(0xFF21E6C1)
     PanelType.Datastore -> androidx.compose.ui.graphics.Color(0xFF8BC34A)
+    PanelType.ProjectExplorer -> androidx.compose.ui.graphics.Color(0xFF4DB6AC)
     PanelType.Emscript -> androidx.compose.ui.graphics.Color(0xFFFFB74D)
     PanelType.M3Director -> androidx.compose.ui.graphics.Color(0xFF6C5CE7)
     PanelType.ChartGraph -> androidx.compose.ui.graphics.Color(0xFF26A69A)

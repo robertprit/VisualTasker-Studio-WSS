@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Release 1.0 Plan
 
-Stand: 2026-10-11
+Stand: 2026-10-12
 
 ## Zweck Und Autoritaet
 
@@ -31,7 +31,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H `DONE`; Runtime-Closure fehlt. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W Vertrag/Hosts implementiert; Geraete-UX und weitere Editor-Produktgates offen. |
 | M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-/Observation-Vertrag und M7-1 Recorder-Publishing implementiert; OCR/OpenCV-Live-Provider und Closure sind offen. |
-| M8 Resources, Data Hub und Workspace Explorer | PLANNED | Datastore-/Asset-Vorarbeiten vorhanden; gemeinsame Scope- und Lifecycle-Abnahme fehlt. |
+| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 Projektvertrag und M8-1 nativer Explorer sind implementiert; Portabilitaet und Asset-Lifecycle folgen. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Sicherheitsgate fehlen. |
 | M10 Release Hardening | PLANNED | Noch kein Feature-Freeze und kein vollstaendiges Release-Gate. |
 
@@ -130,7 +130,7 @@ Gesamtstatus: `IN_PROGRESS`
 | Slice | Status | Ziel |
 | --- | --- | --- |
 | M8-0 | DONE | Kanonischer Projekt-, Multi-Root-, Scope-, Ressourcen-, Persistenz-, Runtime- und Recorder-Vertrag. |
-| M8-1 | PLANNED | Workspace Explorer fuer Workflows, Scripts, Funktionen und Ressourcen. |
+| M8-1 | DONE | Nativer Project Explorer fuer Roots, Definitionen, Variablen und Ressourcen mit ProjectOperations, Guards, History und Persistenz. |
 | M8-2 | PLANNED | Mehrere Workflow-Roots und referenzierte Subworkflows. |
 | M8-3 | PLANNED | Funktionsbibliothek mit stabilen IDs und Call-Referenzen. |
 | M8-4 | PLANNED | Local-, Script-, Project-, App-Shared- und External-Scopes. |
@@ -143,7 +143,8 @@ Gesamtstatus: `IN_PROGRESS`
 M8-0 fuehrt `ProjectDocument` als Eigentums- und Referenzgrenze ueber den vorhandenen
 `WorkspaceDocument` ein. WorkflowGraph, WorkspaceOperations und Editorprojektionen bleiben
 kanonisch; es wurde weder ein paralleler Resource Manager noch ein zweites Workflow-Modell gebaut.
-Explorer, Funktionsruntime und portable Asset-Pakete bleiben Folgeslices.
+Funktionsruntime und portable Asset-Pakete bleiben Folgeslices. Der M8-1 Explorer ist die native
+Bedienprojektion dieses Vertrags und fuehrt keine zweite Projektwahrheit ein.
 
 ## M9 Integrationen, VT2VT Und Erweiterbarkeit
 

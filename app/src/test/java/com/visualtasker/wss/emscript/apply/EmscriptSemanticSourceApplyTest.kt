@@ -345,6 +345,17 @@ class EmscriptSemanticSourceApplyTest {
         assertFalse(gate.shouldApply(""))
     }
 
+    @Test
+    fun automaticDraftGateSkipsProgrammaticRootSwitchButAllowsLaterEdit() {
+        val gate = EmscriptAutomaticDraftApplyGate()
+        gate.shouldApply("LET initial = 1")
+
+        gate.suppressNext("LET otherRoot = 1")
+
+        assertFalse(gate.shouldApply("LET otherRoot = 1"))
+        assertTrue(gate.shouldApply("LET otherRoot = 2"))
+    }
+
     private fun success(
         source: String,
         previous: de.visualtasker.workflow.core.WorkspaceDocument? = null,

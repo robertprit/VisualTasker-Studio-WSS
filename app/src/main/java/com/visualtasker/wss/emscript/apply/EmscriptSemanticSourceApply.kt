@@ -377,11 +377,21 @@ object EmscriptSemanticSourceApply {
 /** Prevents a persisted draft from being treated as a fresh edit during workspace startup. */
 class EmscriptAutomaticDraftApplyGate {
     private var initialObservationConsumed = false
+    private var suppressedContent: String? = null
+
+    fun suppressNext(content: String) {
+        suppressedContent = content
+    }
 
     fun shouldApply(content: String): Boolean {
         if (!initialObservationConsumed) {
             initialObservationConsumed = true
+            if (suppressedContent == content) suppressedContent = null
             return false
+        }
+        suppressedContent?.let { suppressed ->
+            suppressedContent = null
+            if (suppressed == content) return false
         }
         return content.isNotBlank()
     }

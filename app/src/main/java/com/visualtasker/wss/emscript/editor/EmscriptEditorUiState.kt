@@ -60,4 +60,12 @@ class EmscriptEditorUiState {
         redoStacks[tabId] = stack.dropLast(1)
         return next
     }
+
+    fun resetDocumentState(tabId: String) {
+        selectionStarts.remove(tabId)
+        selectionEnds.remove(tabId)
+        foldedKeysByTab.remove(tabId)
+        undoStacks.remove(tabId)
+        redoStacks.remove(tabId)
+    }
 }

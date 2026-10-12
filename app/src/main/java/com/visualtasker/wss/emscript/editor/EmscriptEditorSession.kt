@@ -90,6 +90,16 @@ data class EmscriptEditorSession(
             )
         }
 
+    fun replaceManualContent(text: String): EmscriptEditorSession =
+        updateTab(MANUAL_TAB_ID) { tab ->
+            tab.copy(
+                content = text,
+                dirty = false,
+                diagnostics = emptyList(),
+                updatedAt = nextUpdatedAt(tab.updatedAt),
+            )
+        }.copy(activeTabId = MANUAL_TAB_ID)
+
     fun updateGeneratedFromBlocks(
         content: String,
         diagnostics: List<EmscriptEditorDiagnostic> = emptyList(),

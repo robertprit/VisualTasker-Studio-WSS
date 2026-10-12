@@ -26,6 +26,7 @@ enum class PanelType {
     Marker,
     Vision,
     Datastore,
+    ProjectExplorer,
     Emscript,
     RuntimeLog,
     TextEditor,

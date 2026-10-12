@@ -297,10 +297,11 @@ import com.visualtasker.wss.recording.RecordingSessionStatus
 import com.visualtasker.wss.recording.RecordingIntegrityIssue
 import com.visualtasker.wss.recording.RecordingIntegritySeverity
 import com.visualtasker.wss.recording.RecorderPublishConfirmation
-import com.visualtasker.wss.recording.RecorderPublishPreview
 import com.visualtasker.wss.recording.RecorderPublishRequest
-import com.visualtasker.wss.recording.RecorderPublishResult
 import com.visualtasker.wss.recording.RecorderWorkflowPublisher
+import com.visualtasker.wss.recording.RecorderProjectPublishPreview
+import com.visualtasker.wss.recording.RecorderProjectPublishResult
+import com.visualtasker.wss.recording.RecorderProjectWorkflowPublisher
 import com.visualtasker.wss.emscript.editor.EmScriptEditorScreen
 import com.visualtasker.wss.emscript.editor.EditorDefaults
 import com.visualtasker.wss.emscript.editor.EmscriptEditorSession
@@ -373,12 +374,22 @@ import com.visualtasker.wss.workspace.model.applyFlowchartWorkspaceMutation
 import com.visualtasker.wss.workspace.model.flowchartConnectionOptions
 import com.visualtasker.wss.workspace.data.WorkspaceSessionSnapshot
 import com.visualtasker.wss.workspace.data.WorkspaceSessionStore
+import com.visualtasker.wss.workspace.data.ProjectWorkspaceStore
 import com.visualtasker.wss.workspace.data.defaultAccentForPanelType
 import com.visualtasker.wss.workspace.data.supportedWorkspacePanelTypes
 import com.visualtasker.wss.workspace.model.PanelAction
 import com.visualtasker.wss.workspace.model.PanelActionSink
 import com.visualtasker.wss.workspace.model.PanelState
 import com.visualtasker.wss.workspace.model.PanelType
+import com.visualtasker.wss.workspace.model.ProjectExplorerController
+import com.visualtasker.wss.workspace.model.ProjectExplorerItemKind
+import com.visualtasker.wss.workspace.model.ProjectExplorerMutationContext
+import com.visualtasker.wss.workspace.model.ProjectExplorerMutationResult
+import com.visualtasker.wss.workspace.model.ProjectExplorerProjector
+import com.visualtasker.wss.workspace.model.ProjectExplorerUiState
+import com.visualtasker.wss.workspace.model.definitionIdOrNull
+import com.visualtasker.wss.workspace.model.resourceIdOrNull
+import com.visualtasker.wss.workspace.model.rootIdOrNull
 import com.visualtasker.wss.workspace.model.JunktorSeed
 import com.visualtasker.wss.workspace.model.RailMode
 import com.visualtasker.wss.workspace.model.RailProjection
@@ -577,6 +588,12 @@ import de.visualtasker.blockeditor.serialization.BlockEditorDocumentFormats
 import de.visualtasker.workflow.serialization.WorkflowDecodeResult
 import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.workflow.core.SemanticEntityKind
+import de.visualtasker.workflow.core.ProjectDocument
+import de.visualtasker.workflow.core.ProjectOperation
+import de.visualtasker.workflow.core.ProjectOperationId
+import de.visualtasker.workflow.core.ProjectWorkflowRoot
+import de.visualtasker.workflow.core.WorkflowRootId
+import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.flowchart.domain.FlowEdgeId
 import de.visualtasker.flowchart.domain.FlowEdgeKind
 import de.visualtasker.flowchart.domain.FlowNodeId
@@ -607,6 +624,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
+import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -652,6 +670,8 @@ private const val CHROME_TAB_ACTION_ICON_PREF_KEY = "chrometab_action_icon"
 private const val CHROME_TAB_CLOSE_ICON_PREF_KEY = "chrometab_close_icon"
 private const val PANEL_RAIL_EXPANDED_PREF_PREFIX = "workspace_panel_rail_expanded:"
 private const val TEXT_EDITOR_DRAFT_PREF_KEY = "workspace_text_editor_draft"
+private const val TEXT_EDITOR_DRAFT_ROOT_PREF_KEY = "workspace_text_editor_draft_root"
+private const val TEXT_EDITOR_DRAFT_BY_ROOT_PREF_PREFIX = "workspace_text_editor_draft_by_root:"
 private const val TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY = "workspace_text_editor_test_script_version"
 private const val STEPPER_STATE_PREF_KEY = "workspace_stepper_state"
 private const val M3_SHAPEMAKER_PACKAGE = M3ShapeMakerBridgeContract.PACKAGE_NAME
@@ -1268,22 +1288,45 @@ fun WorkspaceScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var settingsTab by remember { mutableIntStateOf(2) }
     val persistedWorkspaceResources = remember(context) { loadWorkspaceResourceBundle(context) }
-    var workflowState by remember(uiPrefs, persistedWorkspaceResources) {
+    val legacyWorkflowState = remember(uiPrefs, persistedWorkspaceResources) {
+        WorkspaceWorkflowState.fromSerialized(
+            serializedJson = loadBlockEditorWorkspaceJson(uiPrefs),
+            resources = persistedWorkspaceResources,
+        )
+    }
+    val projectWorkspaceStore = remember(context.applicationContext) { ProjectWorkspaceStore(context.applicationContext) }
+    var projectDocument by remember(projectWorkspaceStore, legacyWorkflowState.document) {
+        mutableStateOf(projectWorkspaceStore.loadProject(legacyWorkflowState.document))
+    }
+    var workflowState by remember(projectWorkspaceStore, persistedWorkspaceResources) {
+        val initialDocument = projectDocument.activeRoot()?.workspace ?: legacyWorkflowState.document
         mutableStateOf(
-            WorkspaceWorkflowState.fromSerialized(
-                serializedJson = loadBlockEditorWorkspaceJson(uiPrefs),
+            WorkspaceWorkflowState.fromDocument(
+                document = initialDocument,
+                mutationSource = "project:initial",
                 resources = persistedWorkspaceResources,
             ),
         )
     }
+    val projectExplorerController = remember { ProjectExplorerController() }
+    var projectExplorerUiState by remember(projectWorkspaceStore) {
+        mutableStateOf(projectWorkspaceStore.loadExplorerState())
+    }
+    var projectExplorerDiagnostic by remember { mutableStateOf<String?>(null) }
+    val projectSelections = remember { mutableStateMapOf<WorkflowRootId, WorkspaceSelectionState>() }
+    LaunchedEffect(projectExplorerUiState) {
+        projectWorkspaceStore.saveExplorerState(projectExplorerUiState)
+    }
     val workspaceHistory = remember(uiPrefs) { WorkspaceShellHistoryController() }
     val recorderWorkflowPublisher = remember(context) {
-        RecorderWorkflowPublisher(assetExists = { reference ->
-            val direct = File(reference)
-            direct.isFile || File(runtimeFilesRoot(context), reference).isFile
-        })
+        RecorderProjectWorkflowPublisher(
+            RecorderWorkflowPublisher(assetExists = { reference ->
+                val direct = File(reference)
+                direct.isFile || File(runtimeFilesRoot(context), reference).isFile
+            }),
+        )
     }
-    var recorderPublishPreview by remember { mutableStateOf<RecorderPublishPreview?>(null) }
+    var recorderPublishPreview by remember { mutableStateOf<RecorderProjectPublishPreview?>(null) }
     var recorderPublishMessage by remember { mutableStateOf<String?>(null) }
     var flowRuntimeSnapshot by remember { mutableStateOf<FlowRuntimeSnapshot?>(null) }
     var selectedFlowchartNodeForInsert by remember { mutableStateOf<FlowNodeId?>(null) }
@@ -1321,7 +1364,11 @@ fun WorkspaceScreen(
             }
     }
     val initialTextEditorDraft = remember(uiPrefs) {
-        loadInitialTextEditorDraft(uiPrefs)
+        loadInitialTextEditorDraft(
+            uiPrefs = uiPrefs,
+            activeRootId = projectDocument.manifest.activeRootId,
+            projectedSource = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace"),
+        )
     }
     var emscriptSession by remember {
         mutableStateOf(
@@ -2154,8 +2201,39 @@ fun WorkspaceScreen(
     val logConsoleState = remember { LogConsoleUiState() }
     val emscriptApplyGuard = remember { EmscriptApplyGuard() }
     val automaticDraftApplyGate = remember { EmscriptAutomaticDraftApplyGate() }
-    fun replaceWorkflowState(nextWorkflowState: WorkspaceWorkflowState, source: String) {
+    fun replaceWorkflowState(
+        nextWorkflowState: WorkspaceWorkflowState,
+        source: String,
+        syncProject: Boolean = true,
+    ) {
         BlockEditorDropTrace.markActive("HOST_WORKSPACE_REPLACE_ENTER", "source=$source")
+        if (syncProject) {
+            val rootId = projectDocument.manifest.activeRootId
+            val root = rootId?.let(projectDocument.roots::get)
+            if (rootId == null || root == null) {
+                projectExplorerDiagnostic = "Kein aktiver Projekt-Workflow verfügbar."
+                return
+            }
+            if (root.workspace != nextWorkflowState.document) {
+                val operation = ProjectOperation.ReplaceRootWorkspace(
+                    operationId = ProjectOperationId("workspace:$source:${UUID.randomUUID()}"),
+                    rootId = rootId,
+                    expectedWorkspaceRevision = root.workspace.version,
+                    workspace = nextWorkflowState.document,
+                )
+                when (val result = projectExplorerController.execute(projectDocument, operation)) {
+                    is ProjectExplorerMutationResult.Success -> {
+                        projectDocument = result.project
+                        projectWorkspaceStore.saveProject(result.project)
+                        projectExplorerDiagnostic = null
+                    }
+                    is ProjectExplorerMutationResult.Rejected -> {
+                        projectExplorerDiagnostic = result.diagnostic.message
+                        return
+                    }
+                }
+            }
+        }
         val previousSelection = workspaceSelectionState
         val previousProjectedScript = workflowState.emscriptProjection.getOrNull()
         val semanticWorkflowChanged = nextWorkflowState.emscriptProjection.getOrNull() != previousProjectedScript
@@ -2181,6 +2259,77 @@ fun WorkspaceScreen(
             WorkspaceWorkflowState.fromSerialized(updated, mutationSource = source),
             source,
         )
+    }
+    fun acceptProjectMutation(
+        result: ProjectExplorerMutationResult,
+        source: String,
+        restoreSelection: Boolean = true,
+    ): Boolean {
+        return when (result) {
+            is ProjectExplorerMutationResult.Rejected -> {
+                projectExplorerDiagnostic = result.diagnostic.message
+                false
+            }
+            is ProjectExplorerMutationResult.Success -> {
+                val previousRootId = projectDocument.manifest.activeRootId
+                val previousDraft = emscriptSession.tabs
+                    .firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
+                    ?.content
+                    .orEmpty()
+                previousRootId?.let { projectSelections[it] = workspaceSelectionState }
+                projectDocument = result.project
+                projectWorkspaceStore.saveProject(result.project)
+                projectExplorerDiagnostic = null
+                val activeRoot = result.project.activeRoot()
+                val rootChanged = activeRoot?.id != previousRootId
+                if (rootChanged && previousRootId != null) {
+                    persistTextEditorDraftForRoot(uiPrefs, previousRootId, previousDraft)
+                }
+                if (activeRoot != null && activeRoot.workspace != workflowState.document) {
+                    replaceWorkflowState(
+                        nextWorkflowState = WorkspaceWorkflowState.fromDocument(
+                            document = activeRoot.workspace,
+                            mutationSource = source,
+                            resources = workflowState.resources,
+                        ),
+                        source = source,
+                        syncProject = false,
+                    )
+                    if (restoreSelection) {
+                        workspaceSelectionState = WorkspaceSelectionResolver.reconcile(
+                            document = workflowState.document,
+                            selection = projectSelections[activeRoot.id] ?: WorkspaceSelectionState(),
+                        )
+                    }
+                }
+                if (rootChanged && activeRoot != null) {
+                    val projectedSource = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
+                    val rootDraft = loadTextEditorDraftForRoot(uiPrefs, activeRoot.id, projectedSource)
+                    automaticDraftApplyGate.suppressNext(rootDraft)
+                    emscriptSession = emscriptSession
+                        .updateGeneratedFromBlocks(projectedSource)
+                        .replaceManualContent(rootDraft)
+                    emscriptEditorUiState.resetDocumentState(EmscriptEditorSession.MANUAL_TAB_ID)
+                    emscriptFileManager.scripts["draft"] = rootDraft
+                    persistTextEditorDraftForRoot(uiPrefs, activeRoot.id, rootDraft)
+                }
+                true
+            }
+        }
+    }
+    fun executeProjectOperation(
+        operation: ProjectOperation,
+        source: String,
+        context: ProjectExplorerMutationContext = ProjectExplorerMutationContext(),
+    ): Boolean = acceptProjectMutation(
+        result = projectExplorerController.execute(projectDocument, operation, context),
+        source = source,
+    )
+    fun undoProjectChange() {
+        acceptProjectMutation(projectExplorerController.undo(projectDocument), "project-explorer:undo")
+    }
+    fun redoProjectChange() {
+        acceptProjectMutation(projectExplorerController.redo(projectDocument), "project-explorer:redo")
     }
     val applyWorkspaceJsonChange: (String, String) -> Unit = applyWorkspaceJsonChange@{ updated, source ->
         BlockEditorDropTrace.markActive("HOST_WORKSPACE_CHANGE_ENTER", "source=$source")
@@ -2240,6 +2389,9 @@ fun WorkspaceScreen(
             targetWorkspaceId = workflowState.document.id,
             targetWorkflowEntityId = workflow.ref.id.value,
             expectedWorkspaceRevision = workflowState.document.version,
+            targetProjectId = projectDocument.id.value,
+            targetProjectRevision = projectDocument.revision.value,
+            targetWorkflowRootId = projectDocument.manifest.activeRootId?.value,
         )
     }
     LaunchedEffect(
@@ -2247,6 +2399,7 @@ fun WorkspaceScreen(
         recordingPlaybackRuntimeState.candidateDocument?.sourceRecordVersion,
         recordingPlaybackRuntimeState.reviewDecisions,
         workflowState.document.version,
+        projectDocument.revision.value,
     ) {
         recorderPublishPreview = null
         recorderPublishMessage = null
@@ -2326,7 +2479,9 @@ fun WorkspaceScreen(
             emscriptSession = emscriptSession
                 .selectTab(EmscriptEditorSession.MANUAL_TAB_ID)
                 .updateManualContent(content)
-            uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
+            projectDocument.manifest.activeRootId?.let { rootId ->
+                persistTextEditorDraftForRoot(uiPrefs, rootId, content)
+            } ?: uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, content).apply()
         }
         studioLogStore.append(
             level = StudioLogLevel.DEBUG,
@@ -2864,6 +3019,9 @@ fun WorkspaceScreen(
             document = workflowState.document,
             workflowId = workflowState.document.id,
             workspaceRevision = workflowState.revision.toLong(),
+            projectId = projectDocument.id.value,
+            workflowRootId = projectDocument.manifest.activeRootId?.value,
+            projectRevision = projectDocument.revision.value,
         )
         if (started) {
             workspaceDryRunResult = null
@@ -4205,7 +4363,7 @@ fun WorkspaceScreen(
                                 },
                                 onNextUnreviewed = RecordingPlaybackRuntime::nextUnreviewed,
                                 onBeginTargetCorrection = RecordingPlaybackRuntime::showBeforePhase,
-                                publishPreview = recorderPublishPreview,
+                                publishPreview = recorderPublishPreview?.workspacePreview,
                                 publishMessage = recorderPublishMessage,
                                 onCreatePublishPreview = createPreview@{
                                     val request = recorderPublishRequest()
@@ -4219,7 +4377,7 @@ fun WorkspaceScreen(
                                         request = request,
                                         candidates = candidates,
                                         reviewed = reviewed,
-                                        current = workflowState.document,
+                                        project = projectDocument,
                                     )
                                     recorderPublishMessage = if (recorderPublishPreview?.canPublish == true) {
                                         "Vorschau bereit. Der Workspace ist noch unveraendert."
@@ -4232,26 +4390,27 @@ fun WorkspaceScreen(
                                     val request = recorderPublishRequest() ?: return@confirmPublish
                                     val confirmed = request.copy(
                                         confirmation = RecorderPublishConfirmation(
-                                            previewToken = preview.confirmationToken,
+                                            previewToken = preview.workspacePreview.confirmationToken,
                                             confirmedAtEpochMs = System.currentTimeMillis(),
                                         ),
                                     )
                                     when (val result = recorderWorkflowPublisher.apply(
                                         request = confirmed,
                                         preview = preview,
-                                        current = workflowState.document,
+                                        project = projectDocument,
                                     )) {
-                                        is RecorderPublishResult.Success -> {
-                                            applyWorkspaceJsonChange(
-                                                WorkflowSerializer.serialize(result.document),
+                                        is RecorderProjectPublishResult.Success -> {
+                                            projectExplorerController.recordAcceptedTransition(projectDocument, result.project)
+                                            acceptProjectMutation(
+                                                ProjectExplorerMutationResult.Success(result.project),
                                                 "recorder:publish:${confirmed.recorderDocumentId}",
                                             )
                                             recorderPublishMessage = "${result.publishedEntityIds.size} Recorder-Schritte veroeffentlicht."
                                         }
-                                        is RecorderPublishResult.AlreadyPublished -> {
+                                        is RecorderProjectPublishResult.AlreadyPublished -> {
                                             recorderPublishMessage = "Recorder-Schritte wurden bereits veroeffentlicht."
                                         }
-                                        is RecorderPublishResult.Failure -> {
+                                        is RecorderProjectPublishResult.Failure -> {
                                             recorderPublishMessage = result.diagnostics.joinToString("\n") { it.message }
                                         }
                                     }
@@ -4479,6 +4638,87 @@ fun WorkspaceScreen(
                     )
                     WorkspacePanelContent(
                         panel = panel,
+                        projectExplorer = ProjectExplorerPanelBindings(
+                            projection = ProjectExplorerProjector.project(projectDocument) { resource ->
+                                val direct = File(resource.location)
+                                direct.isFile || File(runtimeFilesRoot(context), resource.location).isFile
+                            },
+                            uiState = projectExplorerUiState,
+                            canUndo = projectExplorerController.canUndo,
+                            canRedo = projectExplorerController.canRedo,
+                            diagnosticMessage = projectExplorerDiagnostic,
+                            onUiStateChange = { projectExplorerUiState = it },
+                            onCreateRoot = { name ->
+                                val suffix = UUID.randomUUID().toString()
+                                val rootId = WorkflowRootId("root:$suffix")
+                                executeProjectOperation(
+                                    operation = ProjectOperation.CreateRoot(
+                                        operationId = ProjectOperationId("explorer:create:$suffix"),
+                                        root = ProjectWorkflowRoot(
+                                            id = rootId,
+                                            name = name,
+                                            workspace = WorkspaceDocument("workspace:$suffix"),
+                                        ),
+                                    ),
+                                    source = "project-explorer:create",
+                                )
+                            },
+                            onRenameRoot = { rootId, name ->
+                                executeProjectOperation(
+                                    operation = ProjectOperation.RenameRoot(
+                                        operationId = ProjectOperationId("explorer:rename:${UUID.randomUUID()}"),
+                                        rootId = rootId,
+                                        name = name,
+                                    ),
+                                    source = "project-explorer:rename",
+                                )
+                            },
+                            onDeleteItem = { item ->
+                                val operation = when (item.kind) {
+                                    ProjectExplorerItemKind.Workflow -> item.rootIdOrNull()?.let { rootId ->
+                                        ProjectOperation.DeleteRoot(ProjectOperationId("explorer:delete-root:${UUID.randomUUID()}"), rootId)
+                                    }
+                                    ProjectExplorerItemKind.Definition -> item.definitionIdOrNull()?.let { definitionId ->
+                                        ProjectOperation.DeleteDefinition(ProjectOperationId("explorer:delete-definition:${UUID.randomUUID()}"), definitionId)
+                                    }
+                                    ProjectExplorerItemKind.Resource -> item.resourceIdOrNull()?.let { resourceId ->
+                                        ProjectOperation.RemoveResource(ProjectOperationId("explorer:delete-resource:${UUID.randomUUID()}"), resourceId)
+                                    }
+                                    else -> null
+                                }
+                                operation?.let {
+                                    executeProjectOperation(
+                                        operation = it,
+                                        source = "project-explorer:delete",
+                                        context = ProjectExplorerMutationContext(
+                                            activeExecutionRootIds = executionSession
+                                                ?.takeIf { session -> session.isActive }
+                                                ?.workflowRootId
+                                                ?.let(::WorkflowRootId)
+                                                ?.let(::setOf)
+                                                .orEmpty(),
+                                            recorderTargetRootId = projectDocument.manifest.activeRootId
+                                                .takeIf { recorderPublishPreview != null },
+                                        ),
+                                    )
+                                }
+                            },
+                            onOpenRoot = { rootId, targetPanel ->
+                                if (executeProjectOperation(
+                                        operation = ProjectOperation.SetActiveRoot(
+                                            operationId = ProjectOperationId("explorer:open:${UUID.randomUUID()}"),
+                                            rootId = rootId,
+                                        ),
+                                        source = "project-explorer:open",
+                                    )
+                                ) {
+                                    projectExplorerUiState = projectExplorerUiState.copy(selectedItemKey = "workflow:${rootId.value}")
+                                    revealPanel(targetPanel)
+                                }
+                            },
+                            onUndo = ::undoProjectChange,
+                            onRedo = ::redoProjectChange,
+                        ),
                         steps = projectedSteps,
                         actionSink = bridge,
                         uiPrefs = uiPrefs,
@@ -4594,7 +4834,9 @@ fun WorkspaceScreen(
                             emscriptSession = updated
                             val manual = updated.tabs.firstOrNull { it.id == EmscriptEditorSession.MANUAL_TAB_ID }
                             if (manual != null) {
-                                uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, manual.content).apply()
+                                projectDocument.manifest.activeRootId?.let { rootId ->
+                                    persistTextEditorDraftForRoot(uiPrefs, rootId, manual.content)
+                                } ?: uiPrefs.edit().putString(TEXT_EDITOR_DRAFT_PREF_KEY, manual.content).apply()
                             }
                         },
                         logStore = studioLogStore,
@@ -5140,6 +5382,7 @@ private fun WorkspaceFloatingPanel(
 @Composable
 private fun WorkspacePanelContent(
     panel: PanelState,
+    projectExplorer: ProjectExplorerPanelBindings,
     steps: List<RecorderStepUi>,
     actionSink: PanelActionSink,
     uiPrefs: android.content.SharedPreferences,
@@ -5236,6 +5479,20 @@ private fun WorkspacePanelContent(
         VisualAssetPresentationRuntime.load(visualAssetStoreDirectory(context))
     }
     when (panel.type) {
+        PanelType.ProjectExplorer -> ProjectExplorerPanel(
+            projection = projectExplorer.projection,
+            uiState = projectExplorer.uiState,
+            canUndo = projectExplorer.canUndo,
+            canRedo = projectExplorer.canRedo,
+            diagnosticMessage = projectExplorer.diagnosticMessage,
+            onUiStateChange = projectExplorer.onUiStateChange,
+            onCreateRoot = projectExplorer.onCreateRoot,
+            onRenameRoot = projectExplorer.onRenameRoot,
+            onDeleteItem = projectExplorer.onDeleteItem,
+            onOpenRoot = projectExplorer.onOpenRoot,
+            onUndo = projectExplorer.onUndo,
+            onRedo = projectExplorer.onRedo,
+        )
         PanelType.RecorderSteps -> RecorderStepsPanel(
             steps = steps,
             actionSink = actionSink,
@@ -12369,6 +12626,7 @@ private fun WorkspaceRail(
                 PanelType.Marker,
                 PanelType.Vision,
                 PanelType.Datastore,
+                PanelType.ProjectExplorer,
                 PanelType.M3Director,
                 PanelType.ChartGraph,
                 PanelType.TextEditor,
@@ -15657,6 +15915,7 @@ private fun iconForPanelType(type: PanelType) = when (type) {
     PanelType.Marker -> Icons.Default.TouchApp
     PanelType.Vision -> Icons.Default.CenterFocusStrong
     PanelType.Datastore -> Icons.Default.FolderOpen
+    PanelType.ProjectExplorer -> Icons.Default.AccountTree
     PanelType.Emscript -> Icons.Default.Terminal
     PanelType.RuntimeLog -> Icons.Default.PlayArrow
     PanelType.TextEditor -> Icons.Default.Article
@@ -15683,6 +15942,7 @@ private fun AddPanelDialog(
         PanelType.Marker,
         PanelType.Vision,
         PanelType.Datastore,
+        PanelType.ProjectExplorer,
         PanelType.M3Director,
         PanelType.ChartGraph,
         PanelType.TextEditor,
@@ -15768,6 +16028,7 @@ private fun displayNameForPanelType(type: PanelType): String = when (type) {
     PanelType.Marker -> "Marker"
     PanelType.Vision -> "Vision"
     PanelType.Datastore -> "Datastore"
+    PanelType.ProjectExplorer -> "Project Explorer"
     PanelType.Emscript -> "EMScript"
     PanelType.RuntimeLog -> "RuntimeLog"
     PanelType.TextEditor -> "TextEditor"
@@ -15816,6 +16077,7 @@ private fun toMainPanelType(type: PanelType): MainPanelType = when (type) {
     PanelType.Marker,
     PanelType.Vision,
     PanelType.Datastore,
+    PanelType.ProjectExplorer,
     PanelType.M3Director,
     PanelType.ChartGraph -> MainPanelType.LIST_TEST
     PanelType.Vt2Vt -> MainPanelType.LIST_TEST
@@ -15842,19 +16104,54 @@ private fun loadBlockEditorWorkspaceJson(
 }
 
 private fun loadInitialTextEditorDraft(
-    uiPrefs: android.content.SharedPreferences
+    uiPrefs: android.content.SharedPreferences,
+    activeRootId: WorkflowRootId?,
+    projectedSource: String,
 ): String {
     val loadedVersion = uiPrefs.getInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, 0)
     val persisted = uiPrefs.getString(TEXT_EDITOR_DRAFT_PREF_KEY, null)
-    if (loadedVersion < EditorDefaults.integrationTestScriptVersion || persisted.isNullOrBlank()) {
+    val legacyDraft = if (loadedVersion < EditorDefaults.integrationTestScriptVersion || persisted.isNullOrBlank()) {
         uiPrefs.edit()
             .putString(TEXT_EDITOR_DRAFT_PREF_KEY, EditorDefaults.commandCatalogBreadthTestScript)
             .putInt(TEXT_EDITOR_TEST_SCRIPT_VERSION_PREF_KEY, EditorDefaults.integrationTestScriptVersion)
             .apply()
-        return EditorDefaults.commandCatalogBreadthTestScript
+        EditorDefaults.commandCatalogBreadthTestScript
+    } else {
+        persisted
     }
-    return persisted
+    if (activeRootId == null) return legacyDraft
+
+    val rootDraft = uiPrefs.getString(textEditorDraftRootKey(activeRootId), null)
+    val legacyOwner = uiPrefs.getString(TEXT_EDITOR_DRAFT_ROOT_PREF_KEY, null)
+    val selectedDraft = rootDraft ?: if (legacyOwner == null || legacyOwner == activeRootId.value) {
+        legacyDraft
+    } else {
+        projectedSource
+    }
+    persistTextEditorDraftForRoot(uiPrefs, activeRootId, selectedDraft)
+    return selectedDraft
 }
+
+private fun loadTextEditorDraftForRoot(
+    uiPrefs: android.content.SharedPreferences,
+    rootId: WorkflowRootId,
+    fallback: String,
+): String = uiPrefs.getString(textEditorDraftRootKey(rootId), null) ?: fallback
+
+private fun persistTextEditorDraftForRoot(
+    uiPrefs: android.content.SharedPreferences,
+    rootId: WorkflowRootId,
+    content: String,
+) {
+    uiPrefs.edit()
+        .putString(TEXT_EDITOR_DRAFT_PREF_KEY, content)
+        .putString(TEXT_EDITOR_DRAFT_ROOT_PREF_KEY, rootId.value)
+        .putString(textEditorDraftRootKey(rootId), content)
+        .apply()
+}
+
+private fun textEditorDraftRootKey(rootId: WorkflowRootId): String =
+    "$TEXT_EDITOR_DRAFT_BY_ROOT_PREF_PREFIX${rootId.value}"
 
 private fun importAndPersistIntegrationWorkspace(
     uiPrefs: android.content.SharedPreferences,
