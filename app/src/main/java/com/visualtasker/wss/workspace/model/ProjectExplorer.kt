@@ -10,8 +10,13 @@ import de.visualtasker.workflow.core.ProjectOperationResult
 import de.visualtasker.workflow.core.ProjectReferenceTarget
 import de.visualtasker.workflow.core.ProjectResource
 import de.visualtasker.workflow.core.ProjectResourceType
+import de.visualtasker.workflow.core.ProjectTransaction
+import de.visualtasker.workflow.core.ProjectVariable
+import de.visualtasker.workflow.core.ProjectVariableScopes
 import de.visualtasker.workflow.core.ProjectValidator
 import de.visualtasker.workflow.core.ResourceId
+import de.visualtasker.workflow.core.SemanticRelationKind
+import de.visualtasker.workflow.core.SemanticRelationRoleKind
 import de.visualtasker.workflow.core.VariableScope
 import de.visualtasker.workflow.core.WorkflowRootId
 
@@ -82,7 +87,8 @@ data class ProjectExplorerUiState(
 object ProjectExplorerProjector {
     fun project(
         project: ProjectDocument,
-        resourceExists: (ProjectResource) -> Boolean = { it.location.isNotBlank() },
+        inventoryDiagnostics: List<ProjectInventoryDiagnostic> = emptyList(),
+        resourceExists: (ProjectResource) -> Boolean = { ProjectResourceBridge.isInline(it) || it.location.isNotBlank() },
     ): ProjectExplorerProjection {
         val referencesByTarget = project.references.values.groupingBy { it.target.targetId }.eachCount()
         val sections = buildList {
@@ -117,6 +123,16 @@ object ProjectExplorerProjector {
                     key = "diagnostic:${issue.code}:$index",
                     kind = ProjectExplorerItemKind.Diagnostic,
                     stableId = issue.referenceId?.value ?: issue.rootId?.value ?: issue.code.name,
+                    label = issue.code.name,
+                    detail = issue.message,
+                    missing = true,
+                    enabled = false,
+                )
+            } + inventoryDiagnostics.mapIndexed { index, issue ->
+                ProjectExplorerItem(
+                    key = "inventory-diagnostic:${issue.code}:$index",
+                    kind = ProjectExplorerItemKind.Diagnostic,
+                    stableId = issue.entityId?.value ?: issue.resourceId ?: issue.variableId ?: issue.code.name,
                     label = issue.code.name,
                     detail = issue.message,
                     missing = true,
@@ -164,7 +180,14 @@ object ProjectExplorerProjector {
     ) {
         add(
             section(sectionKind, label) {
-                project.variables.values.filter { it.definition.scope in scopes }.sortedBy { it.definition.name.lowercase() }.map { variable ->
+                variablesForScopes(project, scopes).map { variable ->
+                    val contract = ProjectVariableScopes.contract(variable.definition.scope)
+                    val providerStatus = when {
+                        contract.providerRequired && variable.providerBinding.isNullOrBlank() -> "provider GAP"
+                        variable.providerBinding != null -> variable.providerBinding
+                        contract.runtimeImplemented -> "runtime active"
+                        else -> "runtime GAP"
+                    }
                     ProjectExplorerItem(
                         key = "variable:${variable.definition.id}",
                         kind = ProjectExplorerItemKind.Variable,
@@ -172,16 +195,45 @@ object ProjectExplorerProjector {
                         label = variable.definition.name,
                         detail = buildString {
                             append(variable.definition.type).append(" · ").append(variable.definition.scope.name)
-                            variable.providerBinding?.let { append(" · ").append(it) }
+                            append(" · ").append(contract.lifetime.name)
+                            append(" · ").append(contract.persistence.name)
+                            append(" · ").append(providerStatus)
                         },
                         whereUsedCount = project.references.values.count {
                             (it.target as? ProjectReferenceTarget.Variable)?.variableId == variable.definition.id
+                        } + if (variable.definition.scope in setOf(VariableScope.Local, VariableScope.Script)) {
+                            rootVariableReferenceCount(project, variable.definition.id)
+                        } else {
+                            0
                         },
                     )
                 }
             },
         )
     }
+
+    private fun variablesForScopes(
+        project: ProjectDocument,
+        scopes: Set<VariableScope>,
+    ): List<ProjectVariable> {
+        val rootVariables = project.roots.values
+            .flatMap { root -> root.workspace.variables.variables.values }
+            .filter { it.scope in scopes }
+            .associate { definition -> definition.id to ProjectVariable(definition) }
+        val projectVariables = project.variables.values
+            .filter { it.definition.scope in scopes }
+            .associateBy { it.definition.id }
+        return (rootVariables + projectVariables).values.sortedBy { it.definition.name.lowercase() }
+    }
+
+    private fun rootVariableReferenceCount(project: ProjectDocument, variableId: String): Int =
+        project.roots.values.sumOf { root ->
+            root.workspace.canonical?.relations.orEmpty().count { relation ->
+                relation.kind == SemanticRelationKind.Reference &&
+                    relation.role.kind == SemanticRelationRoleKind.Variable &&
+                    relation.target.id.value == "variable:$variableId"
+            }
+        }
 
     private fun MutableList<ProjectExplorerSection>.addResourceSection(
         project: ProjectDocument,
@@ -249,9 +301,21 @@ class ProjectExplorerController(
         project: ProjectDocument,
         operation: ProjectOperation,
         context: ProjectExplorerMutationContext = ProjectExplorerMutationContext(),
+    ): ProjectExplorerMutationResult = execute(
+        project = project,
+        transaction = ProjectTransaction(operation.operationId, listOf(operation), project.revision),
+        context = context,
+    )
+
+    fun execute(
+        project: ProjectDocument,
+        transaction: ProjectTransaction,
+        context: ProjectExplorerMutationContext = ProjectExplorerMutationContext(),
     ): ProjectExplorerMutationResult {
-        guard(operation, context)?.let { return ProjectExplorerMutationResult.Rejected(project, it) }
-        val result = ProjectOperationExecutor.execute(project, operation)
+        transaction.operations.forEach { operation ->
+            guard(operation, context)?.let { return ProjectExplorerMutationResult.Rejected(project, it) }
+        }
+        val result = ProjectOperationExecutor.execute(project, transaction)
         return when (result) {
             is ProjectOperationResult.Success -> {
                 history.recordAcceptedTransition(project, result.project)

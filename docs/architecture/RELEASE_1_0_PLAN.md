@@ -31,7 +31,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H `DONE`; Runtime-Closure fehlt. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W Vertrag/Hosts implementiert; Geraete-UX und weitere Editor-Produktgates offen. |
 | M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-/Observation-Vertrag und M7-1 Recorder-Publishing implementiert; OCR/OpenCV-Live-Provider und Closure sind offen. |
-| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 Projektvertrag und M8-1 nativer Explorer sind implementiert; Portabilitaet und Asset-Lifecycle folgen. |
+| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-2 sind implementiert; Runtime-Provider, Portabilitaet und Asset-Lifecycle folgen. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Sicherheitsgate fehlen. |
 | M10 Release Hardening | PLANNED | Noch kein Feature-Freeze und kein vollstaendiges Release-Gate. |
 
@@ -131,7 +131,7 @@ Gesamtstatus: `IN_PROGRESS`
 | --- | --- | --- |
 | M8-0 | DONE | Kanonischer Projekt-, Multi-Root-, Scope-, Ressourcen-, Persistenz-, Runtime- und Recorder-Vertrag. |
 | M8-1 | DONE | Nativer Project Explorer fuer Roots, Definitionen, Variablen und Ressourcen mit ProjectOperations, Guards, History und Persistenz. |
-| M8-2 | PLANNED | Mehrere Workflow-Roots und referenzierte Subworkflows. |
+| M8-2 | DONE | Reale Resource-/Variable-Bestaende, Referenzen, Migration und Projektoperationen produktiv verbinden. |
 | M8-3 | PLANNED | Funktionsbibliothek mit stabilen IDs und Call-Referenzen. |
 | M8-4 | PLANNED | Local-, Script-, Project-, App-Shared- und External-Scopes. |
 | M8-5 | PLANNED | Persistente Daten ueber klar getrennte lokale und externe Provider. |
@@ -145,6 +145,10 @@ M8-0 fuehrt `ProjectDocument` als Eigentums- und Referenzgrenze ueber den vorhan
 kanonisch; es wurde weder ein paralleler Resource Manager noch ein zweites Workflow-Modell gebaut.
 Funktionsruntime und portable Asset-Pakete bleiben Folgeslices. Der M8-1 Explorer ist die native
 Bedienprojektion dieses Vertrags und fuehrt keine zweite Projektwahrheit ein.
+M8-2 uebernimmt bestehende WorkspaceResources einmalig in das `ProjectDocument`, projiziert sie
+verlustfrei fuer Canvas/Worldview zurueck und verbindet deklarative Project-/AppShared-Scopes.
+Nicht vorhandene Runtime-/Storage-Provider bleiben sichtbare GAPs; physischer Asset-Lifecycle und
+Projektpakete werden nicht vorgezogen.
 
 ## M9 Integrationen, VT2VT Und Erweiterbarkeit
 

@@ -140,14 +140,14 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M7-0: 62 `IMPLEMENTED`, 46
 | ID | Status | Produktpfad | Nachweis | Abhaengigkeit / Release |
 | --- | --- | --- | --- | --- |
 | D-01 | IMPLEMENTED | ja | `ProjectDocument`, `ProjectSerializer`, nativer `ProjectExplorerPanel`, `ProjectWorkspaceStore` | Paketformat folgt in M8-9 |
-| D-02 | IMPLEMENTED | ja | Typisierte ProjectResources, Referenzen, Where-Used, Delete-Guard und Codec | Asset-Paket/Lifecycle in M8-6 erweitern |
-| D-03 | PARTIAL | ja | WorkspaceResources, Marker/Vision/Recorder Projektionen | M8-6 |
+| D-02 | IMPLEMENTED | ja | Typisierte ProjectResources, M8-2 Bestandsintegration, exakte Payload-Projektion, Referenzen, Where-Used und Delete-Guard | Physischer Asset-Lifecycle in M8-6 erweitern |
+| D-03 | PARTIAL | ja | M8-2 bindet Screenshot-/Marker-/Template-Bestaende an; Vision-/Recorder-Observations bleiben abgeleitete Worldview-Daten | M8-6 |
 | D-04 | PARTIAL | ja | VisualAsset Catalog/Package/Inbox/Runtime | M8-6 |
 | D-05 | IMPLEMENTED | ja | `LegacyStudioResourceImporter/Mapper` plus Tests | Migration-Gate |
 | D-06 | PARTIAL | ja | `ToolboxSetMode` und VisualAsset-UI | M8-6 |
 | D-07 | IMPLEMENTED | ja | WSS Drag contracts, effects, Compose-DnD adapter | M8-7 erweitern |
-| D-08 | PARTIAL | ja | M8-1 Root-/Definition-/Variable-/Resource-Navigation, Where-used und Guards | Scope-Provider/Asset-Lifecycle M8-4/M8-8 |
-| D-09 | PARTIAL | teil | Resource Codec, Session Store, Backup docs | M8-9/M10-3 |
+| D-08 | PARTIAL | ja | M8-1 Explorer plus M8-2 Scope-Trennung, reale Where-used-Referenzen und Provider-GAP-Diagnosen | Runtime-/Storage-Provider M8-4/M8-5 |
+| D-09 | PARTIAL | teil | ProjectSerializer erhaelt M8-2 Resource-Payloads; Paketexport, Relocation und Restore fehlen | M8-9/M10-3 |
 | D-10 | PARTIAL | teil | Worldview Contracts/Unifier/Panel Projections | kein dynamisches World Model |
 | D-11 | PARTIAL | teil | `ReadOnlyKnowledgeIndex.kt`, RAG Architekturdoc | read-only, post-1.0 Ausbau |
 | D-12 | DEFERRED | - | Release Plan Erweiterungen | post-1.0 |

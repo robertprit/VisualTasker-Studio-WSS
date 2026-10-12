@@ -387,6 +387,9 @@ import com.visualtasker.wss.workspace.model.ProjectExplorerMutationContext
 import com.visualtasker.wss.workspace.model.ProjectExplorerMutationResult
 import com.visualtasker.wss.workspace.model.ProjectExplorerProjector
 import com.visualtasker.wss.workspace.model.ProjectExplorerUiState
+import com.visualtasker.wss.workspace.model.ProjectInventoryDiagnosticCode
+import com.visualtasker.wss.workspace.model.ProjectInventoryIntegrator
+import com.visualtasker.wss.workspace.model.ProjectResourceBridge
 import com.visualtasker.wss.workspace.model.definitionIdOrNull
 import com.visualtasker.wss.workspace.model.resourceIdOrNull
 import com.visualtasker.wss.workspace.model.rootIdOrNull
@@ -590,8 +593,12 @@ import de.visualtasker.workflow.serialization.WorkflowSerializer
 import de.visualtasker.workflow.core.SemanticEntityKind
 import de.visualtasker.workflow.core.ProjectDocument
 import de.visualtasker.workflow.core.ProjectOperation
+import de.visualtasker.workflow.core.ProjectOperationExecutor
 import de.visualtasker.workflow.core.ProjectOperationId
+import de.visualtasker.workflow.core.ProjectOperationResult
+import de.visualtasker.workflow.core.ProjectTransaction
 import de.visualtasker.workflow.core.ProjectWorkflowRoot
+import de.visualtasker.workflow.core.ResourceId
 import de.visualtasker.workflow.core.WorkflowRootId
 import de.visualtasker.workflow.core.WorkspaceDocument
 import de.visualtasker.flowchart.domain.FlowEdgeId
@@ -1287,7 +1294,7 @@ fun WorkspaceScreen(
     var showAddPanelDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var settingsTab by remember { mutableIntStateOf(2) }
-    val persistedWorkspaceResources = remember(context) { loadWorkspaceResourceBundle(context) }
+    val persistedWorkspaceResources = remember(context) { loadProjectInventoryResources(context) }
     val legacyWorkflowState = remember(uiPrefs, persistedWorkspaceResources) {
         WorkspaceWorkflowState.fromSerialized(
             serializedJson = loadBlockEditorWorkspaceJson(uiPrefs),
@@ -1295,8 +1302,17 @@ fun WorkspaceScreen(
         )
     }
     val projectWorkspaceStore = remember(context.applicationContext) { ProjectWorkspaceStore(context.applicationContext) }
+    val initialProjectInventory = remember(projectWorkspaceStore, legacyWorkflowState.document, persistedWorkspaceResources) {
+        ProjectInventoryIntegrator.integrate(
+            project = projectWorkspaceStore.loadProject(legacyWorkflowState.document),
+            legacyResources = persistedWorkspaceResources,
+        )
+    }
     var projectDocument by remember(projectWorkspaceStore, legacyWorkflowState.document) {
-        mutableStateOf(projectWorkspaceStore.loadProject(legacyWorkflowState.document))
+        mutableStateOf(initialProjectInventory.project)
+    }
+    var projectInventoryDiagnostics by remember(projectWorkspaceStore) {
+        mutableStateOf(initialProjectInventory.diagnostics)
     }
     var workflowState by remember(projectWorkspaceStore, persistedWorkspaceResources) {
         val initialDocument = projectDocument.activeRoot()?.workspace ?: legacyWorkflowState.document
@@ -1304,7 +1320,7 @@ fun WorkspaceScreen(
             WorkspaceWorkflowState.fromDocument(
                 document = initialDocument,
                 mutationSource = "project:initial",
-                resources = persistedWorkspaceResources,
+                resources = ProjectResourceBridge.toWorkspaceBundle(projectDocument),
             ),
         )
     }
@@ -1316,6 +1332,9 @@ fun WorkspaceScreen(
     val projectSelections = remember { mutableStateMapOf<WorkflowRootId, WorkspaceSelectionState>() }
     LaunchedEffect(projectExplorerUiState) {
         projectWorkspaceStore.saveExplorerState(projectExplorerUiState)
+    }
+    LaunchedEffect(initialProjectInventory.changed) {
+        if (initialProjectInventory.changed) projectWorkspaceStore.saveProject(initialProjectInventory.project)
     }
     val workspaceHistory = remember(uiPrefs) { WorkspaceShellHistoryController() }
     val recorderWorkflowPublisher = remember(context) {
@@ -2221,13 +2240,23 @@ fun WorkspaceScreen(
                     expectedWorkspaceRevision = root.workspace.version,
                     workspace = nextWorkflowState.document,
                 )
-                when (val result = projectExplorerController.execute(projectDocument, operation)) {
-                    is ProjectExplorerMutationResult.Success -> {
-                        projectDocument = result.project
-                        projectWorkspaceStore.saveProject(result.project)
+                when (val result = ProjectOperationExecutor.execute(projectDocument, operation)) {
+                    is ProjectOperationResult.Success -> {
+                        val integrated = ProjectInventoryIntegrator.integrate(result.project)
+                        val rejected = integrated.diagnostics.firstOrNull {
+                            it.code == ProjectInventoryDiagnosticCode.ProjectTransactionRejected
+                        }
+                        if (rejected != null) {
+                            projectExplorerDiagnostic = rejected.message
+                            return
+                        }
+                        projectExplorerController.recordAcceptedTransition(projectDocument, integrated.project)
+                        projectDocument = integrated.project
+                        projectInventoryDiagnostics = integrated.diagnostics
+                        projectWorkspaceStore.saveProject(integrated.project)
                         projectExplorerDiagnostic = null
                     }
-                    is ProjectExplorerMutationResult.Rejected -> {
+                    is ProjectOperationResult.Failure -> {
                         projectExplorerDiagnostic = result.diagnostic.message
                         return
                     }
@@ -2277,20 +2306,26 @@ fun WorkspaceScreen(
                     ?.content
                     .orEmpty()
                 previousRootId?.let { projectSelections[it] = workspaceSelectionState }
-                projectDocument = result.project
-                projectWorkspaceStore.saveProject(result.project)
-                projectExplorerDiagnostic = null
-                val activeRoot = result.project.activeRoot()
+                val integrated = ProjectInventoryIntegrator.integrate(result.project)
+                val acceptedProject = integrated.project
+                projectDocument = acceptedProject
+                projectWorkspaceStore.saveProject(acceptedProject)
+                projectInventoryDiagnostics = integrated.diagnostics
+                projectExplorerDiagnostic = integrated.diagnostics
+                    .firstOrNull { it.code == ProjectInventoryDiagnosticCode.ProjectTransactionRejected }
+                    ?.message
+                val activeRoot = acceptedProject.activeRoot()
                 val rootChanged = activeRoot?.id != previousRootId
                 if (rootChanged && previousRootId != null) {
                     persistTextEditorDraftForRoot(uiPrefs, previousRootId, previousDraft)
                 }
+                val projectResources = ProjectResourceBridge.toWorkspaceBundle(acceptedProject)
                 if (activeRoot != null && activeRoot.workspace != workflowState.document) {
                     replaceWorkflowState(
                         nextWorkflowState = WorkspaceWorkflowState.fromDocument(
                             document = activeRoot.workspace,
                             mutationSource = source,
-                            resources = workflowState.resources,
+                            resources = projectResources,
                         ),
                         source = source,
                         syncProject = false,
@@ -2301,6 +2336,11 @@ fun WorkspaceScreen(
                             selection = projectSelections[activeRoot.id] ?: WorkspaceSelectionState(),
                         )
                     }
+                } else {
+                    workflowState = workflowState.copy(
+                        resources = projectResources,
+                        worldview = WorldviewDocument.fromResources(projectResources),
+                    )
                 }
                 if (rootChanged && activeRoot != null) {
                     val projectedSource = workflowState.emscriptProjection.getOrDefault("// Leerer Workspace")
@@ -2323,6 +2363,14 @@ fun WorkspaceScreen(
         context: ProjectExplorerMutationContext = ProjectExplorerMutationContext(),
     ): Boolean = acceptProjectMutation(
         result = projectExplorerController.execute(projectDocument, operation, context),
+        source = source,
+    )
+    fun executeProjectTransaction(
+        transaction: ProjectTransaction,
+        source: String,
+        context: ProjectExplorerMutationContext = ProjectExplorerMutationContext(),
+    ): Boolean = acceptProjectMutation(
+        result = projectExplorerController.execute(projectDocument, transaction, context),
         source = source,
     )
     fun undoProjectChange() {
@@ -4450,6 +4498,27 @@ fun WorkspaceScreen(
                                             details = target.absolutePath,
                                             groupKey = "screenshot:capture"
                                         )
+                                        if (ok) {
+                                            val asset = ScreenshotCanvasAsset(
+                                                file = target,
+                                                label = target.nameWithoutExtension,
+                                                app = "VisualTasker Studio WSS",
+                                                scene = target.parentFile?.name ?: "Screenshot",
+                                            )
+                                            canvasAssetWorkspaceResources(listOf(asset)).singleOrNull()?.let { resource ->
+                                                val resourceId = ResourceId(resource.id)
+                                                executeProjectOperation(
+                                                    operation = ProjectOperation.PutResource(
+                                                        operationId = ProjectOperationId("canvas:capture:${UUID.randomUUID()}"),
+                                                        resource = ProjectResourceBridge.toProjectResource(
+                                                            resource,
+                                                            projectDocument.resources[resourceId],
+                                                        ),
+                                                    ),
+                                                    source = "canvas:capture",
+                                                )
+                                            }
+                                        }
                                         screenshotCanvasState.refreshAssets()
                                     }
                                 }
@@ -4639,9 +4708,14 @@ fun WorkspaceScreen(
                     WorkspacePanelContent(
                         panel = panel,
                         projectExplorer = ProjectExplorerPanelBindings(
-                            projection = ProjectExplorerProjector.project(projectDocument) { resource ->
-                                val direct = File(resource.location)
-                                direct.isFile || File(runtimeFilesRoot(context), resource.location).isFile
+                            projection = ProjectExplorerProjector.project(
+                                project = projectDocument,
+                                inventoryDiagnostics = projectInventoryDiagnostics,
+                            ) { resource ->
+                                ProjectResourceBridge.isInline(resource) ||
+                                    resource.location.startsWith("content:") ||
+                                    File(resource.location).isFile ||
+                                    File(runtimeFilesRoot(context), resource.location).isFile
                             },
                             uiState = projectExplorerUiState,
                             canUndo = projectExplorerController.canUndo,
@@ -4932,33 +5006,65 @@ fun WorkspaceScreen(
                         },
                         screenshotCanvasState = screenshotCanvasState,
                         screenshotAssets = screenshotAssets,
-                        onSceneMarkerSaved = addSceneSaveNode,
+                        onSceneMarkerSaved = { marker ->
+                            addSceneSaveNode(marker)
+                            canvasMarkerWorkspaceResources(screenshotAssets, listOf(marker)).singleOrNull()?.let { resource ->
+                                val resourceId = ResourceId(resource.id)
+                                executeProjectOperation(
+                                    operation = ProjectOperation.PutResource(
+                                        operationId = ProjectOperationId("canvas:marker:${UUID.randomUUID()}"),
+                                        resource = ProjectResourceBridge.toProjectResource(
+                                            resource,
+                                            projectDocument.resources[resourceId],
+                                        ),
+                                    ),
+                                    source = "canvas:marker-save",
+                                )
+                            }
+                        },
                         onWorkspaceResourceUpsert = { resource ->
-                            val resources = WorkspaceResourceReducer.upsert(workflowState.resources, resource)
-                            workflowState = workflowState.copy(
-                                resources = resources,
-                                worldview = WorldviewDocument.fromResources(resources),
+                            val resourceId = ResourceId(resource.id)
+                            executeProjectOperation(
+                                operation = ProjectOperation.PutResource(
+                                    operationId = ProjectOperationId("resource:upsert:${UUID.randomUUID()}"),
+                                    resource = ProjectResourceBridge.toProjectResource(
+                                        resource,
+                                        projectDocument.resources[resourceId],
+                                    ),
+                                ),
+                                source = "resource:upsert",
                             )
-                            WorkspaceResourceFileStore.save(workspaceResourceStoreFile(context), resources)
                         },
                         onWorkspaceResourceRemove = { resourceId ->
-                            val resources = WorkspaceResourceReducer.remove(workflowState.resources, resourceId)
-                            workflowState = workflowState.copy(
-                                resources = resources,
-                                worldview = WorldviewDocument.fromResources(resources),
+                            executeProjectOperation(
+                                operation = ProjectOperation.RemoveResource(
+                                    operationId = ProjectOperationId("resource:remove:${UUID.randomUUID()}"),
+                                    resourceId = ResourceId(resourceId),
+                                ),
+                                source = "resource:remove",
                             )
-                            WorkspaceResourceFileStore.save(workspaceResourceStoreFile(context), resources)
                         },
                         onWorkspaceResourcesImported = { imported ->
-                            val resources = WorkspaceResourceReducer.upsertAll(
-                                bundle = workflowState.resources,
-                                resources = imported.resources,
-                            )
-                            workflowState = workflowState.copy(
-                                resources = resources,
-                                worldview = WorldviewDocument.fromResources(resources),
-                            )
-                            WorkspaceResourceFileStore.save(workspaceResourceStoreFile(context), resources)
+                            val operations = imported.resources.map { resource ->
+                                val resourceId = ResourceId(resource.id)
+                                ProjectOperation.PutResource(
+                                    operationId = ProjectOperationId("resource:import:${resource.id}:${UUID.randomUUID()}"),
+                                    resource = ProjectResourceBridge.toProjectResource(
+                                        resource,
+                                        projectDocument.resources[resourceId],
+                                    ),
+                                )
+                            }
+                            if (operations.isNotEmpty()) {
+                                executeProjectTransaction(
+                                    transaction = ProjectTransaction(
+                                        transactionId = ProjectOperationId("resource:import:${UUID.randomUUID()}"),
+                                        operations = operations,
+                                        expectedRevision = projectDocument.revision,
+                                    ),
+                                    source = "resource:import",
+                                )
+                            }
                         },
                         onWorkspaceJsonChange = applyWorkspaceJsonChange
                     )
@@ -5008,7 +5114,7 @@ fun WorkspaceScreen(
                 },
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .zIndex(999_999f),
+                    .zIndex(0f),
             )
         }
 
@@ -6588,29 +6694,58 @@ private fun buildCanvasWorldview(
     visionObservations: List<WorldObservation> = emptyList(),
     recorderObservations: List<WorldObservation> = emptyList(),
 ): WorldviewDocument {
+    val assetResources = canvasAssetWorkspaceResources(assets)
+    val markerResources = canvasMarkerWorkspaceResources(assets, markers)
+    val observationResources = WorkspaceObservationResourceProjector.project(
+        visionObservations = visionObservations,
+        recorderObservations = recorderObservations,
+    )
+    val merged = (baseResources.resources + assetResources + markerResources + observationResources)
+        .associateBy { it.id }
+        .values
+        .toList()
+    val projected = WorldviewDocument.fromResources(baseResources.copy(resources = merged))
+    val mergedObservations = (projected.observations + visionObservations + recorderObservations)
+        .distinctBy { it.id }
+        .sortedBy { it.id }
+    return WorldviewEntityUnifier.unify(
+        projected.copy(
+            observations = mergedObservations,
+            revision = projected.revision + visionObservations.size + recorderObservations.size,
+        )
+    )
+}
+
+private fun canvasAssetWorkspaceResources(
+    assets: List<ScreenshotCanvasAsset>,
+): List<WorkspaceResource> = assets.map { asset ->
+    WorkspaceResource(
+        id = "screenshot:${asset.id.stableResourceSuffix()}",
+        kind = WorkspaceResourceKind.Screenshot,
+        label = asset.label,
+        uri = asset.file.absolutePath,
+        mimeType = "image/png",
+        packageName = asset.app,
+        activityClass = asset.scene,
+        tags = setOf("canvas", "scene"),
+        metadata = mapOf(
+            "date" to asset.dateLabel,
+            "source" to "canvas",
+        ),
+        updatedAtEpochMs = asset.file.lastModified(),
+    )
+}
+
+private fun canvasMarkerWorkspaceResources(
+    assets: List<ScreenshotCanvasAsset>,
+    markers: List<ScreenshotCanvasSavedMarker>,
+): List<WorkspaceResource> {
     val assetSizes = assets.associate { asset ->
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(asset.file.absolutePath, options)
         asset.id to (options.outWidth.coerceAtLeast(1) to options.outHeight.coerceAtLeast(1))
     }
-    val assetResources = assets.map { asset ->
-        WorkspaceResource(
-            id = "screenshot:${asset.id.stableResourceSuffix()}",
-            kind = WorkspaceResourceKind.Screenshot,
-            label = asset.label,
-            uri = asset.file.absolutePath,
-            mimeType = "image/png",
-            packageName = asset.app,
-            activityClass = asset.scene,
-            tags = setOf("canvas", "scene"),
-            metadata = mapOf(
-                "date" to asset.dateLabel,
-                "source" to "canvas",
-            ),
-            updatedAtEpochMs = asset.file.lastModified(),
-        )
-    }
-    val markerResources = markers.mapNotNull { marker ->
+    return markers.mapNotNull { marker ->
         val size = marker.assetId?.let(assetSizes::get) ?: assetSizes.values.firstOrNull()
         val referenceWidth = size?.first ?: return@mapNotNull null
         val referenceHeight = size.second
@@ -6676,24 +6811,6 @@ private fun buildCanvasWorldview(
             updatedAtEpochMs = marker.updatedAt,
         )
     }
-    val observationResources = WorkspaceObservationResourceProjector.project(
-        visionObservations = visionObservations,
-        recorderObservations = recorderObservations,
-    )
-    val merged = (baseResources.resources + assetResources + markerResources + observationResources)
-        .associateBy { it.id }
-        .values
-        .toList()
-    val projected = WorldviewDocument.fromResources(baseResources.copy(resources = merged))
-    val mergedObservations = (projected.observations + visionObservations + recorderObservations)
-        .distinctBy { it.id }
-        .sortedBy { it.id }
-    return WorldviewEntityUnifier.unify(
-        projected.copy(
-            observations = mergedObservations,
-            revision = projected.revision + visionObservations.size + recorderObservations.size,
-        )
-    )
 }
 
 private fun String.stableResourceSuffix(): String =
@@ -6905,9 +7022,6 @@ private fun DatastorePanel(
             visionObservations = state.vision.observations,
             recorderObservations = recorderObservations,
         )
-    }
-    LaunchedEffect(canvasWorldview.resources) {
-        WorkspaceResourceFileStore.save(workspaceResourceStoreFile(context), canvasWorldview.resources)
     }
     val visualMemory = remember(canvasWorldview) {
         VisualUiMemoryProjector.project(canvasWorldview)
@@ -12033,6 +12147,19 @@ private fun loadWorkspaceResourceBundle(context: Context): WorkspaceResourceBund
         .fold(persisted) { resources, asset ->
             WorkspaceResourceReducer.upsert(resources, asset.toWorkspaceResource())
         }
+}
+
+private fun loadProjectInventoryResources(context: Context): WorkspaceResourceBundle {
+    val base = loadWorkspaceResourceBundle(context)
+    val assets = loadScreenshotCanvasAssets(context)
+    val markers = (
+        loadScreenshotCanvasSavedMarkers(context) +
+            LiveMarkerStore.load(context).map(LiveMarkerResult::toScreenshotCanvasMarker)
+        ).distinctBy { it.id }
+    return WorkspaceResourceReducer.upsertAll(
+        bundle = base,
+        resources = canvasAssetWorkspaceResources(assets) + canvasMarkerWorkspaceResources(assets, markers),
+    )
 }
 
 private fun loadRuntimeDatastore(context: Context): RuntimeDatastoreLoadResult {
