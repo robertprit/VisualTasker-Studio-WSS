@@ -5,6 +5,7 @@ class DeterministicExecutionRunner(
     private val providers: ExecutionProviderRegistry,
     private val maxSteps: Int = 10_000,
     private val maxLoopIterations: Int = 1_000,
+    private val variableRuntimeFactory: VariableRuntimeSessionFactory? = null,
 ) {
     fun execute(
         request: ExecutionRequest,
@@ -21,6 +22,7 @@ class DeterministicExecutionRunner(
             cancellationToken = cancellationToken,
             providerPolicies = request.providerPolicies,
         )
+        val variableRuntime = variableRuntimeFactory?.open(request, cancellationToken)
         fun event(
             kind: ExecutionTraceEventKind,
             entityId: String? = null,
@@ -32,6 +34,7 @@ class DeterministicExecutionRunner(
             pathTrace: PointerPathTraceInfo? = null,
             targetTrace: TargetResolutionTraceInfo? = null,
             providerTrace: ProviderResolutionTraceInfo? = null,
+            variableTrace: VariableTraceInfo? = null,
         ) {
             val traceEvent = ExecutionTraceEvent(
                 index = trace.size + 1,
@@ -46,6 +49,7 @@ class DeterministicExecutionRunner(
                 pathTrace = pathTrace,
                 targetTrace = targetTrace,
                 providerTrace = providerTrace,
+                variableTrace = variableTrace,
             )
             trace += traceEvent
             traceObserver(traceEvent)
@@ -83,6 +87,7 @@ class DeterministicExecutionRunner(
             maxSteps = maxSteps,
             maxLoopIterations = maxLoopIterations,
             traceObserver = traceObserver,
+            variableRuntime = variableRuntime,
         )
         return try {
             machine.execute(plan.steps)
@@ -138,6 +143,7 @@ private class Machine(
     private val maxSteps: Int,
     private val maxLoopIterations: Int,
     private val traceObserver: (ExecutionTraceEvent) -> Unit,
+    private val variableRuntime: VariableRuntimeSession?,
 ) {
     var currentEntityId: String? = null
         private set
@@ -149,9 +155,7 @@ private class Machine(
             currentEntityId = step.entityId
             emit(ExecutionTraceEventKind.STEP_STARTED, entityId = step.entityId)
             val value = when (step) {
-                is ExecutionStep.Assign -> evaluate(step.expression).also { value ->
-                    context.variables[step.variableId] = value
-                }
+                is ExecutionStep.Assign -> writeVariable(step, evaluate(step.expression))
                 is ExecutionStep.Invoke -> invoke(step.entityId, step.commandId, step.capability, step.arguments)
                 is ExecutionStep.Branch -> executeBranch(step)
                 is ExecutionStep.Repeat -> executeRepeat(step)
@@ -207,7 +211,7 @@ private class Machine(
 
     private fun evaluate(expression: ExecutionExpression): ExecutionValue = when (expression) {
         is ExecutionExpression.Literal -> expression.value
-        is ExecutionExpression.Variable -> context.variables[expression.variableId] ?: ExecutionValue.NullValue
+        is ExecutionExpression.Variable -> readVariable(expression)
         is ExecutionExpression.Binary -> evaluateBinary(expression)
         is ExecutionExpression.ListExpression -> ExecutionValue.ListValue(expression.values.map(::evaluate))
         is ExecutionExpression.ValueConstructor -> {
@@ -439,6 +443,63 @@ private class Machine(
         )
     }
 
+    private fun writeVariable(step: ExecutionStep.Assign, value: ExecutionValue): ExecutionValue {
+        val runtime = variableRuntime
+        if (runtime == null) {
+            context.variables[step.variableId] = value
+            return value
+        }
+        return when (val result = runtime.write(step.variableId, value, step.declaration)) {
+            is VariableRuntimeResult.Success -> {
+                context.variables[result.binding.variableId] = result.value
+                emit(
+                    kind = ExecutionTraceEventKind.VARIABLE_WRITTEN,
+                    entityId = step.entityId,
+                    variableTrace = result.trace,
+                )
+                result.value
+            }
+            is VariableRuntimeResult.Missing -> fail(
+                "VARIABLE_MISSING",
+                "Variable '${result.binding.variableId}' is missing.",
+                step.entityId,
+                variableTrace = result.trace,
+            )
+            is VariableRuntimeResult.Failed -> fail(
+                result.failure.code.name,
+                result.failure.message,
+                step.entityId,
+                variableTrace = result.trace,
+            )
+        }
+    }
+
+    private fun readVariable(expression: ExecutionExpression.Variable): ExecutionValue {
+        val runtime = variableRuntime ?: return context.variables[expression.variableId] ?: ExecutionValue.NullValue
+        return when (val result = runtime.read(expression.variableId)) {
+            is VariableRuntimeResult.Success -> result.value.also {
+                context.variables[result.binding.variableId] = it
+                emit(
+                    kind = ExecutionTraceEventKind.VARIABLE_READ,
+                    entityId = expression.entityId,
+                    variableTrace = result.trace,
+                )
+            }
+            is VariableRuntimeResult.Missing -> fail(
+                "VARIABLE_MISSING",
+                "Variable '${result.binding.variableId}' is missing.",
+                expression.entityId,
+                variableTrace = result.trace,
+            )
+            is VariableRuntimeResult.Failed -> fail(
+                result.failure.code.name,
+                result.failure.message,
+                expression.entityId,
+                variableTrace = result.trace,
+            )
+        }
+    }
+
     private fun checkpoint(entityId: String) {
         if (context.cancellationToken.isCancellationRequested) throw ExecutionCancelled(entityId)
         stepCount += 1
@@ -457,6 +518,7 @@ private class Machine(
         pathTrace: PointerPathTraceInfo? = null,
         targetTrace: TargetResolutionTraceInfo? = null,
         providerTrace: ProviderResolutionTraceInfo? = null,
+        variableTrace: VariableTraceInfo? = null,
     ) {
         val traceEvent = ExecutionTraceEvent(
             index = trace.size + 1,
@@ -470,6 +532,7 @@ private class Machine(
             pathTrace = pathTrace,
             targetTrace = targetTrace,
             providerTrace = providerTrace,
+            variableTrace = variableTrace,
         )
         trace += traceEvent
         traceObserver(traceEvent)
@@ -482,6 +545,7 @@ private class Machine(
         pathTrace: PointerPathTraceInfo? = null,
         targetTrace: TargetResolutionTraceInfo? = null,
         providerTrace: ProviderResolutionTraceInfo? = null,
+        variableTrace: VariableTraceInfo? = null,
     ): Nothing = throw ExecutionFailed(
         ExecutionDiagnostic(
             code = code,
@@ -490,6 +554,7 @@ private class Machine(
             pathTrace = pathTrace,
             targetTrace = targetTrace,
             providerTrace = providerTrace,
+            variableTrace = variableTrace,
         ),
     )
 }

@@ -146,7 +146,7 @@ die Baseline eingerechnet. Aktueller Matrixstand nach M7-0: 62 `IMPLEMENTED`, 46
 | D-05 | IMPLEMENTED | ja | `LegacyStudioResourceImporter/Mapper` plus Tests | Migration-Gate |
 | D-06 | PARTIAL | ja | `ToolboxSetMode` und VisualAsset-UI | M8-6 |
 | D-07 | IMPLEMENTED | ja | WSS Drag contracts, effects, Compose-DnD adapter | M8-7 erweitern |
-| D-08 | PARTIAL | ja | M8-1 Explorer plus M8-2 Scope-Trennung, reale Where-used-Referenzen und Provider-GAP-Diagnosen | Runtime-/Storage-Provider M8-4/M8-5 |
+| D-08 | IMPLEMENTED | ja | M8-1 Explorer, M8-2 Scope-Trennung und M8-4 ScopeResolver, Project-/AppShared-Storage, CAS/Recovery und RuntimeTrace | Tasker-Write bleibt M9-1; Funktionsframes folgen mit Funktionsruntime |
 | D-09 | IMPLEMENTED | ja | M8-3 `.vtpkg`, deterministischer Export, sicherer Preflight, Relokation, Konflikt/Kopie und atomarer Import | Device-SAF-Gate und Backup/Restore M10-3 |
 | D-10 | PARTIAL | teil | Worldview Contracts/Unifier/Panel Projections | kein dynamisches World Model |
 | D-11 | PARTIAL | teil | `ReadOnlyKnowledgeIndex.kt`, RAG Architekturdoc | read-only, post-1.0 Ausbau |

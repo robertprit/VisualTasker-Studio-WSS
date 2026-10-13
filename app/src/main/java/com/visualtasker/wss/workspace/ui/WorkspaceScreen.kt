@@ -330,6 +330,7 @@ import com.visualtasker.wss.emscript.runtime.EmscriptValue
 import com.visualtasker.wss.emscript.runtime.AndroidRuntimeSnapshot
 import com.visualtasker.wss.emscript.runtime.ExecutionCancellationReason
 import com.visualtasker.wss.emscript.runtime.RuntimeClient
+import com.visualtasker.wss.emscript.runtime.ProjectVariableBindings
 import com.visualtasker.wss.emscript.runtime.ExecutionState
 import com.visualtasker.wss.emscript.runtime.toAndroidRuntimeSnapshot
 import com.visualtasker.wss.emscript.runtime.toToolboxCapability
@@ -3160,6 +3161,9 @@ fun WorkspaceScreen(
             projectId = projectDocument.id.value,
             workflowRootId = projectDocument.manifest.activeRootId?.value,
             projectRevision = projectDocument.revision.value,
+            variableBindings = projectDocument.manifest.activeRootId
+                ?.let { rootId -> ProjectVariableBindings.forExecution(projectDocument, rootId) }
+                .orEmpty(),
         )
         if (started) {
             workspaceDryRunResult = null

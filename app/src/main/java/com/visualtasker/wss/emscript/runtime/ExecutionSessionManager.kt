@@ -43,6 +43,7 @@ class ExecutionSessionManager(
         projectId: String? = null,
         workflowRootId: String? = null,
         projectRevision: Long? = null,
+        variableBindings: Map<String, VariableBinding> = emptyMap(),
     ): ExecutionSessionId? = synchronized(lock) {
         if (mutableCurrentSession.value?.isActive == true || reservedRequest != null) return null
         val sessionId = ExecutionSessionId(sessionIdFactory())
@@ -57,6 +58,7 @@ class ExecutionSessionManager(
             projectId = projectId,
             workflowRootId = workflowRootId,
             projectRevision = projectRevision,
+            variableBindings = variableBindings,
         )
         reservedRequest = request
         publish(
@@ -99,6 +101,7 @@ class ExecutionSessionManager(
         projectId: String? = null,
         workflowRootId: String? = null,
         projectRevision: Long? = null,
+        variableBindings: Map<String, VariableBinding> = emptyMap(),
     ): ExecutionSessionId? {
         val sessionId = reserve(
             workflowId,
@@ -110,6 +113,7 @@ class ExecutionSessionManager(
             projectId,
             workflowRootId,
             projectRevision,
+            variableBindings,
         ) ?: return null
         return sessionId.takeIf(::startReserved)
     }
@@ -158,6 +162,7 @@ class ExecutionSessionManager(
             projectId = request.projectId,
             workflowRootId = request.workflowRootId,
             projectRevision = request.projectRevision,
+            variableBindings = request.variableBindings,
         )
         val plan = when (val planned = planner.plan(runtimeRequest)) {
             is ExecutionPlanResult.Ready -> planned.plan

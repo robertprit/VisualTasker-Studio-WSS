@@ -26,6 +26,7 @@ fun AndroidRuntimeSnapshot.toExecutionTrace(
             targetTrace = event.targetTrace ?: event.diagnostic?.targetTrace,
             providerTrace = event.providerTrace ?: event.diagnostic?.providerTrace,
             captureTrace = event.captureTrace,
+            variableTrace = event.variableTrace ?: event.diagnostic?.variableTrace,
         )
     }
     val finalResult = result
@@ -97,6 +98,12 @@ private fun ExecutionTraceEvent.toOperationMessage(): String = when (kind) {
     ExecutionTraceEventKind.BRANCH_SELECTED -> "Branch selected: ${relationId.orEmpty()}"
     ExecutionTraceEventKind.PROVIDER_STARTED -> "Provider started: ${providerId.orEmpty()}"
     ExecutionTraceEventKind.PROVIDER_FINISHED -> "Provider finished: ${providerId.orEmpty()}"
+    ExecutionTraceEventKind.VARIABLE_READ -> variableTrace?.let {
+        "Variable read: ${it.variableId} [${it.scope}/${it.providerId}] ${it.status}"
+    } ?: "Variable read"
+    ExecutionTraceEventKind.VARIABLE_WRITTEN -> variableTrace?.let {
+        "Variable write: ${it.variableId} [${it.scope}/${it.providerId}] ${it.status}"
+    } ?: "Variable write"
     ExecutionTraceEventKind.DIAGNOSTIC -> diagnostic?.message ?: "Runtime diagnostic"
     ExecutionTraceEventKind.CANCELLED -> "Workflow execution cancelled"
 }

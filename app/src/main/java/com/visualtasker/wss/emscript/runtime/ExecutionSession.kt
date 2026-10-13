@@ -36,6 +36,7 @@ data class ExecutionSessionRequest(
     val projectId: String? = null,
     val workflowRootId: String? = null,
     val projectRevision: Long? = null,
+    val variableBindings: Map<String, VariableBinding> = emptyMap(),
 )
 
 data class ExecutionSessionSnapshot(

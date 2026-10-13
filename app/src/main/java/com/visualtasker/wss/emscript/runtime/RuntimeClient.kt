@@ -23,6 +23,7 @@ class RuntimeClient(
         projectId: String? = null,
         workflowRootId: String? = null,
         projectRevision: Long? = null,
+        variableBindings: Map<String, VariableBinding> = emptyMap(),
     ): Boolean {
         val sessionId = host.reserve(
             document = document,
@@ -33,6 +34,7 @@ class RuntimeClient(
             projectId = projectId,
             workflowRootId = workflowRootId,
             projectRevision = projectRevision,
+            variableBindings = variableBindings,
         ) ?: return false
         val intent = HeadlessRuntimeService.startIntent(appContext, sessionId)
         return runCatching {

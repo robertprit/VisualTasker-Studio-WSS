@@ -47,7 +47,7 @@ Teilimplementierungen, isolierte Contracts und reine Planung.
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H sind DONE; Runtime-Closure fehlt. Kontrollfluss ist kein 1.0-Core-Blocker. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W WindowSession-Vertrag und Hostadapter implementiert; reale Geraete-UX-Abnahme und Editor-Produktgates folgen. |
 | M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-Kontext und M7-1 kontrolliertes Recorder-to-Workflow-Publishing produktiv; OCR/OpenCV-Live-Provider und Perception-Closure folgen. |
-| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-3 verbinden Projektvertrag, Explorer, reale Bestaende und portable `.vtpkg`-Pakete; Runtime-Provider und weitergehender Asset-Lifecycle folgen. |
+| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-4 verbinden Projektvertrag, Explorer, portable `.vtpkg`-Pakete und produktive Scope-/Storage-Provider; Asset-Lifecycle folgt. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Provider-Grenzen sind noch festzulegen. |
 | M10 Release Hardening | PLANNED | Beginnt nach den freigegebenen Produkt-Slices und dem Feature-Freeze. |
 
@@ -461,6 +461,10 @@ Accessibility, OCR, OCV, YOLO, DOM und Runtime erhalten getrennte Worldview-Prov
 - [x] M8-3: ProjectLocal-/Embedded-Assets hashen und relokieren; AppShared-, External- und fluechtige Capture-Abhaengigkeiten explizit deklarieren.
 - [x] M8-3: Bounded Preflight, Traversal-/ZIP-Bomb-Schutz, isoliertes Staging, Konflikt/Kopie und atomaren Import-Rollback absichern.
 - [ ] M8-3 Device-Gate: SAF Export/Import nur mit einem ausdruecklich freigegebenen isolierten Testprojekt abnehmen.
+- [x] M8-4: Local-/Script-Laufzeitwerte und persistente Project-/AppShared-Provider ueber einen deterministischen ScopeResolver in den bestehenden ExecutionRunner integrieren.
+- [x] M8-4: Atomare CAS-Writes, Revisionskonflikte, Cancellation, Neustart- und Crash-Recovery fuer typisierte Runtime-Werte absichern.
+- [x] M8-4: External-Providervertrag und Tasker-Snapshot-Read ehrlich als PARTIAL integrieren; bestaetigte Tasker-Writes bleiben M9-1.
+- [ ] M8-4 Device-Gate: Runtime-Werte nur in einem ausdruecklich freigegebenen isolierten Testprojekt auf Android abnehmen.
 
 - [ ] Screenshot Panel Funktionen in Canvas/Vision/Marker sauber aufteilen.
 - [ ] Inspector-Funktionen in Inspector/Debug/Datastore trennen.

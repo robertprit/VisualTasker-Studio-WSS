@@ -1,6 +1,6 @@
 # VisualTasker Studio WSS Release 1.0 Plan
 
-Stand: 2026-10-12
+Stand: 2026-10-13
 
 ## Zweck Und Autoritaet
 
@@ -31,7 +31,7 @@ Namensgleichheit besitzt die Statusmatrix dieses Dokuments Vorrang fuer die Rele
 | M5 Runtime und Capability Provider | ACTIVE | M5-0 bis M5-8 und M5-H `DONE`; Runtime-Closure fehlt. |
 | M6 Editor Productization und Workspace UX | ACTIVE | M6-W Vertrag/Hosts implementiert; Geraete-UX und weitere Editor-Produktgates offen. |
 | M7 Perception, Recorder und Inspection | ACTIVE | M7-0 Capture-/Observation-Vertrag und M7-1 Recorder-Publishing implementiert; OCR/OpenCV-Live-Provider und Closure sind offen. |
-| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-3 sind implementiert; Runtime-Provider und weitergehender Asset-Lifecycle folgen. |
+| M8 Resources, Data Hub und Workspace Explorer | ACTIVE | M8-0 bis M8-4 sind implementiert; Asset-Lifecycle und weitere Provider folgen. |
 | M9 Integrationen, VT2VT und Erweiterbarkeit | PLANNED | Teilimplementierungen vorhanden; Release-Scope und Sicherheitsgate fehlen. |
 | M10 Release Hardening | PLANNED | Noch kein Feature-Freeze und kein vollstaendiges Release-Gate. |
 
@@ -133,7 +133,7 @@ Gesamtstatus: `IN_PROGRESS`
 | M8-1 | DONE | Nativer Project Explorer fuer Roots, Definitionen, Variablen und Ressourcen mit ProjectOperations, Guards, History und Persistenz. |
 | M8-2 | DONE | Reale Resource-/Variable-Bestaende, Referenzen, Migration und Projektoperationen produktiv verbinden. |
 | M8-3 | DONE | Portable `.vtpkg`-Pakete, Dependency-Manifest, Integritaet, Relokation, SAF und atomarer Import. |
-| M8-4 | PLANNED | Local-, Script-, Project-, App-Shared- und External-Scopes. |
+| M8-4 | DONE | Deterministische Local-/Script-/Project-/AppShared-/External-Aufloesung, persistente Project-/AppShared-Werte, CAS/Recovery und wertfreie Trace-Provenienz. |
 | M8-5 | PLANNED | Persistente Daten ueber klar getrennte lokale und externe Provider. |
 | M8-6 | PLANNED | Asset Registry fuer Images, Templates, Regions und Shapes. |
 | M8-7 | PLANNED | Typisiertes Drag-and-Drop zwischen Explorer und Editoren. |
@@ -147,8 +147,9 @@ Funktionsruntime und portable Asset-Pakete bleiben Folgeslices. Der M8-1 Explore
 Bedienprojektion dieses Vertrags und fuehrt keine zweite Projektwahrheit ein.
 M8-2 uebernimmt bestehende WorkspaceResources einmalig in das `ProjectDocument`, projiziert sie
 verlustfrei fuer Canvas/Worldview zurueck und verbindet deklarative Project-/AppShared-Scopes.
-Nicht vorhandene Runtime-/Storage-Provider bleiben sichtbare GAPs. M8-3 liefert portable Pakete,
-Hashpruefung, projektlokale Relokation und sichere Release-Guards; automatische Asset-GC,
+M8-3 liefert portable Pakete, Hashpruefung, projektlokale Relokation und sichere Release-Guards.
+M8-4 bindet die Scopes an den bestehenden Runner und liefert produktive Project-/AppShared-Stores.
+Tasker ist als Snapshot-Read `PARTIAL`; bestaetigte Writes bleiben M9-1. Automatische Asset-GC,
 Mehrprojekt-Katalog und Backup/Restore bleiben spaetere Slices.
 
 ## M9 Integrationen, VT2VT Und Erweiterbarkeit

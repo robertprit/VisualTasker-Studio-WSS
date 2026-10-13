@@ -23,6 +23,7 @@ data class ExecutionRequest(
     val projectId: String? = null,
     val workflowRootId: String? = null,
     val projectRevision: Long? = null,
+    val variableBindings: Map<String, VariableBinding> = emptyMap(),
 )
 
 data class ExecutionPlan(
@@ -151,6 +152,7 @@ data class ExecutionDiagnostic(
     val pathTrace: PointerPathTraceInfo? = null,
     val targetTrace: TargetResolutionTraceInfo? = null,
     val providerTrace: ProviderResolutionTraceInfo? = null,
+    val variableTrace: VariableTraceInfo? = null,
 )
 
 data class TargetResolutionTraceInfo(
@@ -187,6 +189,8 @@ enum class ExecutionTraceEventKind {
     BRANCH_SELECTED,
     PROVIDER_STARTED,
     PROVIDER_FINISHED,
+    VARIABLE_READ,
+    VARIABLE_WRITTEN,
     DIAGNOSTIC,
     CANCELLED,
 }
@@ -205,6 +209,7 @@ data class ExecutionTraceEvent(
     val targetTrace: TargetResolutionTraceInfo? = null,
     val providerTrace: ProviderResolutionTraceInfo? = null,
     val captureTrace: CaptureTraceInfo? = null,
+    val variableTrace: VariableTraceInfo? = null,
 )
 
 data class ExecutionResult(

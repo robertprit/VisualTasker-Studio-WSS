@@ -21,6 +21,7 @@ class AndroidRuntimeHost(
         projectId: String? = null,
         workflowRootId: String? = null,
         projectRevision: Long? = null,
+        variableBindings: Map<String, VariableBinding> = emptyMap(),
     ): ExecutionSessionId? = sessions.reserve(
         workflowId = workflowId,
         workspaceRevision = workspaceRevision,
@@ -30,6 +31,7 @@ class AndroidRuntimeHost(
         projectId = projectId,
         workflowRootId = workflowRootId,
         projectRevision = projectRevision,
+        variableBindings = variableBindings,
     )
 
     fun startReserved(sessionId: ExecutionSessionId): Boolean = sessions.startReserved(sessionId)
@@ -60,7 +62,11 @@ object RuntimeProcessHost {
                 NativeAccessibilityProvider(),
             ),
         )
-        val runner = DeterministicExecutionRunner(planner = planner, providers = providers)
+        val runner = DeterministicExecutionRunner(
+            planner = planner,
+            providers = providers,
+            variableRuntimeFactory = androidVariableRuntimeFactory(context),
+        )
         return AndroidRuntimeHost(
             ExecutionSessionManager(
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),

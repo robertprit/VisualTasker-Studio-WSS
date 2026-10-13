@@ -34,6 +34,7 @@ class ProjectExecutionPlanner(
                 projectId = project.id.value,
                 workflowRootId = rootId.value,
                 projectRevision = project.revision.value,
+                variableBindings = ProjectVariableBindings.forExecution(project, rootId),
             ),
         )
     }

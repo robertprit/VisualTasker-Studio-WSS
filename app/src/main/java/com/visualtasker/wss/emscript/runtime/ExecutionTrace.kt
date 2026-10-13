@@ -63,6 +63,7 @@ data class OperationResult(
     val targetTrace: TargetResolutionTraceInfo? = null,
     val providerTrace: ProviderResolutionTraceInfo? = null,
     val captureTrace: CaptureTraceInfo? = null,
+    val variableTrace: VariableTraceInfo? = null,
 )
 
 data class CaptureTraceInfo(
